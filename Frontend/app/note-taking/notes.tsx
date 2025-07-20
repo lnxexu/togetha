@@ -3,15 +3,14 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Audio } from 'expo-av';
 import React, { useState, useEffect, useCallback } from 'react';
 import Navbar from '../NavBar';
-import { notesApi } from './services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
+import { Platform } from 'react-native';
 
 import {
   Animated,
   Dimensions,
   FlatList,
-  Platform,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -25,6 +24,206 @@ import {
 import { RootStackParamList } from '../navigation/AppNavigator';
 
 const { width } = Dimensions.get('window');
+
+// API configuration - moved from api.tsx
+const API_URL = __DEV__ 
+  ? Platform.OS === 'android'
+    ? 'http://10.0.2.2:8000'  // Android emulator 
+    : 'http://localhost:8000'  // iOS simulator
+  : 'https://your-production-api-url.com';  // Production API
+  
+let AUTH_TOKEN: string | null = null;
+
+// Helper function for API requests - moved from api.tsx
+// Update the fetchAPI function to properly handle authentication
+
+const fetchAPI = async (endpoint: string, options: RequestInit = {}) => {
+  // Ensure headers object exists
+  const headers = options.headers || {};
+  
+  // Add Content-Type if not present and not a FormData request
+  if (!options.body || !(options.body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json';
+  }
+  
+  // Add Authorization header if token exists
+  if (AUTH_TOKEN) {
+    headers['Authorization'] = `Token ${AUTH_TOKEN}`;
+  } else {
+    // Try to retrieve token from storage if not in memory
+    const storedToken = await AsyncStorage.getItem('authToken');
+    if (storedToken) {
+      AUTH_TOKEN = storedToken;
+      headers['Authorization'] = `Token ${storedToken}`;
+    }
+  }
+  
+  // Prepare final options with headers
+  const finalOptions = {
+    ...options,
+    headers,
+  };
+  
+  try {
+    const response = await fetch(`${API_URL}${endpoint}`, finalOptions);
+    
+    // Handle authentication errors
+    if (response.status === 401) {
+      console.log('Authentication error: 401');
+      throw new Error('Authentication required');
+    }
+    
+    // For other error status codes
+    if (!response.ok) {
+      console.log(`API Error: ${response.status}`);
+      throw new Error(`API Error: ${response.status}`);
+    }
+    
+    // Check if response is empty
+    const text = await response.text();
+    return text ? JSON.parse(text) : {};
+    
+  } catch (error) {
+    console.log('API request failed:', error);
+    throw error;
+  }
+};
+
+// Update the setAuthToken function to ensure token is properly stored
+export const setAuthToken = async (token: string) => {
+  AUTH_TOKEN = token;
+  await AsyncStorage.setItem('authToken', token);
+  console.log('Auth token set:', token);
+};
+
+// Add a login function that properly handles authentication
+export const login = async (username: string, password: string) => {
+  try {
+    const data = await fetchAPI('/login/', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    });
+    
+    // Save the token
+    if (data && data.token) {
+      await setAuthToken(data.token);
+      console.log('Login successful');
+      return data;
+    } else {
+      throw new Error('Invalid login response');
+    }
+  } catch (error) {
+    console.error('Login error:', error);
+    throw error;
+  }
+};
+// Notes API functions - moved from api.tsx
+const notesApi = {
+  // Get all folders
+  getFolders: async () => {
+    return fetchAPI('/notes/folders/');
+  },
+  
+  // Create a new folder
+  createFolder: async (folderData: any) => {
+    return fetchAPI('/notes/folders/', {
+      method: 'POST',
+      body: JSON.stringify(folderData)
+    });
+  },
+  
+  // Update a folder
+  updateFolder: async (id: string, folderData: any) => {
+    return fetchAPI(`/notes/folders/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(folderData)
+    });
+  },
+  
+  // Delete a folder
+  deleteFolder: async (id: string) => {
+    return fetchAPI(`/notes/folders/${id}/`, {
+      method: 'DELETE'
+    });
+  },
+  
+  // Get all notes
+  getNotes: async () => {
+    return fetchAPI('/notes/notes/');
+  },
+  
+  // Get notes by folder ID
+  getNotesByFolder: async (folderId: string) => {
+    return fetchAPI(`/notes/notes/?folder_id=${folderId}`);
+  },
+  
+  // Create a new note
+  createNote: async (noteData: any) => {
+    return fetchAPI('/notes/notes/', {
+      method: 'POST',
+      body: JSON.stringify(noteData)
+    });
+  },
+  
+  // Update a note
+  updateNote: async (id: string, noteData: any) => {
+    return fetchAPI(`/notes/notes/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(noteData)
+    });
+  },
+  
+  // Delete a note
+  deleteNote: async (id: string) => {
+    return fetchAPI(`/notes/notes/${id}/`, {
+      method: 'DELETE'
+    });
+  },
+  
+  // Upload audio recording
+  uploadAudioRecording: async (noteId: string, audioUri: string) => {
+    // Create FormData for file upload
+    const formData = new FormData();
+    formData.append('note', noteId);
+    
+    // Extract filename from URI
+    const uriParts = audioUri.split('/');
+    const fileName = uriParts[uriParts.length - 1];
+    
+    // Add the audio file to the form data
+    const fileType = 'audio/m4a'; // Adjust based on your recording format
+    
+    // @ts-ignore - TypeScript doesn't recognize the format needed for React Native
+    formData.append('audio_file', {
+      uri: audioUri,
+      name: fileName,
+      type: fileType
+    });
+    
+    // Use fetch directly for FormData uploads
+    const response = await fetch(`${API_URL}/notes/audio-recordings/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'multipart/form-data',
+        ...(AUTH_TOKEN && { 'Authorization': `Token ${AUTH_TOKEN}` })
+      },
+      body: formData
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to upload audio: ${response.status}`);
+    }
+    
+    return await response.json();
+  },
+  
+  // Transcribe audio recording
+  transcribeAudioRecording: async (id: string) => {
+    return fetchAPI(`/notes/audio-recordings/${id}/transcribe/`, {
+      method: 'POST'
+    });
+  },
+};
 
 type NotesScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Notes'>;
 
@@ -76,7 +275,7 @@ export default function NotesScreen() {
   const [recordingAnimation] = useState(new Animated.Value(1));
   const [showFolderDropdown, setShowFolderDropdown] = useState(false);
   
-  // New states for API integration and offline functionality
+  // States for API integration and offline functionality
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -222,7 +421,7 @@ export default function NotesScreen() {
           ? 'voice'
           : 'text';
           
-        // Extract tags from content (this is a placeholder - implement your tag extraction logic)
+        // Extract tags from content
         const tags = extractTagsFromContent(note.content);
         
         return {
@@ -260,7 +459,7 @@ export default function NotesScreen() {
     }
   };
 
-  // Simple tag extraction function (placeholder - implement your own logic)
+  // Simple tag extraction function
   const extractTagsFromContent = (content: string): string[] => {
     if (!content) return [];
     
@@ -357,7 +556,6 @@ export default function NotesScreen() {
   const uploadAudioRecording = async (noteId: string, audioUri: string) => {
     if (!isOnline) {
       // Store info for later upload
-      // For simplicity, we'll just keep the URI with the note
       return;
     }
     
@@ -543,8 +741,6 @@ export default function NotesScreen() {
   };
 
   const createTextNote = () => {
-    // Navigate to create note screen or implement inline creation
-    // For this example, we'll just create a basic note
     createNote({
       title: 'New Note',
       content: '',
@@ -855,7 +1051,7 @@ const styles = StyleSheet.create({
   },
   headerIcons: {
     flexDirection: 'row',
-    gap: 12, // For modern RN, or use margin if needed
+    gap: 12,
   },
   icon: {
     marginRight: 12,
@@ -865,8 +1061,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 28,
-    // fontFamily: 'Inter-Bold', // Commented out as custom fonts might not be loaded
-    fontWeight: 'bold', // Using fontWeight as a fallback
+    fontWeight: 'bold',
     color: '#6A009C',
     marginBottom: 4,
   },
@@ -874,7 +1069,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6B7280',
   },
-  // New Folder Container Styles
   folderContainer: {
     paddingHorizontal: 20,
     paddingVertical: 16,
@@ -889,10 +1083,10 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderWidth: 1,
     borderColor: '#E5E7EB',
-    justifyContent: 'space-between', // To push arrow to the right
+    justifyContent: 'space-between',
   },
   folderText: {
-    flex: 1, // Allows text to take available space
+    flex: 1,
     marginLeft: 8,
     fontSize: 16,
     color: '#1F2937',
@@ -901,12 +1095,11 @@ const styles = StyleSheet.create({
   folderDropdown: {
     marginTop: 12,
     paddingVertical: 8,
-    // No fixed height, ScrollView will handle content size
   },
   folderItem: {
     alignItems: 'center',
-    marginRight: 20, // Spacing between folder icons
-    width: 70, // Fixed width for each folder item
+    marginRight: 20,
+    width: 70,
   },
   folderItemText: {
     fontSize: 12,
@@ -914,8 +1107,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
     textAlign: 'center',
   },
-  // End of New Folder Container Styles
-
   notesList: {
     flex: 1,
   },
@@ -1036,11 +1227,10 @@ const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
     right: 20,
-    // Adjust the bottom position to be above the Navbar
-    bottom: 90, // Increased from 30 to 90 to account for Navbar height
+    bottom: 90,
     flexDirection: 'row',
     alignItems: 'center',
-    zIndex: 1, // Ensure FAB stays on top
+    zIndex: 1,
   },
   fabButton: {
     width: 56,
@@ -1093,3 +1283,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 });
+
+// Export the setAuthToken function so it can be used elsewhere in the app
+export { setAuthToken };

@@ -15,8 +15,14 @@ import {
 import Toast from 'react-native-toast-message';
 import LoginIllustration from '../../assets/illustrations/undraw_access-account_aydp (1).svg';
 import type { RootStackParamList } from '../navigation/AppNavigator';
+import { Platform } from 'react-native';
 
-const API_BASE_URL = 'http://10.0.2.2:8000'; // Match with your Django server
+// API URL configuration
+const API_BASE_URL = __DEV__ 
+  ? Platform.OS === 'android'
+    ? 'http://10.0.2.2:8000'  // Android emulator 
+    : 'http://localhost:8000'  // iOS simulator
+  : 'https://your-production-api-url.com';  // Production API
 
 export default function SignIn() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
