@@ -19,7 +19,12 @@ import { KeyboardAvoidingView, Platform, ScrollView, Modal } from 'react-native'
 
 type SignUpScreenProp = NativeStackNavigationProp<RootStackParamList, 'Signup'>;
 
-const API_BASE_URL = 'http://10.0.2.2:8000'; // Django server URL
+// API URL configuration
+const API_BASE_URL = __DEV__ 
+  ? Platform.OS === 'android'
+    ? 'http://10.0.2.2:8000'  // Android emulator 
+    : 'http://localhost:8000'  // iOS simulator
+  : 'https://your-production-api-url.com';  // Production API
 
 export default function SignUp() {
   const navigation = useNavigation<SignUpScreenProp>();
