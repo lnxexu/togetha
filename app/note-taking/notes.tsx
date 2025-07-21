@@ -313,14 +313,14 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
                 viewMode === "grid" && styles.gridNoteTypeIcon,
                 {
                   backgroundColor:
-                    item.type === "voice" ? "#f2e5f8ff" : "#DBEAFE",
+                    item.type === "voice" ? "#FFEBEE" : "#DBEAFE",
                 },
               ]}
             >
               <MaterialIcons
                 name={item.type === "voice" ? "mic" : "description"}
                 size={viewMode === "grid" ? 16 : 20}
-                color={item.type === "voice" ? "#6A009C" : "#3B82F6"}
+                color={item.type === "voice" ? "#D32F2F" : "#3B82F6"}
               />
             </View>
             <View style={styles.noteTitleSection}>
@@ -415,7 +415,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
                         styles.waveformBar,
                         {
                           height: Math.random() * 24 + 8,
-                          backgroundColor: i < 8 ? "#6A009C" : "#aaaaaaff",
+                          backgroundColor: i < 8 ? "#D32F2F" : "#aaaaaaff", // Changed from #6A009C
                         },
                       ]}
                     />
@@ -794,7 +794,7 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 24,
-    paddingTop: Platform.OS === "ios" ? 60 : 40,
+    paddingTop: Platform.OS === 'ios' ? 40 : 40,
     paddingBottom: 24,
     backgroundColor: "#F8FAFC",
   },
@@ -831,7 +831,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     shadowColor: "#6366F1",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 2,
   },
@@ -850,7 +850,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     shadowColor: "#1E293B",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
+    shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 2,
   },
@@ -956,13 +956,13 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 3,
   },
+  voiceNoteContent: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+  },
   gridNoteContent: {
     padding: 16,
     borderRadius: 16,
-  },
-  voiceNoteContent: {
-    borderLeftWidth: 4,
-    borderLeftColor: "#6A009C",
   },
   noteHeader: {
     flexDirection: "row",
@@ -1073,7 +1073,7 @@ const styles = StyleSheet.create({
   voiceNoteIndicator: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#f2e5f8ff",
+    backgroundColor: "#FFEBEE",
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
@@ -1083,11 +1083,12 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     justifyContent: "center",
   },
+
   playButton: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "#6A009C",
+    backgroundColor: "#D32F2F", // Changed from #6A009C
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
@@ -1114,12 +1115,12 @@ const styles = StyleSheet.create({
   audioDuration: {
     fontSize: 12,
     fontFamily: "Inter-Medium",
-    color: "#6A009C",
-  },
+    color: "#374151",
+    },
   gridAudioDuration: {
     fontSize: 11,
     fontFamily: "Inter-Medium",
-    color: "#6A009C",
+    color: "#374151",
   },
   tagsContainer: {
     flexDirection: "row",

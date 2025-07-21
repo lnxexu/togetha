@@ -8,6 +8,9 @@ import NotesScreen from '../note-taking/notes';
 import LoginScreen from '../onboarding/signin';
 import SignupScreen from '../onboarding/signup';
 import WelcomeScreen from '../onboarding/Welcome';
+import ToDo from '../task-management/ToDo';
+import AddTask from '../task-management/AddTask';
+import TaskDetails from '../task-management/TaskDetails';
 
 export type RootStackParamList = {
   Welcome: undefined;
@@ -21,6 +24,13 @@ export type RootStackParamList = {
       title: string;
       content: string;
     };
+  };
+  ToDo: undefined;
+  TaskDetails: {
+    taskId: string;
+  };
+  AddTask: {
+    quadrant?: 'urgent-important' | 'not-urgent-important' | 'urgent-not-important' | 'not-urgent-not-important';
   };
   PDFs: undefined;
   RINA: undefined;
@@ -41,11 +51,13 @@ const AppNavigator: React.FC = () => {
       <Stack.Screen name="Home" component={Home} />
       <Stack.Screen name="Notes" component={NotesScreen} />
       <Stack.Screen name="NoteEditor" component={NoteEditorScreen} />
+      <Stack.Screen name="ToDo" component={ToDo} />
+      <Stack.Screen name="TaskDetails" component={TaskDetails} />
+      <Stack.Screen name="AddTask" component={AddTask} />
       <Stack.Screen name="RINA" component={ChatBot} />
 
       {/* Add other screens when they're ready */}
       {/* <Stack.Screen name="PDFs" component={PDFsScreen} />
-      <Stack.Screen name="RINA" component={ChatBot} />
       <Stack.Screen name="Profile" component={ProfileScreen} /> */}
     </Stack.Navigator>
   );

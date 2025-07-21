@@ -38,20 +38,20 @@ export default function Navbar({ activeRoute = "Home" }: NavbarProps) {
 
         <TouchableOpacity
           style={styles.navItem}
-          onPress={() => navigation.navigate("PDFs")}
+          onPress={() => navigation.navigate("ToDo")} // Changed from "PDFs" to "ToDo"
         >
           <MaterialIcons
-            name="menu-book"
+            name="check-box" // You can change the icon if needed
             size={24}
-            color={activeRoute === "PDFs" ? "#AD00FF" : "#7F8C8D"}
+            color={activeRoute === "ToDo" ? "#AD00FF" : "#7F8C8D"} // Updated activeRoute check
           />
           <Text
             style={[
               styles.navText,
-              activeRoute === "PDFs" && styles.activeNavText,
+              activeRoute === "ToDo" && styles.activeNavText, // Updated activeRoute check
             ]}
           >
-            PDFs
+            To Do
           </Text>
         </TouchableOpacity>
 
@@ -162,7 +162,7 @@ const styles = StyleSheet.create({
     fontFamily: "Inter-Medium",
   },
   chatbotIcon: {
-    width: 40,
+    width: 50,
     height: 30,
     tintColor: "#7F8C8D",
   },
