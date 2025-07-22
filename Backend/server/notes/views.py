@@ -16,7 +16,7 @@ def folder_list(request):
         return Response(serializer.data)
     
     elif request.method == 'POST':
-        serializer = FolderSerializer(data=request.data)
+        serializer = FolderSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             # Associate folder with the current user
             serializer.save(user=request.user)
@@ -46,7 +46,7 @@ def folder_detail(request, pk):
     elif request.method == 'DELETE':
         folder.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
-
+    
 @api_view(['GET', 'POST'])
 @authentication_classes([TokenAuthentication, SessionAuthentication])
 @permission_classes([IsAuthenticated])
@@ -61,7 +61,7 @@ def note_list(request):
         return Response(serializer.data)
     
     elif request.method == 'POST':
-        serializer = NoteSerializer(data=request.data)
+        serializer = NoteSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             # Associate note with the current user
             serializer.save(user=request.user)

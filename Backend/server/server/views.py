@@ -4,10 +4,11 @@ from .serializers import UserSerializer
 from rest_framework import status
 from rest_framework.authtoken.models import Token
 from django.contrib.auth.models import User 
-from django.shortcuts import get_object_or_404
+from django.shortcuts import get_object_or_404, render
 from rest_framework.decorators import permission_classes, authentication_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.authentication import TokenAuthentication,SessionAuthentication
+from django.http import HttpResponse
 
 @api_view(['POST'])
 def login(request):
@@ -39,3 +40,26 @@ def test_token(request):
     if not user.is_authenticated:
         return Response({"error": "Authentication required"}, status=status.HTTP_401_UNAUTHORIZED)
     return Response({"message": f"Hello, {user.username}!"}, status=status.HTTP_200_OK)
+
+from django.http import HttpResponse
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.authentication import TokenAuthentication, SessionAuthentication
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+
+# Add this new view
+def home(request):
+    return render(request, 'login.html')
+
+def chatbot_index(request):
+    """
+    View to render the main chatbot interface
+    """
+    return render(request, 'chatbot.html')
+
+def login_page(request):
+    return HttpResponse("Login Page")
+
+def signup_page(request):
+    return render(request, 'signup.html')  

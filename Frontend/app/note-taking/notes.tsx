@@ -1,231 +1,29 @@
-import { MaterialIcons } from '@expo/vector-icons';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Audio } from 'expo-av';
-import React, { useState, useEffect, useCallback } from 'react';
-import Navbar from '../NavBar';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import NetInfo from '@react-native-community/netinfo';
-import { Platform } from 'react-native';
-
+import { MaterialIcons } from "@expo/vector-icons";
+import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { Audio } from "expo-av";
+import React, { useState } from "react";
 import {
+  Alert,
   Animated,
   Dimensions,
   FlatList,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
-  Alert,
-  RefreshControl,
-  ActivityIndicator
-} from 'react-native';
-import { RootStackParamList } from '../navigation/AppNavigator';
+} from "react-native";
+import Navbar from "../NavBar";
+import { RootStackParamList } from "../navigation/AppNavigator";
 
-const { width } = Dimensions.get('window');
+const { width } = Dimensions.get("window");
 
-// API configuration - moved from api.tsx
-const API_URL = __DEV__ 
-  ? Platform.OS === 'android'
-    ? 'http://10.0.2.2:8000'  // Android emulator 
-    : 'http://localhost:8000'  // iOS simulator
-  : 'https://your-production-api-url.com';  // Production API
-  
-let AUTH_TOKEN: string | null = null;
-
-// Helper function for API requests - moved from api.tsx
-// Update the fetchAPI function to properly handle authentication
-
-const fetchAPI = async (endpoint: string, options: RequestInit = {}) => {
-  // Ensure headers object exists
-  const headers = options.headers || {};
-  
-  // Add Content-Type if not present and not a FormData request
-  if (!options.body || !(options.body instanceof FormData)) {
-    headers['Content-Type'] = 'application/json';
-  }
-  
-  // Add Authorization header if token exists
-  if (AUTH_TOKEN) {
-    headers['Authorization'] = `Token ${AUTH_TOKEN}`;
-  } else {
-    // Try to retrieve token from storage if not in memory
-    const storedToken = await AsyncStorage.getItem('authToken');
-    if (storedToken) {
-      AUTH_TOKEN = storedToken;
-      headers['Authorization'] = `Token ${storedToken}`;
-    }
-  }
-  
-  // Prepare final options with headers
-  const finalOptions = {
-    ...options,
-    headers,
-  };
-  
-  try {
-    const response = await fetch(`${API_URL}${endpoint}`, finalOptions);
-    
-    // Handle authentication errors
-    if (response.status === 401) {
-      console.log('Authentication error: 401');
-      throw new Error('Authentication required');
-    }
-    
-    // For other error status codes
-    if (!response.ok) {
-      console.log(`API Error: ${response.status}`);
-      throw new Error(`API Error: ${response.status}`);
-    }
-    
-    // Check if response is empty
-    const text = await response.text();
-    return text ? JSON.parse(text) : {};
-    
-  } catch (error) {
-    console.log('API request failed:', error);
-    throw error;
-  }
-};
-
-// Update the setAuthToken function to ensure token is properly stored
-export const setAuthToken = async (token: string) => {
-  AUTH_TOKEN = token;
-  await AsyncStorage.setItem('authToken', token);
-  console.log('Auth token set:', token);
-};
-
-// Add a login function that properly handles authentication
-export const login = async (username: string, password: string) => {
-  try {
-    const data = await fetchAPI('/login/', {
-      method: 'POST',
-      body: JSON.stringify({ username, password }),
-    });
-    
-    // Save the token
-    if (data && data.token) {
-      await setAuthToken(data.token);
-      console.log('Login successful');
-      return data;
-    } else {
-      throw new Error('Invalid login response');
-    }
-  } catch (error) {
-    console.error('Login error:', error);
-    throw error;
-  }
-};
-// Notes API functions - moved from api.tsx
-const notesApi = {
-  // Get all folders
-  getFolders: async () => {
-    return fetchAPI('/notes/folders/');
-  },
-  
-  // Create a new folder
-  createFolder: async (folderData: any) => {
-    return fetchAPI('/notes/folders/', {
-      method: 'POST',
-      body: JSON.stringify(folderData)
-    });
-  },
-  
-  // Update a folder
-  updateFolder: async (id: string, folderData: any) => {
-    return fetchAPI(`/notes/folders/${id}/`, {
-      method: 'PATCH',
-      body: JSON.stringify(folderData)
-    });
-  },
-  
-  // Delete a folder
-  deleteFolder: async (id: string) => {
-    return fetchAPI(`/notes/folders/${id}/`, {
-      method: 'DELETE'
-    });
-  },
-  
-  // Get all notes
-  getNotes: async () => {
-    return fetchAPI('/notes/notes/');
-  },
-  
-  // Get notes by folder ID
-  getNotesByFolder: async (folderId: string) => {
-    return fetchAPI(`/notes/notes/?folder_id=${folderId}`);
-  },
-  
-  // Create a new note
-  createNote: async (noteData: any) => {
-    return fetchAPI('/notes/notes/', {
-      method: 'POST',
-      body: JSON.stringify(noteData)
-    });
-  },
-  
-  // Update a note
-  updateNote: async (id: string, noteData: any) => {
-    return fetchAPI(`/notes/notes/${id}/`, {
-      method: 'PATCH',
-      body: JSON.stringify(noteData)
-    });
-  },
-  
-  // Delete a note
-  deleteNote: async (id: string) => {
-    return fetchAPI(`/notes/notes/${id}/`, {
-      method: 'DELETE'
-    });
-  },
-  
-  // Upload audio recording
-  uploadAudioRecording: async (noteId: string, audioUri: string) => {
-    // Create FormData for file upload
-    const formData = new FormData();
-    formData.append('note', noteId);
-    
-    // Extract filename from URI
-    const uriParts = audioUri.split('/');
-    const fileName = uriParts[uriParts.length - 1];
-    
-    // Add the audio file to the form data
-    const fileType = 'audio/m4a'; // Adjust based on your recording format
-    
-    // @ts-ignore - TypeScript doesn't recognize the format needed for React Native
-    formData.append('audio_file', {
-      uri: audioUri,
-      name: fileName,
-      type: fileType
-    });
-    
-    // Use fetch directly for FormData uploads
-    const response = await fetch(`${API_URL}/notes/audio-recordings/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'multipart/form-data',
-        ...(AUTH_TOKEN && { 'Authorization': `Token ${AUTH_TOKEN}` })
-      },
-      body: formData
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Failed to upload audio: ${response.status}`);
-    }
-    
-    return await response.json();
-  },
-  
-  // Transcribe audio recording
-  transcribeAudioRecording: async (id: string) => {
-    return fetchAPI(`/notes/audio-recordings/${id}/transcribe/`, {
-      method: 'POST'
-    });
-  },
-};
-
-type NotesScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Notes'>;
+type NotesScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 interface NotesScreenProps {
   navigation: NotesScreenNavigationProp;
@@ -235,439 +33,120 @@ interface Note {
   id: string;
   title: string;
   content: string;
-  folder: string;
-  created_at?: Date;
-  updated_at?: Date;
-  createdAt?: Date; // For compatibility with both API and local format
-  updatedAt?: Date; // For compatibility with both API and local format
-  type: 'text' | 'voice' | 'image';
-  audio_recordings?: Array<{
-    id: string;
-    audio_file: string;
-    duration: number;
-    transcribed: boolean;
-  }>;
+  createdAt: Date;
+  updatedAt: Date;
+  type: "text" | "voice" | "image";
   audioUri?: string;
   tags?: string[];
   linkedTaskId?: string;
-  _synced?: boolean; // Flag to track sync status
-  _pendingAction?: 'create' | 'update' | 'delete'; // For offline changes tracking
 }
 
-// Interface for folders
 interface Folder {
   id: string;
   name: string;
-  description?: string;
-  notes_count?: number;
-  icon?: keyof typeof MaterialIcons.glyphMap; // For UI representation
-  _synced?: boolean;
+  icon: keyof typeof MaterialIcons.glyphMap;
+  color: string;
 }
 
-export default function NotesScreen() {
-  const [notes, setNotes] = useState<Note[]>([]);
-  const [folders, setFolders] = useState<Folder[]>([]);
+const DUMMY_FOLDERS: Folder[] = [
+  { id: "f1", name: "Lectures", icon: "school", color: "#667EEA" },
+  { id: "f2", name: "Labs", icon: "science", color: "#F093FB" },
+  { id: "f3", name: "Clinical", icon: "medical-services", color: "#4FACFE" },
+  { id: "f4", name: "Research", icon: "library-books", color: "#43E97B" },
+  { id: "f5", name: "Homework", icon: "assignment", color: "#FA8BFF" },
+  { id: "f6", name: "Projects", icon: "folder-special", color: "#2BD2FF" },
+];
+
+const INITIAL_NOTES: Note[] = [
+  {
+    id: "1",
+    title: "Pharmacology Lecture Notes",
+    content:
+      "Drug classifications and mechanisms of action. Important points about drug interactions and contraindications.",
+    createdAt: new Date(2024, 10, 15),
+    updatedAt: new Date(2024, 10, 15),
+    type: "text",
+    tags: ["pharmacology", "lecture"],
+  },
+  {
+    id: "2",
+    title: "Clinical Assessment Recording",
+    content: "",
+    createdAt: new Date(2024, 10, 14),
+    updatedAt: new Date(2024, 10, 14),
+    type: "voice",
+    audioUri: "sample_uri",
+    tags: ["clinical", "assessment"],
+  },
+  {
+    id: "3",
+    title: "Anatomy Study Notes",
+    content:
+      "Detailed notes on the cardiovascular system including heart structure, blood flow, and common pathologies.",
+    createdAt: new Date(2024, 10, 13),
+    updatedAt: new Date(2024, 10, 13),
+    type: "text",
+    tags: ["anatomy", "cardiovascular"],
+  },
+];
+
+const FOLDER_COLORS = [
+  "#667EEA",
+  "#F093FB",
+  "#4FACFE",
+  "#43E97B",
+  "#FA8BFF",
+  "#2BD2FF",
+  "#FF6B6B",
+  "#4ECDC4",
+  "#45B7D1",
+  "#96CEB4",
+  "#FFEAA7",
+  "#DDA0DD",
+  "#98D8C8",
+  "#F7DC6F",
+  "#BB8FCE",
+];
+
+const FOLDER_ICONS: (keyof typeof MaterialIcons.glyphMap)[] = [
+  "school",
+  "science",
+  "medical-services",
+  "library-books",
+  "assignment",
+  "folder-special",
+  "work",
+  "home",
+  "favorite",
+  "star",
+  "lightbulb",
+  "code",
+  "music-note",
+  "photo",
+  "sports",
+];
+
+export default function NotesScreen({ navigation }: NotesScreenProps) {
+  const [notes, setNotes] = useState<Note[]>(INITIAL_NOTES);
+  const [folders, setFolders] = useState<Folder[]>(DUMMY_FOLDERS);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedFilter, setSelectedFilter] = useState('all');
-  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedFilter, setSelectedFilter] = useState("all");
   const [recordingAnimation] = useState(new Animated.Value(1));
   const [showFolderDropdown, setShowFolderDropdown] = useState(false);
-  
-  // States for API integration and offline functionality
-  const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [isOnline, setIsOnline] = useState(true);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  const [viewMode, setViewMode] = useState<"list" | "grid">("list");
+  const [showCreateFolderModal, setShowCreateFolderModal] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [selectedFolderIcon, setSelectedFolderIcon] =
+    useState<keyof typeof MaterialIcons.glyphMap>("folder");
+  const [selectedFolderColor, setSelectedFolderColor] = useState("#667EEA");
+  const [showOptionsDropdown, setShowOptionsDropdown] = useState(false);
+  const [showSearchBar, setShowSearchBar] = useState(false);
+  const [activeNoteOptions, setActiveNoteOptions] = useState<string | null>(
+    null
+  );
 
-  // Network connectivity listener
-  useEffect(() => {
-    const unsubscribe = NetInfo.addEventListener(state => {
-      const online = !!state.isConnected;
-      setIsOnline(online);
-      
-      // Trigger sync when coming back online
-      if (online && !isOnline) {
-        syncWithServer();
-      }
-    });
-
-    return () => unsubscribe();
-  }, [isOnline]);
-
-  // Initial data loading
-  useEffect(() => {
-    loadData();
-  }, [selectedFolder]);
-
-  // Load data from API or local storage
-  const loadData = async () => {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      // Try loading from local storage first (for immediate display)
-      await loadFromLocalStorage();
-      
-      // If online, fetch fresh data from API
-      if (isOnline) {
-        await fetchFolders();
-        await fetchNotes();
-      }
-    } catch (err) {
-      console.error('Error loading data:', err);
-      setError('Failed to load notes. Please try again.');
-    } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
-    }
-  };
-
-  // Save data to local storage
-  const saveToLocalStorage = async () => {
-    try {
-      await AsyncStorage.setItem('notes', JSON.stringify(notes));
-      await AsyncStorage.setItem('folders', JSON.stringify(folders));
-      await AsyncStorage.setItem('lastSyncTime', new Date().toISOString());
-    } catch (err) {
-      console.error('Error saving to local storage:', err);
-    }
-  };
-
-  // Load data from local storage
-  const loadFromLocalStorage = async () => {
-    try {
-      const storedNotes = await AsyncStorage.getItem('notes');
-      const storedFolders = await AsyncStorage.getItem('folders');
-      
-      if (storedNotes) {
-        setNotes(JSON.parse(storedNotes));
-      }
-      
-      if (storedFolders) {
-        setFolders(JSON.parse(storedFolders));
-      }
-    } catch (err) {
-      console.error('Error loading from local storage:', err);
-    }
-  };
-
-  // Count pending sync items
-  useEffect(() => {
-    const count = notes.filter(note => note._pendingAction).length;
-    setPendingSyncCount(count);
-  }, [notes]);
-
-  // Auto-save changes to local storage
-  useEffect(() => {
-    if (notes.length > 0 || folders.length > 0) {
-      saveToLocalStorage();
-    }
-  }, [notes, folders]);
-
-  // Fetch folders from API
-  const fetchFolders = async () => {
-    try {
-      const foldersData = await notesApi.getFolders();
-      
-      // Assign icons to folders for UI
-      const processedFolders = foldersData.map((folder: Folder) => ({
-        ...folder,
-        icon: getIconForFolder(folder.name),
-        _synced: true
-      }));
-      
-      setFolders(processedFolders);
-    } catch (err) {
-      console.error('Error fetching folders:', err);
-      if (isOnline) {
-        setError('Failed to load folders from server');
-      }
-    }
-  };
-
-  // Assign icons based on folder name
-  const getIconForFolder = (name: string): keyof typeof MaterialIcons.glyphMap => {
-    const nameLC = name.toLowerCase();
-    if (nameLC.includes('work')) return 'business-center';
-    if (nameLC.includes('person')) return 'person';
-    if (nameLC.includes('idea')) return 'lightbulb-outline';
-    if (nameLC.includes('recipe')) return 'restaurant';
-    if (nameLC.includes('travel')) return 'travel-explore';
-    if (nameLC.includes('project')) return 'folder-open';
-    if (nameLC.includes('financ')) return 'account-balance';
-    if (nameLC.includes('health')) return 'favorite';
-    return 'folder'; // Default icon
-  };
-
-  // Fetch notes from API
-  const fetchNotes = async () => {
-    try {
-      let notesData;
-      
-      if (selectedFolder) {
-        notesData = await notesApi.getNotesByFolder(selectedFolder);
-      } else {
-        notesData = await notesApi.getNotes();
-      }
-      
-      // Process notes to add UI-specific properties
-      const processedNotes = notesData.map((note: Note) => {
-        // Determine note type based on whether it has audio recordings
-        const noteType = note.audio_recordings && note.audio_recordings.length > 0
-          ? 'voice'
-          : 'text';
-          
-        // Extract tags from content
-        const tags = extractTagsFromContent(note.content);
-        
-        return {
-          ...note,
-          type: noteType,
-          tags,
-          createdAt: new Date(note.created_at || Date.now()),
-          updatedAt: new Date(note.updated_at || Date.now()),
-          _synced: true
-        };
-      });
-      
-      // Merge with local notes that are pending sync
-      const pendingNotes = notes.filter(note => note._pendingAction);
-      if (pendingNotes.length > 0) {
-        // Keep pending notes and add newly fetched ones that don't conflict
-        const mergedNotes = [...pendingNotes];
-        
-        processedNotes.forEach((apiNote: Note) => {
-          const pendingNote = pendingNotes.find(n => n.id === apiNote.id);
-          if (!pendingNote) {
-            mergedNotes.push(apiNote);
-          }
-        });
-        
-        setNotes(mergedNotes);
-      } else {
-        setNotes(processedNotes);
-      }
-    } catch (err) {
-      console.error('Error fetching notes:', err);
-      if (isOnline) {
-        setError('Failed to load notes from server');
-      }
-    }
-  };
-
-  // Simple tag extraction function
-  const extractTagsFromContent = (content: string): string[] => {
-    if (!content) return [];
-    
-    // Extract hashtags from content
-    const matches = content.match(/#\w+/g);
-    if (matches) {
-      return matches.map(tag => tag.substring(1)); // Remove # prefix
-    }
-    return [];
-  };
-
-  // Create new note
-  const createNote = async (noteData: Partial<Note>) => {
-    // Create temporary local note with pending status
-    const tempId = `temp_${Date.now()}`;
-    const newNote: Note = {
-      id: tempId,
-      title: noteData.title || 'New Note',
-      content: noteData.content || '',
-      folder: selectedFolder || '',
-      type: noteData.type || 'text',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      _synced: false,
-      _pendingAction: 'create'
-    };
-    
-    // Add to local state immediately (optimistic update)
-    setNotes(prev => [newNote, ...prev]);
-    
-    // If online, try to sync immediately
-    if (isOnline) {
-      try {
-        const response = await notesApi.createNote({
-          title: newNote.title,
-          content: newNote.content,
-          folder: newNote.folder
-        });
-        
-        // Update local state with server response
-        setNotes(prev => prev.map(note => 
-          note.id === tempId ? { 
-            ...response, 
-            type: newNote.type,
-            createdAt: new Date(response.created_at),
-            updatedAt: new Date(response.updated_at),
-            _synced: true 
-          } : note
-        ));
-        
-        // If it's a voice note and has audioUri, upload the recording
-        if (newNote.type === 'voice' && newNote.audioUri) {
-          await uploadAudioRecording(response.id, newNote.audioUri);
-        }
-      } catch (err) {
-        console.error('Error creating note:', err);
-        // Keep the note with pending status for later sync
-      }
-    }
-  };
-
-  // Delete note
-  const deleteNote = async (noteId: string) => {
-    // Check if it's a temp note that hasn't been synced yet
-    const isTemp = noteId.startsWith('temp_');
-    
-    if (isTemp) {
-      // If it's a temp note, just remove it from local state
-      setNotes(prev => prev.filter(note => note.id !== noteId));
-      return;
-    }
-    
-    // Mark for deletion (optimistic update)
-    setNotes(prev => prev.map(note => 
-      note.id === noteId 
-        ? { ...note, _pendingAction: 'delete', _synced: false } 
-        : note
-    ));
-    
-    // If online, try to delete from server
-    if (isOnline) {
-      try {
-        await notesApi.deleteNote(noteId);
-        // Remove from local state on success
-        setNotes(prev => prev.filter(note => note.id !== noteId));
-      } catch (err) {
-        console.error('Error deleting note:', err);
-        Alert.alert('Error', 'Failed to delete note. Will retry when online.');
-      }
-    }
-  };
-
-  // Upload audio recording
-  const uploadAudioRecording = async (noteId: string, audioUri: string) => {
-    if (!isOnline) {
-      // Store info for later upload
-      return;
-    }
-    
-    try {
-      const response = await notesApi.uploadAudioRecording(noteId, audioUri);
-      
-      // Update note with audio recording info
-      setNotes(prev => prev.map(note => 
-        note.id === noteId 
-          ? { 
-              ...note, 
-              audio_recordings: [...(note.audio_recordings || []), response]
-            } 
-          : note
-      ));
-      
-      return response;
-    } catch (err) {
-      console.error('Error uploading audio:', err);
-      throw err;
-    }
-  };
-
-  // Sync pending changes with server
-  const syncWithServer = async () => {
-    if (!isOnline || isSyncing) return;
-    
-    setIsSyncing(true);
-    
-    try {
-      // Process all pending actions
-      const notesToSync = notes.filter(note => note._pendingAction);
-      
-      for (const note of notesToSync) {
-        switch (note._pendingAction) {
-          case 'create':
-            try {
-              const response = await notesApi.createNote({
-                title: note.title,
-                content: note.content,
-                folder: note.folder
-              });
-              
-              // If it's a voice note and has audioUri, upload the recording
-              if (note.type === 'voice' && note.audioUri) {
-                await uploadAudioRecording(response.id, note.audioUri);
-              }
-              
-              // Update local state
-              setNotes(prev => prev.map(n => 
-                n.id === note.id 
-                  ? { 
-                      ...response, 
-                      type: note.type,
-                      createdAt: new Date(response.created_at),
-                      updatedAt: new Date(response.updated_at),
-                      _synced: true,
-                      _pendingAction: undefined
-                    } 
-                  : n
-              ));
-            } catch (err) {
-              console.error('Error syncing create:', err);
-            }
-            break;
-            
-          case 'update':
-            try {
-              const response = await notesApi.updateNote(note.id, {
-                title: note.title,
-                content: note.content,
-                folder: note.folder
-              });
-              
-              // Update local state
-              setNotes(prev => prev.map(n => 
-                n.id === note.id 
-                  ? { 
-                      ...response, 
-                      type: note.type,
-                      createdAt: new Date(response.created_at),
-                      updatedAt: new Date(response.updated_at),
-                      _synced: true,
-                      _pendingAction: undefined
-                    } 
-                  : n
-              ));
-            } catch (err) {
-              console.error('Error syncing update:', err);
-            }
-            break;
-            
-          case 'delete':
-            try {
-              await notesApi.deleteNote(note.id);
-              // Remove from local state
-              setNotes(prev => prev.filter(n => n.id !== note.id));
-            } catch (err) {
-              console.error('Error syncing delete:', err);
-            }
-            break;
-        }
-      }
-      
-      // After all syncing is done, refresh data from server
-      await fetchNotes();
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  // Start recording function with animation
   const startRecording = async () => {
     try {
       await Audio.requestPermissionsAsync();
@@ -682,28 +161,25 @@ export default function NotesScreen() {
       setRecording(recording);
       setIsRecording(true);
 
-      // Start pulsing animation
       Animated.loop(
         Animated.sequence([
           Animated.timing(recordingAnimation, {
-            toValue: 1.2,
-            duration: 800,
+            toValue: 1.3,
+            duration: 600,
             useNativeDriver: true,
           }),
           Animated.timing(recordingAnimation, {
             toValue: 1,
-            duration: 800,
+            duration: 600,
             useNativeDriver: true,
           }),
         ])
       ).start();
     } catch (err) {
-      console.error('Failed to start recording', err);
-      Alert.alert('Error', 'Failed to start recording');
+      console.error("Failed to start recording", err);
     }
   };
 
-  // Stop recording function
   const stopRecording = async () => {
     if (!recording) return;
 
@@ -715,574 +191,1226 @@ export default function NotesScreen() {
       recordingAnimation.stopAnimation();
       recordingAnimation.setValue(1);
 
-      // Create a new voice note with the recording
       if (uri) {
-        await createNote({
+        const newNote: Note = {
+          id: Date.now().toString(),
           title: `Voice Note ${new Date().toLocaleString()}`,
-          content: '',
-          type: 'voice',
+          content: "",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          type: "voice",
           audioUri: uri,
-        });
+          tags: ["voice"],
+        };
+        setNotes((prev) => [newNote, ...prev]);
       }
     } catch (err) {
-      console.error('Failed to stop recording', err);
-      Alert.alert('Error', 'Failed to save recording');
+      console.error("Failed to stop recording", err);
     }
   };
 
-  const onRefresh = useCallback(() => {
-    setIsRefreshing(true);
-    loadData();
-  }, []);
-
-  const onFolderPress = (folderId: string) => {
-    setSelectedFolder(folderId === selectedFolder ? null : folderId);
-    setShowFolderDropdown(false);
-  };
-
-  const createTextNote = () => {
-    createNote({
-      title: 'New Note',
-      content: '',
-      type: 'text'
-    });
-  };
-
-  const filteredNotes = notes.filter(note => {
-    // Don't show notes marked for deletion
-    if (note._pendingAction === 'delete') return false;
-    
-    const matchesSearch = note.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          note.content.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesFilter = selectedFilter === 'all' || note.type === selectedFilter;
-    const matchesFolder = !selectedFolder || note.folder === selectedFolder;
-    
-    return matchesSearch && matchesFilter && matchesFolder;
-  });
-
-  const getTypeIcon = (type: string) => {
-    switch (type) {
-      case 'voice':
-        return 'mic';
-      case 'image':
-        return 'image';
-      default:
-        return 'note';
-    }
-  };
-
-  const getTypeColor = (type: string) => {
-    switch (type) {
-      case 'voice':
-        return '#FF6B6B';
-      case 'image':
-        return '#4ECDC4';
-      default:
-        return '#45B7D1';
-    }
-  };
-
-  const formatDate = (date: Date) => {
-    const now = new Date();
-    const diffTime = Math.abs(now.getTime() - date.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
-    if (diffDays === 1) return 'Today';
-    if (diffDays === 2) return 'Yesterday';
-    if (diffDays <= 7) return `${diffDays - 1} days ago`;
-    return date.toLocaleDateString();
-  };
-
-  const renderNoteItem = ({ item, index }: { item: Note; index: number }) => (
-    <View style={styles.noteItem}>
-      <TouchableOpacity 
-        style={[
-          styles.noteContent,
-          !item._synced && styles.unsyncedNote
-        ]} 
-        activeOpacity={0.8}
-        onLongPress={() => {
-          Alert.alert(
-            'Delete Note',
-            'Are you sure you want to delete this note?',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Delete', onPress: () => deleteNote(item.id), style: 'destructive' }
-            ]
-          );
-        }}
-      >
-        <View style={styles.noteHeader}>
-          <View style={styles.noteTitleContainer}>
-            <View style={[styles.typeIndicator, { backgroundColor: getTypeColor(item.type) }]}>
-              <MaterialIcons name={getTypeIcon(item.type)} size={16} color="white" />
-            </View>
-            <Text style={styles.noteTitle} numberOfLines={1}>
-              {item.title}
-            </Text>
-            {!item._synced && (
-              <MaterialIcons name="sync" size={16} color="#9CA3AF" style={{ marginLeft: 8 }} />
-            )}
-          </View>
-          <Text style={styles.noteDate}>
-            {formatDate(new Date(item.updatedAt || item.updated_at || Date.now()))}
-          </Text>
-        </View>
-        
-        {item.type === 'voice' ? (
-          <View style={styles.voiceNoteIndicator}>
-            <View style={styles.waveform}>
-              {[...Array(20)].map((_, i) => (
-                <View
-                  key={i}
-                  style={[
-                    styles.waveformBar,
-                    { height: Math.random() * 20 + 8 }
-                  ]}
-                />
-              ))}
-            </View>
-            <Text style={styles.voiceNoteDuration}>
-              {item.audio_recordings && item.audio_recordings[0]?.duration 
-                ? `${Math.floor(item.audio_recordings[0].duration / 60)}:${Math.floor(item.audio_recordings[0].duration % 60).toString().padStart(2, '0')}`
-                : '0:00'}
-            </Text>
-          </View>
-        ) : (
-          <Text style={styles.notePreview} numberOfLines={2}>
-            {item.content}
-          </Text>
-        )}
-        
-        {item.tags && item.tags.length > 0 && (
-          <View style={styles.tagsContainer}>
-            {item.tags.slice(0, 3).map((tag, tagIndex) => (
-              <View key={tagIndex} style={styles.tag}>
-                <Text style={styles.tagText}>#{tag}</Text>
-              </View>
-            ))}
-          </View>
-        )}
-      </TouchableOpacity>
-    </View>
-  );
-
-  const renderEmptyState = () => {
-    if (isLoading) {
-      return (
-        <View style={styles.emptyState}>
-          <ActivityIndicator size="large" color="#6A009C" />
-          <Text style={styles.emptyStateSubtitle}>Loading notes...</Text>
-        </View>
-      );
-    }
-    
-    return (
-      <View style={styles.emptyState}>
-        <MaterialIcons name="note-add" size={80} color="#E0E0E0" />
-        <Text style={styles.emptyStateTitle}>No notes yet</Text>
-        <Text style={styles.emptyStateSubtitle}>
-          Tap the + button to create your first note
-        </Text>
-      </View>
+  const handleDeleteNote = (noteId: string) => {
+    Alert.alert(
+      "Delete Note",
+      "Are you sure you want to delete this note? This action cannot be undone.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            setNotes((prev) => prev.filter((note) => note.id !== noteId));
+            setActiveNoteOptions(null);
+          },
+        },
+      ]
     );
   };
 
+  const handleNotePress = (note: Note) => {
+    // Close any open options when navigating
+    setActiveNoteOptions(null);
+    navigation.navigate("NoteEditor", {
+      noteId: note.id,
+      initialNote: {
+        title: note.title,
+        content: note.content,
+      },
+    });
+  };
+
+  const handleCreateNote = () => {
+    navigation.navigate("NoteEditor", {
+      initialNote: {
+        title: "",
+        content: "",
+      },
+    });
+  };
+
+  const handleCreateFolder = () => {
+    if (newFolderName.trim() === "") {
+      Alert.alert("Error", "Please enter a folder name");
+      return;
+    }
+
+    const newFolder: Folder = {
+      id: `f_${Date.now()}`,
+      name: newFolderName.trim(),
+      icon: selectedFolderIcon,
+      color: selectedFolderColor,
+    };
+
+    setFolders((prev) => [...prev, newFolder]);
+    setNewFolderName("");
+    setSelectedFolderIcon("folder");
+    setSelectedFolderColor("#667EEA");
+    setShowCreateFolderModal(false);
+  };
+
+  const toggleSearch = () => {
+    setShowSearchBar(!showSearchBar);
+    if (showSearchBar) {
+      setSearchQuery(""); // Clear search when closing
+    }
+  };
+
+  const filteredNotes = notes.filter((note) => {
+    const matchesSearch =
+      searchQuery === "" ||
+      note.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      note.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (note.tags &&
+        note.tags.some((tag) =>
+          tag.toLowerCase().includes(searchQuery.toLowerCase())
+        ));
+    const matchesFilter =
+      selectedFilter === "all" || note.type === selectedFilter;
+    return matchesSearch && matchesFilter;
+  });
+
+  const renderNoteItem = ({ item }: { item: Note }) => (
+    <TouchableOpacity
+      style={[styles.noteItem, viewMode === "grid" && styles.gridNoteItem]}
+      onPress={() => handleNotePress(item)}
+      activeOpacity={0.8}
+    >
+      <View
+        style={[
+          styles.noteContent,
+          item.type === "voice" && styles.voiceNoteContent,
+          viewMode === "grid" && styles.gridNoteContent,
+        ]}
+      >
+        <View style={styles.noteHeader}>
+          <View style={styles.noteTitleContainer}>
+            <View
+              style={[
+                styles.noteTypeIcon,
+                viewMode === "grid" && styles.gridNoteTypeIcon,
+                {
+                  backgroundColor:
+                    item.type === "voice" ? "#f2e5f8ff" : "#DBEAFE",
+                },
+              ]}
+            >
+              <MaterialIcons
+                name={item.type === "voice" ? "mic" : "description"}
+                size={viewMode === "grid" ? 16 : 20}
+                color={item.type === "voice" ? "#6A009C" : "#3B82F6"}
+              />
+            </View>
+            <View style={styles.noteTitleSection}>
+              <Text
+                style={[
+                  styles.noteTitle,
+                  viewMode === "grid" && styles.gridNoteTitle,
+                ]}
+                numberOfLines={viewMode === "grid" ? 2 : 1}
+              >
+                {item.title}
+              </Text>
+              <Text
+                style={[
+                  styles.noteDate,
+                  viewMode === "grid" && styles.gridNoteDate,
+                ]}
+              >
+                {item.updatedAt.toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  ...(viewMode === "list" && {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  }),
+                })}
+              </Text>
+            </View>
+          </View>
+          {viewMode === "list" && (
+            <View style={styles.noteOptionsContainer}>
+              <TouchableOpacity
+                style={styles.noteOptionsButton}
+                onPress={() =>
+                  setActiveNoteOptions(
+                    activeNoteOptions === item.id ? null : item.id
+                  )
+                }
+              >
+                <MaterialIcons name="more-vert" size={20} color="#9CA3AF" />
+              </TouchableOpacity>
+
+              {activeNoteOptions === item.id && (
+                <View style={styles.noteOptionsDropdown}>
+                  <TouchableOpacity
+                    style={styles.noteOptionItem}
+                    onPress={() => handleDeleteNote(item.id)}
+                  >
+                    <MaterialIcons name="delete" size={18} color="#EF4444" />
+                    <Text style={styles.noteOptionText}>Delete</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          )}
+          {viewMode === "grid" && (
+            <TouchableOpacity
+              style={styles.gridNoteOptionsButton}
+              onPress={() => handleDeleteNote(item.id)}
+            >
+              <MaterialIcons name="delete" size={16} color="#9CA3AF" />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {item.type === "voice" ? (
+          <View
+            style={[
+              styles.voiceNoteIndicator,
+              viewMode === "grid" && styles.gridVoiceNoteIndicator,
+            ]}
+          >
+            <View
+              style={[
+                styles.playButton,
+                viewMode === "grid" && styles.gridPlayButton,
+              ]}
+            >
+              <MaterialIcons
+                name="play-arrow"
+                size={viewMode === "grid" ? 20 : 24}
+                color="#FFFFFF"
+              />
+            </View>
+            {viewMode === "list" && (
+              <>
+                <View style={styles.waveform}>
+                  {[...Array(25)].map((_, i) => (
+                    <View
+                      key={i}
+                      style={[
+                        styles.waveformBar,
+                        {
+                          height: Math.random() * 24 + 8,
+                          backgroundColor: i < 8 ? "#6A009C" : "#aaaaaaff",
+                        },
+                      ]}
+                    />
+                  ))}
+                </View>
+                <Text style={styles.audioDuration}>2:34</Text>
+              </>
+            )}
+            {viewMode === "grid" && (
+              <Text style={styles.gridAudioDuration}>2:34</Text>
+            )}
+          </View>
+        ) : (
+          <Text
+            style={[
+              styles.notePreview,
+              viewMode === "grid" && styles.gridNotePreview,
+            ]}
+            numberOfLines={viewMode === "grid" ? 4 : 3}
+          >
+            {item.content}
+          </Text>
+        )}
+
+        {item.tags && item.tags.length > 0 && viewMode === "list" && (
+          <View style={styles.tagsContainer}>
+            {item.tags.slice(0, 3).map((tag, index) => (
+              <View key={index} style={styles.tag}>
+                <Text style={styles.tagText}>#{tag}</Text>
+              </View>
+            ))}
+            {item.tags.length > 3 && (
+              <View style={styles.moreTagsIndicator}>
+                <Text style={styles.moreTagsText}>+{item.tags.length - 3}</Text>
+              </View>
+            )}
+          </View>
+        )}
+      </View>
+    </TouchableOpacity>
+  );
+
+  const renderCreateFolderModal = () => (
+    <Modal
+      visible={showCreateFolderModal}
+      transparent={true}
+      animationType="slide"
+      onRequestClose={() => setShowCreateFolderModal(false)}
+    >
+      <KeyboardAvoidingView
+        style={styles.modalContainer}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 60 : 20}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowCreateFolderModal(false)}
+        >
+          <View style={{ flex: 1 }} />
+          <TouchableOpacity
+            style={styles.modalContent}
+            activeOpacity={1}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Create New Folder</Text>
+              <TouchableOpacity
+                onPress={() => setShowCreateFolderModal(false)}
+                style={styles.modalCloseButton}
+              >
+                <MaterialIcons name="close" size={24} color="#9CA3AF" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              style={styles.modalBody}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Folder Name</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={newFolderName}
+                  onChangeText={setNewFolderName}
+                  placeholder="Enter folder name"
+                  placeholderTextColor="#9CA3AF"
+                  autoFocus={true}
+                  maxLength={20}
+                  returnKeyType="done"
+                  onSubmitEditing={handleCreateFolder}
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Choose Icon</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.iconSelector}
+                  keyboardShouldPersistTaps="always"
+                >
+                  {FOLDER_ICONS.map((iconName) => (
+                    <TouchableOpacity
+                      key={iconName}
+                      style={[
+                        styles.iconOption,
+                        selectedFolderIcon === iconName &&
+                          styles.selectedIconOption,
+                      ]}
+                      onPress={() => setSelectedFolderIcon(iconName)}
+                    >
+                      <MaterialIcons
+                        name={iconName}
+                        size={24}
+                        color={
+                          selectedFolderIcon === iconName
+                            ? "#FFFFFF"
+                            : "#6A009C"
+                        }
+                      />
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Choose Color</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.colorSelector}
+                  keyboardShouldPersistTaps="always"
+                >
+                  {FOLDER_COLORS.map((color) => (
+                    <TouchableOpacity
+                      key={color}
+                      style={[
+                        styles.colorOption,
+                        { backgroundColor: color },
+                        selectedFolderColor === color &&
+                          styles.selectedColorOption,
+                      ]}
+                      onPress={() => setSelectedFolderColor(color)}
+                    >
+                      {selectedFolderColor === color && (
+                        <MaterialIcons name="check" size={20} color="#9C27B0" />
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => setShowCreateFolderModal(false)}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.createButton}
+                onPress={handleCreateFolder}
+              >
+                <Text style={styles.createButtonText}>Create Folder</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      
-      {/* Header */}
+    <TouchableOpacity
+      style={styles.container}
+      activeOpacity={1}
+      onPress={() => {
+        setActiveNoteOptions(null);
+        setShowOptionsDropdown(false);
+      }}
+    >
+      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+
       <View style={styles.header}>
         <View style={styles.headerTopRow}>
-          <Text style={styles.headerTitle}>
-            {selectedFolder 
-              ? folders.find(f => f.id === selectedFolder)?.name || 'Notes'
-              : 'All Notes'}
-          </Text>
-          <View style={styles.headerIcons}>
-            {!isOnline && (
-              <MaterialIcons name="cloud-off" size={24} color="#F97316" style={styles.icon} />
-            )}
-            {pendingSyncCount > 0 && (
-              <TouchableOpacity onPress={syncWithServer} disabled={!isOnline || isSyncing}>
-                <MaterialIcons 
-                  name={isSyncing ? "sync" : "sync-problem"} 
-                  size={24} 
-                  color={isSyncing ? "#9CA3AF" : "#F97316"} 
-                  style={styles.icon} 
-                />
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity onPress={() => {}}>
-              <MaterialIcons name="search" size={24} color="#1F2937" style={styles.icon} />
+          <View style={styles.headerTitleSection}>
+            <Text style={styles.headerTitle}>All Notes</Text>
+            <Text style={styles.headerSubtitle}>
+              {filteredNotes.length}{" "}
+              {filteredNotes.length === 1 ? "note" : "notes"}
+            </Text>
+          </View>
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              style={[
+                styles.headerActionButton,
+                showSearchBar && styles.activeSearchButton,
+              ]}
+              onPress={toggleSearch}
+            >
+              <MaterialIcons name="search" size={22} color="#6A009C" />
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => {}}>
-              <MaterialIcons name="more-vert" size={24} color="#1F2937" style={styles.rotatedToolbarIcon} />
+            <TouchableOpacity
+              style={styles.headerActionButton}
+              onPress={() => setShowOptionsDropdown(!showOptionsDropdown)}
+            >
+              <MaterialIcons name="more-vert" size={22} color="#6A009C" />
             </TouchableOpacity>
+
+            {showOptionsDropdown && (
+              <View style={styles.optionsDropdown}>
+                <TouchableOpacity
+                  style={styles.dropdownOption}
+                  onPress={() => {
+                    setShowCreateFolderModal(true);
+                    setShowOptionsDropdown(false);
+                  }}
+                >
+                  <MaterialIcons
+                    name="create-new-folder"
+                    size={20}
+                    color="#6A009C"
+                  />
+                  <Text style={styles.dropdownOptionText}>Create Folder</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.dropdownOption}
+                  onPress={() => {
+                    setViewMode(viewMode === "list" ? "grid" : "list");
+                    setShowOptionsDropdown(false);
+                  }}
+                >
+                  <MaterialIcons
+                    name={viewMode === "list" ? "grid-view" : "view-list"}
+                    size={20}
+                    color="#6A009C"
+                  />
+                  <Text style={styles.dropdownOptionText}>
+                    {viewMode === "list" ? "Grid View" : "List View"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </View>
-        <Text style={styles.headerSubtitle}>
-          {filteredNotes.length} {filteredNotes.length === 1 ? 'note' : 'notes'}
-        </Text>
+
+        {showSearchBar && (
+          <View style={styles.searchContainer}>
+            <View style={styles.searchInputContainer}>
+              <MaterialIcons
+                name="search"
+                size={20}
+                color="#9CA3AF"
+                style={styles.searchIcon}
+              />
+              <TextInput
+                style={styles.searchInput}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholder="Search notes..."
+                placeholderTextColor="#9CA3AF"
+                autoFocus={true}
+                returnKeyType="search"
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity
+                  style={styles.clearSearchButton}
+                  onPress={() => setSearchQuery("")}
+                >
+                  <MaterialIcons name="clear" size={18} color="#9CA3AF" />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        )}
       </View>
 
-      {/* Folder Container */}
-      <View style={styles.folderContainer}>
+      <View style={styles.folderSection}>
         <TouchableOpacity
-          style={styles.folderBar}
+          style={styles.folderToggle}
           onPress={() => setShowFolderDropdown(!showFolderDropdown)}
-          activeOpacity={0.8}
+          activeOpacity={0.7}
         >
-          <MaterialIcons name="folder" size={20} color="#9CA3AF" />
-          <Text style={styles.folderText}>Folders</Text>
+          <View style={styles.folderToggleLeft}>
+            <MaterialIcons name="folder" size={22} color="#FFDE21" />
+            <Text style={styles.folderToggleText}>Folders</Text>
+          </View>
           <MaterialIcons
-            name={showFolderDropdown ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
-            size={20}
+            name={showFolderDropdown ? "expand-less" : "expand-more"}
+            size={24}
             color="#9CA3AF"
           />
         </TouchableOpacity>
 
         {showFolderDropdown && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.folderDropdown}>
-            {folders.map((folder) => (
-              <TouchableOpacity 
-                key={folder.id} 
-                style={[
-                  styles.folderItem,
-                  selectedFolder === folder.id && styles.selectedFolderItem
-                ]} 
-                activeOpacity={0.7}
-                onPress={() => onFolderPress(folder.id)}
-              >
-                <MaterialIcons 
-                  name={folder.icon || 'folder'} 
-                  size={32} 
-                  color={selectedFolder === folder.id ? "#FFFFFF" : "#6A009C"} 
-                />
-                <Text style={[
-                  styles.folderItemText,
-                  selectedFolder === folder.id && styles.selectedFolderText
-                ]}>
-                  {folder.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+          <View style={styles.folderDropdown}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.foldersScrollContent}
+            >
+              {folders.map((folder) => (
+                <TouchableOpacity
+                  key={folder.id}
+                  style={styles.folderCard}
+                  activeOpacity={0.8}
+                >
+                  <View
+                    style={[
+                      styles.folderIcon,
+                      { backgroundColor: folder.color },
+                    ]}
+                  >
+                    <MaterialIcons
+                      name={folder.icon}
+                      size={24}
+                      color="#FFFFFF"
+                    />
+                  </View>
+                  <Text style={styles.folderName}>{folder.name}</Text>
+                  <Text style={styles.folderCount}>
+                    {Math.floor(Math.random() * 12) + 1}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
         )}
       </View>
 
-      {/* Notes List */}
       <FlatList
         data={filteredNotes}
         renderItem={renderNoteItem}
-        keyExtractor={item => item.id}
-        style={styles.notesList}
-        contentContainerStyle={styles.notesListContainer}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.notesList}
         showsVerticalScrollIndicator={false}
-        ListEmptyComponent={renderEmptyState}
-        refreshControl={
-          <RefreshControl
-            refreshing={isRefreshing}
-            onRefresh={onRefresh}
-            colors={["#6A009C"]}
-            tintColor="#6A009C"
-          />
-        }
+        ItemSeparatorComponent={() => <View style={styles.noteSeparator} />}
+        numColumns={viewMode === "grid" ? 2 : 1}
+        key={viewMode}
+        ListEmptyComponent={() => (
+          <View style={styles.emptyState}>
+            <MaterialIcons name="search-off" size={64} color="#CBD5E0" />
+            <Text style={styles.emptyStateTitle}>No notes found</Text>
+            <Text style={styles.emptyStateSubtitle}>
+              {searchQuery
+                ? "Try adjusting your search terms"
+                : "Create your first note to get started"}
+            </Text>
+          </View>
+        )}
       />
 
-      {/* Error message if needed */}
-      {error && (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
-        </View>
-      )}
-
-      {/* Floating Action Buttons */}
-      <View style={styles.fab}>
-        <Animated.View style={{ transform: [{ scale: recordingAnimation }] }}>
-          <TouchableOpacity
-            style={[
-              styles.fabButton,
-              styles.voiceFabButton,
-              isRecording && styles.recordingButton,
-            ]}
-            onPress={isRecording ? stopRecording : startRecording}
-            activeOpacity={0.8}
-          >
-            <MaterialIcons
-              name={isRecording ? 'stop' : 'mic'}
-              size={30}
-              color="#6A009C"
-            />
-          </TouchableOpacity>
-        </Animated.View>
-        
+      <View style={styles.fabContainer}>
         <TouchableOpacity
-          style={[styles.fabButton, styles.textFabButton]}
-          onPress={createTextNote}
+          style={[styles.fabButton, styles.textFab]}
+          onPress={handleCreateNote}
           activeOpacity={0.8}
         >
-          <MaterialIcons name="note-add" size={30} color="#6A009C" />
+          <MaterialIcons name="note-add" size={28} color="#9C27B0" />
         </TouchableOpacity>
       </View>
-            
-      <Navbar activeRoute="Notes" />
 
-    </View>
+      <Navbar activeRoute="Notes" />
+      {renderCreateFolderModal()}
+    </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fcfcfcff',
+    backgroundColor: "#F8FAFC",
   },
   header: {
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'ios' ? 50 : 20,
-    paddingBottom: 20,
-    backgroundColor: '#fcfcfcff',
+    paddingHorizontal: 24,
+    paddingTop: Platform.OS === "ios" ? 60 : 40,
+    paddingBottom: 24,
+    backgroundColor: "#F8FAFC",
   },
   headerTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
   },
-  headerIcons: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  icon: {
-    marginRight: 12,
-  },
-  rotatedToolbarIcon: {
-    transform: [{ rotate: '90deg' }],
+  headerTitleSection: {
+    flex: 1,
   },
   headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#6A009C',
+    fontSize: 32,
+    fontFamily: "Inter-Bold",
+    color: "#6A009C",
     marginBottom: 4,
   },
   headerSubtitle: {
-    fontSize: 14,
-    color: '#6B7280',
-  },
-  folderContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: '#fcfcfcff',
-  },
-  folderBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    justifyContent: 'space-between',
-  },
-  folderText: {
-    flex: 1,
-    marginLeft: 8,
     fontSize: 16,
-    color: '#1F2937',
-    fontWeight: '500',
+    fontFamily: "Inter-Medium",
+    color: "#64748B",
   },
-  folderDropdown: {
-    marginTop: 12,
-    paddingVertical: 8,
+  headerActions: {
+    flexDirection: "row",
+    gap: 8,
+    position: "relative",
   },
-  folderItem: {
-    alignItems: 'center',
-    marginRight: 20,
-    width: 70,
-  },
-  folderItemText: {
-    fontSize: 12,
-    color: '#374151',
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  notesList: {
-    flex: 1,
-  },
-  notesListContainer: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 160,
-  },
-  noteItem: {
-    marginBottom: 16,
-  },
-  noteContent: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
+  headerActionButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#6366F1",
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
-    elevation: 4,
+    elevation: 2,
+  },
+  activeSearchButton: {
+    backgroundColor: "#6A009C",
+  },
+  searchContainer: {
+    marginTop: 16,
+  },
+  searchInputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  searchIcon: {
+    marginRight: 12,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    fontFamily: "Inter-Regular",
+    color: "#1F2937",
+  },
+  clearSearchButton: {
+    padding: 4,
+    marginLeft: 8,
+  },
+  folderSection: {
+    paddingHorizontal: 24,
+    marginBottom: 16,
+  },
+  folderToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  folderToggleLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  folderToggleText: {
+    fontSize: 16,
+    fontFamily: "Inter-Medium",
+    color: "#374151",
+    marginLeft: 12,
+  },
+  folderDropdown: {
+    marginTop: 16,
+  },
+  foldersScrollContent: {
+    paddingHorizontal: 4,
+  },
+  folderCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 16,
+    marginRight: 12,
+    width: 100,
+    alignItems: "center",
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  folderIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  folderName: {
+    fontSize: 13,
+    fontFamily: "Inter-Medium",
+    color: "#374151",
+    textAlign: "center",
+    marginBottom: 4,
+  },
+  folderCount: {
+    fontSize: 11,
+    fontFamily: "Inter-Regular",
+    color: "#9CA3AF",
+  },
+  notesList: {
+    paddingHorizontal: 24,
+    paddingBottom: 120,
+  },
+  noteItem: {
+    marginVertical: 6,
+  },
+  gridNoteItem: {
+    flex: 1,
+    marginHorizontal: 4,
+    maxWidth: (width - 72) / 2, // Account for padding and gap
+  },
+  noteContent: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  gridNoteContent: {
+    padding: 16,
+    borderRadius: 16,
+  },
+  voiceNoteContent: {
+    borderLeftWidth: 4,
+    borderLeftColor: "#6A009C",
   },
   noteHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginBottom: 16,
   },
   noteTitleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
     flex: 1,
   },
-  typeIndicator: {
+  noteTypeIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+  },
+  gridNoteTypeIcon: {
     width: 32,
     height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
+    borderRadius: 10,
+    marginRight: 8,
+  },
+  noteTitleSection: {
+    flex: 1,
+    justifyContent: "center",
   },
   noteTitle: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#1F2937',
-    flex: 1,
+    fontFamily: "Inter-Bold",
+    color: "#1E293B",
+    marginBottom: 4,
+    lineHeight: 20,
   },
-  noteDate: {
-    fontSize: 12,
-    color: '#9CA3AF',
-    fontWeight: '500',
+  gridNoteTitle: {
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  noteOptionsContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginLeft: 12,
+  },
+  noteOptionsButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F8FAFC",
+  },
+  noteOptionsDropdown: {
+    position: "absolute",
+    right: 0,
+    top: 40,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 8,
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 3,
+    zIndex: 10,
+  },
+  noteOptionItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+  },
+  noteOptionText: {
+    fontSize: 14,
+    fontFamily: "Inter-Regular",
+    color: "#1E293B",
+    marginLeft: 8,
+  },
+  gridNoteOptionsButton: {
+    position: "absolute",
+    right: 8,
+    top: 8,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F8FAFC",
   },
   notePreview: {
     fontSize: 14,
-    color: '#6B7280',
+    fontFamily: "Inter-Regular",
+    color: "#374151",
     lineHeight: 20,
     marginBottom: 12,
   },
+  noteDate: {
+    fontSize: 12,
+    fontFamily: "Inter-Regular",
+    color: "#9CA3AF",
+  },
+  gridNoteDate: {
+    fontSize: 11,
+  },
+  gridNotePreview: {
+    fontSize: 12,
+    lineHeight: 16,
+    marginBottom: 8,
+  },
   voiceNoteIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f2e5f8ff",
+    borderRadius: 16,
+    padding: 16,
     marginBottom: 12,
   },
+  gridVoiceNoteIndicator: {
+    padding: 12,
+    marginBottom: 8,
+    justifyContent: "center",
+  },
+  playButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#6A009C",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+  },
+  gridPlayButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginRight: 8,
+  },
   waveform: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+
     flex: 1,
+    height: 32,
+    marginRight: 12,
   },
   waveformBar: {
-    width: 3,
-    backgroundColor: '#FF6B6B',
-    marginRight: 2,
-    borderRadius: 2,
+    width: 2,
+    borderRadius: 1,
+    marginHorizontal: 1,
   },
-  voiceNoteDuration: {
+  audioDuration: {
     fontSize: 12,
-    color: '#6B7280',
-    fontWeight: '500',
+    fontFamily: "Inter-Medium",
+    color: "#6A009C",
+  },
+  gridAudioDuration: {
+    fontSize: 11,
+    fontFamily: "Inter-Medium",
+    color: "#6A009C",
   },
   tagsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
   },
   tag: {
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    backgroundColor: "#EEF2FF",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
     marginRight: 8,
     marginBottom: 4,
   },
   tagText: {
-    fontSize: 12,
-    color: '#3B82F6',
-    fontWeight: '500',
+    fontSize: 11,
+    fontFamily: "Inter-Medium",
+    color: "#6366F1",
+  },
+  moreTagsIndicator: {
+    backgroundColor: "#F1F5F9",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  moreTagsText: {
+    fontSize: 10,
+    fontFamily: "Inter-Medium",
+    color: "#64748B",
+  },
+  noteSeparator: {
+    height: 8,
   },
   emptyState: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingTop: 100,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 24,
   },
   emptyStateTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#9CA3AF',
+    fontSize: 18,
+    fontFamily: "Inter-Bold",
+    color: "#1E293B",
     marginTop: 16,
-    marginBottom: 8,
   },
   emptyStateSubtitle: {
     fontSize: 14,
-    color: '#D1D5DB',
-    textAlign: 'center',
+    fontFamily: "Inter-Regular",
+    color: "#9CA3AF",
+    textAlign: "center",
+    marginTop: 8,
   },
-  fab: {
-    position: 'absolute',
-    right: 20,
-    bottom: 90,
-    flexDirection: 'row',
-    alignItems: 'center',
-    zIndex: 1,
+  fabContainer: {
+    position: "absolute",
+    right: 24,
+    bottom: 100,
+    alignItems: "center",
   },
   fabButton: {
     width: 56,
     height: 56,
     borderRadius: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 12,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.24,
+    shadowRadius: 16,
+    elevation: 8,
+    marginBottom: 16,
+  },
+
+  textFab: {
+    backgroundColor: "#ffffffff",
+  },
+  // Modal Styles
+  modalContainer: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    justifyContent: "flex-end",
+  },
+  modalContent: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingBottom: Platform.OS === "ios" ? 34 : 24,
+    minHeight: Dimensions.get("window").height * 0.5,
+    maxHeight: Dimensions.get("window").height * 0.9,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 20,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+    position: "relative",
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontFamily: "Inter-Bold",
+    color: "#1E293B",
+    letterSpacing: -0.2,
+  },
+  modalCloseButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#F8FAFC",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  modalBody: {
+    flex: 1,
+    paddingHorizontal: 24,
+    paddingTop: 8,
+  },
+  modalFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9",
+    backgroundColor: "#FAFBFC",
+  },
+  inputGroup: {
+    marginBottom: 28,
+  },
+  inputLabel: {
+    fontSize: 15,
+    fontFamily: "Inter-Medium",
+    color: "#374151",
+    marginBottom: 10,
+    letterSpacing: -0.1,
+  },
+  textInput: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    fontSize: 16,
+    fontFamily: "Inter-Regular",
+    color: "#1F2937",
+    borderWidth: 2,
+    borderColor: "#E5E7EB",
+    shadowColor: "#64748B",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  iconSelector: {
+    marginTop: 12,
+    paddingBottom: 8,
+  },
+  iconOption: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: "#F8FAFC",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+    borderWidth: 2,
+    borderColor: "#E2E8F0",
+    shadowColor: "#64748B",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  selectedIconOption: {
+    backgroundColor: "#6A009C",
+    borderColor: "#6A009C",
+    shadowColor: "#6A009C",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 4,
+    transform: [{ scale: 1.05 }],
+  },
+  colorSelector: {
+    marginTop: 12,
+    paddingBottom: 8,
+  },
+  colorOption: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 14,
+    borderWidth: 2,
+    borderColor: "rgba(255, 255, 255, 0.3)",
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  selectedColorOption: {
+    borderWidth: 3,
+    borderColor: "#FFFFFF",
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 6,
+    transform: [{ scale: 1.1 }],
+  },
+  cancelButton: {
+    flex: 1,
+    backgroundColor: "#F8FAFC",
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    alignItems: "center",
+    marginRight: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    shadowColor: "#64748B",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontFamily: "Inter-Medium",
+    color: "#64748B",
+    letterSpacing: -0.1,
+  },
+  createButton: {
+    flex: 1,
+    backgroundColor: "#6A009C",
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    alignItems: "center",
+    shadowColor: "#6A009C",
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
-    elevation: 8,
+    elevation: 6,
   },
-  voiceFabButton: {
-    backgroundColor: '#ffffffff',
+  createButtonText: {
+    fontSize: 16,
+    fontFamily: "Inter-Medium",
+    color: "#FFFFFF",
+    letterSpacing: -0.1,
   },
-  recordingButton: {
-    backgroundColor: '#ffffffff',
-  },
-  textFabButton: {
-    backgroundColor: '#ffffffff',
-  },
-  unsyncedNote: {
-    borderLeftWidth: 4,
-    borderLeftColor: '#F97316',
-  },
-  selectedFolderItem: {
-    backgroundColor: '#6A009C',
-    borderRadius: 12,
-    padding: 8,
-  },
-  selectedFolderText: {
-    color: '#FFFFFF',
-  },
-  errorContainer: {
-    position: 'absolute',
-    bottom: 140,
-    left: 0,
+  optionsDropdown: {
+    position: "absolute",
+    top: 50,
     right: 0,
-    backgroundColor: '#FFEBEE',
-    padding: 8,
-    alignItems: 'center',
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    paddingVertical: 8,
+    width: 180,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
+    zIndex: 100,
   },
-  errorText: {
-    color: '#C62828',
-    fontWeight: '500',
+  dropdownOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  dropdownOptionText: {
+    fontSize: 14,
+    fontFamily: "Inter-Medium",
+    color: "#1E293B",
+    marginLeft: 12,
   },
 });
-
-// Export the setAuthToken function so it can be used elsewhere in the app
-export { setAuthToken };
