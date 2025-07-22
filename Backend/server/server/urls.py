@@ -18,11 +18,14 @@ from django.contrib import admin
 from django.urls import path, re_path, include
 from server import views
 
-
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('notes/', include('notes.urls')),
+    path('chatbot/', include('chatbot.urls')),
     re_path('login', views.login),
     re_path('signup', views.signup),
     re_path('test_token', views.test_token),
+
+    path('signup/', views.signup_page, name='signup_page'),
+    path('', views.home, name='home'),  
 ]
