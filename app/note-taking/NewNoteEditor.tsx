@@ -21,10 +21,10 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
-} from 'react-native';
+  View,
+} from "react-native";
 
-const { RichEditor, RichToolbar } = require('react-native-pell-rich-editor');
+const { RichEditor, RichToolbar } = require("react-native-pell-rich-editor");
 
 // Types
 interface NoteEditorProps {
@@ -69,7 +69,7 @@ interface Attachment {
 
 interface PDFAnnotation {
   id: string;
-  type: 'highlight' | 'note' | 'underline' | 'strikethrough';
+  type: "highlight" | "note" | "underline" | "strikethrough";
   page: number;
   x: number;
   y: number;
@@ -88,7 +88,7 @@ interface RinaPopupProps {
   onAskRina: (text: string) => void;
 }
 
-type ColorChannel = 'r' | 'g' | 'b';
+type ColorChannel = "r" | "g" | "b";
 
 // Constants
 const subjects = [
@@ -116,25 +116,37 @@ const storage = {
   },
   async removeItem(key: string): Promise<void> {
     await AsyncStorage.removeItem(key);
-  }
+  },
 };
 
 // RINA Button Component
-const RinaButton: React.FC<RinaPopupProps> = ({ visible, selectedText, position, onClose, onAskRina }) => {
+const RinaButton: React.FC<RinaPopupProps> = ({
+  visible,
+  selectedText,
+  position,
+  onClose,
+  onAskRina,
+}) => {
   if (!visible || !selectedText.trim()) return null;
 
   // Calculate position to avoid overflow
   const buttonWidth = 120;
   const buttonHeight = 40;
-  const windowWidth = Dimensions.get('window').width;
+  const windowWidth = Dimensions.get("window").width;
   let left = position.x - buttonWidth / 2;
   let top = position.y - buttonHeight - 10;
   if (left < 8) left = 8;
-  if (left + buttonWidth > windowWidth - 8) left = windowWidth - buttonWidth - 8;
+  if (left + buttonWidth > windowWidth - 8)
+    left = windowWidth - buttonWidth - 8;
   if (top < 40) top = position.y + 24;
 
   return (
-    <View style={[styles.rinaFloatingButton, { top, left, width: buttonWidth, height: buttonHeight }]}> 
+    <View
+      style={[
+        styles.rinaFloatingButton,
+        { top, left, width: buttonWidth, height: buttonHeight },
+      ]}
+    >
       <TouchableOpacity
         style={styles.rinaButtonContainer}
         onPress={() => {
@@ -142,7 +154,12 @@ const RinaButton: React.FC<RinaPopupProps> = ({ visible, selectedText, position,
           onClose();
         }}
       >
-        <MaterialIcons name="psychology" size={18} color="#fff" style={{ marginRight: 6 }} />
+        <MaterialIcons
+          name="psychology"
+          size={18}
+          color="#fff"
+          style={{ marginRight: 6 }}
+        />
         <Text style={styles.rinaButtonText}>Ask RINA</Text>
       </TouchableOpacity>
     </View>
@@ -150,14 +167,14 @@ const RinaButton: React.FC<RinaPopupProps> = ({ visible, selectedText, position,
 };
 
 // PDF Annotation Toolbar Component
-const PDFAnnotationToolbar = ({ 
-  onHighlight, 
-  onNote, 
-  onUnderline, 
+const PDFAnnotationToolbar = ({
+  onHighlight,
+  onNote,
+  onUnderline,
   onStrikethrough,
   onClose,
   selectedColor,
-  onColorChange 
+  onColorChange,
 }: {
   onHighlight: () => void;
   onNote: () => void;
@@ -167,7 +184,14 @@ const PDFAnnotationToolbar = ({
   selectedColor: string;
   onColorChange: (color: string) => void;
 }) => {
-  const colors = ['#FFFF00', '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7'];
+  const colors = [
+    "#FFFF00",
+    "#FF6B6B",
+    "#4ECDC4",
+    "#45B7D1",
+    "#96CEB4",
+    "#FFEAA7",
+  ];
 
   return (
     <View style={styles.pdfToolbar}>
@@ -175,17 +199,17 @@ const PDFAnnotationToolbar = ({
         <MaterialIcons name="format-color-fill" size={20} color="#333" />
         <Text style={styles.pdfToolText}>Highlight</Text>
       </TouchableOpacity>
-      
+
       <TouchableOpacity style={styles.pdfToolButton} onPress={onNote}>
         <MaterialIcons name="sticky-note-2" size={20} color="#333" />
         <Text style={styles.pdfToolText}>Note</Text>
       </TouchableOpacity>
-      
+
       <TouchableOpacity style={styles.pdfToolButton} onPress={onUnderline}>
         <MaterialIcons name="format-underlined" size={20} color="#333" />
         <Text style={styles.pdfToolText}>Underline</Text>
       </TouchableOpacity>
-      
+
       <TouchableOpacity style={styles.pdfToolButton} onPress={onStrikethrough}>
         <MaterialIcons name="strikethrough-s" size={20} color="#333" />
         <Text style={styles.pdfToolText}>Strike</Text>
@@ -198,7 +222,7 @@ const PDFAnnotationToolbar = ({
             style={[
               styles.colorButton,
               { backgroundColor: color },
-              selectedColor === color && styles.selectedColorButton
+              selectedColor === color && styles.selectedColorButton,
             ]}
             onPress={() => onColorChange(color)}
           />
@@ -213,25 +237,30 @@ const PDFAnnotationToolbar = ({
 };
 
 // Enhanced PDF Viewer with Annotation Support
-const PDFViewerModal = ({ 
-  attachment, 
-  onClose, 
-  onAnnotation 
-}: { 
+const PDFViewerModal = ({
+  attachment,
+  onClose,
+  onAnnotation,
+}: {
   attachment: Attachment | null;
   onClose: () => void;
   onAnnotation: (annotation: PDFAnnotation) => void;
 }) => {
   const [showToolbar, setShowToolbar] = useState(false);
-  const [selectedText, setSelectedText] = useState('');
+  const [selectedText, setSelectedText] = useState("");
   const [selectionPosition, setSelectionPosition] = useState({ x: 0, y: 0 });
-  const [annotationColor, setAnnotationColor] = useState('#FFFF00');
-  const [annotations, setAnnotations] = useState<PDFAnnotation[]>(attachment?.annotations || []);
+  const [annotationColor, setAnnotationColor] = useState("#FFFF00");
+  const [annotations, setAnnotations] = useState<PDFAnnotation[]>(
+    attachment?.annotations || []
+  );
   const [showRinaPopup, setShowRinaPopup] = useState(false);
 
-  if (!attachment || attachment.type !== 'pdf') return null;
+  if (!attachment || attachment.type !== "pdf") return null;
 
-  const handleTextSelection = (text: string, position: { x: number, y: number }) => {
+  const handleTextSelection = (
+    text: string,
+    position: { x: number; y: number }
+  ) => {
     if (text.trim()) {
       setSelectedText(text);
       setSelectionPosition(position);
@@ -240,7 +269,7 @@ const PDFViewerModal = ({
     }
   };
 
-  const handleAnnotation = (type: PDFAnnotation['type']) => {
+  const handleAnnotation = (type: PDFAnnotation["type"]) => {
     if (selectedText) {
       const annotation: PDFAnnotation = {
         id: `annotation_${Date.now()}`,
@@ -253,17 +282,20 @@ const PDFViewerModal = ({
         color: annotationColor,
         text: selectedText,
       };
-      
-      setAnnotations(prev => [...prev, annotation]);
+
+      setAnnotations((prev) => [...prev, annotation]);
       onAnnotation(annotation);
       setShowToolbar(false);
-      setSelectedText('');
+      setSelectedText("");
     }
   };
 
   const handleAskRina = (text: string) => {
     // Here you would integrate with your RINA AI service
-    Alert.alert('Ask RINA', `You selected: "${text}"\n\nThis would open RINA chat with the selected text.`);
+    Alert.alert(
+      "Ask RINA",
+      `You selected: "${text}"\n\nThis would open RINA chat with the selected text.`
+    );
   };
 
   return (
@@ -282,21 +314,22 @@ const PDFViewerModal = ({
             style={styles.pdfPlaceholder}
             onLongPress={(event) => {
               const { pageX, pageY } = event.nativeEvent;
-              handleTextSelection('Sample selected text from PDF', { x: pageX, y: pageY });
+              handleTextSelection("Sample selected text from PDF", {
+                x: pageX,
+                y: pageY,
+              });
             }}
           >
             <MaterialIcons name="picture-as-pdf" size={80} color="#FF5722" />
-            <Text style={styles.pdfPlaceholderText}>
-              {attachment.name}
-            </Text>
+            <Text style={styles.pdfPlaceholderText}>{attachment.name}</Text>
             <Text style={styles.pdfInstructionText}>
               PDF preview not available in Expo Go
             </Text>
             <Text style={styles.pdfInstructionText}>
               Long press to simulate text selection for annotations
             </Text>
-            
-            <TouchableOpacity 
+
+            <TouchableOpacity
               style={styles.pdfOpenButton}
               onPress={() => {
                 Linking.openURL(attachment.uri).catch(() => {
@@ -307,7 +340,7 @@ const PDFViewerModal = ({
               <MaterialIcons name="open-in-new" size={20} color="#fff" />
               <Text style={styles.pdfOpenButtonText}>Open in External App</Text>
             </TouchableOpacity>
-            
+
             {/* Render annotations */}
             {annotations.map((annotation) => (
               <View
@@ -318,7 +351,7 @@ const PDFViewerModal = ({
                     backgroundColor: annotation.color,
                     left: annotation.x,
                     top: annotation.y,
-                  }
+                  },
                 ]}
               >
                 <Text style={styles.annotationText}>{annotation.text}</Text>
@@ -330,13 +363,13 @@ const PDFViewerModal = ({
         {/* Annotation Toolbar */}
         {showToolbar && (
           <PDFAnnotationToolbar
-            onHighlight={() => handleAnnotation('highlight')}
-            onNote={() => handleAnnotation('note')}
-            onUnderline={() => handleAnnotation('underline')}
-            onStrikethrough={() => handleAnnotation('strikethrough')}
+            onHighlight={() => handleAnnotation("highlight")}
+            onNote={() => handleAnnotation("note")}
+            onUnderline={() => handleAnnotation("underline")}
+            onStrikethrough={() => handleAnnotation("strikethrough")}
             onClose={() => {
               setShowToolbar(false);
-              setSelectedText('');
+              setSelectedText("");
             }}
             selectedColor={annotationColor}
             onColorChange={setAnnotationColor}
@@ -356,7 +389,13 @@ const PDFViewerModal = ({
   );
 };
 
-const PreviewModal = ({ attachment, onClose }: { attachment: Attachment | null, onClose: () => void }) => {
+const PreviewModal = ({
+  attachment,
+  onClose,
+}: {
+  attachment: Attachment | null;
+  onClose: () => void;
+}) => {
   if (!attachment) return null;
 
   return (
@@ -365,10 +404,10 @@ const PreviewModal = ({ attachment, onClose }: { attachment: Attachment | null, 
         {/* Header */}
         <View style={styles.previewHeader}>
           <View style={styles.previewHeaderLeft}>
-            <MaterialIcons 
-              name={attachment.type === "pdf" ? "picture-as-pdf" : "image"} 
-              size={20} 
-              color="#fff" 
+            <MaterialIcons
+              name={attachment.type === "pdf" ? "picture-as-pdf" : "image"}
+              size={20}
+              color="#fff"
             />
             <Text style={styles.previewHeaderTitle} numberOfLines={1}>
               {attachment.name}
@@ -382,16 +421,16 @@ const PreviewModal = ({ attachment, onClose }: { attachment: Attachment | null, 
         {/* Content */}
         <View style={styles.previewContent}>
           {attachment.type === "image" ? (
-            <ScrollView 
+            <ScrollView
               contentContainerStyle={styles.imagePreviewContainer}
               maximumZoomScale={3}
               minimumZoomScale={1}
               showsVerticalScrollIndicator={false}
               showsHorizontalScrollIndicator={false}
             >
-              <Image 
-                source={{ uri: attachment.uri }} 
-                style={styles.previewImage} 
+              <Image
+                source={{ uri: attachment.uri }}
+                style={styles.previewImage}
                 resizeMode="contain"
               />
             </ScrollView>
@@ -399,7 +438,11 @@ const PreviewModal = ({ attachment, onClose }: { attachment: Attachment | null, 
             // PDF Preview (Expo Go Compatible)
             <View style={styles.previewDocument}>
               <View style={styles.pdfPreviewIcon}>
-                <MaterialIcons name="picture-as-pdf" size={80} color="#FF5722" />
+                <MaterialIcons
+                  name="picture-as-pdf"
+                  size={80}
+                  color="#FF5722"
+                />
               </View>
               <Text style={styles.previewDocumentTitle}>{attachment.name}</Text>
               <Text style={styles.previewDocumentInfo}>
@@ -412,7 +455,8 @@ const PreviewModal = ({ attachment, onClose }: { attachment: Attachment | null, 
                 <View style={styles.annotationsInfo}>
                   <MaterialIcons name="note" size={16} color="#fff" />
                   <Text style={styles.annotationsText}>
-                    {attachment.annotations.length} annotation{attachment.annotations.length !== 1 ? 's' : ''}
+                    {attachment.annotations.length} annotation
+                    {attachment.annotations.length !== 1 ? "s" : ""}
                   </Text>
                 </View>
               )}
@@ -423,7 +467,7 @@ const PreviewModal = ({ attachment, onClose }: { attachment: Attachment | null, 
         {/* Footer Actions */}
         <View style={styles.previewFooter}>
           {attachment.type === "pdf" && (
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.previewActionButton}
               onPress={() => {
                 onClose();
@@ -434,16 +478,19 @@ const PreviewModal = ({ attachment, onClose }: { attachment: Attachment | null, 
               <Text style={styles.previewActionText}>Annotate</Text>
             </TouchableOpacity>
           )}
-          
-          <TouchableOpacity 
+
+          <TouchableOpacity
             style={styles.previewActionButton}
             onPress={() => {
               Alert.alert("Download", "Would you like to save this file?", [
                 { text: "Cancel" },
-                { text: "Save", onPress: () => {
-                  // In a real app, you'd implement file saving logic here
-                  Alert.alert("Success", "File saved to device");
-                }}
+                {
+                  text: "Save",
+                  onPress: () => {
+                    // In a real app, you'd implement file saving logic here
+                    Alert.alert("Success", "File saved to device");
+                  },
+                },
               ]);
             }}
           >
@@ -451,7 +498,7 @@ const PreviewModal = ({ attachment, onClose }: { attachment: Attachment | null, 
             <Text style={styles.previewActionText}>Save</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.previewActionButton}
             onPress={() => {
               Linking.openURL(attachment.uri).catch(() => {
@@ -475,29 +522,45 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   // State
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [title, setTitle] = useState(route.params?.initialNote?.title || "");
-  const [content, setContent] = useState(route.params?.initialNote?.content || "");
-  const [subject, setSubject] = useState(route.params?.initialNote?.subject || "");
-  const [linkedTask, setLinkedTask] = useState(route.params?.initialNote?.linkedTask || "");
-  const [tags, setTags] = useState<string[]>(route.params?.initialNote?.tags || []);
-  const [attachments, setAttachments] = useState<Attachment[]>(route.params?.initialNote?.attachments || []);
+  const [content, setContent] = useState(
+    route.params?.initialNote?.content || ""
+  );
+  const [subject, setSubject] = useState(
+    route.params?.initialNote?.subject || ""
+  );
+  const [linkedTask, setLinkedTask] = useState(
+    route.params?.initialNote?.linkedTask || ""
+  );
+  const [tags, setTags] = useState<string[]>(
+    route.params?.initialNote?.tags || []
+  );
+  const [attachments, setAttachments] = useState<Attachment[]>(
+    route.params?.initialNote?.attachments || []
+  );
   const [isSaving, setIsSaving] = useState(false);
   const [showMoreOptions, setShowMoreOptions] = useState(false);
   const [showSubjectModal, setShowSubjectModal] = useState(false);
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [showTagModal, setShowTagModal] = useState(false);
   const [newTag, setNewTag] = useState("");
-  const [syncStatus, setSyncStatus] = useState<"saved" | "syncing" | "offline">("saved");
+  const [syncStatus, setSyncStatus] = useState<"saved" | "syncing" | "offline">(
+    "saved"
+  );
   const [noteId] = useState(route.params?.noteId || `note_${Date.now()}`);
-  const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null);
-  const [pdfViewerAttachment, setPdfViewerAttachment] = useState<Attachment | null>(null);
+  const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(
+    null
+  );
+  const [pdfViewerAttachment, setPdfViewerAttachment] =
+    useState<Attachment | null>(null);
   const [showRinaPopup, setShowRinaPopup] = useState(false);
-  const [selectedText, setSelectedText] = useState('');
+  const [selectedText, setSelectedText] = useState("");
   const [selectionPosition, setSelectionPosition] = useState({ x: 0, y: 0 });
-  const [textColor, setTextColor] = useState('black');
-  const [bgColor, setBgColor] = useState('white');
+  const [textColor, setTextColor] = useState("black");
+  const [bgColor, setBgColor] = useState("white");
   const [showColorPicker, setShowColorPicker] = useState(false);
-  const [currentColorAction, setCurrentColorAction] = useState<'text' | 'background' | null>(null);
-
+  const [currentColorAction, setCurrentColorAction] = useState<
+    "text" | "background" | null
+  >(null);
 
   // Effects
   useEffect(() => {
@@ -508,10 +571,13 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
         setKeyboardHeight(e.endCoordinates.height);
       }
     );
-    const keyboardDidHideListener = Keyboard.addListener("keyboardDidHide", () => {
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setKeyboardHeight(0);
-    });
+    const keyboardDidHideListener = Keyboard.addListener(
+      "keyboardDidHide",
+      () => {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        setKeyboardHeight(0);
+      }
+    );
 
     return () => {
       keyboardDidShowListener.remove();
@@ -532,20 +598,20 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   }, [title, content, attachments]);
 
   // Helper functions
-const basicColors = [
-  { name: 'black', hex: '#000000' },
-  { name: 'white', hex: '#FFFFFF' },
-  { name: 'red', hex: '#FF0000' },
-  { name: 'green', hex: '#00FF00' },
-  { name: 'blue', hex: '#0000FF' },
-  { name: 'yellow', hex: '#FFFF00' },
-  { name: 'orange', hex: '#FFA500' },
-  { name: 'purple', hex: '#800080' },
-  { name: 'gray', hex: '#808080' },
-  { name: 'brown', hex: '#A52A2A' },
-  { name: 'pink', hex: '#FFC0CB' },
-  { name: 'cyan', hex: '#00FFFF' },
-];
+  const basicColors = [
+    { name: "black", hex: "#000000" },
+    { name: "white", hex: "#FFFFFF" },
+    { name: "red", hex: "#FF0000" },
+    { name: "green", hex: "#00FF00" },
+    { name: "blue", hex: "#0000FF" },
+    { name: "yellow", hex: "#FFFF00" },
+    { name: "orange", hex: "#FFA500" },
+    { name: "purple", hex: "#800080" },
+    { name: "gray", hex: "#808080" },
+    { name: "brown", hex: "#A52A2A" },
+    { name: "pink", hex: "#FFC0CB" },
+    { name: "cyan", hex: "#00FFFF" },
+  ];
 
   const getCurrentNoteData = (): Note => {
     return {
@@ -556,21 +622,22 @@ const basicColors = [
       linkedTask,
       tags,
       attachments,
-      createdAt: route.params?.initialNote?.createdAt || new Date().toISOString(),
+      createdAt:
+        route.params?.initialNote?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
   };
 
-const openColorPicker = (type: 'text' | 'background') => {
-  setCurrentColorAction(type);
-  setShowColorPicker(true);
-};
+  const openColorPicker = (type: "text" | "background") => {
+    setCurrentColorAction(type);
+    setShowColorPicker(true);
+  };
 
   const applyColor = (colorName: string, colorHex: string) => {
-    if (currentColorAction === 'text') {
+    if (currentColorAction === "text") {
       setTextColor(colorName);
       richTextRef.current?.setForeColor(colorHex);
-    } else if (currentColorAction === 'background') {
+    } else if (currentColorAction === "background") {
       setBgColor(colorName);
       richTextRef.current?.setHiliteColor(colorHex);
     }
@@ -628,13 +695,16 @@ const openColorPicker = (type: 'text' | 'background') => {
   };
 
   // Text selection handler
-  const handleTextSelection = (text: string, position: { x: number; y: number }) => {
+  const handleTextSelection = (
+    text: string,
+    position: { x: number; y: number }
+  ) => {
     if (text.trim()) {
-      console.log('Text selected:', text); // Debug log
+      console.log("Text selected:", text); // Debug log
       setSelectedText(text);
       setSelectionPosition(position);
       setShowRinaPopup(true);
-      
+
       // Auto-hide the button after 8 seconds
       setTimeout(() => {
         setShowRinaPopup(false);
@@ -644,24 +714,30 @@ const openColorPicker = (type: 'text' | 'background') => {
 
   const handleAskRina = (text: string) => {
     Alert.alert(
-      'Ask RINA', 
+      "Ask RINA",
       `You selected: "${text}"\n\nThis would open RINA chat with the selected text.`,
       [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Ask RINA', onPress: () => {
-          // Here you would navigate to RINA chat or open a modal
-          console.log('Opening RINA with text:', text);
-        }}
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Ask RINA",
+          onPress: () => {
+            // Here you would navigate to RINA chat or open a modal
+            console.log("Opening RINA with text:", text);
+          },
+        },
       ]
     );
   };
 
   const handlePickImage = async () => {
     setShowMoreOptions(false);
-    
+
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
-      Alert.alert("Permission Required", "Please grant media library permission.");
+      Alert.alert(
+        "Permission Required",
+        "Please grant media library permission."
+      );
       return;
     }
 
@@ -690,7 +766,7 @@ const openColorPicker = (type: 'text' | 'background') => {
 
   const handlePickDocument = async () => {
     setShowMoreOptions(false);
-    
+
     const result = await DocumentPicker.getDocumentAsync({
       type: "application/pdf",
       copyToCacheDirectory: true,
@@ -708,7 +784,9 @@ const openColorPicker = (type: 'text' | 'background') => {
           timestamp: new Date(),
         },
       ]);
-      richTextRef.current?.insertHTML(`<a href="${asset.uri}">${asset.name}</a>`);
+      richTextRef.current?.insertHTML(
+        `<a href="${asset.uri}">${asset.name}</a>`
+      );
     }
   };
 
@@ -719,10 +797,14 @@ const openColorPicker = (type: 'text' | 'background') => {
         text: "Delete",
         style: "destructive",
         onPress: async () => {
-          const attachmentToDelete = attachments.find((a) => a.id === attachmentId);
+          const attachmentToDelete = attachments.find(
+            (a) => a.id === attachmentId
+          );
           if (attachmentToDelete) {
             try {
-              await FileSystem.deleteAsync(attachmentToDelete.uri, { idempotent: true });
+              await FileSystem.deleteAsync(attachmentToDelete.uri, {
+                idempotent: true,
+              });
             } catch (e) {
               console.error("Failed to delete attachment file:", e);
             }
@@ -735,11 +817,11 @@ const openColorPicker = (type: 'text' | 'background') => {
 
   const handleAnnotation = (annotation: PDFAnnotation) => {
     if (pdfViewerAttachment) {
-      const updatedAttachments = attachments.map(att => {
+      const updatedAttachments = attachments.map((att) => {
         if (att.id === pdfViewerAttachment.id) {
           return {
             ...att,
-            annotations: [...(att.annotations || []), annotation]
+            annotations: [...(att.annotations || []), annotation],
           };
         }
         return att;
@@ -761,17 +843,23 @@ const openColorPicker = (type: 'text' | 'background') => {
 
   const getSyncStatusIcon = () => {
     switch (syncStatus) {
-      case "syncing": return "sync";
-      case "offline": return "cloud-off";
-      default: return "cloud-done";
+      case "syncing":
+        return "sync";
+      case "offline":
+        return "cloud-off";
+      default:
+        return "cloud-done";
     }
   };
 
   const getSyncStatusColor = () => {
     switch (syncStatus) {
-      case "syncing": return "#FF9500";
-      case "offline": return "#FF3B30";
-      default: return "#34C759";
+      case "syncing":
+        return "#FF9500";
+      case "offline":
+        return "#FF3B30";
+      default:
+        return "#34C759";
     }
   };
 
@@ -794,15 +882,18 @@ const openColorPicker = (type: 'text' | 'background') => {
             color={getSyncStatusColor()}
           />
           <Text style={[styles.syncStatus, { color: getSyncStatusColor() }]}>
-            {syncStatus === "syncing" ? "Syncing..." : 
-             syncStatus === "offline" ? "Offline" : "Saved"}
+            {syncStatus === "syncing"
+              ? "Syncing..."
+              : syncStatus === "offline"
+              ? "Offline"
+              : "Saved"}
           </Text>
         </View>
 
         <View style={styles.headerActions}>
           {keyboardHeight > 0 && (
-            <TouchableOpacity 
-              style={styles.keyboardDismissButton} 
+            <TouchableOpacity
+              style={styles.keyboardDismissButton}
               onPress={() => {
                 Keyboard.dismiss();
               }}
@@ -811,67 +902,99 @@ const openColorPicker = (type: 'text' | 'background') => {
             </TouchableOpacity>
           )}
 
-          <TouchableOpacity style={styles.saveButton} onPress={handleSave} disabled={isSaving}>
-            <MaterialIcons name={isSaving ? "sync" : "check"} size={24} color="#007AFF" />
+          <TouchableOpacity
+            style={styles.saveButton}
+            onPress={handleSave}
+            disabled={isSaving}
+          >
+            <MaterialIcons
+              name={isSaving ? "sync" : "check"}
+              size={24}
+              color="#007AFF"
+            />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.moreButton} onPress={() => setShowMoreOptions((prev) => !prev)}>
+          <TouchableOpacity
+            style={styles.moreButton}
+            onPress={() => setShowMoreOptions((prev) => !prev)}
+          >
             <MaterialIcons name="more-vert" size={24} color="#007AFF" />
           </TouchableOpacity>
 
           {showMoreOptions && (
             <View style={styles.moreOptionsMenu}>
-              <TouchableOpacity style={styles.optionItem} onPress={handlePickImage}>
+              <TouchableOpacity
+                style={styles.optionItem}
+                onPress={handlePickImage}
+              >
                 <MaterialIcons name="image" size={20} color="#666" />
                 <Text style={styles.optionText}>Insert Image</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.optionItem} onPress={handlePickDocument}>
+              <TouchableOpacity
+                style={styles.optionItem}
+                onPress={handlePickDocument}
+              >
                 <MaterialIcons name="attach-file" size={20} color="#666" />
                 <Text style={styles.optionText}>Attach File</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.optionItem} onPress={() => setShowMoreOptions(false)}>
+              <TouchableOpacity
+                style={styles.optionItem}
+                onPress={() => setShowMoreOptions(false)}
+              >
                 <MaterialIcons name="keyboard-voice" size={20} color="#666" />
                 <Text style={styles.optionText}>Voice Recording</Text>
               </TouchableOpacity>
               {attachments.length > 0 && (
-                <TouchableOpacity 
-                  style={styles.optionItem} 
+                <TouchableOpacity
+                  style={styles.optionItem}
                   onPress={() => {
                     setShowMoreOptions(false);
                     // Show attachment thumbnails modal or scroll to attachments
                     Alert.alert(
-                      "Attachments Preview", 
-                      `You have ${attachments.length} attachment${attachments.length !== 1 ? 's' : ''} in this note.`,
+                      "Attachments Preview",
+                      `You have ${attachments.length} attachment${
+                        attachments.length !== 1 ? "s" : ""
+                      } in this note.`,
                       [
                         { text: "OK" },
-                        { text: "View All", onPress: () => {
-                          // In a real implementation, you could scroll to attachments section
-                          console.log("Scrolling to attachments section");
-                        }}
+                        {
+                          text: "View All",
+                          onPress: () => {
+                            // In a real implementation, you could scroll to attachments section
+                            console.log("Scrolling to attachments section");
+                          },
+                        },
                       ]
                     );
                   }}
                 >
                   <MaterialIcons name="attachment" size={20} color="#666" />
-                  <Text style={styles.optionText}>View Attachments ({attachments.length})</Text>
+                  <Text style={styles.optionText}>
+                    View Attachments ({attachments.length})
+                  </Text>
                 </TouchableOpacity>
               )}
               <TouchableOpacity style={styles.optionItem}>
                 <MaterialIcons name="psychology" size={20} color="#9C27B0" />
                 <Text style={styles.optionText}>AI Suggest</Text>
               </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.optionItem} 
+              <TouchableOpacity
+                style={styles.optionItem}
                 onPress={() => {
                   setShowMoreOptions(false);
                   // Get current content and simulate text selection
                   if (content.trim()) {
                     // Extract first 50 characters as "selected" text for demo
-                    const textContent = content.replace(/<[^>]*>/g, '').trim(); // Remove HTML tags
-                    const selectedText = textContent.slice(0, 50) + (textContent.length > 50 ? '...' : '');
+                    const textContent = content.replace(/<[^>]*>/g, "").trim(); // Remove HTML tags
+                    const selectedText =
+                      textContent.slice(0, 50) +
+                      (textContent.length > 50 ? "..." : "");
                     handleTextSelection(selectedText, { x: 150, y: 200 });
                   } else {
-                    handleTextSelection("Demo: Select text in the editor to see Ask RINA button", { x: 150, y: 200 });
+                    handleTextSelection(
+                      "Demo: Select text in the editor to see Ask RINA button",
+                      { x: 150, y: 200 }
+                    );
                   }
                 }}
               >
@@ -902,22 +1025,35 @@ const openColorPicker = (type: 'text' | 'background') => {
 
         {/* Metadata Section */}
         <View style={styles.metadataSection}>
-          <TouchableOpacity style={styles.metadataItem} onPress={() => setShowSubjectModal(true)}>
+          <TouchableOpacity
+            style={styles.metadataItem}
+            onPress={() => setShowSubjectModal(true)}
+          >
             <MaterialIcons name="school" size={16} color="#666" />
-            <Text style={styles.metadataText}>{subject || "Select Subject"}</Text>
+            <Text style={styles.metadataText}>
+              {subject || "Select Subject"}
+            </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.metadataItem} onPress={() => setShowTaskModal(true)}>
+          <TouchableOpacity
+            style={styles.metadataItem}
+            onPress={() => setShowTaskModal(true)}
+          >
             <MaterialIcons name="assignment" size={16} color="#666" />
             <Text style={styles.metadataText}>
-              {linkedTask ? mockTasks.find((t) => t.id === linkedTask)?.title : "Link to Task"}
+              {linkedTask
+                ? mockTasks.find((t) => t.id === linkedTask)?.title
+                : "Link to Task"}
             </Text>
           </TouchableOpacity>
         </View>
 
         {/* Tags */}
         <View style={styles.tagsSection}>
-          <TouchableOpacity style={styles.addTagButton} onPress={() => setShowTagModal(true)}>
+          <TouchableOpacity
+            style={styles.addTagButton}
+            onPress={() => setShowTagModal(true)}
+          >
             <MaterialIcons name="add" size={16} color="#007AFF" />
             <Text style={styles.addTagText}>Add Tag</Text>
           </TouchableOpacity>
@@ -950,10 +1086,13 @@ const openColorPicker = (type: 'text' | 'background') => {
             }}
             onMessage={(message: any) => {
               // Handle messages from the editor
-              if (message.type === 'selection' && message.text) {
+              if (message.type === "selection" && message.text) {
                 const text = message.text.trim();
                 if (text.length > 0) {
-                  handleTextSelection(text, { x: message.x || 100, y: message.y || 100 });
+                  handleTextSelection(text, {
+                    x: message.x || 100,
+                    y: message.y || 100,
+                  });
                 }
               }
             }}
@@ -972,14 +1111,20 @@ const openColorPicker = (type: 'text' | 'background') => {
         {/* Attachments Section */}
         {attachments.length > 0 && (
           <>
-            <Text style={styles.sectionTitle}>Attachments ({attachments.length})</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.attachmentsScrollView}>
+            <Text style={styles.sectionTitle}>
+              Attachments ({attachments.length})
+            </Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.attachmentsScrollView}
+            >
               {attachments.map((attachment) => (
                 <View key={attachment.id} style={styles.attachmentCard}>
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={styles.attachmentPreviewContainer}
                     onPress={() => {
-                      if (attachment.type === 'pdf') {
+                      if (attachment.type === "pdf") {
                         setPdfViewerAttachment(attachment);
                       } else {
                         setPreviewAttachment(attachment);
@@ -988,35 +1133,43 @@ const openColorPicker = (type: 'text' | 'background') => {
                   >
                     {/* Preview Thumbnail */}
                     <View style={styles.attachmentThumbnail}>
-                      {attachment.type === 'image' ? (
-                        <Image 
-                          source={{ uri: attachment.uri }} 
+                      {attachment.type === "image" ? (
+                        <Image
+                          source={{ uri: attachment.uri }}
                           style={styles.imageThumbnail}
                           resizeMode="cover"
                         />
                       ) : (
                         <View style={styles.pdfThumbnail}>
-                          <MaterialIcons name="picture-as-pdf" size={40} color="#FF5722" />
+                          <MaterialIcons
+                            name="picture-as-pdf"
+                            size={40}
+                            color="#FF5722"
+                          />
                           <Text style={styles.pdfLabel}>PDF</Text>
                         </View>
                       )}
-                      
+
                       {/* File Type Overlay */}
                       <View style={styles.fileTypeOverlay}>
                         <Text style={styles.fileTypeText}>
                           {attachment.type.toUpperCase()}
                         </Text>
                       </View>
-                      
+
                       {/* Annotations Badge for PDFs */}
-                      {attachment.type === 'pdf' && attachment.annotations && attachment.annotations.length > 0 && (
-                        <View style={styles.annotationBadgeOverlay}>
-                          <MaterialIcons name="note" size={12} color="#fff" />
-                          <Text style={styles.annotationBadgeText}>{attachment.annotations.length}</Text>
-                        </View>
-                      )}
+                      {attachment.type === "pdf" &&
+                        attachment.annotations &&
+                        attachment.annotations.length > 0 && (
+                          <View style={styles.annotationBadgeOverlay}>
+                            <MaterialIcons name="note" size={12} color="#fff" />
+                            <Text style={styles.annotationBadgeText}>
+                              {attachment.annotations.length}
+                            </Text>
+                          </View>
+                        )}
                     </View>
-                    
+
                     {/* File Info */}
                     <View style={styles.attachmentInfo}>
                       <Text style={styles.attachmentName} numberOfLines={2}>
@@ -1027,22 +1180,26 @@ const openColorPicker = (type: 'text' | 'background') => {
                       </Text>
                     </View>
                   </TouchableOpacity>
-                  
+
                   {/* Action Buttons */}
                   <View style={styles.attachmentActions}>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       style={styles.attachmentActionButton}
                       onPress={() => {
-                        if (attachment.type === 'pdf') {
+                        if (attachment.type === "pdf") {
                           setPdfViewerAttachment(attachment);
                         } else {
                           setPreviewAttachment(attachment);
                         }
                       }}
                     >
-                      <MaterialIcons name="visibility" size={16} color="#007AFF" />
+                      <MaterialIcons
+                        name="visibility"
+                        size={16}
+                        color="#007AFF"
+                      />
                     </TouchableOpacity>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       style={styles.attachmentActionButton}
                       onPress={() => deleteAttachment(attachment.id)}
                     >
@@ -1066,38 +1223,40 @@ const openColorPicker = (type: 'text' | 'background') => {
         selectedIconTint="#007AFF"
         disabledIconTint="#666"
         actions={[
-          'bold',
-          'italic',
-          'underline',
-          'strikethrough',
-          'heading1',
-          'heading2',
-          'heading3',
-          'heading4',
-          'heading5',
-          'heading6',
-          'blockquote',
-          'code',
-          'line',
-          'unorderedList',
-          'orderedList',
-          'alignLeft',
-          'alignCenter',
-          'alignRight',
-          'alignFull',
-          'undo',
-          'redo',
-          'insertLink',
-          'insertImage',
-          'foreColor',
-          'hiliteColor',
-          'removeFormat',
+          "bold",
+          "italic",
+          "underline",
+          "strikethrough",
+          "heading1",
+          "heading2",
+          "heading3",
+          "heading4",
+          "heading5",
+          "heading6",
+          "blockquote",
+          "code",
+          "line",
+          "unorderedList",
+          "orderedList",
+          "alignLeft",
+          "alignCenter",
+          "alignRight",
+          "alignFull",
+          "undo",
+          "redo",
+          "insertLink",
+          "insertImage",
+          "foreColor",
+          "hiliteColor",
+          "removeFormat",
         ]}
         iconMap={{
           bold: () => <MaterialIcons name="format-bold" size={20} />,
           italic: () => <MaterialIcons name="format-italic" size={20} />,
           underline: () => <MaterialIcons name="format-underlined" size={20} />,
-          strikethrough: () => <MaterialIcons name="strikethrough-s" size={20} />,
+          strikethrough: () => (
+            <MaterialIcons name="strikethrough-s" size={20} />
+          ),
           heading1: () => <Text style={styles.headingText}>H1</Text>,
           heading2: () => <Text style={styles.headingText}>H2</Text>,
           heading3: () => <Text style={styles.headingText}>H3</Text>,
@@ -1107,66 +1266,79 @@ const openColorPicker = (type: 'text' | 'background') => {
           blockquote: () => <MaterialIcons name="format-quote" size={20} />,
           code: () => <MaterialIcons name="code" size={20} />,
           line: () => <MaterialIcons name="horizontal-rule" size={20} />,
-          unorderedList: () => <MaterialIcons name="format-list-bulleted" size={20} />,
-          orderedList: () => <MaterialIcons name="format-list-numbered" size={20} />,
+          unorderedList: () => (
+            <MaterialIcons name="format-list-bulleted" size={20} />
+          ),
+          orderedList: () => (
+            <MaterialIcons name="format-list-numbered" size={20} />
+          ),
           alignLeft: () => <MaterialIcons name="format-align-left" size={20} />,
-          alignCenter: () => <MaterialIcons name="format-align-center" size={20} />,
-          alignRight: () => <MaterialIcons name="format-align-right" size={20} />,
-          alignFull: () => <MaterialIcons name="format-align-justify" size={20} />,
+          alignCenter: () => (
+            <MaterialIcons name="format-align-center" size={20} />
+          ),
+          alignRight: () => (
+            <MaterialIcons name="format-align-right" size={20} />
+          ),
+          alignFull: () => (
+            <MaterialIcons name="format-align-justify" size={20} />
+          ),
           undo: () => <MaterialIcons name="undo" size={20} />,
           redo: () => <MaterialIcons name="redo" size={20} />,
           insertLink: () => <MaterialIcons name="link" size={20} />,
           insertImage: () => <MaterialIcons name="image" size={20} />,
           foreColor: () => (
-            <TouchableOpacity onPress={() => openColorPicker('text')}>
+            <TouchableOpacity onPress={() => openColorPicker("text")}>
               <MaterialIcons name="format-color-text" size={20} />
             </TouchableOpacity>
           ),
           hiliteColor: () => (
-            <TouchableOpacity onPress={() => openColorPicker('background')}>
+            <TouchableOpacity onPress={() => openColorPicker("background")}>
               <MaterialIcons name="format-color-fill" size={20} />
             </TouchableOpacity>
           ),
         }}
       />
-<Modal
-  visible={showColorPicker}
-  transparent={true}
-  animationType="slide"
-  onRequestClose={() => setShowColorPicker(false)}
->
-  <View style={styles.colorPickerModal}>
-    <View style={styles.colorPickerContainer}>
-      <Text style={styles.colorPickerTitle}>
-        Select {currentColorAction === 'text' ? 'Text' : 'Background'} Color
-      </Text>
-      
-      <View style={styles.colorGrid}>
-        {basicColors.map((color) => (
-          <TouchableOpacity
-            key={color.name}
-            style={[styles.colorSwatch, { backgroundColor: color.hex }]}
-            onPress={() => applyColor(color.name, color.hex)}
-          >
-            <Text style={[
-              styles.colorName,
-              { color: color.name === 'black' ? 'white' : 'black' }
-            ]}>
-              {color.name}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-      
-      <TouchableOpacity
-        style={[styles.colorPickerButton, styles.colorPickerCancelButton]}
-        onPress={() => setShowColorPicker(false)}
+      <Modal
+        visible={showColorPicker}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowColorPicker(false)}
       >
-        <Text style={styles.colorPickerCancelButtonText}>Cancel</Text>
-      </TouchableOpacity>
-    </View>
-  </View>
-</Modal>
+        <View style={styles.colorPickerModal}>
+          <View style={styles.colorPickerContainer}>
+            <Text style={styles.colorPickerTitle}>
+              Select {currentColorAction === "text" ? "Text" : "Background"}{" "}
+              Color
+            </Text>
+
+            <View style={styles.colorGrid}>
+              {basicColors.map((color) => (
+                <TouchableOpacity
+                  key={color.name}
+                  style={[styles.colorSwatch, { backgroundColor: color.hex }]}
+                  onPress={() => applyColor(color.name, color.hex)}
+                >
+                  <Text
+                    style={[
+                      styles.colorName,
+                      { color: color.name === "black" ? "white" : "black" },
+                    ]}
+                  >
+                    {color.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TouchableOpacity
+              style={[styles.colorPickerButton, styles.colorPickerCancelButton]}
+              onPress={() => setShowColorPicker(false)}
+            >
+              <Text style={styles.colorPickerCancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* RINA Button for Text Selection */}
       <RinaButton
@@ -1185,9 +1357,9 @@ const openColorPicker = (type: 'text' | 'background') => {
       />
 
       {/* Preview Modal */}
-      <PreviewModal 
-        attachment={previewAttachment} 
-        onClose={() => setPreviewAttachment(null)} 
+      <PreviewModal
+        attachment={previewAttachment}
+        onClose={() => setPreviewAttachment(null)}
       />
 
       {/* Modals */}
@@ -1210,7 +1382,10 @@ const openColorPicker = (type: 'text' | 'background') => {
                 </TouchableOpacity>
               )}
             />
-            <TouchableOpacity style={styles.modalCloseButton} onPress={() => setShowSubjectModal(false)}>
+            <TouchableOpacity
+              style={styles.modalCloseButton}
+              onPress={() => setShowSubjectModal(false)}
+            >
               <Text style={styles.modalCloseText}>Cancel</Text>
             </TouchableOpacity>
           </View>
@@ -1237,7 +1412,10 @@ const openColorPicker = (type: 'text' | 'background') => {
                 </TouchableOpacity>
               )}
             />
-            <TouchableOpacity style={styles.modalCloseButton} onPress={() => setShowTaskModal(false)}>
+            <TouchableOpacity
+              style={styles.modalCloseButton}
+              onPress={() => setShowTaskModal(false)}
+            >
               <Text style={styles.modalCloseText}>Cancel</Text>
             </TouchableOpacity>
           </View>
@@ -1404,93 +1582,93 @@ const styles = StyleSheet.create({
   attachmentCard: {
     width: 160,
     marginRight: 12,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: "#f8f9fa",
     borderRadius: 12,
     padding: 8,
     borderWidth: 1,
-    borderColor: '#e9ecef',
+    borderColor: "#e9ecef",
   },
   attachmentPreviewContainer: {
     marginBottom: 8,
   },
   attachmentThumbnail: {
-    width: '100%',
+    width: "100%",
     height: 120,
     borderRadius: 8,
     marginBottom: 8,
-    position: 'relative',
-    overflow: 'hidden',
+    position: "relative",
+    overflow: "hidden",
   },
   imageThumbnail: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
     borderRadius: 8,
   },
   pdfThumbnail: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#fff3e0',
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: "100%",
+    height: "100%",
+    backgroundColor: "#fff3e0",
+    justifyContent: "center",
+    alignItems: "center",
     borderRadius: 8,
     borderWidth: 2,
-    borderColor: '#ffcc80',
-    borderStyle: 'dashed',
+    borderColor: "#ffcc80",
+    borderStyle: "dashed",
   },
   pdfLabel: {
     fontSize: 12,
-    color: '#FF5722',
-    fontWeight: 'bold',
+    color: "#FF5722",
+    fontWeight: "bold",
     marginTop: 4,
   },
   fileTypeOverlay: {
-    position: 'absolute',
+    position: "absolute",
     top: 4,
     right: 4,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    backgroundColor: "rgba(0,0,0,0.7)",
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
   },
   fileTypeText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 10,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
   annotationBadgeOverlay: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 4,
     right: 4,
-    backgroundColor: '#FF6B6B',
+    backgroundColor: "#FF6B6B",
     borderRadius: 10,
     paddingHorizontal: 6,
     paddingVertical: 2,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
   attachmentInfo: {
     marginBottom: 8,
   },
   attachmentName: {
     fontSize: 12,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: "600",
+    color: "#333",
     marginBottom: 2,
   },
   attachmentDate: {
     fontSize: 10,
-    color: '#666',
+    color: "#666",
   },
   attachmentActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
+    flexDirection: "row",
+    justifyContent: "space-around",
   },
   attachmentActionButton: {
     padding: 8,
     borderRadius: 6,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: "#ddd",
   },
   // Legacy styles (keeping for compatibility)
   attachmentItem: {
@@ -1515,7 +1693,7 @@ const styles = StyleSheet.create({
     color: "#333",
     fontFamily: "Inter-Regular",
     borderWidth: 0,
-    width: '100%',
+    width: "100%",
   },
   recordingItem: {
     flexDirection: "row",
@@ -1652,10 +1830,10 @@ const styles = StyleSheet.create({
     flex: 1,
     marginBottom: 20,
     borderWidth: 0,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderRadius: 8,
     minHeight: 300,
-    width: '100%',
+    width: "100%",
   },
   moreButton: {
     marginLeft: 10,
@@ -1688,146 +1866,146 @@ const styles = StyleSheet.create({
   },
   previewOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    backgroundColor: "rgba(0, 0, 0, 0.95)",
   },
   previewHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingTop: 50,
     paddingHorizontal: 20,
     paddingBottom: 15,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
+    borderBottomColor: "rgba(255,255,255,0.1)",
   },
   previewHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     flex: 1,
   },
   previewHeaderTitle: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
     marginLeft: 8,
     flex: 1,
   },
   previewCloseButton: {
     padding: 8,
     borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: "rgba(255,255,255,0.1)",
   },
   previewContent: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   imagePreviewContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    minHeight: '100%',
+    justifyContent: "center",
+    alignItems: "center",
+    minHeight: "100%",
   },
   previewImage: {
-    width: '100%',
-    height: '100%',
-    maxWidth: '90%',
-    maxHeight: '80%',
+    width: "100%",
+    height: "100%",
+    maxWidth: "90%",
+    maxHeight: "80%",
   },
   previewDocument: {
-    alignItems: 'center',
+    alignItems: "center",
     padding: 40,
   },
   pdfPreviewIcon: {
     padding: 20,
-    backgroundColor: 'rgba(255,87,34,0.1)',
+    backgroundColor: "rgba(255,87,34,0.1)",
     borderRadius: 50,
     marginBottom: 20,
   },
   previewDocumentTitle: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 18,
-    fontWeight: '600',
-    textAlign: 'center',
+    fontWeight: "600",
+    textAlign: "center",
     marginBottom: 8,
   },
   previewDocumentInfo: {
-    color: '#ccc',
+    color: "#ccc",
     fontSize: 14,
     marginBottom: 16,
   },
   annotationsInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,107,107,0.2)',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,107,107,0.2)",
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
   },
   annotationsText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 12,
     marginLeft: 4,
   },
   previewFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
+    flexDirection: "row",
+    justifyContent: "space-around",
     paddingHorizontal: 20,
     paddingVertical: 20,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.1)',
+    borderTopColor: "rgba(255,255,255,0.1)",
   },
   previewActionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.1)",
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 8,
     minWidth: 80,
-    justifyContent: 'center',
+    justifyContent: "center",
   },
   previewActionText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: "600",
     marginLeft: 4,
   },
   // Legacy preview styles (keeping for compatibility)
   previewDocumentText: {
-    color: '#fff',
+    color: "#fff",
     marginTop: 10,
     fontSize: 16,
   },
   previewOpenButton: {
     marginTop: 20,
     padding: 10,
-    backgroundColor: '#007AFF',
+    backgroundColor: "#007AFF",
     borderRadius: 5,
   },
   previewOpenButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
+    color: "#fff",
+    fontWeight: "bold",
   },
   annotationBadge: {
-    backgroundColor: '#FF6B6B',
+    backgroundColor: "#FF6B6B",
     borderRadius: 10,
     paddingHorizontal: 6,
     paddingVertical: 2,
     marginLeft: 8,
   },
   annotationBadgeText: {
-    color: 'white',
+    color: "white",
     fontSize: 10,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
   // RINA Button Styles
   rinaFloatingButton: {
-    position: 'absolute',
+    position: "absolute",
     zIndex: 9999,
-    backgroundColor: '#7C3AED',
+    backgroundColor: "#7C3AED",
     borderRadius: 20,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 4,
@@ -1835,34 +2013,34 @@ const styles = StyleSheet.create({
   },
   rinaButtonContainer: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
   rinaButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
+    color: "#fff",
+    fontWeight: "bold",
     fontSize: 14,
   },
   // PDF Viewer Styles
   pdfViewerContainer: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: "#f5f5f5",
   },
   pdfHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#333',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "#333",
     padding: 16,
     paddingTop: 50,
   },
   pdfTitle: {
-    color: 'white',
+    color: "white",
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     flex: 1,
   },
   pdfContent: {
@@ -1870,60 +2048,60 @@ const styles = StyleSheet.create({
   },
   pdfPlaceholder: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     padding: 40,
     minHeight: 500,
-    position: 'relative',
+    position: "relative",
   },
   pdfPlaceholderText: {
     fontSize: 18,
-    color: '#666',
+    color: "#666",
     marginTop: 16,
-    textAlign: 'center',
+    textAlign: "center",
   },
   pdfInstructionText: {
     fontSize: 14,
-    color: '#999',
+    color: "#999",
     marginTop: 8,
-    textAlign: 'center',
+    textAlign: "center",
   },
   pdfOpenButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FF5722',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FF5722",
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 8,
     marginTop: 20,
   },
   pdfOpenButtonText: {
-    color: '#fff',
-    fontWeight: '600',
+    color: "#fff",
+    fontWeight: "600",
     marginLeft: 8,
   },
   // PDF Annotation Toolbar
   pdfToolbar: {
-    flexDirection: 'row',
-    backgroundColor: 'white',
+    flexDirection: "row",
+    backgroundColor: "white",
     padding: 12,
     borderTopWidth: 1,
-    borderTopColor: '#ddd',
-    alignItems: 'center',
-    flexWrap: 'wrap',
+    borderTopColor: "#ddd",
+    alignItems: "center",
+    flexWrap: "wrap",
   },
   pdfToolButton: {
-    alignItems: 'center',
+    alignItems: "center",
     marginHorizontal: 8,
     marginVertical: 4,
   },
   pdfToolText: {
     fontSize: 10,
-    color: '#333',
+    color: "#333",
     marginTop: 2,
   },
   colorPalette: {
-    flexDirection: 'row',
+    flexDirection: "row",
     marginHorizontal: 8,
   },
   colorButton: {
@@ -1932,116 +2110,116 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginHorizontal: 2,
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: "#ddd",
   },
   selectedColorButton: {
     borderWidth: 2,
-    borderColor: '#333',
+    borderColor: "#333",
   },
   pdfCloseButton: {
-    marginLeft: 'auto',
+    marginLeft: "auto",
     padding: 4,
   },
   // Annotation Overlay
   annotationOverlay: {
-    position: 'absolute',
+    position: "absolute",
     padding: 4,
     borderRadius: 4,
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.3)',
+    borderColor: "rgba(0,0,0,0.3)",
   },
   annotationText: {
     fontSize: 12,
-    color: '#333',
+    color: "#333",
   },
   colorPickerModal: {
-  flex: 1,
-  justifyContent: 'center',
-  backgroundColor: 'rgba(0,0,0,0.5)',
-  padding: 20,
-},
-colorPickerContainer: {
-  backgroundColor: 'white',
-  borderRadius: 8,
-  padding: 20,
-},
-colorPickerTitle: {
-  fontSize: 18,
-  fontWeight: 'bold',
-  marginBottom: 16,
-  textAlign: 'center',
-},
-colorPreview: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  justifyContent: 'center',
-  marginBottom: 20,
-},
-colorPreviewBox: {
-  width: 50,
-  height: 50,
-  borderRadius: 8,
-  marginRight: 10,
-  borderWidth: 1,
-  borderColor: '#ddd',
-},
-colorHexText: {
-  fontSize: 16,
-  fontFamily: 'monospace',
-},
-colorChannelLabel: {
-  fontSize: 14,
-  marginTop: 10,
-},
-colorSlider: {
-  width: '100%',
-  height: 40,
-},
-colorPickerActions: {
-  flexDirection: 'row',
-  justifyContent: 'space-between',
-  marginTop: 20,
-},
-colorPickerButton: {
-  backgroundColor: '#007AFF',
-  padding: 12,
-  borderRadius: 8,
-  flex: 1,
-  marginHorizontal: 8,
-  alignItems: 'center',
-},
-colorPickerButtonText: {
-  color: 'white',
-  fontWeight: 'bold',
-},
-colorPickerCancelButton: {
-  backgroundColor: '#f5f5f5',
-},
-colorPickerCancelButtonText: {
-  color: '#666',
-  fontWeight: 'bold',
-},
-colorGrid: {
-  flexDirection: 'row',
-  flexWrap: 'wrap',
-  justifyContent: 'center',
-  marginBottom: 20,
-},
-colorSwatch: {
-  width: 80,
-  height: 80,
-  margin: 8,
-  borderRadius: 8,
-  justifyContent: 'center',
-  alignItems: 'center',
-  borderWidth: 1,
-  borderColor: '#ddd',
-},
-colorName: {
-  fontSize: 12,
-  fontWeight: 'bold',
-  textAlign: 'center',
-},
+    flex: 1,
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.5)",
+    padding: 20,
+  },
+  colorPickerContainer: {
+    backgroundColor: "white",
+    borderRadius: 8,
+    padding: 20,
+  },
+  colorPickerTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    marginBottom: 16,
+    textAlign: "center",
+  },
+  colorPreview: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 20,
+  },
+  colorPreviewBox: {
+    width: 50,
+    height: 50,
+    borderRadius: 8,
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: "#ddd",
+  },
+  colorHexText: {
+    fontSize: 16,
+    fontFamily: "monospace",
+  },
+  colorChannelLabel: {
+    fontSize: 14,
+    marginTop: 10,
+  },
+  colorSlider: {
+    width: "100%",
+    height: 40,
+  },
+  colorPickerActions: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 20,
+  },
+  colorPickerButton: {
+    backgroundColor: "#007AFF",
+    padding: 12,
+    borderRadius: 8,
+    flex: 1,
+    marginHorizontal: 8,
+    alignItems: "center",
+  },
+  colorPickerButtonText: {
+    color: "white",
+    fontWeight: "bold",
+  },
+  colorPickerCancelButton: {
+    backgroundColor: "#f5f5f5",
+  },
+  colorPickerCancelButtonText: {
+    color: "#666",
+    fontWeight: "bold",
+  },
+  colorGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    marginBottom: 20,
+  },
+  colorSwatch: {
+    width: 80,
+    height: 80,
+    margin: 8,
+    borderRadius: 8,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#ddd",
+  },
+  colorName: {
+    fontSize: 12,
+    fontWeight: "bold",
+    textAlign: "center",
+  },
 });
 
 export default NewNoteEditor;

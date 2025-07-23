@@ -242,7 +242,8 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
                 styles.noteTypeIcon,
                 viewMode === "grid" && styles.gridNoteTypeIcon,
                 {
-                  backgroundColor: item.type === "image" ? "#FEF3C7" : "#DBEAFE",
+                  backgroundColor:
+                    item.type === "image" ? "#FEF3C7" : "#DBEAFE",
                 },
               ]}
             >
@@ -329,7 +330,8 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
           <View style={styles.attachmentsContainer}>
             <MaterialIcons name="attach-file" size={16} color="#9CA3AF" />
             <Text style={styles.attachmentCount}>
-              {item.attachments.length} attachment{item.attachments.length !== 1 ? 's' : ''}
+              {item.attachments.length} attachment
+              {item.attachments.length !== 1 ? "s" : ""}
             </Text>
           </View>
         )}
@@ -688,7 +690,7 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 24,
-    paddingTop: Platform.OS === 'ios' ? 40 : 40,
+    paddingTop: Platform.OS === "ios" ? 40 : 40,
     paddingBottom: 24,
     backgroundColor: "#F8FAFC",
   },
