@@ -3,7 +3,7 @@ import React from 'react';
 
 import ChatBot from '../chatbot/AI';
 import Home from '../home';
-import NoteEditorScreen from '../note-taking/NoteEditor';
+import NewNoteEditor from '../note-taking/NewNoteEditor';
 import NotesScreen from '../note-taking/notes';
 import LoginScreen from '../onboarding/signin';
 import SignupScreen from '../onboarding/signup';
@@ -23,8 +23,14 @@ export type RootStackParamList = {
     initialNote?: {
       title: string;
       content: string;
+      subject?: string;
+      linkedTask?: string;
+      tags?: string[];
+      attachments?: any[];
+      createdAt?: string;
+      updatedAt?: string;
     };
-  };
+  } | undefined;
   ToDo: undefined;
   TaskDetails: {
     taskId: string;
@@ -50,7 +56,7 @@ const AppNavigator: React.FC = () => {
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="Home" component={Home} />
       <Stack.Screen name="Notes" component={NotesScreen} />
-      <Stack.Screen name="NoteEditor" component={NoteEditorScreen} />
+      <Stack.Screen name="NoteEditor" component={NewNoteEditor} />
       <Stack.Screen name="ToDo" component={ToDo} />
       <Stack.Screen name="TaskDetails" component={TaskDetails} />
       <Stack.Screen name="AddTask" component={AddTask} />
