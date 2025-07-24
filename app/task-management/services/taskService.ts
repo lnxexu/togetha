@@ -49,6 +49,7 @@ class TaskService {
       id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
       ...taskData,
       priority: taskData.priority || 'not-urgent-not-important',
+      status: taskData.status || 'todo',
       completed: false,
       overdue: taskData.dueDate ? taskData.dueDate < new Date() : false,
       createdAt: new Date(),

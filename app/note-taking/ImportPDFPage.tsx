@@ -11,15 +11,13 @@ import {
   TextInput,
   Platform,
   StatusBar,
-  PanResponder,
   Animated,
 } from "react-native";
+import { WebView } from 'react-native-webview';
 import { MaterialIcons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import Svg, { Rect, Circle, Text as SvgText } from 'react-native-svg';
-import { PanGestureHandler, State } from 'react-native-gesture-handler';
 import Navbar from "../NavBar";
 
 const { RichEditor, RichToolbar } = require("react-native-pell-rich-editor");
@@ -64,6 +62,8 @@ const HIGHLIGHT_COLORS = [
   "#9C27B0", // Purple
 ];
 
+const annotationColors = HIGHLIGHT_COLORS;
+
 const ImportPDFPage = () => {
   const [pdfDocument, setPdfDocument] = useState<PDFDocument | null>(null);
   const [selectedAnnotationType, setSelectedAnnotationType] = useState<"highlight" | "note" | "underline" | "strikethrough">("highlight");
@@ -73,23 +73,84 @@ const ImportPDFPage = () => {
   const [noteText, setNoteText] = useState("");
   const [annotations, setAnnotations] = useState<PDFAnnotation[]>([]);
   const [pdfNotes, setPdfNotes] = useState("");
-  const [selectionMode, setSelectionMode] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
-  const [pdfScale, setPdfScale] = useState(1);
-  const [pdfOffset, setPdfOffset] = useState({ x: 0, y: 0 });
-  const [selectionArea, setSelectionArea] = useState<SelectionArea | null>(null);
-  const [isSelecting, setIsSelecting] = useState(false);
-  const [tempSelection, setTempSelection] = useState<SelectionArea | null>(null);
+  const [webViewHeight, setWebViewHeight] = useState(0);
+  const [showFloatingToolbar, setShowFloatingToolbar] = useState(true);
+  const [pendingAnnotation, setPendingAnnotation] = useState<Partial<PDFAnnotation> | null>(null);
+
+  // Animation values for floating toolbar
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const slideAnim = useRef(new Animated.Value(0)).current;
+
+  // Animate floating toolbar
+  useEffect(() => {
+    if (showFloatingToolbar) {
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: -50,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [showFloatingToolbar]);
   
-  const pdfRef = useRef<any>(null);
+  const webViewRef = useRef<WebView>(null);
   const richTextRef = useRef<any>(null);
-  const selectionAnimatedValue = useRef(new Animated.Value(0)).current;
 
   // Load saved data on component mount
   useEffect(() => {
     loadSavedData();
   }, []);
+
+  // Load PDF when document changes
+  useEffect(() => {
+    if (pdfDocument && webViewRef.current) {
+      loadPDFInWebView();
+    }
+  }, [pdfDocument]);
+
+  const loadPDFInWebView = async () => {
+    if (!pdfDocument || !webViewRef.current) return;
+    
+    try {
+      // Read PDF file as base64
+      const base64 = await FileSystem.readAsStringAsync(pdfDocument.uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      
+      // Create data URL
+      const dataUrl = `data:application/pdf;base64,${base64}`;
+      
+      // Send to WebView
+      webViewRef.current.postMessage(JSON.stringify({
+        type: 'loadPDF',
+        dataUrl: dataUrl
+      }));
+    } catch (error) {
+      console.error('Error loading PDF in WebView:', error);
+      Alert.alert('Error', 'Failed to load PDF in viewer');
+    }
+  };
 
   const loadSavedData = async () => {
     try {
@@ -136,13 +197,12 @@ const ImportPDFPage = () => {
           name: asset.name,
           annotations: [],
           notes: "",
-          totalPages: 5, // Default for Expo Go demo
         };
 
         setPdfDocument(newDocument);
         setAnnotations([]);
         setPdfNotes("");
-        setTotalPages(5); // Set default pages for demo
+        setCurrentPage(1);
         await saveData(newDocument);
       }
     } catch (error) {
@@ -153,123 +213,27 @@ const ImportPDFPage = () => {
 
   const handleAnnotation = (type: string) => {
     setSelectedAnnotationType(type as any);
-    setSelectionMode(true);
     
-    // Animate selection indicator
-    Animated.sequence([
-      Animated.timing(selectionAnimatedValue, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: false,
-      }),
-    ]).start();
+    // Send message to WebView to enable annotation mode
+    if (webViewRef.current) {
+      webViewRef.current.postMessage(JSON.stringify({
+        type: 'setAnnotationMode',
+        annotationType: type,
+        color: selectedColor
+      }));
+    }
 
     Alert.alert(
       "Annotation Mode",
       `${type.charAt(0).toUpperCase() + type.slice(1)} mode enabled. Drag to select text area in the PDF.`,
       [
-        { 
-          text: "Cancel", 
-          onPress: () => {
-            setSelectionMode(false);
-            Animated.timing(selectionAnimatedValue, {
-              toValue: 0,
-              duration: 300,
-              useNativeDriver: false,
-            }).start();
-          }
-        },
         { text: "OK" }
       ]
     );
   };
 
-  // Pan responder for selection
-  const panResponder = PanResponder.create({
-    onMoveShouldSetPanResponder: () => selectionMode,
-    onPanResponderGrant: (evt) => {
-      if (!selectionMode) return;
-      
-      const startX = evt.nativeEvent.locationX;
-      const startY = evt.nativeEvent.locationY;
-      
-      setIsSelecting(true);
-      setTempSelection({
-        startX,
-        startY,
-        endX: startX,
-        endY: startY,
-        page: currentPage,
-      });
-    },
-    onPanResponderMove: (evt) => {
-      if (!selectionMode || !isSelecting) return;
-      
-      const endX = evt.nativeEvent.locationX;
-      const endY = evt.nativeEvent.locationY;
-      
-      setTempSelection(prev => prev ? {
-        ...prev,
-        endX,
-        endY,
-      } : null);
-    },
-    onPanResponderRelease: (evt) => {
-      if (!selectionMode || !tempSelection) return;
-      
-      const endX = evt.nativeEvent.locationX;
-      const endY = evt.nativeEvent.locationY;
-      
-      const finalSelection = {
-        ...tempSelection,
-        endX,
-        endY,
-      };
-      
-      // Calculate selection bounds
-      const x = Math.min(finalSelection.startX, finalSelection.endX);
-      const y = Math.min(finalSelection.startY, finalSelection.endY);
-      const width = Math.abs(finalSelection.endX - finalSelection.startX);
-      const height = Math.abs(finalSelection.endY - finalSelection.startY);
-      
-      // Only create annotation if selection is meaningful
-      if (width > 10 && height > 10) {
-        if (selectedAnnotationType === 'note') {
-          setNoteText("");
-          setShowNotesModal(true);
-          setSelectionArea(finalSelection);
-        } else {
-          createAnnotation(x, y, width, height);
-        }
-      }
-      
-      setIsSelecting(false);
-      setTempSelection(null);
-      setSelectionMode(false);
-      
-      Animated.timing(selectionAnimatedValue, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: false,
-      }).start();
-    },
-  });
-
-  const createAnnotation = async (x: number, y: number, width: number, height: number, noteContent?: string) => {
-    const newAnnotation: PDFAnnotation = {
-      id: Date.now().toString(),
-      type: selectedAnnotationType,
-      page: currentPage,
-      x: x / pdfScale,
-      y: y / pdfScale,
-      width: width / pdfScale,
-      height: height / pdfScale,
-      color: selectedColor,
-      text: `Selected text on page ${currentPage}`,
-      note: noteContent,
-    };
-
-    const updatedAnnotations = [...annotations, newAnnotation];
+  const createAnnotation = async (annotationData: PDFAnnotation) => {
+    const updatedAnnotations = [...annotations, annotationData];
     setAnnotations(updatedAnnotations);
 
     if (pdfDocument) {
@@ -282,30 +246,74 @@ const ImportPDFPage = () => {
     }
   };
 
-  const saveNote = async () => {
-    if (noteText.trim() && selectionArea) {
-      const x = Math.min(selectionArea.startX, selectionArea.endX);
-      const y = Math.min(selectionArea.startY, selectionArea.endY);
-      const width = Math.abs(selectionArea.endX - selectionArea.startX);
-      const height = Math.abs(selectionArea.endY - selectionArea.startY);
+  const onWebViewMessage = (event: any) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
       
-      await createAnnotation(x, y, width, height, noteText);
+      switch (data.type) {
+        case 'pdfLoaded':
+          setTotalPages(data.totalPages);
+          if (pdfDocument) {
+            const updatedDocument = {
+              ...pdfDocument,
+              totalPages: data.totalPages,
+            };
+            setPdfDocument(updatedDocument);
+            saveData(updatedDocument);
+            
+            // Send existing annotations to WebView
+            webViewRef.current?.postMessage(JSON.stringify({
+              type: 'loadAnnotations',
+              annotations: annotations
+            }));
+          }
+          break;
+          
+        case 'pageChanged':
+          setCurrentPage(data.page);
+          break;
+          
+        case 'annotationCreated':
+          if (data.annotation.type === 'note') {
+            // For notes, store temporarily and open modal
+            setPendingAnnotation(data.annotation);
+            setNoteText("");
+            setShowNotesModal(true);
+          } else {
+            // For other annotations, create directly
+            const newAnnotation: PDFAnnotation = {
+              ...data.annotation,
+              id: Date.now().toString() + Math.random().toString(36).substring(2),
+              color: selectedColor,
+            };
+            createAnnotation(newAnnotation);
+          }
+          break;
+          
+        case 'selectionComplete':
+          // Handle text selection completion
+          console.log('Selection complete:', data);
+          break;
+      }
+    } catch (error) {
+      console.error('Error processing WebView message:', error);
+    }
+  };
+
+  const saveNote = async () => {
+    if (pendingAnnotation && noteText.trim()) {
+      // Create the note annotation with the entered text
+      const newAnnotation: PDFAnnotation = {
+        ...pendingAnnotation as PDFAnnotation,
+        id: Date.now().toString() + Math.random().toString(36).substring(2),
+        color: selectedColor,
+        note: noteText.trim(),
+      };
+      await createAnnotation(newAnnotation);
+      setPendingAnnotation(null);
     }
     setShowNotesModal(false);
     setNoteText("");
-    setSelectionArea(null);
-  };
-
-  const updatePDFNotes = async (notes: string) => {
-    setPdfNotes(notes);
-    if (pdfDocument) {
-      const updatedDocument = {
-        ...pdfDocument,
-        notes,
-      };
-      setPdfDocument(updatedDocument);
-      await saveData(updatedDocument);
-    }
   };
 
   const deleteAnnotation = async (annotationId: string) => {
@@ -320,89 +328,6 @@ const ImportPDFPage = () => {
       setPdfDocument(updatedDocument);
       await saveData(updatedDocument);
     }
-  };
-
-  const renderAnnotationOverlay = () => {
-    const currentPageAnnotations = annotations.filter(ann => ann.page === currentPage);
-    
-    return (
-      <View style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
-        <Svg height="100%" width="100%" style={StyleSheet.absoluteFill}>
-          {currentPageAnnotations.map((annotation) => {
-            const x = annotation.x * pdfScale;
-            const y = annotation.y * pdfScale;
-            const width = annotation.width * pdfScale;
-            const height = annotation.height * pdfScale;
-
-            switch (annotation.type) {
-              case 'highlight':
-                return (
-                  <Rect
-                    key={annotation.id}
-                    x={x}
-                    y={y}
-                    width={width}
-                    height={height}
-                    fill={annotation.color}
-                    opacity={0.4}
-                    rx={2}
-                  />
-                );
-              case 'underline':
-                return (
-                  <Rect
-                    key={annotation.id}
-                    x={x}
-                    y={y + height - 2}
-                    width={width}
-                    height={2}
-                    fill={annotation.color}
-                  />
-                );
-              case 'strikethrough':
-                return (
-                  <Rect
-                    key={annotation.id}
-                    x={x}
-                    y={y + height / 2}
-                    width={width}
-                    height={2}
-                    fill={annotation.color}
-                  />
-                );
-              case 'note':
-                return (
-                  <Circle
-                    key={annotation.id}
-                    cx={x + 10}
-                    cy={y + 10}
-                    r={10}
-                    fill={annotation.color}
-                    opacity={0.8}
-                  />
-                );
-              default:
-                return null;
-            }
-          })}
-          
-          {/* Temp selection overlay */}
-          {tempSelection && isSelecting && (
-            <Rect
-              x={Math.min(tempSelection.startX, tempSelection.endX)}
-              y={Math.min(tempSelection.startY, tempSelection.endY)}
-              width={Math.abs(tempSelection.endX - tempSelection.startX)}
-              height={Math.abs(tempSelection.endY - tempSelection.startY)}
-              fill="#2196F3"
-              opacity={0.3}
-              stroke="#2196F3"
-              strokeWidth={2}
-              strokeDasharray="5,5"
-            />
-          )}
-        </Svg>
-      </View>
-    );
   };
 
   if (!pdfDocument) {
@@ -458,6 +383,13 @@ const ImportPDFPage = () => {
           
           <TouchableOpacity 
             style={styles.headerButton} 
+            onPress={() => setShowFloatingToolbar(!showFloatingToolbar)}
+          >
+            <MaterialIcons name="edit" size={24} color="#6A009C" />
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.headerButton} 
             onPress={handleImportPDF}
           >
             <MaterialIcons name="folder-open" size={24} color="#6A009C" />
@@ -465,73 +397,456 @@ const ImportPDFPage = () => {
         </View>
       </View>
 
-      {/* Selection Mode Indicator */}
-      {selectionMode && (
-        <Animated.View 
-          style={[
-            styles.selectionModeIndicator,
-            {
-              opacity: selectionAnimatedValue,
-              transform: [{
-                translateY: selectionAnimatedValue.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [-50, 0],
-                })
-              }]
-            }
-          ]}
-        >
-          <Text style={styles.selectionModeText}>
-            {selectedAnnotationType.toUpperCase()} MODE - Drag to select area
-          </Text>
-          <TouchableOpacity 
-            style={styles.cancelSelectionButton}
-            onPress={() => {
-              setSelectionMode(false);
-              setIsSelecting(false);
-              setTempSelection(null);
-              Animated.timing(selectionAnimatedValue, {
-                toValue: 0,
-                duration: 300,
-                useNativeDriver: false,
-              }).start();
-            }}
-          >
-            <MaterialIcons name="close" size={16} color="#FFFFFF" />
-          </TouchableOpacity>
-        </Animated.View>
-      )}
+      {/* PDF Viewer with WebView + PDF.js */}
+      <View 
+        style={styles.pdfContainer}
+        onLayout={(event) => {
+          setWebViewHeight(event.nativeEvent.layout.height);
+        }}
+      >
+        <WebView
+          ref={webViewRef}
+          source={{
+            html: `
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>PDF Viewer</title>
+              <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+              <style>
+                body { margin: 0; padding: 0; background: #f5f5f5; user-select: none; }
+                #canvas-container { display: flex; justify-content: center; padding: 20px; position: relative; }
+                #pdf-canvas { max-width: 100%; background: white; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border-radius: 8px; cursor: crosshair; }
+                #controls { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); 
+                           display: flex; gap: 12px; background: rgba(255,255,255,0.95); padding: 12px 16px; 
+                           border-radius: 20px; box-shadow: 0 4px 16px rgba(0,0,0,0.1); z-index: 1000; }
+                #controls button { background: #6A009C; color: white; border: none; border-radius: 8px; 
+                                  padding: 8px 12px; cursor: pointer; font-size: 14px; }
+                #controls button:disabled { background: #ccc; cursor: not-allowed; }
+                #page-info { font-size: 14px; color: #333; font-weight: 500; min-width: 80px; text-align: center; 
+                            display: flex; align-items: center; }
+                .annotation-overlay { position: absolute; pointer-events: none; z-index: 10; border: 2px solid; border-radius: 3px; }
+                .selection-box { position: absolute; border: 2px dashed #6A009C; background: rgba(106, 0, 156, 0.1); 
+                               pointer-events: none; z-index: 5; border-radius: 3px; }
+                .annotation-highlight { background-color: rgba(255, 235, 59, 0.4); }
+                .annotation-underline { border-bottom: 3px solid; }
+                .annotation-strikethrough { position: relative; }
+                .annotation-strikethrough:after { content: ''; position: absolute; top: 50%; left: 0; right: 0; 
+                                                 height: 2px; background-color: currentColor; }
+                .annotation-note { background: rgba(33, 150, 243, 0.2); border: 2px solid #2196F3; }
+                #annotation-tooltip { position: absolute; background: white; border: 1px solid #ccc; border-radius: 4px; 
+                                    padding: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 1001; 
+                                    font-size: 12px; max-width: 200px; display: none; }
+              </style>
+            </head>
+            <body>
+              <div id="canvas-container">
+                <canvas id="pdf-canvas"></canvas>
+                <div id="annotation-tooltip"></div>
+              </div>
+              <div id="controls">
+                <button id="prev-page">‹ Prev</button>
+                <span id="page-info">1 / 1</span>
+                <button id="next-page">Next ›</button>
+              </div>
+              <script>
+                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                
+                let pdfDoc = null;
+                let pageNum = 1;
+                let scale = 1.2;
+                let canvas = document.getElementById('pdf-canvas');
+                let ctx = canvas.getContext('2d');
+                let annotations = [];
+                let isSelecting = false;
+                let selectionStart = null;
+                let selectionEnd = null;
+                let currentAnnotationType = 'highlight';
+                let currentColor = '#FFEB3B';
+                let selectionBox = null;
+                
+                function renderPage(num) {
+                  if (!pdfDoc) return;
+                  pdfDoc.getPage(num).then(function(page) {
+                    const viewport = page.getViewport({ scale: scale });
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+                    
+                    const renderContext = {
+                      canvasContext: ctx,
+                      viewport: viewport
+                    };
+                    
+                    page.render(renderContext).promise.then(function() {
+                      document.getElementById('page-info').textContent = num + ' / ' + pdfDoc.numPages;
+                      document.getElementById('prev-page').disabled = (num <= 1);
+                      document.getElementById('next-page').disabled = (num >= pdfDoc.numPages);
+                      
+                      // Re-render annotations for current page
+                      renderAnnotations();
+                      
+                      if (window.ReactNativeWebView) {
+                        window.ReactNativeWebView.postMessage(JSON.stringify({
+                          type: 'pageChanged',
+                          page: num,
+                          totalPages: pdfDoc.numPages
+                        }));
+                      }
+                    });
+                  });
+                }
+                
+                function renderAnnotations() {
+                  // Clear existing annotation overlays
+                  const existingOverlays = document.querySelectorAll('.annotation-overlay');
+                  existingOverlays.forEach(overlay => overlay.remove());
+                  
+                  // Render annotations for current page
+                  const pageAnnotations = annotations.filter(ann => ann.page === pageNum);
+                  pageAnnotations.forEach(annotation => {
+                    createAnnotationOverlay(annotation);
+                  });
+                }
+                
+                function createAnnotationOverlay(annotation) {
+                  const overlay = document.createElement('div');
+                  overlay.className = 'annotation-overlay annotation-' + annotation.type;
+                  overlay.style.left = annotation.x + 'px';
+                  overlay.style.top = annotation.y + 'px';
+                  overlay.style.width = annotation.width + 'px';
+                  overlay.style.height = annotation.height + 'px';
+                  overlay.style.borderColor = annotation.color;
+                  overlay.style.backgroundColor = annotation.type === 'highlight' ? annotation.color + '40' : 'transparent';
+                  
+                  if (annotation.note) {
+                    overlay.title = annotation.note;
+                    overlay.style.cursor = 'pointer';
+                    overlay.onclick = function() {
+                      showAnnotationTooltip(annotation, overlay);
+                    };
+                  }
+                  
+                  document.getElementById('canvas-container').appendChild(overlay);
+                }
+                
+                function showAnnotationTooltip(annotation, element) {
+                  const tooltip = document.getElementById('annotation-tooltip');
+                  tooltip.innerHTML = '<strong>' + annotation.type.toUpperCase() + '</strong><br>' + (annotation.note || 'No note');
+                  tooltip.style.display = 'block';
+                  tooltip.style.left = (element.offsetLeft + element.offsetWidth + 5) + 'px';
+                  tooltip.style.top = element.offsetTop + 'px';
+                  
+                  setTimeout(() => {
+                    tooltip.style.display = 'none';
+                  }, 3000);
+                }
+                
+                // Mouse events for selection
+                canvas.addEventListener('mousedown', function(e) {
+                  if (!isSelecting) return;
+                  
+                  const rect = canvas.getBoundingClientRect();
+                  selectionStart = {
+                    x: e.clientX - rect.left,
+                    y: e.clientY - rect.top
+                  };
+                  
+                  // Create selection box
+                  selectionBox = document.createElement('div');
+                  selectionBox.className = 'selection-box';
+                  selectionBox.style.left = selectionStart.x + 'px';
+                  selectionBox.style.top = selectionStart.y + 'px';
+                  selectionBox.style.width = '0px';
+                  selectionBox.style.height = '0px';
+                  document.getElementById('canvas-container').appendChild(selectionBox);
+                });
+                
+                canvas.addEventListener('mousemove', function(e) {
+                  if (!isSelecting || !selectionStart || !selectionBox) return;
+                  
+                  const rect = canvas.getBoundingClientRect();
+                  const currentX = e.clientX - rect.left;
+                  const currentY = e.clientY - rect.top;
+                  
+                  const left = Math.min(selectionStart.x, currentX);
+                  const top = Math.min(selectionStart.y, currentY);
+                  const width = Math.abs(currentX - selectionStart.x);
+                  const height = Math.abs(currentY - selectionStart.y);
+                  
+                  selectionBox.style.left = left + 'px';
+                  selectionBox.style.top = top + 'px';
+                  selectionBox.style.width = width + 'px';
+                  selectionBox.style.height = height + 'px';
+                });
+                
+                canvas.addEventListener('mouseup', function(e) {
+                  if (!isSelecting || !selectionStart || !selectionBox) return;
+                  
+                  const rect = canvas.getBoundingClientRect();
+                  selectionEnd = {
+                    x: e.clientX - rect.left,
+                    y: e.clientY - rect.top
+                  };
+                  
+                  // Calculate selection bounds
+                  const left = Math.min(selectionStart.x, selectionEnd.x);
+                  const top = Math.min(selectionStart.y, selectionEnd.y);
+                  const width = Math.abs(selectionEnd.x - selectionStart.x);
+                  const height = Math.abs(selectionEnd.y - selectionStart.y);
+                  
+                  // Only create annotation if selection is meaningful (> 5px in both dimensions)
+                  if (width > 5 && height > 5) {
+                    const annotation = {
+                      type: currentAnnotationType,
+                      page: pageNum,
+                      x: left,
+                      y: top,
+                      width: width,
+                      height: height,
+                      color: currentColor,
+                      timestamp: Date.now()
+                    };
+                    
+                    if (window.ReactNativeWebView) {
+                      window.ReactNativeWebView.postMessage(JSON.stringify({
+                        type: 'annotationCreated',
+                        annotation: annotation
+                      }));
+                    }
+                  }
+                  
+                  // Clean up
+                  if (selectionBox) {
+                    selectionBox.remove();
+                    selectionBox = null;
+                  }
+                  selectionStart = null;
+                  selectionEnd = null;
+                  isSelecting = false;
+                  canvas.style.cursor = 'default';
+                });
+                
+                function onPrevPage() {
+                  if (pageNum <= 1) return;
+                  pageNum--;
+                  renderPage(pageNum);
+                }
+                
+                function onNextPage() {
+                  if (pageNum >= pdfDoc.numPages) return;
+                  pageNum++;
+                  renderPage(pageNum);
+                }
+                
+                // Event listeners
+                document.getElementById('prev-page').addEventListener('click', onPrevPage);
+                document.getElementById('next-page').addEventListener('click', onNextPage);
+                
+                // Load PDF from data URL
+                function loadPDF(dataUrl) {
+                  pdfjsLib.getDocument(dataUrl).promise.then(function(pdfDoc_) {
+                    pdfDoc = pdfDoc_;
+                    
+                    if (window.ReactNativeWebView) {
+                      window.ReactNativeWebView.postMessage(JSON.stringify({
+                        type: 'pdfLoaded',
+                        totalPages: pdfDoc.numPages
+                      }));
+                    }
+                    
+                    renderPage(pageNum);
+                  }).catch(function(error) {
+                    console.error('Error loading PDF:', error);
+                  });
+                }
+                
+                // Listen for messages from React Native
+                window.addEventListener('message', function(event) {
+                  const data = JSON.parse(event.data);
+                  
+                  switch (data.type) {
+                    case 'loadPDF':
+                      loadPDF(data.dataUrl);
+                      break;
+                    case 'setAnnotationMode':
+                      isSelecting = true;
+                      currentAnnotationType = data.annotationType;
+                      currentColor = data.color;
+                      canvas.style.cursor = 'crosshair';
+                      break;
+                    case 'disableAnnotationMode':
+                      isSelecting = false;
+                      canvas.style.cursor = 'default';
+                      break;
+                    case 'goToPage':
+                      pageNum = data.page;
+                      renderPage(pageNum);
+                      break;
+                    case 'loadAnnotations':
+                      annotations = data.annotations || [];
+                      renderAnnotations();
+                      break;
+                  }
+                });
+              </script>
+            </body>
+            </html>
+            `
+          }}
+          style={styles.webView}
+          onMessage={onWebViewMessage}
+          javaScriptEnabled={true}
+          domStorageEnabled={true}
+          startInLoadingState={true}
+          scalesPageToFit={false}
+          showsVerticalScrollIndicator={false}
+          showsHorizontalScrollIndicator={false}
+          renderLoading={() => (
+            <View style={styles.webViewLoading}>
+              <MaterialIcons name="picture-as-pdf" size={60} color="#FF5722" />
+              <Text style={styles.webViewLoadingText}>Loading PDF...</Text>
+            </View>
+          )}
+        />
 
-      {/* PDF Viewer Placeholder (Expo Go Compatible) */}
-      <View style={styles.pdfContainer} {...panResponder.panHandlers}>
-        <View style={styles.pdfPlaceholder}>
-          <MaterialIcons name="picture-as-pdf" size={80} color="#FF5722" />
-          <Text style={styles.pdfPlaceholderTitle}>{pdfDocument.name}</Text>
-          <Text style={styles.pdfPlaceholderText}>
-            PDF preview not available in Expo Go
-          </Text>
-          <Text style={styles.pdfInstructionText}>
-            Use a development build to view PDFs directly
-          </Text>
-          <Text style={styles.pdfInstructionText}>
-            Tap and drag to simulate annotation selection
-          </Text>
-          
-          {/* Simulate pages */}
-          <View style={styles.simulatedPageContainer}>
-            <Text style={styles.simulatedPageText}>
-              Page {currentPage} of {totalPages || 5}
-            </Text>
-            <Text style={styles.simulatedPageContent}>
-              This is simulated PDF content for demonstration.
-              {'\n'}You can still test the annotation features.
-              {'\n'}Drag to select areas for highlighting and notes.
-            </Text>
-          </View>
-        </View>
-        
-        {/* Annotation Overlay */}
-        {renderAnnotationOverlay()}
+        {/* Floating Annotation Toolbar */}
+        {showFloatingToolbar && (
+          <Animated.View 
+            style={[
+              styles.floatingToolbar,
+              { 
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }]
+              }
+            ]}
+          >
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.floatingToolbarContent}
+            >
+              {/* Annotation Type Buttons */}
+              <TouchableOpacity
+                style={[
+                  styles.floatingToolButton,
+                  selectedAnnotationType === 'highlight' && styles.floatingToolButtonActive
+                ]}
+                onPress={() => handleAnnotation('highlight')}
+              >
+                <MaterialIcons 
+                  name="highlight" 
+                  size={18} 
+                  color={selectedAnnotationType === 'highlight' ? '#FFF' : '#6A009C'} 
+                />
+                <Text style={[
+                  styles.floatingToolButtonText,
+                  selectedAnnotationType === 'highlight' && styles.floatingToolButtonTextActive
+                ]}>Highlight</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.floatingToolButton,
+                  selectedAnnotationType === 'underline' && styles.floatingToolButtonActive
+                ]}
+                onPress={() => handleAnnotation('underline')}
+              >
+                <MaterialIcons 
+                  name="format-underlined" 
+                  size={18} 
+                  color={selectedAnnotationType === 'underline' ? '#FFF' : '#6A009C'} 
+                />
+                <Text style={[
+                  styles.floatingToolButtonText,
+                  selectedAnnotationType === 'underline' && styles.floatingToolButtonTextActive
+                ]}>Underline</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.floatingToolButton,
+                  selectedAnnotationType === 'strikethrough' && styles.floatingToolButtonActive
+                ]}
+                onPress={() => handleAnnotation('strikethrough')}
+              >
+                <MaterialIcons 
+                  name="strikethrough-s" 
+                  size={18} 
+                  color={selectedAnnotationType === 'strikethrough' ? '#FFF' : '#6A009C'} 
+                />
+                <Text style={[
+                  styles.floatingToolButtonText,
+                  selectedAnnotationType === 'strikethrough' && styles.floatingToolButtonTextActive
+                ]}>Strike</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.floatingToolButton,
+                  selectedAnnotationType === 'note' && styles.floatingToolButtonActive
+                ]}
+                onPress={() => handleAnnotation('note')}
+              >
+                <MaterialIcons 
+                  name="note-add" 
+                  size={18} 
+                  color={selectedAnnotationType === 'note' ? '#FFF' : '#6A009C'} 
+                />
+                <Text style={[
+                  styles.floatingToolButtonText,
+                  selectedAnnotationType === 'note' && styles.floatingToolButtonTextActive
+                ]}>Note</Text>
+              </TouchableOpacity>
+
+              {/* Color Picker */}
+              <TouchableOpacity 
+                style={styles.floatingColorButton}
+                onPress={() => setShowColorPicker(!showColorPicker)}
+              >
+                <View style={[styles.colorPreview, { backgroundColor: selectedColor }]} />
+                <Text style={styles.floatingToolButtonText}>Color</Text>
+              </TouchableOpacity>
+
+              {/* Clear Button */}
+              <TouchableOpacity
+                style={styles.floatingClearButton}
+                onPress={() => {
+                  setAnnotations([]);
+                  if (pdfDocument) {
+                    const updatedDocument = { ...pdfDocument, annotations: [] };
+                    setPdfDocument(updatedDocument);
+                    saveData(updatedDocument);
+                  }
+                }}
+              >
+                <MaterialIcons name="clear-all" size={18} color="#FF5252" />
+                <Text style={styles.floatingClearButtonText}>Clear</Text>
+              </TouchableOpacity>
+            </ScrollView>
+
+            {/* Color Picker Overlay */}
+            {showColorPicker && (
+              <View style={styles.floatingColorPicker}>
+                {annotationColors.map((color) => (
+                  <TouchableOpacity
+                    key={color}
+                    style={[
+                      styles.colorOption,
+                      { backgroundColor: color },
+                      selectedColor === color && styles.selectedColorOption
+                    ]}
+                    onPress={() => {
+                      setSelectedColor(color);
+                      setShowColorPicker(false);
+                    }}
+                  />
+                ))}
+              </View>
+            )}
+          </Animated.View>
+        )}
       </View>
 
       {/* Page Navigation */}
@@ -539,8 +854,12 @@ const ImportPDFPage = () => {
         <TouchableOpacity 
           style={[styles.navButton, currentPage === 1 && styles.navButtonDisabled]}
           onPress={() => {
-            if (currentPage > 1) {
-              setCurrentPage(currentPage - 1);
+            if (currentPage > 1 && webViewRef.current) {
+              const newPage = currentPage - 1;
+              webViewRef.current.postMessage(JSON.stringify({
+                type: 'goToPage',
+                page: newPage
+              }));
             }
           }}
           disabled={currentPage === 1}
@@ -553,8 +872,12 @@ const ImportPDFPage = () => {
         <TouchableOpacity 
           style={[styles.navButton, currentPage === totalPages && styles.navButtonDisabled]}
           onPress={() => {
-            if (currentPage < totalPages) {
-              setCurrentPage(currentPage + 1);
+            if (currentPage < totalPages && webViewRef.current) {
+              const newPage = currentPage + 1;
+              webViewRef.current.postMessage(JSON.stringify({
+                type: 'goToPage',
+                page: newPage
+              }));
             }
           }}
           disabled={currentPage === totalPages}
@@ -562,167 +885,6 @@ const ImportPDFPage = () => {
           <MaterialIcons name="chevron-right" size={24} color={currentPage === totalPages ? "#CCC" : "#6A009C"} />
         </TouchableOpacity>
       </View>
-
-      {/* Annotation Toolbar */}
-      <View style={styles.annotationToolbar}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <TouchableOpacity 
-            style={[
-              styles.toolButton, 
-              selectedAnnotationType === 'highlight' && styles.activeToolButton,
-              selectionMode && selectedAnnotationType === 'highlight' && styles.selectionActiveButton
-            ]}
-            onPress={() => handleAnnotation('highlight')}
-          >
-            <MaterialIcons 
-              name="highlight" 
-              size={24} 
-              color={selectedAnnotationType === 'highlight' && (selectionMode || styles.activeToolButton) ? "#FFFFFF" : "#6A009C"} 
-            />
-            <Text style={[
-              styles.toolButtonText, 
-              selectedAnnotationType === 'highlight' && styles.activeToolButtonText,
-              selectionMode && selectedAnnotationType === 'highlight' && styles.selectionActiveText
-            ]}>
-              Highlight
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={[
-              styles.toolButton, 
-              selectedAnnotationType === 'underline' && styles.activeToolButton,
-              selectionMode && selectedAnnotationType === 'underline' && styles.selectionActiveButton
-            ]}
-            onPress={() => handleAnnotation('underline')}
-          >
-            <MaterialIcons 
-              name="format-underlined" 
-              size={24} 
-              color={selectedAnnotationType === 'underline' && (selectionMode || styles.activeToolButton) ? "#FFFFFF" : "#6A009C"} 
-            />
-            <Text style={[
-              styles.toolButtonText, 
-              selectedAnnotationType === 'underline' && styles.activeToolButtonText,
-              selectionMode && selectedAnnotationType === 'underline' && styles.selectionActiveText
-            ]}>
-              Underline
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={[
-              styles.toolButton, 
-              selectedAnnotationType === 'strikethrough' && styles.activeToolButton,
-              selectionMode && selectedAnnotationType === 'strikethrough' && styles.selectionActiveButton
-            ]}
-            onPress={() => handleAnnotation('strikethrough')}
-          >
-            <MaterialIcons 
-              name="strikethrough-s" 
-              size={24} 
-              color={selectedAnnotationType === 'strikethrough' && (selectionMode || styles.activeToolButton) ? "#FFFFFF" : "#6A009C"} 
-            />
-            <Text style={[
-              styles.toolButtonText, 
-              selectedAnnotationType === 'strikethrough' && styles.activeToolButtonText,
-              selectionMode && selectedAnnotationType === 'strikethrough' && styles.selectionActiveText
-            ]}>
-              Strike
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={[
-              styles.toolButton, 
-              selectedAnnotationType === 'note' && styles.activeToolButton,
-              selectionMode && selectedAnnotationType === 'note' && styles.selectionActiveButton
-            ]}
-            onPress={() => handleAnnotation('note')}
-          >
-            <MaterialIcons 
-              name="note-add" 
-              size={24} 
-              color={selectedAnnotationType === 'note' && (selectionMode || styles.activeToolButton) ? "#FFFFFF" : "#6A009C"} 
-            />
-            <Text style={[
-              styles.toolButtonText, 
-              selectedAnnotationType === 'note' && styles.activeToolButtonText,
-              selectionMode && selectedAnnotationType === 'note' && styles.selectionActiveText
-            ]}>
-              Note
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.colorButton}
-            onPress={() => setShowColorPicker(!showColorPicker)}
-          >
-            <View style={[styles.colorPreview, { backgroundColor: selectedColor }]} />
-            <Text style={styles.toolButtonText}>Color</Text>
-          </TouchableOpacity>
-        </ScrollView>
-
-        {/* Color Picker */}
-        {showColorPicker && (
-          <View style={styles.colorPicker}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {HIGHLIGHT_COLORS.map((color, index) => (
-                <TouchableOpacity
-                  key={index}
-                  style={[
-                    styles.colorOption,
-                    { backgroundColor: color },
-                    selectedColor === color && styles.selectedColorOption
-                  ]}
-                  onPress={() => {
-                    setSelectedColor(color);
-                    setShowColorPicker(false);
-                  }}
-                />
-              ))}
-            </ScrollView>
-          </View>
-        )}
-      </View>
-
-      {/* Annotations List */}
-      {annotations.filter(ann => ann.page === currentPage).length > 0 && (
-        <View style={styles.annotationsList}>
-          <Text style={styles.annotationsListTitle}>Page {currentPage} Annotations:</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {annotations.filter(ann => ann.page === currentPage).map((annotation) => (
-              <View key={annotation.id} style={[styles.annotationItem, { borderLeftColor: annotation.color }]}>
-                <View style={styles.annotationHeader}>
-                  <MaterialIcons 
-                    name={
-                      annotation.type === 'highlight' ? 'highlight' :
-                      annotation.type === 'underline' ? 'format-underlined' :
-                      annotation.type === 'strikethrough' ? 'strikethrough-s' : 'note'
-                    } 
-                    size={16} 
-                    color={annotation.color} 
-                  />
-                  <TouchableOpacity 
-                    style={styles.deleteAnnotationButton}
-                    onPress={() => deleteAnnotation(annotation.id)}
-                  >
-                    <MaterialIcons name="close" size={14} color="#666" />
-                  </TouchableOpacity>
-                </View>
-                {annotation.note && (
-                  <Text style={styles.annotationNote} numberOfLines={2}>
-                    {annotation.note}
-                  </Text>
-                )}
-                <Text style={styles.annotationType}>
-                  {annotation.type.charAt(0).toUpperCase() + annotation.type.slice(1)}
-                </Text>
-              </View>
-            ))}
-          </ScrollView>
-        </View>
-      )}
 
       {/* Notes Modal */}
       <Modal
@@ -732,15 +894,12 @@ const ImportPDFPage = () => {
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>
-              {selectionArea ? "Add Note" : "PDF Notes"}
-            </Text>
+            <Text style={styles.modalTitle}>PDF Notes</Text>
             <TouchableOpacity 
               style={styles.closeButton}
               onPress={() => {
                 setShowNotesModal(false);
                 setNoteText("");
-                setSelectionArea(null);
               }}
             >
               <MaterialIcons name="close" size={24} color="#666" />
@@ -748,70 +907,60 @@ const ImportPDFPage = () => {
           </View>
 
           <View style={styles.modalContent}>
-            {selectionArea ? (
-              <>
-                <Text style={styles.noteInputLabel}>Add a note for the selected area:</Text>
-                <TextInput
-                  style={styles.noteInput}
-                  value={noteText}
-                  onChangeText={setNoteText}
-                  placeholder="Enter your note here..."
-                  multiline
-                  textAlignVertical="top"
-                />
-                <TouchableOpacity style={styles.saveNoteButton} onPress={saveNote}>
-                  <Text style={styles.saveNoteButtonText}>Save Note</Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              <RichEditor
-                ref={richTextRef}
-                style={styles.richEditor}
-                initialContentHTML={pdfNotes}
-                onChange={updatePDFNotes}
-                placeholder="Take notes about this PDF document..."
-              />
-            )}
+            <RichEditor
+              ref={richTextRef}
+              style={styles.richEditor}
+              initialContentHTML={pdfNotes}
+              onChange={(notes: string) => {
+                setPdfNotes(notes);
+                if (pdfDocument) {
+                  const updatedDocument = {
+                    ...pdfDocument,
+                    notes,
+                  };
+                  setPdfDocument(updatedDocument);
+                  saveData(updatedDocument);
+                }
+              }}
+              placeholder="Take notes about this PDF document..."
+            />
           </View>
 
-          {!selectionArea && (
-            <RichToolbar
-              style={styles.richToolbar}
-              editor={richTextRef}
-              selectedIconTint="#6A009C"
-              disabledIconTint="#666"
-              actions={[
-                "bold",
-                "italic",
-                "underline",
-                "strikethrough",
-                "heading1",
-                "heading2",
-                "unorderedList",
-                "orderedList",
-                "insertLink",
-                "foreColor",
-                "hiliteColor",
-              ]}
-              iconMap={{
-                bold: () => <MaterialIcons name="format-bold" size={20} />,
-                italic: () => <MaterialIcons name="format-italic" size={20} />,
-                underline: () => <MaterialIcons name="format-underlined" size={20} />,
-                strikethrough: () => <MaterialIcons name="strikethrough-s" size={20} />,
-                heading1: () => <Text style={styles.headingText}>H1</Text>,
-                heading2: () => <Text style={styles.headingText}>H2</Text>,
-                unorderedList: () => <MaterialIcons name="format-list-bulleted" size={20} />,
-                orderedList: () => <MaterialIcons name="format-list-numbered" size={20} />,
-                insertLink: () => <MaterialIcons name="link" size={20} />,
-                foreColor: () => <MaterialIcons name="format-color-text" size={20} />,
-                hiliteColor: () => <MaterialIcons name="highlight" size={20} />,
-              }}
-            />
-          )}
+          <RichToolbar
+            style={styles.richToolbar}
+            editor={richTextRef}
+            selectedIconTint="#6A009C"
+            disabledIconTint="#666"
+            actions={[
+              "bold",
+              "italic",
+              "underline",
+              "strikethrough",
+              "heading1",
+              "heading2",
+              "unorderedList",
+              "orderedList",
+              "insertLink",
+              "foreColor",
+              "hiliteColor",
+            ]}
+            iconMap={{
+              bold: () => <MaterialIcons name="format-bold" size={20} />,
+              italic: () => <MaterialIcons name="format-italic" size={20} />,
+              underline: () => <MaterialIcons name="format-underlined" size={20} />,
+              strikethrough: () => <MaterialIcons name="strikethrough-s" size={20} />,
+              heading1: () => <Text style={styles.headingText}>H1</Text>,
+              heading2: () => <Text style={styles.headingText}>H2</Text>,
+              unorderedList: () => <MaterialIcons name="format-list-bulleted" size={20} />,
+              orderedList: () => <MaterialIcons name="format-list-numbered" size={20} />,
+              insertLink: () => <MaterialIcons name="link" size={20} />,
+              foreColor: () => <MaterialIcons name="format-color-text" size={20} />,
+              hiliteColor: () => <MaterialIcons name="highlight" size={20} />,
+            }}
+          />
         </View>
       </Modal>
 
-      <Navbar activeRoute="PDFs" />
     </View>
   );
 };
@@ -868,28 +1017,6 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  selectionModeIndicator: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: "#FF6B35",
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  selectionModeText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontFamily: "Inter-Medium",
-    flex: 1,
-  },
-  cancelSelectionButton: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
   importContainer: {
     flex: 1,
     justifyContent: "center",
@@ -945,62 +1072,26 @@ const styles = StyleSheet.create({
     elevation: 4,
     backgroundColor: "#FFFFFF",
   },
+  webView: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+  },
+  webViewLoading: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+  },
+  webViewLoadingText: {
+    fontSize: 16,
+    fontFamily: "Inter-Medium",
+    color: "#64748B",
+    marginTop: 12,
+  },
   pdf: {
     flex: 1,
     width: Dimensions.get('window').width - 32,
     backgroundColor: "#FFFFFF",
-  },
-  pdfPlaceholder: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 32,
-    backgroundColor: "#FFFFFF",
-  },
-  pdfPlaceholderTitle: {
-    fontSize: 18,
-    fontFamily: "Inter-Bold",
-    color: "#1E293B",
-    marginTop: 16,
-    marginBottom: 8,
-    textAlign: "center",
-  },
-  pdfPlaceholderText: {
-    fontSize: 16,
-    fontFamily: "Inter-Medium",
-    color: "#64748B",
-    textAlign: "center",
-    marginBottom: 4,
-  },
-  pdfInstructionText: {
-    fontSize: 14,
-    fontFamily: "Inter-Regular",
-    color: "#94A3B8",
-    textAlign: "center",
-    marginBottom: 4,
-  },
-  simulatedPageContainer: {
-    backgroundColor: "#F8FAFC",
-    padding: 20,
-    borderRadius: 8,
-    marginTop: 20,
-    width: '90%',
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-  },
-  simulatedPageText: {
-    fontSize: 14,
-    fontFamily: "Inter-Medium",
-    color: "#6A009C",
-    textAlign: "center",
-    marginBottom: 12,
-  },
-  simulatedPageContent: {
-    fontSize: 16,
-    fontFamily: "Inter-Regular",
-    color: "#1E293B",
-    lineHeight: 24,
-    textAlign: "center",
   },
   pageNavigation: {
     flexDirection: "row",
@@ -1058,10 +1149,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#6A009C",
     borderColor: "#6A009C",
   },
-  selectionActiveButton: {
-    backgroundColor: "#FF6B35",
-    borderColor: "#FF6B35",
-  },
   toolButtonText: {
     fontSize: 12,
     fontFamily: "Inter-Medium",
@@ -1069,9 +1156,6 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   activeToolButtonText: {
-    color: "#FFFFFF",
-  },
-  selectionActiveText: {
     color: "#FFFFFF",
   },
   colorButton: {
@@ -1197,36 +1281,6 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
   },
-  noteInputLabel: {
-    fontSize: 16,
-    fontFamily: "Inter-Medium",
-    color: "#1E293B",
-    marginBottom: 12,
-  },
-  noteInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
-    fontFamily: "Inter-Regular",
-    color: "#1E293B",
-    backgroundColor: "#F8FAFC",
-  },
-  saveNoteButton: {
-    backgroundColor: "#6A009C",
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: "center",
-    marginTop: 16,
-  },
-  saveNoteButtonText: {
-    fontSize: 16,
-    fontFamily: "Inter-Medium",
-    color: "#FFFFFF",
-  },
   richEditor: {
     flex: 1,
     minHeight: 300,
@@ -1246,6 +1300,100 @@ const styles = StyleSheet.create({
   headingText: {
     fontSize: 14,
     fontWeight: "bold",
+  },
+  
+  // Floating Toolbar Styles
+  floatingToolbar: {
+    position: 'absolute',
+    top: 80,
+    left: 16,
+    right: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+    zIndex: 1000,
+  },
+  floatingToolbarContent: {
+    paddingHorizontal: 8,
+  },
+  floatingToolButton: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginRight: 8,
+    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    minWidth: 60,
+  },
+  floatingToolButtonActive: {
+    backgroundColor: '#6A009C',
+    borderColor: '#6A009C',
+  },
+  floatingToolButtonText: {
+    fontSize: 10,
+    fontFamily: 'Inter-Medium',
+    color: '#6A009C',
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  floatingToolButtonTextActive: {
+    color: '#FFFFFF',
+  },
+  floatingColorButton: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginRight: 8,
+    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    minWidth: 60,
+  },
+  floatingClearButton: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginRight: 8,
+    borderRadius: 12,
+    backgroundColor: '#FFEBEE',
+    borderWidth: 1,
+    borderColor: '#FFCDD2',
+    minWidth: 60,
+  },
+  floatingClearButtonText: {
+    fontSize: 10,
+    fontFamily: 'Inter-Medium',
+    color: '#FF5252',
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  floatingColorPicker: {
+    position: 'absolute',
+    top: 60,
+    left: 16,
+    right: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 12,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
 });
 

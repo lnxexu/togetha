@@ -75,7 +75,7 @@ const TaskListView: React.FC<TaskListViewProps> = ({
   onCategoryChange,
 }) => {
   const getTasksByQuadrant = (priority: string) => {
-    return tasks.filter(task => task.priority === priority && !task.completed);
+    return tasks.filter(task => task.priority === priority);
   };
 
   const handleTaskLongPress = (task: Task) => {
@@ -111,6 +111,7 @@ const TaskListView: React.FC<TaskListViewProps> = ({
             borderColor: quadrant?.color || '#e9ecef'
           },
           task.overdue && !task.completed && styles.overdueTask,
+          task.completed && styles.completedTask,
         ]}
         onPress={() => onTaskPress(task.id)}
         onLongPress={() => handleTaskLongPress(task)}
@@ -118,7 +119,10 @@ const TaskListView: React.FC<TaskListViewProps> = ({
         <View style={styles.cardContent}>
           <View style={styles.cardTopSection}>
             <View style={styles.cardTextSection}>
-              <Text style={styles.cardTitle} numberOfLines={2}>
+              <Text style={[
+                styles.cardTitle, 
+                task.completed && styles.completedTaskTitle
+              ]} numberOfLines={2}>
                 {task.title}
               </Text>
               {task.dueDate && (
@@ -269,6 +273,10 @@ const styles = StyleSheet.create({
     borderLeftColor: '#e74c3c',
     backgroundColor: '#fdf2f2',
   },
+  completedTask: {
+    backgroundColor: '#f8f9fa',
+    opacity: 0.7,
+  },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
@@ -295,6 +303,10 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontFamily: 'Inter-Regular',
     marginBottom: 4,
+  },
+  completedTaskTitle: {
+    color: '#95a5a6',
+    textDecorationLine: 'line-through',
   },
   cardSubject: {
     fontSize: 11,

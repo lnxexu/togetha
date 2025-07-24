@@ -70,7 +70,7 @@ const EisenhowerMatrix: React.FC<EisenhowerMatrixProps> = ({
   onMarkComplete,
 }) => {
   const getTasksByQuadrant = (priority: string) => {
-    return tasks.filter(task => task.priority === priority && !task.completed);
+    return tasks.filter(task => task.priority === priority);
   };
 
   const handleTaskLongPress = (task: Task) => {
@@ -133,9 +133,9 @@ const EisenhowerMatrix: React.FC<EisenhowerMatrixProps> = ({
                   onPress={() => onMarkComplete(task.id)}
                 >
                   <MaterialIcons 
-                    name="check-box-outline-blank" 
+                    name={task.completed ? "check-box" : "check-box-outline-blank"}
                     size={16} 
-                    color={task.overdue ? '#e74c3c' : '#7f8c8d'} 
+                    color={task.completed ? '#27ae60' : (task.overdue ? '#e74c3c' : '#7f8c8d')} 
                   />
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -143,7 +143,11 @@ const EisenhowerMatrix: React.FC<EisenhowerMatrixProps> = ({
                   onPress={() => onTaskPress(task.id)}
                   onLongPress={() => handleTaskLongPress(task)}
                 >
-                  <Text style={[styles.taskText, task.overdue && styles.overdueTaskText]} numberOfLines={2}>
+                  <Text style={[
+                    styles.taskText, 
+                    task.overdue && !task.completed && styles.overdueTaskText,
+                    task.completed && styles.completedTaskText
+                  ]} numberOfLines={2}>
                     {task.title}
                   </Text>
                 </TouchableOpacity>
@@ -274,6 +278,11 @@ const styles = StyleSheet.create({
   overdueTaskText: {
     color: '#e74c3c',
     fontWeight: '500',
+  },
+  completedTaskText: {
+    color: '#95a5a6',
+    textDecorationLine: 'line-through',
+    opacity: 0.7,
   },
 });
 

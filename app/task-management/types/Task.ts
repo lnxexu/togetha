@@ -4,14 +4,27 @@ export type Priority =
   | 'urgent-not-important'
   | 'not-urgent-not-important';
 
+export type TaskStatus = 
+  | 'todo'
+  | 'in-progress'
+  | 'completed'
+  | 'on-hold';
+
+export interface TaskCategory {
+  id: string;
+  name: string;
+  color: string;
+  createdAt: Date;
+}
+
 export interface Task {
   id: string;
   title: string;
   description?: string;
-  subject?: string;
+  category?: TaskCategory;
   priority: Priority;
+  status: TaskStatus;
   dueDate?: Date;
-  dueTime?: string;
   completed: boolean;
   overdue: boolean;
   createdAt: Date;
@@ -22,8 +35,8 @@ export interface Task {
 export interface TaskFormData {
   title: string;
   description?: string;
-  subject?: string;
+  category?: TaskCategory;
   priority?: Priority;
+  status?: TaskStatus;
   dueDate?: Date;
-  dueTime?: string;
 }

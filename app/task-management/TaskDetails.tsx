@@ -16,8 +16,9 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/AppNavigator';
-import { Task, Priority } from './types/Task';
+import { Task, Priority, TaskStatus, TaskCategory } from './types/Task';
 import { taskService } from './services/taskService';
+import { categoryService } from './services/categoryService';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -31,150 +32,87 @@ const TaskDetails: React.FC = () => {
     const [editedTitle, setEditedTitle] = useState('');
     const [editedDescription, setEditedDescription] = useState('');
     const [editedPriority, setEditedPriority] = useState<Priority>('not-urgent-not-important');
-    const [editedSubject, setEditedSubject] = useState('');
+    const [editedStatus, setEditedStatus] = useState<TaskStatus>('todo');
+    const [editedCategory, setEditedCategory] = useState<TaskCategory | undefined>(undefined);
+    const [editedDueDate, setEditedDueDate] = useState<Date | null>(null);
     const [showPriorityModal, setShowPriorityModal] = useState(false);
-    const [showSubjectModal, setShowSubjectModal] = useState(false);
+    const [showStatusModal, setShowStatusModal] = useState(false);
+    const [showCategoryModal, setShowCategoryModal] = useState(false);
+    const [showDateModal, setShowDateModal] = useState(false);
+    const [calendarDate, setCalendarDate] = useState(new Date());
+    const [categories, setCategories] = useState<TaskCategory[]>([]);
 
     const priorityOptions = [
-        { value: 'urgent-important', label: 'Urgent & Important', color: '#dc3545' },
-        { value: 'not-urgent-important', label: 'Important', color: '#28a745' },
-        { value: 'urgent-not-important', label: 'Urgent', color: '#ffc107' },
-        { value: 'not-urgent-not-important', label: 'Neither', color: '#6c757d' },
+        { value: 'urgent-important', label: 'Urgent & Important', color: '#e74c3c', description: 'Do First - Critical tasks' },
+        { value: 'not-urgent-important', label: 'Important, Not Urgent', color: '#1abc9c', description: 'Schedule - Plan for these' },
+        { value: 'urgent-not-important', label: 'Urgent, Not Important', color: '#f39c12', description: 'Delegate - Can be delegated' },
+        { value: 'not-urgent-not-important', label: 'Neither Urgent nor Important', color: '#27ae60', description: 'Eliminate - Consider removing' },
     ];
 
-    const subjectOptions = [
-        'Computer Science',
-        'Mathematics',
-        'Health',
-        'Programming',
-        'Personal',
-        'Work',
-        'Study',
-        'Other',
+    const statusOptions = [
+        { value: 'todo', label: 'To Do', color: '#6c757d' },
+        { value: 'in-progress', label: 'In Progress', color: '#fd7e14' },
+        { value: 'completed', label: 'Completed', color: '#198754' },
+        { value: 'on-hold', label: 'On Hold', color: '#dc3545' },
     ];
 
     // Load task when screen is focused
     useFocusEffect(
         useCallback(() => {
             loadTask();
+            loadCategories();
         }, [])
     );
 
+    const loadCategories = async () => {
+        try {
+            const loadedCategories = await categoryService.getCategories();
+            setCategories(loadedCategories);
+        } catch (error) {
+            console.error('Error loading categories:', error);
+        }
+    };
+
     const loadTask = async () => {
         try {
-            // Sample data for demonstration - in real app, fetch from taskService
-            const sampleTasks: Task[] = [
-                {
-                    id: '1',
-                    title: 'Submit Final Project Report',
-                    description: 'Complete and submit the final semester project report for Computer Science',
-                    priority: 'urgent-important',
-                    subject: 'Computer Science',
-                    dueDate: new Date('2025-07-22'),
-                    dueTime: '11:59 PM',
-                    completed: false,
-                    overdue: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                },
-                {
-                    id: '2',
-                    title: 'Prepare for Mathematics Exam',
-                    description: 'Study calculus and linear algebra topics for tomorrow\'s exam',
-                    priority: 'urgent-important',
-                    subject: 'Mathematics',
-                    dueDate: new Date('2025-07-22'),
-                    dueTime: '8:00 AM',
-                    completed: false,
-                    overdue: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                },
-                {
-                    id: '3',
-                    title: 'Doctor Appointment',
-                    description: 'Annual health checkup appointment',
-                    priority: 'urgent-important',
-                    subject: 'Health',
-                    dueDate: new Date('2025-07-21'),
-                    dueTime: '2:00 PM',
-                    completed: false,
-                    overdue: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                },
-                {
-                    id: '4',
-                    title: 'Start Research Paper',
-                    description: 'Begin research on AI ethics for next month\'s assignment',
-                    priority: 'not-urgent-important',
-                    subject: 'Computer Science',
-                    dueDate: new Date('2025-08-15'),
-                    completed: false,
-                    overdue: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                },
-                {
-                    id: '5',
-                    title: 'Learn New Programming Language',
-                    description: 'Start learning Python for data science applications',
-                    priority: 'not-urgent-important',
-                    subject: 'Programming',
-                    dueDate: new Date('2025-08-01'),
-                    completed: false,
-                    overdue: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                },
-            ];
-
-            const foundTask = sampleTasks.find(t => t.id === taskId);
+            const foundTask = await taskService.getTaskById(taskId);
             if (foundTask) {
                 setTask(foundTask);
                 setEditedTitle(foundTask.title);
                 setEditedDescription(foundTask.description || '');
                 setEditedPriority(foundTask.priority);
-                setEditedSubject(foundTask.subject || '');
+                setEditedStatus(foundTask.status);
+                setEditedCategory(foundTask.category);
+                setEditedDueDate(foundTask.dueDate || null);
             } else {
                 Alert.alert('Error', 'Task not found');
                 navigation.goBack();
             }
         } catch (error) {
             console.error('Error loading task:', error);
-            Alert.alert('Error', 'Failed to load task');
+            Alert.alert('Error', 'Failed to load task details');
         }
-    };
-
-    const handleEdit = () => {
-        setIsEditing(true);
     };
 
     const handleSave = async () => {
         if (!task) return;
         
         try {
-            // In a real app, you would update via taskService
-            // await taskService.updateTask(taskId, { 
-            //     title: editedTitle, 
-            //     description: editedDescription,
-            //     priority: editedPriority,
-            //     subject: editedSubject 
-            // });
-            
-            // Update local state for demonstration
-            setTask({
-                ...task,
+            const updates = {
                 title: editedTitle,
                 description: editedDescription,
                 priority: editedPriority,
-                subject: editedSubject,
-                updatedAt: new Date(),
-            });
+                status: editedStatus,
+                category: editedCategory,
+                dueDate: editedDueDate || undefined,
+            };
             
+            const updatedTask = await taskService.updateTask(task.id, updates);
+            setTask(updatedTask);
             setIsEditing(false);
-            Alert.alert('Success', 'Task updated successfully');
+            Alert.alert('Success', 'Task updated successfully!');
         } catch (error) {
+            console.error('Error updating task:', error);
             Alert.alert('Error', 'Failed to update task');
         }
     };
@@ -184,78 +122,130 @@ const TaskDetails: React.FC = () => {
             setEditedTitle(task.title);
             setEditedDescription(task.description || '');
             setEditedPriority(task.priority);
-            setEditedSubject(task.subject || '');
+            setEditedStatus(task.status);
+            setEditedCategory(task.category);
+            setEditedDueDate(task.dueDate || null);
         }
         setIsEditing(false);
     };
 
-    const handleMarkAsDone = async () => {
+    // Calendar helper functions
+    const getDaysInMonth = (date: Date) => {
+        return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+    };
+
+    const getFirstDayOfMonth = (date: Date) => {
+        return new Date(date.getFullYear(), date.getMonth(), 1).getDay();
+    };
+
+    const getPreviousMonth = () => {
+        setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1));
+    };
+
+    const getNextMonth = () => {
+        setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1));
+    };
+
+    const isToday = (day: number) => {
+        const today = new Date();
+        return (
+            day === today.getDate() &&
+            calendarDate.getMonth() === today.getMonth() &&
+            calendarDate.getFullYear() === today.getFullYear()
+        );
+    };
+
+    const isSelectedDate = (day: number) => {
+        if (!editedDueDate) return false;
+        return (
+            day === editedDueDate.getDate() &&
+            calendarDate.getMonth() === editedDueDate.getMonth() &&
+            calendarDate.getFullYear() === editedDueDate.getFullYear()
+        );
+    };
+
+    const selectDate = (day: number) => {
+        const selectedDate = new Date(calendarDate.getFullYear(), calendarDate.getMonth(), day);
+        setEditedDueDate(selectedDate);
+        setShowDateModal(false);
+    };
+
+    const renderCalendarDays = () => {
+        const daysInMonth = getDaysInMonth(calendarDate);
+        const firstDay = getFirstDayOfMonth(calendarDate);
+        const days = [];
+
+        // Add empty cells for days before the first day of the month
+        for (let i = 0; i < firstDay; i++) {
+            days.push(
+                <View key={`empty-${i}`} style={[styles.calendarDay, styles.inactiveDay]} />
+            );
+        }
+
+        // Add days of the month
+        for (let day = 1; day <= daysInMonth; day++) {
+            const isTodayDate = isToday(day);
+            const isSelected = isSelectedDate(day);
+
+            days.push(
+                <TouchableOpacity
+                    key={day}
+                    style={[
+                        styles.calendarDay,
+                        isTodayDate && styles.todayCalendarDay,
+                        isSelected && styles.selectedCalendarDay,
+                    ]}
+                    onPress={() => selectDate(day)}
+                >
+                    <Text style={[
+                        styles.calendarDayText,
+                        isTodayDate && styles.todayDayText,
+                        isSelected && styles.selectedDayText,
+                    ]}>
+                        {day}
+                    </Text>
+                </TouchableOpacity>
+            );
+        }
+
+        return days;
+    };
+
+    const handleDelete = () => {
+        Alert.alert(
+            'Delete Task',
+            'Are you sure you want to delete this task?',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            await taskService.deleteTask(taskId);
+                            navigation.goBack();
+                            Alert.alert('Success', 'Task deleted successfully!');
+                        } catch (error) {
+                            console.error('Error deleting task:', error);
+                            Alert.alert('Error', 'Failed to delete task');
+                        }
+                    },
+                },
+            ]
+        );
+    };
+
+    const toggleCompletion = async () => {
         if (!task) return;
         
         try {
-            // In a real app, you would update via taskService
-            // await taskService.markTaskComplete(taskId);
-            
-            // Update local state for demonstration
-            setTask({
-                ...task,
-                completed: !task.completed,
-                completedAt: !task.completed ? new Date() : undefined,
-                updatedAt: new Date(),
-            });
-            
-            Alert.alert('Success', task.completed ? 'Task marked as pending' : 'Task marked as completed');
+            const updatedTask = await taskService.markTaskComplete(task.id);
+            setTask(updatedTask);
+            setEditedStatus(updatedTask.status);
+            Alert.alert('Success', `Task marked as ${updatedTask.completed ? 'completed' : 'incomplete'}!`);
         } catch (error) {
+            console.error('Error updating task:', error);
             Alert.alert('Error', 'Failed to update task');
-        }
-    };
-
-    const getPriorityLabel = (priority: string) => {
-        switch (priority) {
-            case 'urgent-important':
-                return 'Urgent & Important';
-            case 'not-urgent-important':
-                return 'Important';
-            case 'urgent-not-important':
-                return 'Urgent';
-            case 'not-urgent-not-important':
-                return 'Neither';
-            default:
-                return priority;
-        }
-    };
-
-    const getPriorityColor = (priority: string) => {
-        switch (priority) {
-            case 'urgent-important':
-                return '#dc3545';
-            case 'not-urgent-important':
-                return '#28a745';
-            case 'urgent-not-important':
-                return '#ffc107';
-            case 'not-urgent-not-important':
-                return '#6c757d';
-            default:
-                return '#6c757d';
-        }
-    };
-
-    const formatDate = (date?: Date) => {
-        if (!date) return 'No date set';
-        const today = new Date();
-        const tomorrow = new Date(today);
-        tomorrow.setDate(today.getDate() + 1);
-        
-        if (date.toDateString() === today.toDateString()) {
-            return 'Today';
-        } else if (date.toDateString() === tomorrow.toDateString()) {
-            return 'Tomorrow';
-        } else {
-            return date.toLocaleDateString('en-US', { 
-                weekday: 'short', 
-                month: 'short', 
-                day: 'numeric' 
-            });
         }
     };
 
@@ -263,7 +253,7 @@ const TaskDetails: React.FC = () => {
         return (
             <SafeAreaView style={styles.container}>
                 <View style={styles.loadingContainer}>
-                    <Text style={styles.loadingText}>Loading task...</Text>
+                    <Text style={styles.loadingText}>Loading task details...</Text>
                 </View>
             </SafeAreaView>
         );
@@ -274,126 +264,150 @@ const TaskDetails: React.FC = () => {
             {/* Header */}
             <View style={styles.header}>
                 <TouchableOpacity 
-                    style={styles.backButton}
+                    style={styles.backButton} 
                     onPress={() => navigation.goBack()}
                 >
-          <Ionicons name="chevron-back" size={24} color="#333" />
+                    <Ionicons name="chevron-back" size={24} color="#2c3e50" />
                 </TouchableOpacity>
                 
                 <Text style={styles.headerTitle}>Task Details</Text>
                 
-                <View style={styles.headerActions}>
-                    {isEditing ? (
-                        <>
-                            <TouchableOpacity
-                                style={styles.cancelButton}
-                                onPress={handleCancel}
-                            >
-                                <Text style={styles.cancelButtonText}>Cancel</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={styles.saveButton}
-                                onPress={handleSave}
-                            >
-                                <Text style={styles.saveButtonText}>Save</Text>
-                            </TouchableOpacity>
-                        </>
-                    ) : (
-                        <TouchableOpacity
-                            style={styles.editButton}
-                            onPress={handleEdit}
-                        >
-                            <MaterialIcons name="edit" size={20} color="#6A009C" />
-                            <Text style={styles.editButtonText}>Edit</Text>
-                        </TouchableOpacity>
-                    )}
-                </View>
+                <TouchableOpacity 
+                    style={styles.editButton} 
+                    onPress={() => setIsEditing(!isEditing)}
+                >
+                    <MaterialIcons 
+                        name={isEditing ? "close" : "edit"} 
+                        size={24} 
+                        color="#AD00FF" 
+                    />
+                </TouchableOpacity>
             </View>
 
-            {/* Content */}
-            <View style={styles.content}>
-                {/* Task Name */}
-                <View style={styles.taskNameSection}>
-                    <Text style={styles.taskNameLabel}>Task Name:</Text>
+            <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+                {/* Task Title */}
+                <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>Task Title</Text>
                     {isEditing ? (
                         <TextInput
-                            style={styles.taskNameInput}
+                            style={styles.editInput}
                             value={editedTitle}
                             onChangeText={setEditedTitle}
-                            placeholder="Enter task name"
+                            placeholder="Enter task title..."
                             multiline
                         />
                     ) : (
-                        <Text style={styles.taskName}>{task.title}</Text>
+                        <Text style={styles.taskTitle}>{task.title}</Text>
                     )}
                 </View>
 
-                {/* Info Cards */}
-                <View style={styles.infoCardsContainer}>
-                    {/* Date Card */}
-                    <View style={styles.infoCard}>
-                        <Text style={styles.cardValue}>{formatDate(task.dueDate)}</Text>
+                {/* Task Details Cards */}
+                <View style={styles.detailsContainer}>
+                    <View style={styles.detailsRow}>
+                        {/* Status Card */}
+                        <View style={styles.compactCard}>
+                            <Text style={styles.compactCardLabel}>Status</Text>
+                            {isEditing ? (
+                                <TouchableOpacity
+                                    style={styles.compactCardContent}
+                                    onPress={() => setShowStatusModal(true)}
+                                >
+                                    <Text style={styles.compactCardValue}>
+                                        {statusOptions.find(s => s.value === editedStatus)?.label || 'To Do'}
+                                    </Text>
+                                    <MaterialIcons name="keyboard-arrow-down" size={16} color="#6c757d" />
+                                </TouchableOpacity>
+                            ) : (
+                                <Text style={styles.compactCardValue}>
+                                    {statusOptions.find(s => s.value === task.status)?.label || 'To Do'}
+                                </Text>
+                            )}
+                        </View>
+
+                        {/* Category Card */}
+                        <View style={styles.compactCard}>
+                            <Text style={styles.compactCardLabel}>Category</Text>
+                            {isEditing ? (
+                                <TouchableOpacity
+                                    style={styles.compactCardContent}
+                                    onPress={() => setShowCategoryModal(true)}
+                                >
+                                    <Text style={styles.compactCardValue}>
+                                        {editedCategory ? editedCategory.name : 'No Category'}
+                                    </Text>
+                                    <MaterialIcons name="keyboard-arrow-down" size={16} color="#6c757d" />
+                                </TouchableOpacity>
+                            ) : (
+                                <Text style={styles.compactCardValue}>
+                                    {task.category ? task.category.name : 'No Category'}
+                                </Text>
+                            )}
+                        </View>
+
+                        {/* Due Date Card */}
+                        <View style={styles.compactCard}>
+                            <Text style={styles.compactCardLabel}>Due Date</Text>
+                            {isEditing ? (
+                                <TouchableOpacity
+                                    style={styles.compactCardContent}
+                                    onPress={() => setShowDateModal(true)}
+                                >
+                                    <Text style={styles.compactCardValue}>
+                                        {editedDueDate ? editedDueDate.toLocaleDateString() : 'No due date'}
+                                    </Text>
+                                    <MaterialIcons name="keyboard-arrow-down" size={16} color="#6c757d" />
+                                </TouchableOpacity>
+                            ) : (
+                                <Text style={styles.compactCardValue}>
+                                    {task.dueDate ? task.dueDate.toLocaleDateString() : 'No due date'}
+                                </Text>
+                            )}
+                        </View>
+
+                        {/* Priority Card */}
+                        <View style={styles.compactCard}>
+                            <Text style={styles.compactCardLabel}>Priority</Text>
+                            {isEditing ? (
+                                <TouchableOpacity
+                                    style={styles.compactCardContent}
+                                    onPress={() => setShowPriorityModal(true)}
+                                >
+                                    <Text style={styles.compactCardValue}>
+                                        {priorityOptions.find(p => p.value === editedPriority)?.label?.replace(' & ', ' ') || 'Neither'}
+                                    </Text>
+                                    <MaterialIcons name="keyboard-arrow-down" size={16} color="#6c757d" />
+                                </TouchableOpacity>
+                            ) : (
+                                <Text style={styles.compactCardValue}>
+                                    {priorityOptions.find(p => p.value === task.priority)?.label?.replace(' & ', ' ') || 'Neither'}
+                                </Text>
+                            )}
+                        </View>
                     </View>
-
-                    {/* Time Card */}
-                    <View style={styles.infoCard}>
-                        <Text style={styles.cardValue}>{task.dueTime || 'No time set'}</Text>
-                    </View>
-
-                    {/* Priority Card */}
-                    <TouchableOpacity 
-                        style={[styles.infoCard, isEditing && styles.editableCard]}
-                        onPress={isEditing ? () => setShowPriorityModal(true) : undefined}
-                        disabled={!isEditing}
-                    >
-                        <Text style={[styles.cardValue, { color: getPriorityColor(isEditing ? editedPriority : task.priority) }]}>
-                            {getPriorityLabel(isEditing ? editedPriority : task.priority)}
-                        </Text>
-                        {isEditing && <MaterialIcons name="edit" size={14} color="#6A009C" style={styles.cardEditIcon} />}
-                    </TouchableOpacity>
-
-                    {/* Subject Card */}
-                    <TouchableOpacity 
-                        style={[styles.infoCard, isEditing && styles.editableCard]}
-                        onPress={isEditing ? () => setShowSubjectModal(true) : undefined}
-                        disabled={!isEditing}
-                    >
-                        <Text style={styles.cardValue}>{(isEditing ? editedSubject : task.subject) || 'No subject'}</Text>
-                        {isEditing && <MaterialIcons name="edit" size={14} color="#6A009C" style={styles.cardEditIcon} />}
-                    </TouchableOpacity>
                 </View>
 
                 {/* Task Description */}
-                <View style={styles.descriptionSection}>
-                    <Text style={styles.descriptionLabel}>Task Description</Text>
+                <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>Description</Text>
                     {isEditing ? (
                         <TextInput
-                            style={styles.descriptionInput}
+                            style={[styles.editInput, styles.descriptionInput]}
                             value={editedDescription}
                             onChangeText={setEditedDescription}
-                            placeholder="Enter task description"
+                            placeholder="Enter task description..."
                             multiline
                             textAlignVertical="top"
                         />
                     ) : (
-                        <Text style={styles.description}>
+                        <Text style={styles.taskDescription}>
                             {task.description || 'No description provided'}
                         </Text>
                     )}
                 </View>
-            </View>
 
-            {/* Mark as Done Button - Fixed position in lower right */}
-            <TouchableOpacity
-                style={styles.markAsDoneButton}
-                onPress={handleMarkAsDone}
-            >
-                <Text style={styles.markAsDoneButtonText}>
-                    {task.completed ? 'Mark Pending' : 'Mark as Done'}
-                </Text>
-            </TouchableOpacity>
+            </ScrollView>
 
-            {/* Priority Selection Modal */}
+            {/* Priority Modal */}
             <Modal
                 visible={showPriorityModal}
                 transparent={true}
@@ -404,31 +418,43 @@ const TaskDetails: React.FC = () => {
                     <View style={styles.modalContent}>
                         <View style={styles.modalHeader}>
                             <Text style={styles.modalTitle}>Select Priority</Text>
-                            <TouchableOpacity
-                                onPress={() => setShowPriorityModal(false)}
-                                style={styles.modalCloseButton}
-                            >
-                                <MaterialIcons name="close" size={24} color="#666" />
+                            <TouchableOpacity onPress={() => setShowPriorityModal(false)}>
+                                <MaterialIcons name="close" size={24} color="#6c757d" />
                             </TouchableOpacity>
                         </View>
-                        <ScrollView style={styles.modalList}>
-                            {priorityOptions.map((option) => (
+                        
+                        <ScrollView>
+                            {priorityOptions.map((priority) => (
                                 <TouchableOpacity
-                                    key={option.value}
+                                    key={priority.value}
                                     style={[
                                         styles.modalOption,
-                                        editedPriority === option.value && styles.selectedOption
+                                        editedPriority === priority.value && styles.selectedModalOption
                                     ]}
                                     onPress={() => {
-                                        setEditedPriority(option.value as Priority);
+                                        setEditedPriority(priority.value as Priority);
                                         setShowPriorityModal(false);
                                     }}
                                 >
-                                    <Text style={[styles.modalOptionText, { color: option.color }]}>
-                                        {option.label}
-                                    </Text>
-                                    {editedPriority === option.value && (
-                                        <MaterialIcons name="check" size={20} color={option.color} />
+                                    <View style={styles.priorityOptionContent}>
+                                        <View style={styles.priorityDisplay}>
+                                            <View style={[styles.priorityColor, { backgroundColor: priority.color }]} />
+                                            <Text style={[
+                                                styles.modalOptionText,
+                                                editedPriority === priority.value && styles.selectedOptionText
+                                            ]}>
+                                                {priority.label}
+                                            </Text>
+                                        </View>
+                                        <Text style={[
+                                            styles.priorityDescription,
+                                            editedPriority === priority.value && styles.selectedOptionDescription
+                                        ]}>
+                                            {priority.description}
+                                        </Text>
+                                    </View>
+                                    {editedPriority === priority.value && (
+                                        <MaterialIcons name="check" size={20} color="#AD00FF" />
                                     )}
                                 </TouchableOpacity>
                             ))}
@@ -437,60 +463,343 @@ const TaskDetails: React.FC = () => {
                 </View>
             </Modal>
 
-            {/* Subject Selection Modal */}
+            {/* Status Modal */}
             <Modal
-                visible={showSubjectModal}
+                visible={showStatusModal}
                 transparent={true}
                 animationType="slide"
-                onRequestClose={() => setShowSubjectModal(false)}
+                onRequestClose={() => setShowStatusModal(false)}
             >
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
                         <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>Select Subject</Text>
-                            <TouchableOpacity
-                                onPress={() => setShowSubjectModal(false)}
-                                style={styles.modalCloseButton}
-                            >
-                                <MaterialIcons name="close" size={24} color="#666" />
+                            <Text style={styles.modalTitle}>Select Status</Text>
+                            <TouchableOpacity onPress={() => setShowStatusModal(false)}>
+                                <MaterialIcons name="close" size={24} color="#6c757d" />
                             </TouchableOpacity>
                         </View>
-                        <ScrollView style={styles.modalList}>
-                            {subjectOptions.map((subject) => (
+                        
+                        <ScrollView>
+                            {statusOptions.map((status) => (
                                 <TouchableOpacity
-                                    key={subject}
+                                    key={status.value}
                                     style={[
                                         styles.modalOption,
-                                        editedSubject === subject && styles.selectedOption
+                                        editedStatus === status.value && styles.selectedModalOption
                                     ]}
                                     onPress={() => {
-                                        setEditedSubject(subject);
-                                        setShowSubjectModal(false);
+                                        setEditedStatus(status.value as TaskStatus);
+                                        setShowStatusModal(false);
                                     }}
                                 >
-                                    <Text style={styles.modalOptionText}>
-                                        {subject}
-                                    </Text>
-                                    {editedSubject === subject && (
-                                        <MaterialIcons name="check" size={20} color="#6A009C" />
+                                    <View style={styles.statusDisplay}>
+                                        <View style={[styles.statusIndicator, { backgroundColor: status.color }]} />
+                                        <Text style={[
+                                            styles.modalOptionText,
+                                            editedStatus === status.value && styles.selectedOptionText
+                                        ]}>
+                                            {status.label}
+                                        </Text>
+                                    </View>
+                                    {editedStatus === status.value && (
+                                        <MaterialIcons name="check" size={20} color="#AD00FF" />
                                     )}
                                 </TouchableOpacity>
                             ))}
-                            {/* Custom Subject Input */}
-                            <View style={styles.customSubjectContainer}>
-                                <Text style={styles.customSubjectLabel}>Or enter custom subject:</Text>
-                                <TextInput
-                                    style={styles.customSubjectInput}
-                                    placeholder="Enter custom subject"
-                                    value={editedSubject && !subjectOptions.includes(editedSubject) ? editedSubject : ''}
-                                    onChangeText={(text) => setEditedSubject(text)}
-                                    onSubmitEditing={() => setShowSubjectModal(false)}
-                                />
+                        </ScrollView>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Category Modal */}
+            <Modal
+                visible={showCategoryModal}
+                transparent={true}
+                animationType="slide"
+                onRequestClose={() => setShowCategoryModal(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>Select Category</Text>
+                            <TouchableOpacity onPress={() => setShowCategoryModal(false)}>
+                                <MaterialIcons name="close" size={24} color="#6c757d" />
+                            </TouchableOpacity>
+                        </View>
+                        
+                        <ScrollView style={{ maxHeight: 300 }}>
+                            <TouchableOpacity
+                                style={[
+                                    styles.modalOption,
+                                    !editedCategory && styles.selectedModalOption
+                                ]}
+                                onPress={() => {
+                                    setEditedCategory(undefined);
+                                    setShowCategoryModal(false);
+                                }}
+                            >
+                                <Text style={[
+                                    styles.modalOptionText,
+                                    !editedCategory && styles.selectedOptionText
+                                ]}>
+                                    No Category
+                                </Text>
+                                {!editedCategory && (
+                                    <MaterialIcons name="check" size={20} color="#AD00FF" />
+                                )}
+                            </TouchableOpacity>
+                            
+                            {categories.map((category) => (
+                                <TouchableOpacity
+                                    key={category.id}
+                                    style={[
+                                        styles.modalOption,
+                                        editedCategory?.id === category.id && styles.selectedModalOption
+                                    ]}
+                                    onPress={() => {
+                                        setEditedCategory(category);
+                                        setShowCategoryModal(false);
+                                    }}
+                                >
+                                    <View style={styles.categoryDisplay}>
+                                        <View style={[styles.categoryColor, { backgroundColor: category.color }]} />
+                                        <Text style={[
+                                            styles.modalOptionText,
+                                            editedCategory?.id === category.id && styles.selectedOptionText
+                                        ]}>
+                                            {category.name}
+                                        </Text>
+                                    </View>
+                                    {editedCategory?.id === category.id && (
+                                        <MaterialIcons name="check" size={20} color="#AD00FF" />
+                                    )}
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Date Modal */}
+            <Modal
+                visible={showDateModal}
+                transparent={true}
+                animationType="slide"
+                onRequestClose={() => setShowDateModal(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>Select Due Date</Text>
+                            <TouchableOpacity onPress={() => setShowDateModal(false)}>
+                                <MaterialIcons name="close" size={24} color="#6c757d" />
+                            </TouchableOpacity>
+                        </View>
+                        
+                        <ScrollView style={{ maxHeight: 500 }}>
+                            {/* Quick Date Options */}
+                            <View style={styles.quickDateOptions}>
+                                {/* Remove Due Date Option */}
+                                <TouchableOpacity
+                                    style={[
+                                        styles.modalOption,
+                                        !editedDueDate && styles.selectedModalOption
+                                    ]}
+                                    onPress={() => {
+                                        setEditedDueDate(null);
+                                        setShowDateModal(false);
+                                    }}
+                                >
+                                    <MaterialIcons name="close" size={20} color="#e74c3c" />
+                                    <Text style={[
+                                        styles.modalOptionText,
+                                        { marginLeft: 12 },
+                                        !editedDueDate && styles.selectedOptionText
+                                    ]}>
+                                        Remove Due Date
+                                    </Text>
+                                    {!editedDueDate && (
+                                        <MaterialIcons name="check" size={20} color="#AD00FF" />
+                                    )}
+                                </TouchableOpacity>
+
+                                {/* Today */}
+                                <TouchableOpacity
+                                    style={[
+                                        styles.modalOption,
+                                        editedDueDate && 
+                                        editedDueDate.toDateString() === new Date().toDateString() && 
+                                        styles.selectedModalOption
+                                    ]}
+                                    onPress={() => {
+                                        setEditedDueDate(new Date());
+                                        setShowDateModal(false);
+                                    }}
+                                >
+                                    <MaterialIcons name="today" size={20} color="#1abc9c" />
+                                    <Text style={[
+                                        styles.modalOptionText,
+                                        { marginLeft: 12 },
+                                        editedDueDate && 
+                                        editedDueDate.toDateString() === new Date().toDateString() && 
+                                        styles.selectedOptionText
+                                    ]}>
+                                        Today ({new Date().toLocaleDateString()})
+                                    </Text>
+                                    {editedDueDate && 
+                                     editedDueDate.toDateString() === new Date().toDateString() && (
+                                        <MaterialIcons name="check" size={20} color="#AD00FF" />
+                                    )}
+                                </TouchableOpacity>
+
+                                {/* Tomorrow */}
+                                <TouchableOpacity
+                                    style={[
+                                        styles.modalOption,
+                                        editedDueDate && 
+                                        editedDueDate.toDateString() === new Date(Date.now() + 86400000).toDateString() && 
+                                        styles.selectedModalOption
+                                    ]}
+                                    onPress={() => {
+                                        setEditedDueDate(new Date(Date.now() + 86400000));
+                                        setShowDateModal(false);
+                                    }}
+                                >
+                                    <MaterialIcons name="event" size={20} color="#f39c12" />
+                                    <Text style={[
+                                        styles.modalOptionText,
+                                        { marginLeft: 12 },
+                                        editedDueDate && 
+                                        editedDueDate.toDateString() === new Date(Date.now() + 86400000).toDateString() && 
+                                        styles.selectedOptionText
+                                    ]}>
+                                        Tomorrow ({new Date(Date.now() + 86400000).toLocaleDateString()})
+                                    </Text>
+                                    {editedDueDate && 
+                                     editedDueDate.toDateString() === new Date(Date.now() + 86400000).toDateString() && (
+                                        <MaterialIcons name="check" size={20} color="#AD00FF" />
+                                    )}
+                                </TouchableOpacity>
+
+                                {/* Next Week */}
+                                <TouchableOpacity
+                                    style={[
+                                        styles.modalOption,
+                                        editedDueDate && 
+                                        editedDueDate.toDateString() === new Date(Date.now() + 7 * 86400000).toDateString() && 
+                                        styles.selectedModalOption
+                                    ]}
+                                    onPress={() => {
+                                        setEditedDueDate(new Date(Date.now() + 7 * 86400000));
+                                        setShowDateModal(false);
+                                    }}
+                                >
+                                    <MaterialIcons name="date-range" size={20} color="#e74c3c" />
+                                    <Text style={[
+                                        styles.modalOptionText,
+                                        { marginLeft: 12 },
+                                        editedDueDate && 
+                                        editedDueDate.toDateString() === new Date(Date.now() + 7 * 86400000).toDateString() && 
+                                        styles.selectedOptionText
+                                    ]}>
+                                        Next Week ({new Date(Date.now() + 7 * 86400000).toLocaleDateString()})
+                                    </Text>
+                                    {editedDueDate && 
+                                     editedDueDate.toDateString() === new Date(Date.now() + 7 * 86400000).toDateString() && (
+                                        <MaterialIcons name="check" size={20} color="#AD00FF" />
+                                    )}
+                                </TouchableOpacity>
+                            </View>
+
+                            {/* Calendar */}
+                            <View style={styles.calendarContainer}>
+                                <Text style={styles.calendarSectionTitle}>Or choose a specific date:</Text>
+                                
+                                {/* Calendar Header */}
+                                <View style={styles.calendarHeader}>
+                                    <TouchableOpacity 
+                                        style={styles.monthNavButton}
+                                        onPress={getPreviousMonth}
+                                    >
+                                        <MaterialIcons name="chevron-left" size={20} color="#495057" />
+                                    </TouchableOpacity>
+                                    <Text style={styles.monthYearText}>
+                                        {calendarDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                                    </Text>
+                                    <TouchableOpacity 
+                                        style={styles.monthNavButton}
+                                        onPress={getNextMonth}
+                                    >
+                                        <MaterialIcons name="chevron-right" size={20} color="#495057" />
+                                    </TouchableOpacity>
+                                </View>
+
+                                {/* Calendar Grid */}
+                                <View style={styles.calendarGrid}>
+                                    {/* Day Headers */}
+                                    <View style={styles.dayHeadersRow}>
+                                        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                                            <Text key={day} style={styles.dayHeader}>{day}</Text>
+                                        ))}
+                                    </View>
+                                    
+                                    {/* Calendar Days */}
+                                    <View style={styles.daysContainer}>
+                                        {renderCalendarDays()}
+                                    </View>
+                                </View>
                             </View>
                         </ScrollView>
                     </View>
                 </View>
             </Modal>
+
+  {/* Fixed Action Buttons at Bottom */}
+<View style={styles.actionButtonsContainer}>
+    {isEditing ? (
+        <View style={styles.editButtonsRow}>
+            <TouchableOpacity 
+                style={styles.cancelButton} 
+                onPress={handleCancel}
+            >
+                <MaterialIcons name="close" size={20} color="#e74c3c" />
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+                style={styles.saveButton} 
+                onPress={handleSave}
+            >
+                <MaterialIcons name="save" size={20} color="#fff" />
+                <Text style={styles.saveButtonText}>Save Changes</Text>
+            </TouchableOpacity>
+        </View>
+    ) : (
+        <View style={styles.viewButtonsRow}>
+            <TouchableOpacity 
+                style={styles.completeButton} 
+                onPress={toggleCompletion}
+            >
+                <MaterialIcons 
+                    name={task.completed ? "undo" : "check-circle"} 
+                    size={20} 
+                    color="#fff" 
+                />
+                <Text style={styles.completeButtonText}>
+                    {task.completed ? 'Incomplete' : 'Complete'}
+                </Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+                style={styles.deleteButton} 
+                onPress={handleDelete}
+            >
+                <MaterialIcons name="delete" size={20} color="#fff" />
+                <Text style={styles.deleteButtonText}>Delete</Text>
+            </TouchableOpacity>
+        </View>
+    )}
+</View>
         </SafeAreaView>
     );
 };
@@ -500,71 +809,6 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: '#f8f9fa',
     },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingHorizontal: 20,
-        paddingTop: Platform.OS === 'ios' ? 40 : 40,
-        paddingBottom: 16,
-        backgroundColor: '#F8FAFC',
-        borderBottomWidth: 1,
-        borderBottomColor: '#e9ecef',
-    },
-    backButton: {
-        padding: 8,
-        borderRadius: 8,
-    },
-    headerTitle: {
-        fontSize: 18,
-        fontFamily: 'Inter-Bold',
-        color: '#2c3e50',
-        flex: 1,
-        textAlign: 'left',
-    },
-    headerActions: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-    },
-    editButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        backgroundColor: '#f0e6ff',
-        borderRadius: 8,
-        gap: 4,
-    },
-    editButtonText: {
-        fontSize: 14,
-        color: '#6A009C',
-        fontFamily: 'Inter-Medium',
-    },
-    cancelButton: {
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        backgroundColor: '#f8f9fa',
-        borderRadius: 8,
-        borderWidth: 1,
-        borderColor: '#dee2e6',
-    },
-    cancelButtonText: {
-        fontSize: 14,
-        color: '#6c757d',
-        fontFamily: 'Inter-Medium',
-    },
-    saveButton: {
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        backgroundColor: '#6A009C',
-        borderRadius: 8,
-    },
-    saveButtonText: {
-        fontSize: 14,
-        color: '#fff',
-        fontFamily: 'Inter-Medium',
-    },
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
@@ -573,133 +817,279 @@ const styles = StyleSheet.create({
     loadingText: {
         fontSize: 16,
         color: '#6c757d',
-        fontFamily: 'Inter-Medium',
+        fontFamily: 'Inter-Regular',
     },
-    content: {
-        flex: 1,
-        padding: 20,
-    },
-    taskNameSection: {
-        marginBottom: 24,
-    },
-    taskNameLabel: {
-        fontSize: 16,
-        color: '#6c757d',
-        fontFamily: 'Inter-Medium',
-        marginBottom: 8,
-    },
-    taskName: {
-        fontSize: 24,
-        color: '#2c3e50',
-        fontFamily: 'Inter-Bold',
-        lineHeight: 30,
-    },
-    taskNameInput: {
-        fontSize: 24,
-        color: '#2c3e50',
-        fontFamily: 'Inter-Bold',
-        lineHeight: 30,
-        paddingVertical: 8,
-        paddingHorizontal: 12,
-        backgroundColor: '#fff',
-        borderRadius: 8,
-        borderWidth: 1,
-        borderColor: '#6A009C',
-        minHeight: 60,
-    },
-    infoCardsContainer: {
+    header: {
         flexDirection: 'row',
-        justifyContent: 'flex-start',
-        gap: 8,
-        marginBottom: 24,
-        flexWrap: 'wrap',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingHorizontal: 20,
+        paddingTop: 20,
+        paddingBottom: 15,
+        backgroundColor: '#fff',
+        borderBottomWidth: 1,
+        borderBottomColor: '#e9ecef',
     },
-    infoCard: {
+    backButton: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
         justifyContent: 'center',
         alignItems: 'center',
+        backgroundColor: '#f8f9fa',
+    },
+    headerTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: '#2c3e50',
+        fontFamily: 'Inter-Bold',
+    },
+    editButton: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#f0e6ff',
+    },
+    content: {
+        paddingHorizontal: 20,
+        paddingTop: 20,
+        paddingBottom: 20,  // Add some bottom padding
+    },
+    section: {
+        marginBottom: 24,
+    },
+    sectionTitle: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#2c3e50',
+        marginBottom: 8,
+        fontFamily: 'Inter-SemiBold',
+    },
+    taskTitle: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: '#2c3e50',
+        lineHeight: 30,
+        fontFamily: 'Inter-Bold',
+    },
+    taskDescription: {
+        fontSize: 16,
+        color: '#495057',
+        lineHeight: 24,
+        fontFamily: 'Inter-Regular',
+    },
+    editInput: {
         backgroundColor: '#fff',
-        paddingVertical: 8,
-        paddingHorizontal: 12,
-        borderRadius: 8,
+        borderRadius: 12,
+        padding: 16,
+        fontSize: 16,
+        color: '#2c3e50',
+        borderWidth: 1,
+        borderColor: '#AD00FF',
+        fontFamily: 'Inter-Regular',
+    },
+    descriptionInput: {
+        height: 100,
+        textAlignVertical: 'top',
+    },
+    detailsContainer: {
+        marginBottom: 24,
+    },
+detailsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-start',
+    gap: 8,
+},
+compactCard: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+    minWidth: 120, // Minimum width for each card
+    flexGrow: 1,
+    flexBasis: 0, // This makes cards grow equally
+    maxWidth: '48%', // Maximum 2 cards per row (with gap)
+},
+    compactCardLabel: {
+        fontSize: 12,
+        color: '#6c757d',
+        marginBottom: 4,
+        fontFamily: 'Inter-Medium',
+    },
+    compactCardValue: {
+        fontSize: 14,
+        color: '#2c3e50',
+        fontFamily: 'Inter-Regular',
+    },
+    compactCardContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    cardsContainer: {
+        flexDirection: 'row',
+        gap: 12,
+        marginBottom: 24,
+    },
+    card: {
+        flex: 1,
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        padding: 16,
         borderWidth: 1,
         borderColor: '#e9ecef',
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 8,
+        shadowOpacity: 0.1,
+        shadowRadius: 3.84,
         elevation: 2,
-        alignSelf: 'flex-start',
     },
-    cardContent: {
-        flex: 1,
-    },
-    cardValue: {
-        fontSize: 13,
-        color: '#2c3e50',
-        fontFamily: 'Inter-Medium',
-        textAlign: 'center',
-    },
-    descriptionSection: {
-        flex: 1,
-    },
-    descriptionLabel: {
-        fontSize: 16,
-        color: '#6c757d',
-        fontFamily: 'Inter-Medium',
-        marginBottom: 12,
-    },
-    description: {
-        fontSize: 16,
-        color: '#2c3e50',
-        fontFamily: 'Inter-Regular',
-        lineHeight: 24,
-        backgroundColor: '#fff',
-        padding: 16,
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: '#e9ecef',
-        minHeight: 120,
-    },
-    descriptionInput: {
-        fontSize: 16,
-        color: '#2c3e50',
-        fontFamily: 'Inter-Regular',
-        lineHeight: 24,
-        backgroundColor: '#fff',
-        padding: 16,
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: '#6A009C',
-        minHeight: 120,
-    },
-    markAsDoneButton: {
-        position: 'absolute',
-        bottom: 30,
-        right: 20,
+    cardHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#6A009C',
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        borderRadius: 5,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 8,
-        gap: 8,
+        marginBottom: 8,
     },
-    markAsDoneButtonText: {
+    cardLabel: {
+        fontSize: 14,
+        color: '#6c757d',
+        marginLeft: 8,
+        fontFamily: 'Inter-Medium',
+    },
+    cardValue: {
+        fontSize: 14,
+        color: '#2c3e50',
+        fontFamily: 'Inter-Regular',
+    },
+    editableCardContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    statusDisplay: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+    },
+    statusIndicator: {
+        width: 12,
+        height: 12,
+        borderRadius: 6,
+        marginRight: 8,
+    },
+    categoryDisplay: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+    },
+    categoryColor: {
+        width: 12,
+        height: 12,
+        borderRadius: 6,
+        marginRight: 8,
+    },
+    priorityDisplay: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+    },
+    priorityColor: {
+        width: 12,
+        height: 12,
+        borderRadius: 6,
+        marginRight: 8,
+    },
+    scrollContainer: {
+        flex: 1,  // This will take up all available space except the action buttons
+    },
+actionButtonsContainer: {
+    paddingHorizontal: 20,
+    paddingBottom: Platform.OS === 'ios' ? 30 : 20,
+    paddingTop: 12,
+    backgroundColor: '#fff',
+    borderTopWidth: 1,
+    borderTopColor: '#e9ecef',
+},
+    editButtonsRow: {
+        flexDirection: 'row',
+        gap: 12,
+        justifyContent: 'space-between',
+    },
+    viewButtonsRow: {
+        flexDirection: 'row',
+        gap: 12,
+        justifyContent: 'space-between',
+    },
+cancelButton: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: '#e74c3c',
+    },
+    saveButton: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#AD00FF',
+        borderRadius: 12,
+        padding: 16,
+    },
+    cancelButtonText: {
+        marginLeft: 8,
+        fontSize: 14,
+        color: '#e74c3c',
+        fontFamily: 'Inter-Medium',
+    },
+
+    saveButtonText: {
+        marginLeft: 8,
+        fontSize: 14,
+        color: '#fff',
+        fontFamily: 'Inter-Bold',
+    },
+completeButton: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#28a745',
+        borderRadius: 12,
+        padding: 16,
+    },
+    deleteButton: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#dc3545',
+        borderRadius: 12,
+        padding: 16,
+    },
+    completeButtonText: {
+        marginLeft: 8,
         fontSize: 14,
         color: '#fff',
         fontFamily: 'Inter-Medium',
     },
-    editableCard: {
-        borderColor: '#6A009C',
-        borderWidth: 1,
-    },
-    cardEditIcon: {
-        marginLeft: 4,
+    deleteButtonText: {
+        marginLeft: 8,
+        fontSize: 14,
+        color: '#fff',
+        fontFamily: 'Inter-Medium',
     },
     modalOverlay: {
         flex: 1,
@@ -709,68 +1099,137 @@ const styles = StyleSheet.create({
     },
     modalContent: {
         backgroundColor: '#fff',
-        borderRadius: 12,
-        padding: 20,
-        width: '80%',
+        borderRadius: 16,
+        padding: 24,
+        width: '85%',
         maxHeight: '70%',
     },
     modalHeader: {
         flexDirection: 'row',
-        alignItems: 'center',
         justifyContent: 'space-between',
-        marginBottom: 16,
+        alignItems: 'center',
+        marginBottom: 20,
     },
     modalTitle: {
         fontSize: 18,
         fontFamily: 'Inter-Bold',
         color: '#2c3e50',
     },
-    modalCloseButton: {
-        padding: 4,
-    },
-    modalList: {
-        maxHeight: 300,
-    },
     modalOption: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: 16,
+        paddingVertical: 12,
+        paddingHorizontal: 16,
         borderRadius: 8,
-        marginBottom: 8,
-        backgroundColor: '#f8f9fa',
+        marginBottom: 4,
     },
-    selectedOption: {
-        backgroundColor: '#e8f4fd',
-        borderColor: '#6A009C',
-        borderWidth: 1,
+    selectedModalOption: {
+        backgroundColor: '#f0e6ff',
     },
     modalOptionText: {
-        fontSize: 16,
-        color: '#2c3e50',
-        fontFamily: 'Inter-Medium',
-    },
-    customSubjectContainer: {
-        marginTop: 16,
-        paddingTop: 16,
-        borderTopWidth: 1,
-        borderTopColor: '#e9ecef',
-    },
-    customSubjectLabel: {
         fontSize: 14,
-        color: '#6c757d',
-        fontFamily: 'Inter-Medium',
-        marginBottom: 8,
-    },
-    customSubjectInput: {
-        backgroundColor: '#fff',
-        borderWidth: 1,
-        borderColor: '#6A009C',
-        borderRadius: 8,
-        padding: 12,
-        fontSize: 16,
         color: '#2c3e50',
         fontFamily: 'Inter-Regular',
+    },
+    selectedOptionText: {
+        color: '#AD00FF',
+        fontFamily: 'Inter-Medium',
+    },
+    priorityOptionContent: {
+        flex: 1,
+    },
+    priorityDescription: {
+        fontSize: 12,
+        color: '#7f8c8d',
+        marginTop: 2,
+        fontFamily: 'Inter-Regular',
+    },
+    selectedOptionDescription: {
+        color: '#8A2BE2',
+    },
+    quickDateOptions: {
+        marginBottom: 20,
+        borderBottomWidth: 1,
+        borderBottomColor: '#e9ecef',
+        paddingBottom: 16,
+    },
+    calendarContainer: {
+        padding: 16,
+    },
+    calendarSectionTitle: {
+        fontSize: 16,
+        fontFamily: 'Inter-SemiBold',
+        color: '#2c3e50',
+        marginBottom: 16,
+        textAlign: 'center',
+    },
+    calendarHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 16,
+    },
+    monthNavButton: {
+        padding: 8,
+        borderRadius: 8,
+        backgroundColor: '#f8f9fa',
+    },
+    monthYearText: {
+        fontSize: 16,
+        fontFamily: 'Inter-SemiBold',
+        color: '#2c3e50',
+    },
+    calendarGrid: {
+        gap: 8,
+    },
+    dayHeadersRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-around',
+        marginBottom: 8,
+    },
+    dayHeader: {
+        fontSize: 12,
+        color: '#6c757d',
+        fontFamily: 'Inter-Medium',
+        textAlign: 'center',
+        flex: 1,
+    },
+    daysContainer: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 4,
+    },
+    calendarDay: {
+        width: '13.2%',
+        aspectRatio: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderRadius: 8,
+    },
+    inactiveDay: {
+        opacity: 0.3,
+    },
+    todayCalendarDay: {
+        backgroundColor: '#AD00FF',
+    },
+    selectedCalendarDay: {
+        backgroundColor: '#6A009C',
+    },
+    calendarDayText: {
+        fontSize: 14,
+        color: '#495057',
+        fontFamily: 'Inter-Medium',
+    },
+    inactiveDayText: {
+        color: '#adb5bd',
+    },
+    todayDayText: {
+        color: '#fff',
+        fontFamily: 'Inter-Bold',
+    },
+    selectedDayText: {
+        color: '#fff',
+        fontFamily: 'Inter-Bold',
     },
 });
 

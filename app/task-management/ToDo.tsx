@@ -106,150 +106,169 @@ const ToDo: React.FC = () => {
 
     const loadTasks = async () => {
         try {
-            // Sample data for demonstration
-            const sampleTasks: Task[] = [
-                // Urgent & Important
-                {
-                    id: '1',
-                    title: 'Submit Final Project Report',
-                    description: 'Complete and submit the final semester project report for Computer Science',
-                    priority: 'urgent-important',
-                    subject: 'Computer Science',
-                    dueDate: new Date('2025-07-22'),
-                    dueTime: '11:59 PM',
-                    completed: false,
-                    overdue: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                },
-                {
-                    id: '2',
-                    title: 'Prepare for Mathematics Exam',
-                    description: 'Study calculus and linear algebra topics for tomorrow\'s exam',
-                    priority: 'urgent-important',
-                    subject: 'Mathematics',
-                    dueDate: new Date('2025-07-22'),
-                    dueTime: '8:00 AM',
-                    completed: false,
-                    overdue: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                },
-                {
-                    id: '3',
-                    title: 'Doctor Appointment',
-                    description: 'Annual health checkup appointment',
-                    priority: 'urgent-important',
-                    subject: 'Health',
-                    dueDate: new Date('2025-07-21'),
-                    dueTime: '2:00 PM',
-                    completed: false,
-                    overdue: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                },
-                // Important, Not Urgent
-                {
-                    id: '4',
-                    title: 'Start Research Paper',
-                    description: 'Begin research on AI ethics for next month\'s assignment',
-                    priority: 'not-urgent-important',
-                    subject: 'Computer Science',
-                    dueDate: new Date('2025-08-15'),
-                    completed: false,
-                    overdue: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                },
-                {
-                    id: '5',
-                    title: 'Learn New Programming Language',
-                    description: 'Start learning Python for data science applications',
-                    priority: 'not-urgent-important',
-                    subject: 'Programming',
-                    dueDate: new Date('2025-08-01'),
-                    completed: false,
-                    overdue: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                },
-                {
-                    id: '6',
-                    title: 'Exercise Routine',
-                    description: 'Plan and start a regular exercise routine for better health',
-                    priority: 'not-urgent-important',
-                    subject: 'Health',
-                    completed: false,
-                    overdue: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                },
-                // Urgent, Not Important
-                {
-                    id: '7',
-                    title: 'Reply to Group Chat',
-                    description: 'Respond to non-critical messages in study group chat',
-                    priority: 'urgent-not-important',
-                    subject: 'Social',
-                    dueDate: new Date('2025-07-21'),
-                    completed: false,
-                    overdue: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                },
-                {
-                    id: '8',
-                    title: 'Organize Desktop Files',
-                    description: 'Clean up and organize files on computer desktop',
-                    priority: 'urgent-not-important',
-                    subject: 'Personal',
-                    completed: false,
-                    overdue: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                },
-                // Neither Urgent nor Important
-                {
-                    id: '9',
-                    title: 'Watch Movie',
-                    description: 'Watch that new sci-fi movie everyone is talking about',
-                    priority: 'not-urgent-not-important',
-                    subject: 'Entertainment',
-                    dueDate: new Date('2025-07-22'),
-                    completed: false,
-                    overdue: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                },
-                {
-                    id: '10',
-                    title: 'Browse Social Media',
-                    description: 'Check latest updates on social media platforms',
-                    priority: 'not-urgent-not-important',
-                    subject: 'Entertainment',
-                    dueDate: new Date('2025-07-22'),
-                    completed: false,
-                    overdue: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                },
-                {
-                    id: '11',
-                    title: 'Play Video Games',
-                    description: 'Play that new RPG game that was just released',
-                    priority: 'not-urgent-not-important',
-                    subject: 'Entertainment',
-                    dueDate: new Date('2025-07-22'),
-                    completed: false,
-                    overdue: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                },
-            ];
+            // Load tasks from the actual service
+            const loadedTasks = await taskService.getAllTasks();
+            setTasks(loadedTasks);
+            
+            // If no tasks exist, add some sample data for demonstration
+            if (loadedTasks.length === 0) {
+                const sampleTasks: Task[] = [
+                    // Urgent & Important
+                    {
+                        id: '1',
+                        title: 'Submit Final Project Report',
+                        description: 'Complete and submit the final semester project report for Computer Science',
+                        priority: 'urgent-important',
+                        status: 'in-progress',
+                        category: { id: '1', name: 'Computer Science', color: '#3498db', createdAt: new Date() },
+                        dueDate: new Date('2025-07-22'),
+                        completed: false,
+                        overdue: false,
+                        createdAt: new Date(),
+                        updatedAt: new Date(),
+                    },
+                    {
+                        id: '2',
+                        title: 'Prepare for Mathematics Exam',
+                        description: 'Study calculus and linear algebra topics for tomorrow\'s exam',
+                        priority: 'urgent-important',
+                        status: 'todo',
+                        category: { id: '2', name: 'Mathematics', color: '#e74c3c', createdAt: new Date() },
+                        dueDate: new Date('2025-07-22'),
+                        completed: false,
+                        overdue: false,
+                        createdAt: new Date(),
+                        updatedAt: new Date(),
+                    },
+                    {
+                        id: '3',
+                        title: 'Doctor Appointment',
+                        description: 'Annual health checkup appointment',
+                        priority: 'urgent-important',
+                        status: 'todo',
+                        category: { id: '3', name: 'Health', color: '#2ecc71', createdAt: new Date() },
+                        dueDate: new Date('2025-07-21'),
+                        completed: false,
+                        overdue: false,
+                        createdAt: new Date(),
+                        updatedAt: new Date(),
+                    },
+                    // Important, Not Urgent
+                    {
+                        id: '4',
+                        title: 'Start Research Paper',
+                        description: 'Begin research on AI ethics for next month\'s assignment',
+                        priority: 'not-urgent-important',
+                        status: 'todo',
+                        category: { id: '1', name: 'Computer Science', color: '#3498db', createdAt: new Date() },
+                        dueDate: new Date('2025-08-15'),
+                        completed: false,
+                        overdue: false,
+                        createdAt: new Date(),
+                        updatedAt: new Date(),
+                    },
+                    {
+                        id: '5',
+                        title: 'Learn New Programming Language',
+                        description: 'Start learning Python for data science applications',
+                        priority: 'not-urgent-important',
+                        status: 'todo',
+                        category: { id: '4', name: 'Programming', color: '#f39c12', createdAt: new Date() },
+                        dueDate: new Date('2025-08-01'),
+                        completed: false,
+                        overdue: false,
+                        createdAt: new Date(),
+                        updatedAt: new Date(),
+                    },
+                    {
+                        id: '6',
+                        title: 'Exercise Routine',
+                        description: 'Plan and start a regular exercise routine for better health',
+                        priority: 'not-urgent-important',
+                        status: 'todo',
+                        category: { id: '3', name: 'Health', color: '#2ecc71', createdAt: new Date() },
+                        completed: false,
+                        overdue: false,
+                        createdAt: new Date(),
+                        updatedAt: new Date(),
+                    },
+                    // Urgent, Not Important
+                    {
+                        id: '7',
+                        title: 'Reply to Group Chat',
+                        description: 'Respond to non-critical messages in study group chat',
+                        priority: 'urgent-not-important',
+                        status: 'todo',
+                        category: { id: '5', name: 'Social', color: '#9b59b6', createdAt: new Date() },
+                        dueDate: new Date('2025-07-21'),
+                        completed: false,
+                        overdue: false,
+                        createdAt: new Date(),
+                        updatedAt: new Date(),
+                    },
+                    {
+                        id: '8',
+                        title: 'Organize Desktop Files',
+                        description: 'Clean up and organize files on computer desktop',
+                        priority: 'urgent-not-important',
+                        status: 'todo',
+                        category: { id: '6', name: 'Personal', color: '#1abc9c', createdAt: new Date() },
+                        completed: false,
+                        overdue: false,
+                        createdAt: new Date(),
+                        updatedAt: new Date(),
+                    },
+                    // Neither Urgent nor Important
+                    {
+                        id: '9',
+                        title: 'Watch Movie',
+                        description: 'Watch that new sci-fi movie everyone is talking about',
+                        priority: 'not-urgent-not-important',
+                        status: 'todo',
+                        category: { id: '7', name: 'Entertainment', color: '#e67e22', createdAt: new Date() },
+                        dueDate: new Date('2025-07-22'),
+                        completed: false,
+                        overdue: false,
+                        createdAt: new Date(),
+                        updatedAt: new Date(),
+                    },
+                    {
+                        id: '10',
+                        title: 'Browse Social Media',
+                        description: 'Check latest updates on social media platforms',
+                        priority: 'not-urgent-not-important',
+                        status: 'todo',
+                        category: { id: '7', name: 'Entertainment', color: '#e67e22', createdAt: new Date() },
+                        dueDate: new Date('2025-07-22'),
+                        completed: false,
+                        overdue: false,
+                        createdAt: new Date(),
+                        updatedAt: new Date(),
+                    },
+                    {
+                        id: '11',
+                        title: 'Play Video Games',
+                        description: 'Play that new RPG game that was just released',
+                        priority: 'not-urgent-not-important',
+                        status: 'todo',
+                        category: { id: '7', name: 'Entertainment', color: '#e67e22', createdAt: new Date() },
+                        dueDate: new Date('2025-07-22'),
+                        completed: false,
+                        overdue: false,
+                        createdAt: new Date(),
+                        updatedAt: new Date(),
+                    },
+                ];
 
-            // In a real app, you would fetch from the service
-            // const loadedTasks = await taskService.getAllTasks();
-            setTasks(sampleTasks);
+                // Save sample tasks to the service so they're persistent
+                for (const task of sampleTasks) {
+                    await taskService.createTask(task);
+                }
+                
+                // Reload to get the tasks with proper IDs from the service
+                const savedTasks = await taskService.getAllTasks();
+                setTasks(savedTasks);
+            }
         } catch (error) {
             console.error('Error loading tasks:', error);
             Alert.alert('Error', 'Failed to load tasks');
@@ -308,12 +327,12 @@ const ToDo: React.FC = () => {
         }
         return true;
     }).filter(task => {
-        // Filter by category/subject
+        // Filter by category
         if (selectedCategory === 'all') return true;
-        return task.subject === selectedCategory;
+        return task.category?.name === selectedCategory;
     });
 
-    const categories = [...new Set(tasks.map(task => task.subject).filter((subject): subject is string => Boolean(subject)))];
+    const categories = [...new Set(tasks.map(task => task.category?.name).filter((category): category is string => Boolean(category)))];
 
     const isDateSelected = (date: Date) => {
         return date.toDateString() === selectedDate.toDateString();
