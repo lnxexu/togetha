@@ -46,6 +46,12 @@ const WelcomeScreen: React.FC = () => {
             <Text style={[styles.subtitle, { fontSize: width * 0.035, maxWidth: width * 0.85 } ]}>
               No more juggling apps. With Togetha, your tasks, deadlines, and study materials are all in sync! So you can focus on what really matters.
             </Text>
+            <TouchableOpacity
+              style={[styles.loginButton, { paddingVertical: width * 0.025, paddingHorizontal: width * 0.06, borderRadius: width * 0.05 }]}
+              onPress={() => navigation.navigate('Login')}
+            >
+              <Text style={[styles.loginButtonText, { fontSize: width * 0.04 }]}>Already have an account? Sign In</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -181,6 +187,18 @@ const styles = StyleSheet.create({
   },
   getStartedButtonText: {
     color: '#fff',
+    fontFamily: 'Inter-Medium',
+    textAlign: 'center',
+  },
+  loginButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#A32EDA',
+    alignSelf: 'center',
+    marginTop: 15,
+  },
+  loginButtonText: {
+    color: '#A32EDA',
     fontFamily: 'Inter-Medium',
     textAlign: 'center',
   },

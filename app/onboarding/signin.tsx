@@ -38,9 +38,8 @@ export default function SignIn() {
           />
           <TextInput
             style={styles.input}
-            placeholder="Enter your email"
+            placeholder="Enter your email or username"
             placeholderTextColor="#7F8C8D"
-            keyboardType="email-address"
             autoCapitalize="none"
           />
         </View>

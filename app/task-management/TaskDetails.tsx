@@ -9,12 +9,14 @@ import {
     Platform,
     Alert,
     TextInput,
+    Modal,
+    ScrollView,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/AppNavigator';
-import { Task } from './types/Task';
+import { Task, Priority } from './types/Task';
 import { taskService } from './services/taskService';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -28,6 +30,28 @@ const TaskDetails: React.FC = () => {
     const [isEditing, setIsEditing] = useState(false);
     const [editedTitle, setEditedTitle] = useState('');
     const [editedDescription, setEditedDescription] = useState('');
+    const [editedPriority, setEditedPriority] = useState<Priority>('not-urgent-not-important');
+    const [editedSubject, setEditedSubject] = useState('');
+    const [showPriorityModal, setShowPriorityModal] = useState(false);
+    const [showSubjectModal, setShowSubjectModal] = useState(false);
+
+    const priorityOptions = [
+        { value: 'urgent-important', label: 'Urgent & Important', color: '#dc3545' },
+        { value: 'not-urgent-important', label: 'Important', color: '#28a745' },
+        { value: 'urgent-not-important', label: 'Urgent', color: '#ffc107' },
+        { value: 'not-urgent-not-important', label: 'Neither', color: '#6c757d' },
+    ];
+
+    const subjectOptions = [
+        'Computer Science',
+        'Mathematics',
+        'Health',
+        'Programming',
+        'Personal',
+        'Work',
+        'Study',
+        'Other',
+    ];
 
     // Load task when screen is focused
     useFocusEffect(
@@ -110,6 +134,8 @@ const TaskDetails: React.FC = () => {
                 setTask(foundTask);
                 setEditedTitle(foundTask.title);
                 setEditedDescription(foundTask.description || '');
+                setEditedPriority(foundTask.priority);
+                setEditedSubject(foundTask.subject || '');
             } else {
                 Alert.alert('Error', 'Task not found');
                 navigation.goBack();
@@ -129,13 +155,20 @@ const TaskDetails: React.FC = () => {
         
         try {
             // In a real app, you would update via taskService
-            // await taskService.updateTask(taskId, { title: editedTitle, description: editedDescription });
+            // await taskService.updateTask(taskId, { 
+            //     title: editedTitle, 
+            //     description: editedDescription,
+            //     priority: editedPriority,
+            //     subject: editedSubject 
+            // });
             
             // Update local state for demonstration
             setTask({
                 ...task,
                 title: editedTitle,
                 description: editedDescription,
+                priority: editedPriority,
+                subject: editedSubject,
                 updatedAt: new Date(),
             });
             
@@ -150,6 +183,8 @@ const TaskDetails: React.FC = () => {
         if (task) {
             setEditedTitle(task.title);
             setEditedDescription(task.description || '');
+            setEditedPriority(task.priority);
+            setEditedSubject(task.subject || '');
         }
         setIsEditing(false);
     };
@@ -306,16 +341,26 @@ const TaskDetails: React.FC = () => {
                     </View>
 
                     {/* Priority Card */}
-                    <View style={styles.infoCard}>
-                        <Text style={[styles.cardValue, { color: getPriorityColor(task.priority) }]}>
-                            {getPriorityLabel(task.priority)}
+                    <TouchableOpacity 
+                        style={[styles.infoCard, isEditing && styles.editableCard]}
+                        onPress={isEditing ? () => setShowPriorityModal(true) : undefined}
+                        disabled={!isEditing}
+                    >
+                        <Text style={[styles.cardValue, { color: getPriorityColor(isEditing ? editedPriority : task.priority) }]}>
+                            {getPriorityLabel(isEditing ? editedPriority : task.priority)}
                         </Text>
-                    </View>
+                        {isEditing && <MaterialIcons name="edit" size={14} color="#6A009C" style={styles.cardEditIcon} />}
+                    </TouchableOpacity>
 
                     {/* Subject Card */}
-                    <View style={styles.infoCard}>
-                        <Text style={styles.cardValue}>{task.subject || 'No subject'}</Text>
-                    </View>
+                    <TouchableOpacity 
+                        style={[styles.infoCard, isEditing && styles.editableCard]}
+                        onPress={isEditing ? () => setShowSubjectModal(true) : undefined}
+                        disabled={!isEditing}
+                    >
+                        <Text style={styles.cardValue}>{(isEditing ? editedSubject : task.subject) || 'No subject'}</Text>
+                        {isEditing && <MaterialIcons name="edit" size={14} color="#6A009C" style={styles.cardEditIcon} />}
+                    </TouchableOpacity>
                 </View>
 
                 {/* Task Description */}
@@ -347,6 +392,105 @@ const TaskDetails: React.FC = () => {
                     {task.completed ? 'Mark Pending' : 'Mark as Done'}
                 </Text>
             </TouchableOpacity>
+
+            {/* Priority Selection Modal */}
+            <Modal
+                visible={showPriorityModal}
+                transparent={true}
+                animationType="slide"
+                onRequestClose={() => setShowPriorityModal(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>Select Priority</Text>
+                            <TouchableOpacity
+                                onPress={() => setShowPriorityModal(false)}
+                                style={styles.modalCloseButton}
+                            >
+                                <MaterialIcons name="close" size={24} color="#666" />
+                            </TouchableOpacity>
+                        </View>
+                        <ScrollView style={styles.modalList}>
+                            {priorityOptions.map((option) => (
+                                <TouchableOpacity
+                                    key={option.value}
+                                    style={[
+                                        styles.modalOption,
+                                        editedPriority === option.value && styles.selectedOption
+                                    ]}
+                                    onPress={() => {
+                                        setEditedPriority(option.value as Priority);
+                                        setShowPriorityModal(false);
+                                    }}
+                                >
+                                    <Text style={[styles.modalOptionText, { color: option.color }]}>
+                                        {option.label}
+                                    </Text>
+                                    {editedPriority === option.value && (
+                                        <MaterialIcons name="check" size={20} color={option.color} />
+                                    )}
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Subject Selection Modal */}
+            <Modal
+                visible={showSubjectModal}
+                transparent={true}
+                animationType="slide"
+                onRequestClose={() => setShowSubjectModal(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>Select Subject</Text>
+                            <TouchableOpacity
+                                onPress={() => setShowSubjectModal(false)}
+                                style={styles.modalCloseButton}
+                            >
+                                <MaterialIcons name="close" size={24} color="#666" />
+                            </TouchableOpacity>
+                        </View>
+                        <ScrollView style={styles.modalList}>
+                            {subjectOptions.map((subject) => (
+                                <TouchableOpacity
+                                    key={subject}
+                                    style={[
+                                        styles.modalOption,
+                                        editedSubject === subject && styles.selectedOption
+                                    ]}
+                                    onPress={() => {
+                                        setEditedSubject(subject);
+                                        setShowSubjectModal(false);
+                                    }}
+                                >
+                                    <Text style={styles.modalOptionText}>
+                                        {subject}
+                                    </Text>
+                                    {editedSubject === subject && (
+                                        <MaterialIcons name="check" size={20} color="#6A009C" />
+                                    )}
+                                </TouchableOpacity>
+                            ))}
+                            {/* Custom Subject Input */}
+                            <View style={styles.customSubjectContainer}>
+                                <Text style={styles.customSubjectLabel}>Or enter custom subject:</Text>
+                                <TextInput
+                                    style={styles.customSubjectInput}
+                                    placeholder="Enter custom subject"
+                                    value={editedSubject && !subjectOptions.includes(editedSubject) ? editedSubject : ''}
+                                    onChangeText={(text) => setEditedSubject(text)}
+                                    onSubmitEditing={() => setShowSubjectModal(false)}
+                                />
+                            </View>
+                        </ScrollView>
+                    </View>
+                </View>
+            </Modal>
         </SafeAreaView>
     );
 };
@@ -549,6 +693,84 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: '#fff',
         fontFamily: 'Inter-Medium',
+    },
+    editableCard: {
+        borderColor: '#6A009C',
+        borderWidth: 1,
+    },
+    cardEditIcon: {
+        marginLeft: 4,
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    modalContent: {
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        padding: 20,
+        width: '80%',
+        maxHeight: '70%',
+    },
+    modalHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 16,
+    },
+    modalTitle: {
+        fontSize: 18,
+        fontFamily: 'Inter-Bold',
+        color: '#2c3e50',
+    },
+    modalCloseButton: {
+        padding: 4,
+    },
+    modalList: {
+        maxHeight: 300,
+    },
+    modalOption: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: 16,
+        borderRadius: 8,
+        marginBottom: 8,
+        backgroundColor: '#f8f9fa',
+    },
+    selectedOption: {
+        backgroundColor: '#e8f4fd',
+        borderColor: '#6A009C',
+        borderWidth: 1,
+    },
+    modalOptionText: {
+        fontSize: 16,
+        color: '#2c3e50',
+        fontFamily: 'Inter-Medium',
+    },
+    customSubjectContainer: {
+        marginTop: 16,
+        paddingTop: 16,
+        borderTopWidth: 1,
+        borderTopColor: '#e9ecef',
+    },
+    customSubjectLabel: {
+        fontSize: 14,
+        color: '#6c757d',
+        fontFamily: 'Inter-Medium',
+        marginBottom: 8,
+    },
+    customSubjectInput: {
+        backgroundColor: '#fff',
+        borderWidth: 1,
+        borderColor: '#6A009C',
+        borderRadius: 8,
+        padding: 12,
+        fontSize: 16,
+        color: '#2c3e50',
+        fontFamily: 'Inter-Regular',
     },
 });
 

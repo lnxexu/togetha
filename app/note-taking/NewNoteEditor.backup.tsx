@@ -5,6 +5,7 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   Alert,
   Dimensions,
+  FlatList,
   Keyboard,
   KeyboardAvoidingView,
   KeyboardEvent,
@@ -55,7 +56,10 @@ interface RinaPopupProps {
   onAskRina: (text: string) => void;
 }
 
-// Storage utility
+type ColorChannel = "r" | "g" | "b";
+
+// Constants
+
 const storage = {
   async setItem(key: string, value: string): Promise<void> {
     await AsyncStorage.setItem(key, value);
@@ -115,9 +119,354 @@ const RinaButton: React.FC<RinaPopupProps> = ({
   );
 };
 
+// PDF Annotation Toolbar Component
+const PDFAnnotationToolbar = ({
+  onHighlight,
+  onNote,
+  onUnderline,
+  onStrikethrough,
+  onClose,
+  selectedColor,
+  onColorChange,
+}: {
+  onHighlight: () => void;
+  onNote: () => void;
+  onUnderline: () => void;
+  onStrikethrough: () => void;
+  onClose: () => void;
+  selectedColor: string;
+  onColorChange: (color: string) => void;
+}) => {
+  const colors = [
+    "#FFFF00",
+    "#FF6B6B",
+    "#4ECDC4",
+    "#45B7D1",
+    "#96CEB4",
+    "#FFEAA7",
+  ];
 
+  return (
+    <View style={styles.pdfToolbar}>
+      <TouchableOpacity style={styles.pdfToolButton} onPress={onHighlight}>
+        <MaterialIcons name="format-color-fill" size={20} color="#333" />
+        <Text style={styles.pdfToolText}>Highlight</Text>
+      </TouchableOpacity>
 
+      <TouchableOpacity style={styles.pdfToolButton} onPress={onNote}>
+        <MaterialIcons name="sticky-note-2" size={20} color="#333" />
+        <Text style={styles.pdfToolText}>Note</Text>
+      </TouchableOpacity>
 
+      <TouchableOpacity style={styles.pdfToolButton} onPress={onUnderline}>
+        <MaterialIcons name="format-underlined" size={20} color="#333" />
+        <Text style={styles.pdfToolText}>Underline</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.pdfToolButton} onPress={onStrikethrough}>
+        <MaterialIcons name="strikethrough-s" size={20} color="#333" />
+        <Text style={styles.pdfToolText}>Strike</Text>
+      </TouchableOpacity>
+
+      <View style={styles.colorPalette}>
+        {colors.map((color) => (
+          <TouchableOpacity
+            key={color}
+            style={[
+              styles.colorButton,
+              { backgroundColor: color },
+              selectedColor === color && styles.selectedColorButton,
+            ]}
+            onPress={() => onColorChange(color)}
+          />
+        ))}
+      </View>
+
+      <TouchableOpacity style={styles.pdfCloseButton} onPress={onClose}>
+        <MaterialIcons name="close" size={20} color="#666" />
+      </TouchableOpacity>
+    </View>
+  );
+};
+
+// Enhanced PDF Viewer with Annotation Support
+const PDFViewerModal = ({
+  attachment,
+  onClose,
+  onAnnotation,
+}: {
+  attachment: Attachment | null;
+  onClose: () => void;
+  onAnnotation: (annotation: PDFAnnotation) => void;
+}) => {
+  const [showToolbar, setShowToolbar] = useState(false);
+  const [selectedText, setSelectedText] = useState("");
+  const [selectionPosition, setSelectionPosition] = useState({ x: 0, y: 0 });
+  const [annotationColor, setAnnotationColor] = useState("#FFFF00");
+  const [annotations, setAnnotations] = useState<PDFAnnotation[]>(
+    attachment?.annotations || []
+  );
+  const [showRinaPopup, setShowRinaPopup] = useState(false);
+
+  if (!attachment || attachment.type !== "pdf") return null;
+
+  const handleTextSelection = (
+    text: string,
+    position: { x: number; y: number }
+  ) => {
+    if (text.trim()) {
+      setSelectedText(text);
+      setSelectionPosition(position);
+      setShowToolbar(true);
+      setShowRinaPopup(true);
+    }
+  };
+
+  const handleAnnotation = (type: PDFAnnotation["type"]) => {
+    if (selectedText) {
+      const annotation: PDFAnnotation = {
+        id: `annotation_${Date.now()}`,
+        type,
+        page: 1, // This would need to be determined based on actual PDF page
+        x: selectionPosition.x,
+        y: selectionPosition.y,
+        width: 100, // This would be calculated based on selection
+        height: 20,
+        color: annotationColor,
+        text: selectedText,
+      };
+
+      setAnnotations((prev) => [...prev, annotation]);
+      onAnnotation(annotation);
+      setShowToolbar(false);
+      setSelectedText("");
+    }
+  };
+
+  const handleAskRina = (text: string) => {
+    // Here you would integrate with your RINA AI service
+    Alert.alert(
+      "Ask RINA",
+      `You selected: "${text}"\n\nThis would open RINA chat with the selected text.`
+    );
+  };
+
+  return (
+    <Modal visible={!!attachment} transparent animationType="fade">
+      <View style={styles.pdfViewerContainer}>
+        <View style={styles.pdfHeader}>
+          <Text style={styles.pdfTitle}>{attachment.name}</Text>
+          <TouchableOpacity onPress={onClose}>
+            <MaterialIcons name="close" size={24} color="#fff" />
+          </TouchableOpacity>
+        </View>
+
+        {/* PDF Content Area */}
+        <ScrollView style={styles.pdfContent}>
+          <TouchableOpacity
+            style={styles.pdfPlaceholder}
+            onLongPress={(event) => {
+              const { pageX, pageY } = event.nativeEvent;
+              handleTextSelection("Sample selected text from PDF", {
+                x: pageX,
+                y: pageY,
+              });
+            }}
+          >
+            <MaterialIcons name="picture-as-pdf" size={80} color="#FF5722" />
+            <Text style={styles.pdfPlaceholderText}>{attachment.name}</Text>
+            <Text style={styles.pdfInstructionText}>
+              PDF preview not available in Expo Go
+            </Text>
+            <Text style={styles.pdfInstructionText}>
+              Long press to simulate text selection for annotations
+            </Text>
+
+            <TouchableOpacity
+              style={styles.pdfOpenButton}
+              onPress={() => {
+                Linking.openURL(attachment.uri).catch(() => {
+                  Alert.alert("Error", "Cannot open this PDF file");
+                });
+              }}
+            >
+              <MaterialIcons name="open-in-new" size={20} color="#fff" />
+              <Text style={styles.pdfOpenButtonText}>Open in External App</Text>
+            </TouchableOpacity>
+
+            {/* Render annotations */}
+            {annotations.map((annotation) => (
+              <View
+                key={annotation.id}
+                style={[
+                  styles.annotationOverlay,
+                  {
+                    backgroundColor: annotation.color,
+                    left: annotation.x,
+                    top: annotation.y,
+                  },
+                ]}
+              >
+                <Text style={styles.annotationText}>{annotation.text}</Text>
+              </View>
+            ))}
+          </TouchableOpacity>
+        </ScrollView>
+
+        {/* Annotation Toolbar */}
+        {showToolbar && (
+          <PDFAnnotationToolbar
+            onHighlight={() => handleAnnotation("highlight")}
+            onNote={() => handleAnnotation("note")}
+            onUnderline={() => handleAnnotation("underline")}
+            onStrikethrough={() => handleAnnotation("strikethrough")}
+            onClose={() => {
+              setShowToolbar(false);
+              setSelectedText("");
+            }}
+            selectedColor={annotationColor}
+            onColorChange={setAnnotationColor}
+          />
+        )}
+
+        {/* RINA Popup */}
+        <RinaButton
+          visible={showRinaPopup}
+          selectedText={selectedText}
+          position={selectionPosition}
+          onClose={() => setShowRinaPopup(false)}
+          onAskRina={handleAskRina}
+        />
+      </View>
+    </Modal>
+  );
+};
+
+const PreviewModal = ({
+  attachment,
+  onClose,
+}: {
+  attachment: Attachment | null;
+  onClose: () => void;
+}) => {
+  if (!attachment) return null;
+
+  return (
+    <Modal visible={!!attachment} transparent animationType="fade">
+      <View style={styles.previewOverlay}>
+        {/* Header */}
+        <View style={styles.previewHeader}>
+          <View style={styles.previewHeaderLeft}>
+            <MaterialIcons
+              name={attachment.type === "pdf" ? "picture-as-pdf" : "image"}
+              size={20}
+              color="#fff"
+            />
+            <Text style={styles.previewHeaderTitle} numberOfLines={1}>
+              {attachment.name}
+            </Text>
+          </View>
+          <TouchableOpacity style={styles.previewCloseButton} onPress={onClose}>
+            <MaterialIcons name="close" size={24} color="#fff" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Content */}
+        <View style={styles.previewContent}>
+          {attachment.type === "image" ? (
+            <ScrollView
+              contentContainerStyle={styles.imagePreviewContainer}
+              maximumZoomScale={3}
+              minimumZoomScale={1}
+              showsVerticalScrollIndicator={false}
+              showsHorizontalScrollIndicator={false}
+            >
+              <Image
+                source={{ uri: attachment.uri }}
+                style={styles.previewImage}
+                resizeMode="contain"
+              />
+            </ScrollView>
+          ) : (
+            // PDF Preview (Expo Go Compatible)
+            <View style={styles.previewDocument}>
+              <View style={styles.pdfPreviewIcon}>
+                <MaterialIcons
+                  name="picture-as-pdf"
+                  size={80}
+                  color="#FF5722"
+                />
+              </View>
+              <Text style={styles.previewDocumentTitle}>{attachment.name}</Text>
+              <Text style={styles.previewDocumentInfo}>
+                Created: {new Date(attachment.timestamp).toLocaleDateString()}
+              </Text>
+              <Text style={styles.previewDocumentInfo}>
+                PDF preview not available in Expo Go
+              </Text>
+              {attachment.annotations && attachment.annotations.length > 0 && (
+                <View style={styles.annotationsInfo}>
+                  <MaterialIcons name="note" size={16} color="#fff" />
+                  <Text style={styles.annotationsText}>
+                    {attachment.annotations.length} annotation
+                    {attachment.annotations.length !== 1 ? "s" : ""}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+        </View>
+
+        {/* Footer Actions */}
+        <View style={styles.previewFooter}>
+          {attachment.type === "pdf" && (
+            <TouchableOpacity
+              style={styles.previewActionButton}
+              onPress={() => {
+                onClose();
+                // The parent component will handle opening PDF viewer
+              }}
+            >
+              <MaterialIcons name="edit" size={20} color="#fff" />
+              <Text style={styles.previewActionText}>Annotate</Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity
+            style={styles.previewActionButton}
+            onPress={() => {
+              Alert.alert("Download", "Would you like to save this file?", [
+                { text: "Cancel" },
+                {
+                  text: "Save",
+                  onPress: () => {
+                    // In a real app, you'd implement file saving logic here
+                    Alert.alert("Success", "File saved to device");
+                  },
+                },
+              ]);
+            }}
+          >
+            <MaterialIcons name="download" size={20} color="#fff" />
+            <Text style={styles.previewActionText}>Save</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.previewActionButton}
+            onPress={() => {
+              Linking.openURL(attachment.uri).catch(() => {
+                Alert.alert("Error", "Cannot open this file type");
+              });
+            }}
+          >
+            <MaterialIcons name="open-in-new" size={20} color="#fff" />
+            <Text style={styles.previewActionText}>Open</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+};
 
 const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   // Refs
@@ -812,6 +1161,115 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     color: "#333",
   },
+  // Enhanced Attachment Styles
+  attachmentsScrollView: {
+    marginBottom: 16,
+  },
+  attachmentCard: {
+    width: 160,
+    marginRight: 12,
+    backgroundColor: "#f8f9fa",
+    borderRadius: 12,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: "#e9ecef",
+  },
+  attachmentPreviewContainer: {
+    marginBottom: 8,
+  },
+  attachmentThumbnail: {
+    width: "100%",
+    height: 120,
+    borderRadius: 8,
+    marginBottom: 8,
+    position: "relative",
+    overflow: "hidden",
+  },
+  imageThumbnail: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 8,
+  },
+  pdfThumbnail: {
+    width: "100%",
+    height: "100%",
+    backgroundColor: "#fff3e0",
+    justifyContent: "center",
+    alignItems: "center",
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: "#ffcc80",
+    borderStyle: "dashed",
+  },
+  pdfLabel: {
+    fontSize: 12,
+    color: "#FF5722",
+    fontWeight: "bold",
+    marginTop: 4,
+  },
+  fileTypeOverlay: {
+    position: "absolute",
+    top: 4,
+    right: 4,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  fileTypeText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "bold",
+  },
+  annotationBadgeOverlay: {
+    position: "absolute",
+    bottom: 4,
+    right: 4,
+    backgroundColor: "#FF6B6B",
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  attachmentInfo: {
+    marginBottom: 8,
+  },
+  attachmentName: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 2,
+  },
+  attachmentDate: {
+    fontSize: 10,
+    color: "#666",
+  },
+  attachmentActions: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+  },
+  attachmentActionButton: {
+    padding: 8,
+    borderRadius: 6,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#ddd",
+  },
+  // Legacy styles (keeping for compatibility)
+  attachmentItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+    marginBottom: 8,
+  },
+  attachmentPreviewButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
   customRichTextInput: {
     flex: 1,
     minHeight: 300,
@@ -1045,6 +1503,89 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 40,
   },
+  pdfPreviewIcon: {
+    padding: 20,
+    backgroundColor: "rgba(255,87,34,0.1)",
+    borderRadius: 50,
+    marginBottom: 20,
+  },
+  previewDocumentTitle: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "600",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  previewDocumentInfo: {
+    color: "#ccc",
+    fontSize: 14,
+    marginBottom: 16,
+  },
+  annotationsInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,107,107,0.2)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  annotationsText: {
+    color: "#fff",
+    fontSize: 12,
+    marginLeft: 4,
+  },
+  previewFooter: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.1)",
+  },
+  previewActionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.1)",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+    minWidth: 80,
+    justifyContent: "center",
+  },
+  previewActionText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "600",
+    marginLeft: 4,
+  },
+  // Legacy preview styles (keeping for compatibility)
+  previewDocumentText: {
+    color: "#fff",
+    marginTop: 10,
+    fontSize: 16,
+  },
+  previewOpenButton: {
+    marginTop: 20,
+    padding: 10,
+    backgroundColor: "#007AFF",
+    borderRadius: 5,
+  },
+  previewOpenButtonText: {
+    color: "#fff",
+    fontWeight: "bold",
+  },
+  annotationBadge: {
+    backgroundColor: "#FF6B6B",
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginLeft: 8,
+  },
+  annotationBadgeText: {
+    color: "white",
+    fontSize: 10,
+    fontWeight: "bold",
+  },
   // RINA Button Styles
   rinaFloatingButton: {
     position: "absolute",
@@ -1069,6 +1610,114 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "bold",
     fontSize: 14,
+  },
+  // PDF Viewer Styles
+  pdfViewerContainer: {
+    flex: 1,
+    backgroundColor: "#f5f5f5",
+  },
+  pdfHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "#333",
+    padding: 16,
+    paddingTop: 50,
+  },
+  pdfTitle: {
+    color: "white",
+    fontSize: 18,
+    fontWeight: "bold",
+    flex: 1,
+  },
+  pdfContent: {
+    flex: 1,
+  },
+  pdfPlaceholder: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 40,
+    minHeight: 500,
+    position: "relative",
+  },
+  pdfPlaceholderText: {
+    fontSize: 18,
+    color: "#666",
+    marginTop: 16,
+    textAlign: "center",
+  },
+  pdfInstructionText: {
+    fontSize: 14,
+    color: "#999",
+    marginTop: 8,
+    textAlign: "center",
+  },
+  pdfOpenButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FF5722",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginTop: 20,
+  },
+  pdfOpenButtonText: {
+    color: "#fff",
+    fontWeight: "600",
+    marginLeft: 8,
+  },
+  // PDF Annotation Toolbar
+  pdfToolbar: {
+    flexDirection: "row",
+    backgroundColor: "white",
+    padding: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#ddd",
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
+  pdfToolButton: {
+    alignItems: "center",
+    marginHorizontal: 8,
+    marginVertical: 4,
+  },
+  pdfToolText: {
+    fontSize: 10,
+    color: "#333",
+    marginTop: 2,
+  },
+  colorPalette: {
+    flexDirection: "row",
+    marginHorizontal: 8,
+  },
+  colorButton: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    marginHorizontal: 2,
+    borderWidth: 1,
+    borderColor: "#ddd",
+  },
+  selectedColorButton: {
+    borderWidth: 2,
+    borderColor: "#333",
+  },
+  pdfCloseButton: {
+    marginLeft: "auto",
+    padding: 4,
+  },
+  // Annotation Overlay
+  annotationOverlay: {
+    position: "absolute",
+    padding: 4,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.3)",
+  },
+  annotationText: {
+    fontSize: 12,
+    color: "#333",
   },
   colorPickerModal: {
     flex: 1,

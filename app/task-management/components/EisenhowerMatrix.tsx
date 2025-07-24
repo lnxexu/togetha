@@ -127,28 +127,27 @@ const EisenhowerMatrix: React.FC<EisenhowerMatrixProps> = ({
             </TouchableOpacity>
           ) : (
             quadrantTasks.map(task => (
-              <TouchableOpacity
-                key={task.id}
-                style={[styles.taskItem, task.overdue && styles.overdueTask]}
-                onPress={() => onTaskPress(task.id)}
-                onLongPress={() => handleTaskLongPress(task)}
-              >
-                <View style={styles.taskContent}>
-                  <Text style={styles.taskTitle} numberOfLines={2}>
+              <View key={task.id} style={styles.taskRow}>
+                <TouchableOpacity 
+                  style={styles.checkbox}
+                  onPress={() => onMarkComplete(task.id)}
+                >
+                  <MaterialIcons 
+                    name="check-box-outline-blank" 
+                    size={16} 
+                    color={task.overdue ? '#e74c3c' : '#7f8c8d'} 
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.taskTextContainer}
+                  onPress={() => onTaskPress(task.id)}
+                  onLongPress={() => handleTaskLongPress(task)}
+                >
+                  <Text style={[styles.taskText, task.overdue && styles.overdueTaskText]} numberOfLines={2}>
                     {task.title}
                   </Text>
-                  {task.subject && (
-                    <Text style={styles.taskSubject}>{task.subject}</Text>
-                  )}
-                  <View style={styles.taskMeta}>
-                    {task.dueDate && (
-                      <Text style={[styles.taskDate, task.overdue && styles.overdueText]}>
-                        {task.dueDate.toLocaleDateString()}
-                      </Text>
-                    )}
-                  </View>
-                </View>
-              </TouchableOpacity>
+                </TouchableOpacity>
+              </View>
             ))
           )}
         </ScrollView>
@@ -252,62 +251,29 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontFamily: 'Inter-Regular',
   },
-  taskItem: {
-    backgroundColor: '#f8f9fa',
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 6,
-    borderLeftWidth: 3,
-    borderLeftColor: '#ecf0f1',
+  taskRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    paddingHorizontal: 4,
   },
-  overdueTask: {
-    borderLeftColor: '#e74c3c',
-    backgroundColor: '#fdf2f2',
+  checkbox: {
+    marginRight: 8,
+    paddingVertical: 2,
   },
-  taskContent: {
+  taskTextContainer: {
     flex: 1,
   },
-  taskTitle: {
+  taskText: {
     fontSize: 12,
-    fontWeight: '500',
-    color: '#2c3e50',
+    fontWeight: '400',
+    color: '#ffffffff',
     lineHeight: 16,
-    fontFamily: 'Inter-Medium',
-  },
-  taskSubject: {
-    fontSize: 10,
-    color: '#313131ff',
-    marginTop: 2,
     fontFamily: 'Inter-Regular',
   },
-  taskMeta: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 6,
-  },
-  taskDate: {
-    fontSize: 10,
-    color: '#7f8c8d',
-    fontFamily: 'Inter-Regular',
-  },
-  overdueText: {
+  overdueTaskText: {
     color: '#e74c3c',
     fontWeight: '500',
-  },
-  taskIndicators: {
-    flexDirection: 'row',
-  },
-  indicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginLeft: 8,
-  },
-  indicatorText: {
-    fontSize: 10,
-    color: '#7f8c8d',
-    marginLeft: 2,
-    fontFamily: 'Inter-Regular',
   },
 });
 

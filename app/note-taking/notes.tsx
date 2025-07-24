@@ -1,3 +1,4 @@
+
 import { MaterialIcons } from "@expo/vector-icons";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import React, { useState } from "react";
@@ -540,6 +541,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
                   />
                   <Text style={styles.dropdownOptionText}>Create Folder</Text>
                 </TouchableOpacity>
+
                 <TouchableOpacity
                   style={styles.dropdownOption}
                   onPress={() => {
@@ -556,6 +558,21 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
                     {viewMode === "list" ? "Grid View" : "List View"}
                   </Text>
                 </TouchableOpacity>
+
+                <TouchableOpacity
+  style={styles.dropdownOption}
+  onPress={() => {
+    navigation.navigate("PDFs"); // Navigate to the ImportPDFPage
+    setShowOptionsDropdown(false); // Close the dropdown
+  }}
+>
+  <MaterialIcons
+    name="picture-as-pdf"
+    size={20}
+    color="#6A009C"
+  />
+  <Text style={styles.dropdownOptionText}>Import PDF</Text>
+</TouchableOpacity>
               </View>
             )}
           </View>

@@ -30,16 +30,11 @@ const ToDo: React.FC = () => {
     const [selectedFilter, setSelectedFilter] = useState<'all' | 'pending' | 'completed' | 'overdue'>('all');
     const [selectedCategory, setSelectedCategory] = useState<'all' | string>('all');
 
-    // New states for dropdowns and calendar
+    // New states for calendar
     const [selectedStatus, setSelectedStatus] = useState<'all' | 'pending' | 'completed' | 'overdue'>('all');
-    const [selectedDropdownCategory, setSelectedDropdownCategory] = useState<'all' | string>('all');
     const [selectedDate, setSelectedDate] = useState(new Date());
     const [showCalendarModal, setShowCalendarModal] = useState(false);
     const [calendarDate, setCalendarDate] = useState(new Date());
-    // Dropdown visibility
-    const [showStatusDropdown, setShowStatusDropdown] = useState(false);
-    const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
-    const [showViewDropdown, setShowViewDropdown] = useState(false);
     // Dropdown options
     const statusOptions = [
         { value: 'all', label: 'All Tasks' },
@@ -56,22 +51,6 @@ const ToDo: React.FC = () => {
     const handleStatusSelect = (status: 'all' | 'pending' | 'completed' | 'overdue') => {
         setSelectedStatus(status);
         setSelectedFilter(status);
-        setShowStatusDropdown(false);
-    };
-    const handleCategorySelect = (category: string) => {
-        setSelectedDropdownCategory(category);
-        setSelectedCategory(category);
-        setShowCategoryDropdown(false);
-    };
-    const handleViewSelect = (view: 'matrix' | 'list') => {
-        setViewMode(view);
-        setShowViewDropdown(false);
-    };
-    // Close dropdowns when clicking outside
-    const closeDropdowns = () => {
-        setShowStatusDropdown(false);
-        setShowCategoryDropdown(false);
-        setShowViewDropdown(false);
     };
 
     // Get screen dimensions and orientation
@@ -330,8 +309,8 @@ const ToDo: React.FC = () => {
         return true;
     }).filter(task => {
         // Filter by category/subject
-        if (selectedDropdownCategory === 'all') return true;
-        return task.subject === selectedDropdownCategory;
+        if (selectedCategory === 'all') return true;
+        return task.subject === selectedCategory;
     });
 
     const categories = [...new Set(tasks.map(task => task.subject).filter((subject): subject is string => Boolean(subject)))];
@@ -464,116 +443,106 @@ const ToDo: React.FC = () => {
                     </TouchableOpacity>
                 </Modal>
 
+                {/* Dashboard */}
+                <View style={styles.dashboard}>
+                    <View style={styles.dashboardRow}>
+                        <View style={styles.dashboardCard}>
+                            <Text style={styles.dashboardNumber}>
+                                {tasks.filter(task => !task.completed && !task.overdue).length}
+                            </Text>
+                            <Text style={styles.dashboardLabel}>Pending</Text>
+                        </View>
+                        <View style={styles.dashboardCard}>
+                            <Text style={styles.dashboardNumber}>
+                                {tasks.filter(task => task.completed).length}
+                            </Text>
+                            <Text style={styles.dashboardLabel}>Completed</Text>
+                        </View>
+                        <View style={styles.dashboardCard}>
+                            <Text style={styles.dashboardNumber}>
+                                {tasks.filter(task => task.overdue && !task.completed).length}
+                            </Text>
+                            <Text style={styles.dashboardLabel}>Overdue</Text>
+                        </View>
+                        <View style={styles.dashboardCard}>
+                            <Text style={styles.dashboardNumber}>{tasks.length}</Text>
+                            <Text style={styles.dashboardLabel}>Total</Text>
+                        </View>
+                    </View>
+                </View>
+
+                {/* Status Buttons (only show in list view) */}
+                {viewMode === 'list' && (
+                    <View style={styles.statusButtons}>
+                        <TouchableOpacity
+                            style={[
+                                styles.statusButton,
+                                selectedStatus === 'all' && styles.activeStatusButton
+                            ]}
+                            onPress={() => handleStatusSelect('all')}
+                        >
+                            <Text style={[
+                                styles.statusButtonText,
+                                selectedStatus === 'all' && styles.activeStatusButtonText
+                            ]}>
+                                All
+                            </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[
+                                styles.statusButton,
+                                selectedStatus === 'pending' && styles.activeStatusButton
+                            ]}
+                            onPress={() => handleStatusSelect('pending')}
+                        >
+                            <Text style={[
+                                styles.statusButtonText,
+                                selectedStatus === 'pending' && styles.activeStatusButtonText
+                            ]}>
+                                Pending
+                            </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[
+                                styles.statusButton,
+                                selectedStatus === 'completed' && styles.activeStatusButton
+                            ]}
+                            onPress={() => handleStatusSelect('completed')}
+                        >
+                            <Text style={[
+                                styles.statusButtonText,
+                                selectedStatus === 'completed' && styles.activeStatusButtonText
+                            ]}>
+                                Completed
+                            </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[
+                                styles.statusButton,
+                                selectedStatus === 'overdue' && styles.activeStatusButton
+                            ]}
+                            onPress={() => handleStatusSelect('overdue')}
+                        >
+                            <Text style={[
+                                styles.statusButtonText,
+                                selectedStatus === 'overdue' && styles.activeStatusButtonText
+                            ]}>
+                                Overdue
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
+
                 {/* Dropdown Backdrop - Only show in list view */}
-                {viewMode === 'list' && (showStatusDropdown || showCategoryDropdown) && (
+                {viewMode === 'list' && false && (
                     <TouchableOpacity
                         style={styles.dropdownBackdrop}
                         activeOpacity={1}
-                        onPress={closeDropdowns}
+                        onPress={() => {}}
                     />
                 )}
 
             </View>
-
-            {/* Filters (only show in list view) */}
-            {viewMode === 'list' && (
-                <View style={styles.listViewFilters}>
-                    {/* Dropdown Filters */}
-                    <View style={styles.dropdownFiltersContainer}>
-                        <View style={styles.dropdownFiltersRow}>
-                            {/* Status Dropdown */}
-                            <View style={styles.dropdownWrapper}>
-                                <TouchableOpacity
-                                    style={styles.filterDropdown}
-                                    onPress={() => {
-                                        setShowStatusDropdown(!showStatusDropdown);
-                                        setShowCategoryDropdown(false);
-                                    }}
-                                >
-                                    <Text style={styles.dropdownText}>
-                                        {statusOptions.find(opt => opt.value === selectedStatus)?.label || 'All Tasks'}
-                                    </Text>
-                                    <MaterialIcons name="keyboard-arrow-down" size={20} color="#6c757d" />
-                                </TouchableOpacity>
-                                {showStatusDropdown && (
-                                    <View style={styles.dropdownMenu}>
-                                        {statusOptions.map(option => (
-                                            <TouchableOpacity
-                                                key={option.value}
-                                                style={[
-                                                    styles.dropdownMenuItem,
-                                                    selectedStatus === option.value && styles.selectedDropdownItem
-                                                ]}
-                                                onPress={() => handleStatusSelect(option.value as any)}
-                                            >
-                                                <Text style={[
-                                                    styles.dropdownMenuText,
-                                                    selectedStatus === option.value && styles.selectedDropdownText
-                                                ]}>
-                                                    {option.label}
-                                                </Text>
-                                            </TouchableOpacity>
-                                        ))}
-                                    </View>
-                                )}
-                            </View>
-                            
-                            {/* Subject Dropdown */}
-                            <View style={styles.dropdownWrapper}>
-                                <TouchableOpacity
-                                    style={styles.filterDropdown}
-                                    onPress={() => {
-                                        setShowCategoryDropdown(!showCategoryDropdown);
-                                        setShowStatusDropdown(false);
-                                    }}
-                                >
-                                    <Text style={styles.dropdownText}>
-                                        {selectedDropdownCategory === 'all' ? 'All Subjects' : selectedDropdownCategory}
-                                    </Text>
-                                    <MaterialIcons name="keyboard-arrow-down" size={20} color="#6c757d" />
-                                </TouchableOpacity>
-                                {showCategoryDropdown && (
-                                    <View style={[styles.dropdownMenu, {maxHeight: 220}]}> 
-                                        <ScrollView>
-                                            <TouchableOpacity
-                                                style={[
-                                                    styles.dropdownMenuItem,
-                                                    selectedDropdownCategory === 'all' && styles.selectedDropdownItem
-                                                ]}
-                                                onPress={() => handleCategorySelect('all')}
-                                            >
-                                                <Text style={[
-                                                    styles.dropdownMenuText,
-                                                    selectedDropdownCategory === 'all' && styles.selectedDropdownText
-                                                ]}>
-                                                    All Subjects
-                                                </Text>
-                                            </TouchableOpacity>
-                                            {categories.map(category => (
-                                                <TouchableOpacity
-                                                    key={category}
-                                                    style={[
-                                                        styles.dropdownMenuItem,
-                                                        selectedDropdownCategory === category && styles.selectedDropdownItem
-                                                    ]}
-                                                    onPress={() => handleCategorySelect(category)}
-                                                >
-                                                    <Text style={[
-                                                        styles.dropdownMenuText,
-                                                        selectedDropdownCategory === category && styles.selectedDropdownText
-                                                    ]}>
-                                                        {category}
-                                                    </Text>
-                                                </TouchableOpacity>
-                                            ))}
-                                        </ScrollView>
-                                    </View>
-                                )}
-                            </View>
-                        </View>
-                    </View>
-                </View>
-            )}
 
             {/* Content */}
             <View style={styles.content}>
@@ -1022,6 +991,75 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.24,
         shadowRadius: 16,
         elevation: 8,
+    },
+    // Dashboard styles
+    dashboard: {
+        paddingTop: 16,
+        paddingBottom: 8,
+    },
+    dashboardRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        gap: 8,
+    },
+    dashboardCard: {
+        flex: 1,
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        padding: 16,
+        alignItems: 'center',
+        shadowColor: '#1E293B',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.08,
+        shadowRadius: 8,
+        elevation: 2,
+    },
+    dashboardNumber: {
+        fontSize: 24,
+        fontFamily: 'Inter-Bold',
+        color: '#6A009C',
+        marginBottom: 4,
+    },
+    dashboardLabel: {
+        fontSize: 12,
+        fontFamily: 'Inter-Medium',
+        color: '#6c757d',
+        textAlign: 'center',
+    },
+    // Status buttons styles
+    statusButtons: {
+        flexDirection: 'row',
+        paddingHorizontal: 0,
+        paddingVertical: 16,
+        gap: 8,
+    },
+    statusButton: {
+        flex: 1,
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        borderRadius: 8,
+        backgroundColor: '#fff',
+        borderWidth: 1,
+        borderColor: '#e9ecef',
+        alignItems: 'center',
+        shadowColor: '#1E293B',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 4,
+        elevation: 1,
+    },
+    activeStatusButton: {
+        backgroundColor: '#6A009C',
+        borderColor: '#6A009C',
+    },
+    statusButtonText: {
+        fontSize: 14,
+        fontFamily: 'Inter-Medium',
+        color: '#495057',
+    },
+    activeStatusButtonText: {
+        color: '#fff',
+        fontFamily: 'Inter-SemiBold',
     },
 });
 
