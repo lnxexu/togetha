@@ -79,7 +79,7 @@
 <body>
     <div class="login-container">
         <h1>Login to Togetha</h1>
-        <form method="post" action="/login/">
+        <form method="post" action="login/">
             {% csrf_token %}
             {% if error_message %}
                 <div class="error-message">{{ error_message }}</div>
@@ -103,63 +103,61 @@
     </div>
 
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const form = document.querySelector('form');
+    document.addEventListener('DOMContentLoaded', function() {
+        const form = document.querySelector('form');
+        
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
             
-            form.addEventListener('submit', function(e) {
-                e.preventDefault();
-                
-                const username = document.getElementById('username').value;
-                const password = document.getElementById('password').value;
-                
-                // Send API request
-                fetch('/login/', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
-                    },
-                    body: JSON.stringify({
-                        username: username,
-                        password: password
-                    })
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            // Fix: Remove the space before 'login/'
+            fetch('/login/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                },
+                body: JSON.stringify({
+                    username: username,
+                    password: password
                 })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.token) {
-                        // Store token in localStorage
-                        localStorage.setItem('token', data.token);
-                        // Redirect to home page or dashboard
-                        window.location.href = '/';
-                    } else {
-                        // Show error message
-                        const errorDiv = document.createElement('div');
-                        errorDiv.className = 'error-message';
-                        errorDiv.textContent = data.error || 'Login failed. Please try again.';
-                        
-                        const existingError = document.querySelector('.error-message');
-                        if (existingError) {
-                            existingError.remove();
-                        }
-                        
-                        form.prepend(errorDiv);
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    const errorDiv = document.createElement('div');
-                    errorDiv.className = 'error-message';
-                    errorDiv.textContent = 'Network error. Please try again later.';
-                    
-                    const existingError = document.querySelector('.error-message');
-                    if (existingError) {
-                        existingError.remove();
-                    }
-                    
-                    form.prepend(errorDiv);
-                });
+            })
+            .then(response => {
+                // Add response type checking
+                const contentType = response.headers.get("content-type");
+                if (contentType && contentType.includes("application/json")) {
+                    return response.json();
+                } else {
+                    throw new Error("Response is not JSON");
+                }
+            })
+            .then(data => {
+                // Rest of your code
+                if (data.token) {
+                    localStorage.setItem('token', data.token);
+                    window.location.href = '/';
+                } else {
+                    // Show error message
+                    // ...
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'error-message';
+                errorDiv.textContent = 'Network error or invalid response. Please try again later.';
+                
+                const existingError = document.querySelector('.error-message');
+                if (existingError) {
+                    existingError.remove();
+                }
+                
+                form.prepend(errorDiv);
             });
         });
-    </script>
+    });
+</script>
 </body>
 </html>

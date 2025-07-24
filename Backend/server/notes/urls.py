@@ -1,11 +1,12 @@
-from django.urls import path
+from django.urls import path, re_path
 from . import views
 
 urlpatterns = [
-    path('folders/', views.folder_list, name='folder-list'),
-    path('folders/<str:pk>/', views.folder_detail, name='folder-detail'),
-    path('notes/', views.note_list, name='note-list'),
-    path('notes/<str:pk>/', views.note_detail, name='note-detail'),
-    path('audio-recordings/', views.upload_audio_recording, name='upload-audio'),
-    path('audio-recordings/<str:pk>/transcribe/', views.transcribe_audio, name='transcribe-audio'),
+    re_path(r'^folders/$', views.folder_list, name='folder-list'),
+    re_path(r'^folders/(?P<pk>[^/.]+)/$', views.folder_detail, name='folder-detail'),
+    re_path(r'^notes/$', views.note_list, name='note-list'),
+    re_path(r'^notes/(?P<pk>[^/.]+)/$', views.note_detail, name='note-detail'),
+    re_path(r'^notes/edit/(?P<pk>[^/.]+)/$', views.note_detail, name='note-edit'),
+    re_path(r'^audio-recordings/$', views.upload_audio_recording, name='upload-audio'),
+    re_path(r'^audio-recordings/(?P<pk>[^/.]+)/transcribe/$', views.transcribe_audio, name='transcribe-audio')
 ]

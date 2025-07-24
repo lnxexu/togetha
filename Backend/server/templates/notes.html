@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Togetha - Notes</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+
+        header {
+            background-color: white;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            padding: 15px 0;
+        }
+
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+            color: #4285F4;
+        }
+
+        .user-nav a {
+            margin-left: 20px;
+            text-decoration: none;
+            color: #555;
+        }
+
+        .user-nav a:hover {
+            color: #4285F4;
+        }
+
+        .navbar {
+            background-color: #4285F4;
+            padding: 10px 0;
+        }
+
+        .navbar-content {
+            display: flex;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        .navbar-content a {
+            color: white;
+            text-decoration: none;
+            margin-right: 20px;
+            font-weight: 500;
+        }
+
+        .navbar-content a.active {
+            border-bottom: 2px solid white;
+        }
+
+        .container {
+            display: flex;
+            max-width: 1200px;
+            margin: 20px auto;
+            gap: 20px;
+            height: calc(100vh - 150px);
+        }
+
+        .sidebar {
+            width: 250px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-header {
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .add-btn {
+            background-color: #4285F4;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            padding: 5px 10px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .folders-section {
+            padding: 10px 15px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .folder-list {
+            list-style-type: none;
+            padding: 0;
+            margin: 10px 0;
+        }
+
+        .folder-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 5px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .folder-item:hover {
+            background-color: #f1f1f1;
+        }
+
+        .folder-item.active {
+            background-color: #E3F2FD;
+            font-weight: bold;
+        }
+
+        .folder-actions {
+            display: flex;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .folder-item:hover .folder-actions {
+            opacity: 1;
+        }
+
+        .folder-actions button {
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 2px;
+            margin-left: 5px;
+            font-size: 12px;
+            color: #777;
+        }
+
+        .notes-section {
+            flex: 1;
+            overflow-y: auto;
+            border-top: 1px solid #eee;
+        }
+
+        .notes-header {
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .notes-list {
+            overflow-y: auto;
+        }
+
+        .note-item {
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .note-item:hover {
+            background-color: #f1f1f1;
+        }
+
+        .note-item.active {
+            background-color: #E3F2FD;
+            border-left: 3px solid #4285F4;
+        }
+
+        .note-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .note-preview {
+            color: #777;
+            font-size: 12px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .note-date {
+            font-size: 11px;
+            color: #999;
+            margin-top: 5px;
+        }
+
+        .editor-container {
+            flex: 1;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-width: 0;
+        }
+
+        .editor-header {
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .editor {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        .editor-title {
+            flex: 1;
+            min-width: 200px;
+            margin-right: 10px;
+        }
+
+        .editor-actions {
+            display: flex;
+        }
+
+        .editor-actions button {
+            background-color: transparent;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 5px 10px;
+            margin-left: 10px;
+            cursor: pointer;
+        }
+
+        .editor-actions button:hover {
+            background-color: #f1f1f1;
+        }
+
+        .editor-actions .save-btn {
+            background-color: #4285F4;
+            color: white;
+            border: none;
+        }
+
+        .editor-actions .save-btn:hover {
+            background-color: #3367d6;
+        }
+
+        .editor-actions .record-btn {
+            color: #D32F2F;
+            border-color: #FFCDD2;
+        }
+
+        .editor-actions .record-btn.recording {
+            background-color: #FFEBEE;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+
+            100% {
+                opacity: 1;
+            }
+        }
+
+        .note-title-input {
+            width: 100%;
+            padding: 10px 15px;
+            font-size: 18px;
+            border: 1px solid #eee;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+
+        .note-content {
+            width: 100%;
+            height: 100%;
+            padding: 15px;
+            border: none;
+            resize: none;
+            flex: 1;
+            font-size: 16px;
+            line-height: 1.5;
+            outline: none;
+            margin-bottom: 15px;
+            min-height: 200px;
+            /* Ensures minimum height */
+        }
+
+        .editor-body {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 15px;
+            overflow: auto;
+            height: calc(100% - 100px);
+        }
+
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #777;
+        }
+
+        .empty-state p {
+            margin-top: 10px;
+        }
+
+        .delete-btn {
+            color: #d93025;
+        }
+
+        .folder-select {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            width: 100%;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 100;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.4);
+        }
+
+        .modal-content {
+            background-color: white;
+            margin: 15% auto;
+            padding: 20px;
+            border-radius: 5px;
+            width: 300px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .modal h3 {
+            margin-top: 0;
+            color: #4285F4;
+        }
+
+        .modal input {
+            width: 100%;
+            padding: 8px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 15px;
+        }
+
+        .modal-actions button {
+            padding: 8px 12px;
+            margin-left: 10px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .modal .cancel-btn {
+            background-color: #f1f1f1;
+            border: none;
+        }
+
+        .modal .confirm-btn {
+            background-color: #4285F4;
+            color: white;
+            border: none;
+        }
+
+        .recording-list {
+            margin-top: 15px;
+            padding: 10px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+        }
+
+        .recording-item {
+            display: flex;
+            align-items: center;
+            padding: 8px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .recording-actions {
+            margin-left: auto;
+        }
+
+        .recording-actions button {
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 5px;
+            color: #4285F4;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <div class="header-content">
+            <a href="/" style="text-decoration: none;">
+                <div class="logo">Togetha</div>
+            </a>
+            <div class="user-nav">
+                <a href="/profile/">My Profile</a>
+                <a href="#" id="logout-link">Logout</a>
+            </div>
+        </div>
+    </header>
+
+    <div class="navbar">
+        <div class="navbar-content">
+            <a href="/chatbot/">Chatbot</a>
+            <a href="/notes/" class="active">Notes</a>
+            <a href="/tasks/">Tasks</a>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h3>Folders</h3>
+                <button class="add-btn" id="add-folder-btn">+ New</button>
+            </div>
+            <div class="folders-section">
+                <ul class="folder-list" id="folder-list">
+                    <li class="folder-item active" data-id="all">
+                        <span>All Notes</span>
+                    </li>
+                    <!-- Folders will be added here -->
+                </ul>
+            </div>
+            <div class="notes-section">
+                <div class="notes-header">
+                    <h3>Notes</h3>
+                    <button class="add-btn" id="add-note-btn">+ New</button>
+                </div>
+                <div class="notes-list" id="notes-list">
+                    <!-- Notes will be added here -->
+                </div>
+            </div>
+        </div>
+
+        <div class="editor-container" id="editor-container">
+            <div class="empty-state" id="empty-state">
+                <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="1.5">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                    <line x1="10" y1="9" x2="8" y2="9"></line>
+                </svg>
+                <p>Select a note or create a new one</p>
+            </div>
+
+            <div class="editor" id="editor" style="display: none;">
+                <div class="editor-header">
+                    <div class="editor-title">
+                        <input type="text" id="note-title-input" class="note-title-input" placeholder="Note title">
+                        <select id="folder-select" class="folder-select">
+                            <option value="">No Folder</option>
+                            <!-- Folders will be added here -->
+                        </select>
+                    </div>
+                    <div class="editor-actions">
+                        <button class="record-btn" id="record-btn" title="Record Audio">
+                            🎙️ Record
+                        </button>
+                        <button class="delete-btn" id="delete-note-btn">Delete</button>
+                        <button class="save-btn" id="save-note-btn">Save</button>
+                    </div>
+                </div>
+                <div class="editor-body">
+                    <textarea id="note-content" class="note-content" placeholder="Start typing your note..."></textarea>
+
+                    <div id="recordings-container" class="recording-list" style="display: none;">
+                        <h4>Recordings</h4>
+                        <div id="recordings-list">
+                            <!-- Recordings will be added here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Folder Modal -->
+    <div id="folder-modal" class="modal">
+        <div class="modal-content">
+            <h3>New Folder</h3>
+            <input type="text" id="folder-name-input" placeholder="Enter folder name">
+            <div class="modal-actions">
+                <button class="cancel-btn" id="cancel-folder-btn">Cancel</button>
+                <button class="confirm-btn" id="confirm-folder-btn">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Folder Modal -->
+    <div id="edit-folder-modal" class="modal">
+        <div class="modal-content">
+            <h3>Edit Folder</h3>
+            <input type="text" id="edit-folder-name-input" placeholder="Enter folder name">
+            <div class="modal-actions">
+                <button class="delete-btn" id="delete-folder-btn">Delete</button>
+                <button class="cancel-btn" id="cancel-edit-folder-btn">Cancel</button>
+                <button class="confirm-btn" id="confirm-edit-folder-btn">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            // Check if user is logged in
+            const token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = '/login/';
+                return;
+            }
+
+            // DOM Elements
+            const folderList = document.getElementById('folder-list');
+            const notesList = document.getElementById('notes-list');
+            const editor = document.getElementById('editor');
+            const emptyState = document.getElementById('empty-state');
+            const noteTitleInput = document.getElementById('note-title-input');
+            const noteContent = document.getElementById('note-content');
+            const folderSelect = document.getElementById('folder-select');
+            const addNoteBtn = document.getElementById('add-note-btn');
+            const saveNoteBtn = document.getElementById('save-note-btn');
+            const deleteNoteBtn = document.getElementById('delete-note-btn');
+            const recordBtn = document.getElementById('record-btn');
+            const addFolderBtn = document.getElementById('add-folder-btn');
+            const folderModal = document.getElementById('folder-modal');
+            const folderNameInput = document.getElementById('folder-name-input');
+            const cancelFolderBtn = document.getElementById('cancel-folder-btn');
+            const confirmFolderBtn = document.getElementById('confirm-folder-btn');
+            const editFolderModal = document.getElementById('edit-folder-modal');
+            const editFolderNameInput = document.getElementById('edit-folder-name-input');
+            const deleteFolderBtn = document.getElementById('delete-folder-btn');
+            const cancelEditFolderBtn = document.getElementById('cancel-edit-folder-btn');
+            const confirmEditFolderBtn = document.getElementById('confirm-edit-folder-btn');
+            const recordingsContainer = document.getElementById('recordings-container');
+            const recordingsList = document.getElementById('recordings-list');
+
+            // State variables
+            let currentNoteId = null;
+            let currentFolderId = 'all';
+            let notes = [];
+            let folders = [];
+            let mediaRecorder = null;
+            let audioChunks = [];
+            let isRecording = false;
+            let editingFolderId = null;
+
+            // Fetch folders
+            function fetchFolders() {
+                fetch('/note_taking/folders/', {
+                    headers: {
+                        'Authorization': `Token ${token}`
+                    }
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        folders = data;
+                        renderFolders();
+                        populateFolderSelect();
+                    })
+                    .catch(error => console.error('Error fetching folders:', error));
+            }
+
+            // Render folders list
+            function renderFolders() {
+                // Preserve the "All Notes" item
+                const allNotesItem = folderList.firstChild;
+                folderList.innerHTML = '';
+                folderList.appendChild(allNotesItem);
+
+                folders.forEach(folder => {
+                    const folderItem = document.createElement('li');
+                    folderItem.className = `folder-item ${folder.id == currentFolderId ? 'active' : ''}`;
+                    folderItem.dataset.id = folder.id;
+                    folderItem.innerHTML = `
+                        <span>${folder.name}</span>
+                        <div class="folder-actions">
+                            <button class="edit-folder-btn" data-id="${folder.id}">✏️</button>
+                        </div>
+                    `;
+                    folderItem.addEventListener('click', (e) => {
+                        if (!e.target.classList.contains('edit-folder-btn')) {
+                            selectFolder(folder.id);
+                        }
+                    });
+                    folderList.appendChild(folderItem);
+                });
+
+                // Add event listeners to edit buttons
+                document.querySelectorAll('.edit-folder-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        openEditFolderModal(btn.dataset.id);
+                    });
+                });
+            }
+
+            // Populate folder select dropdown
+            function populateFolderSelect() {
+                // Keep only the first option (No Folder)
+                folderSelect.innerHTML = '<option value="">No Folder</option>';
+
+                folders.forEach(folder => {
+                    const option = document.createElement('option');
+                    option.value = folder.id;
+                    option.textContent = folder.name;
+                    folderSelect.appendChild(option);
+                });
+            }
+
+            // Fetch notes
+            function fetchNotes() {
+                let url = '/note_taking/notes/';
+                if (currentFolderId !== 'all' && currentFolderId !== '') {
+                    url += `?folder_id=${currentFolderId}`;
+                }
+
+                fetch(url, {
+                    headers: {
+                        'Authorization': `Token ${token}`
+                    }
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        notes = data;
+                        renderNotes();
+                    })
+                    .catch(error => console.error('Error fetching notes:', error));
+            }
+
+            // Render notes list
+            function renderNotes() {
+                if (notes.length === 0) {
+                    notesList.innerHTML = '<div class="note-item">No notes yet</div>';
+                    return;
+                }
+
+                notesList.innerHTML = '';
+                notes.forEach(note => {
+                    const noteItem = document.createElement('div');
+                    noteItem.className = `note-item ${note.id === currentNoteId ? 'active' : ''}`;
+                    noteItem.innerHTML = `
+                        <div class="note-title">${note.title || 'Untitled'}</div>
+                        <div class="note-preview">${note.content.substring(0, 50) || 'No content'}</div>
+                        <div class="note-date">${new Date(note.updated_at).toLocaleDateString()}</div>
+                    `;
+                    noteItem.addEventListener('click', () => selectNote(note.id));
+                    notesList.appendChild(noteItem);
+                });
+            }
+
+            // Select folder
+            function selectFolder(folderId) {
+                currentFolderId = folderId;
+
+                // Update active state in UI
+                document.querySelectorAll('.folder-item').forEach(item => {
+                    item.classList.remove('active');
+                });
+                document.querySelector(`.folder-item[data-id="${folderId}"]`).classList.add('active');
+
+                // Fetch notes for this folder
+                fetchNotes();
+            }
+
+            // Select a note
+            function selectNote(noteId) {
+                currentNoteId = noteId;
+                const note = notes.find(n => n.id === noteId);
+
+                noteTitleInput.value = note.title || '';
+                noteContent.value = note.content || '';
+
+                // Set folder in dropdown
+                folderSelect.value = note.folder || '';
+
+                // Show editor
+                emptyState.style.display = 'none';
+                editor.style.display = 'flex'; // Ensure display is flex
+
+                // Fetch and show recordings if any
+                fetchRecordings(noteId);
+
+                // Update UI
+                renderNotes();
+
+                // Set focus to the title input
+                setTimeout(() => noteTitleInput.focus(), 10);
+            }
+
+            // Fetch recordings for a note
+            function fetchRecordings(noteId) {
+                // This is a placeholder - your API might differ
+                fetch(`/note_taking/audio-recordings/?note_id=${noteId}`, {
+                    headers: {
+                        'Authorization': `Token ${token}`
+                    }
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.length > 0) {
+                            renderRecordings(data);
+                            recordingsContainer.style.display = 'block';
+                        } else {
+                            recordingsContainer.style.display = 'none';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error fetching recordings:', error);
+                        recordingsContainer.style.display = 'none';
+                    });
+            }
+
+            // Render recordings list
+            function renderRecordings(recordings) {
+                recordingsList.innerHTML = '';
+                recordings.forEach(recording => {
+                    const recordingItem = document.createElement('div');
+                    recordingItem.className = 'recording-item';
+                    recordingItem.innerHTML = `
+                        <div>
+                            <strong>Recording ${new Date(recording.created_at).toLocaleString()}</strong>
+                            ${recording.transcribed ? ' (Transcribed)' : ''}
+                        </div>
+                        <div class="recording-actions">
+                            <button class="play-recording" data-url="${recording.audio_file}">▶️ Play</button>
+                            ${!recording.transcribed ?
+                            `<button class="transcribe-recording" data-id="${recording.id}">📝 Transcribe</button>` : ''}
+                        </div>
+                    `;
+                    recordingsList.appendChild(recordingItem);
+                });
+
+                // Add event listeners
+                document.querySelectorAll('.play-recording').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const audio = new Audio(btn.dataset.url);
+                        audio.play();
+                    });
+                });
+
+                document.querySelectorAll('.transcribe-recording').forEach(btn => {
+                    btn.addEventListener('click', () => transcribeRecording(btn.dataset.id));
+                });
+            }
+
+            // Create new note
+            addNoteBtn.addEventListener('click', () => {
+                currentNoteId = null;
+                noteTitleInput.value = '';
+                noteContent.value = '';
+
+                // Set folder if one is selected
+                folderSelect.value = currentFolderId !== 'all' ? currentFolderId : '';
+
+                // Hide recordings section for new notes
+                recordingsContainer.style.display = 'none';
+
+                // Show editor
+                emptyState.style.display = 'none';
+                editor.style.display = 'flex';
+                noteTitleInput.focus();
+            });
+
+            // Save note
+            saveNoteBtn.addEventListener('click', () => {
+                const noteData = {
+                    title: noteTitleInput.value,
+                    content: noteContent.value,
+                    folder: folderSelect.value || null
+                };
+
+                 const url = currentNoteId
+                        ? `/note_taking/notes/edit/${currentNoteId}/`  // Changed URL path to match backend routes
+                        : '/note_taking/notes/';  
+
+                const method = currentNoteId ? 'PUT' : 'POST';  // Changed from PATCH to PUT
+
+                fetch(url, {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Token ${token}`,
+                        'X-CSRFToken': getCookie('csrftoken')
+                    },
+                    body: JSON.stringify(noteData),
+                    credentials: 'same-origin'
+                })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! Status: ${response.status}`);
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        if (!currentNoteId) {
+                            currentNoteId = data.id;
+                        }
+                        fetchNotes();
+                        // Show success message
+                        alert('Note saved successfully!');
+                    })
+                    .catch(error => {
+                        console.error('Error saving note:', error);
+                        alert('Failed to save note. Please try again.');
+                    });
+            });
+
+            function getCookie(name) {
+                let cookieValue = null;
+                if (document.cookie && document.cookie !== '') {
+                    const cookies = document.cookie.split(';');
+                    for (let i = 0; i < cookies.length; i++) {
+                        const cookie = cookies[i].trim();
+                        if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                            cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                            break;
+                        }
+                    }
+                }
+                return cookieValue;
+            }
+
+            // Delete note
+            deleteNoteBtn.addEventListener('click', () => {
+                if (!currentNoteId) return;
+
+                if (confirm('Are you sure you want to delete this note?')) {
+                    fetch(`/note_taking/notes/${currentNoteId}/`, {
+                        method: 'DELETE',
+                        headers: {
+                            'Authorization': `Token ${token}`
+                        }
+                    })
+                        .then(() => {
+                            currentNoteId = null;
+                            emptyState.style.display = 'flex';
+                            editor.style.display = 'none';
+                            fetchNotes();
+                        })
+                        .catch(error => console.error('Error deleting note:', error));
+                }
+            });
+
+            // Audio recording functionality
+            recordBtn.addEventListener('click', () => {
+                if (!currentNoteId) {
+                    alert('Please save your note before recording audio.');
+                    return;
+                }
+
+                if (isRecording) {
+                    stopRecording();
+                } else {
+                    startRecording();
+                }
+            });
+
+            function startRecording() {
+                navigator.mediaDevices.getUserMedia({ audio: true })
+                    .then(stream => {
+                        mediaRecorder = new MediaRecorder(stream);
+                        mediaRecorder.start();
+
+                        audioChunks = [];
+                        mediaRecorder.addEventListener("dataavailable", event => {
+                            audioChunks.push(event.data);
+                        });
+
+                        mediaRecorder.addEventListener("stop", () => {
+                            const audioBlob = new Blob(audioChunks);
+                            uploadRecording(audioBlob);
+                        });
+
+                        // Update UI
+                        isRecording = true;
+                        recordBtn.textContent = '🔴 Stop';
+                        recordBtn.classList.add('recording');
+                    })
+                    .catch(e => {
+                        console.error('Error accessing microphone:', e);
+                        alert('Could not access microphone. Please ensure your browser has permission.');
+                    });
+            }
+
+            function stopRecording() {
+                mediaRecorder.stop();
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                isRecording = false;
+                recordBtn.textContent = '🎙️ Record';
+                recordBtn.classList.remove('recording');
+            }
+
+            function uploadRecording(audioBlob) {
+                const formData = new FormData();
+                formData.append('audio_file', audioBlob, 'recording.webm');
+                formData.append('note', currentNoteId);
+
+                fetch('/note_taking/audio-recordings/', {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'Authorization': `Token ${token}`
+                    }
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        // Refresh recordings
+                        fetchRecordings(currentNoteId);
+                    })
+                    .catch(error => console.error('Error uploading recording:', error));
+            }
+
+            function transcribeRecording(recordingId) {
+                fetch(`/note_taking/audio-recordings/${recordingId}/`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Token ${token}`
+                    }
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        // Refresh recordings
+                        fetchRecordings(currentNoteId);
+
+                        // Add transcribed text to note if transcription was successful
+                        if (data.transcription) {
+                            noteContent.value += '\n\n' + data.transcription;
+                            // Auto-save the note
+                            saveNoteBtn.click();
+                        }
+                    })
+                    .catch(error => console.error('Error transcribing recording:', error));
+            }
+
+            // Folder management
+            addFolderBtn.addEventListener('click', () => {
+                folderNameInput.value = '';
+                folderModal.style.display = 'block';
+            });
+
+            cancelFolderBtn.addEventListener('click', () => {
+                folderModal.style.display = 'none';
+            });
+
+            confirmFolderBtn.addEventListener('click', () => {
+                const folderName = folderNameInput.value.trim();
+                if (!folderName) return;
+
+                fetch('/note_taking/folders/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Token ${token}`
+                    },
+                    body: JSON.stringify({ name: folderName })
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        folderModal.style.display = 'none';
+                        fetchFolders();
+                    })
+                    .catch(error => console.error('Error creating folder:', error));
+            });
+
+            function openEditFolderModal(folderId) {
+                editingFolderId = folderId;
+                const folder = folders.find(f => f.id == folderId);
+                editFolderNameInput.value = folder.name;
+                editFolderModal.style.display = 'block';
+            }
+
+            cancelEditFolderBtn.addEventListener('click', () => {
+                editFolderModal.style.display = 'none';
+            });
+
+            confirmEditFolderBtn.addEventListener('click', () => {
+                const folderName = editFolderNameInput.value.trim();
+                if (!folderName) return;
+
+                fetch(`/note_taking/folders/${editingFolderId}/`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Token ${token}`
+                    },
+                    body: JSON.stringify({ name: folderName })
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        editFolderModal.style.display = 'none';
+                        fetchFolders();
+                    })
+                    .catch(error => console.error('Error updating folder:', error));
+            });
+
+            deleteFolderBtn.addEventListener('click', () => {
+                if (confirm('Are you sure you want to delete this folder? Notes in this folder will not be deleted.')) {
+                    fetch(`/note_taking/folders/${editingFolderId}/`, {
+                        method: 'DELETE',
+                        headers: {
+                            'Authorization': `Token ${token}`
+                        }
+                    })
+                        .then(() => {
+                            editFolderModal.style.display = 'none';
+                            // If we're currently viewing this folder, switch to All Notes
+                            if (currentFolderId == editingFolderId) {
+                                currentFolderId = 'all';
+                            }
+                            fetchFolders();
+                            fetchNotes();
+                        })
+                        .catch(error => console.error('Error deleting folder:', error));
+                }
+            });
+
+            // Close modals when clicking outside
+            window.addEventListener('click', (e) => {
+                if (e.target === folderModal) {
+                    folderModal.style.display = 'none';
+                }
+                if (e.target === editFolderModal) {
+                    editFolderModal.style.display = 'none';
+                }
+            });
+
+            // Add logout functionality
+            document.getElementById('logout-link').addEventListener('click', function (e) {
+                e.preventDefault();
+                localStorage.removeItem('token');
+                window.location.href = '/login/';
+            });
+
+            // Initialize
+            fetchFolders();
+            fetchNotes();
+        });
+    </script>
+</body>
+
+</html>
