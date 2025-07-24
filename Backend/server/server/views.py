@@ -41,25 +41,33 @@ def test_token(request):
         return Response({"error": "Authentication required"}, status=status.HTTP_401_UNAUTHORIZED)
     return Response({"message": f"Hello, {user.username}!"}, status=status.HTTP_200_OK)
 
-from django.http import HttpResponse
-from rest_framework.decorators import api_view, authentication_classes, permission_classes
-from rest_framework.authentication import TokenAuthentication, SessionAuthentication
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from rest_framework import status
-
-# Add this new view
-def home(request):
-    return render(request, 'login.html')
-
-def chatbot_index(request):
-    """
-    View to render the main chatbot interface
-    """
-    return render(request, 'chatbot.html')
+# get username of the currently logged in user
+@api_view(['GET'])
+@authentication_classes([TokenAuthentication, SessionAuthentication])
+@permission_classes([IsAuthenticated])
+def get_username(request):
+    user = request.user
+    if not user.is_authenticated:
+        return Response({"error": "Authentication required"}, status=status.HTTP_401_UNAUTHORIZED)
+    return Response({"username": user.username}, status=status.HTTP_200_OK)
 
 def login_page(request):
-    return HttpResponse("Login Page")
+    return render(request, 'login.html')
 
 def signup_page(request):
     return render(request, 'signup.html')  
+
+def test_token_page(request):
+    return render(request, 'test_token.html')
+
+def home_page(request):
+    return render(request, 'home.html')
+
+def chatbot_page(request):
+    return render(request, 'chatbot.html')
+
+def notes_page(request):
+    return render(request, 'notes.html')
+
+def task_manager_page(request):
+    return render(request, 'tasks.html')

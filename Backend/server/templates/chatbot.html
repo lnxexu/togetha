@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+
+{% block title %}Togetha - AI Chatbot{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/chatbot.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="chat-container">
+    <div class="chat-header">
+        <div>{{ bot_name|default:"Togetha AI Assistant" }}</div>
+        <div class="chat-actions">
+            <button id="clear-chat" class="btn btn-sm btn-outline-light">
+                <i class="fas fa-trash"></i> Clear Chat
+            </button>
+        </div>
+    </div>
+    <div class="chat-messages" id="chat-messages">
+        <!-- Messages will appear here -->
+        <!-- Loading indicator -->
+        <div id="loading-indicator" class="loading-indicator" style="display: none;">
+            <div class="typing-dots">
+                <span class="typing-dot"></span>
+                <span class="typing-dot"></span>
+                <span class="typing-dot"></span>
+            </div>
+            <span>AI is thinking...</span>
+        </div>
+    </div>
+    <div class="chat-input-container">
+        <textarea class="chat-input" id="chat-input" placeholder="Type your message..." rows="1"></textarea>
+        <button class="send-button" id="send-button">
+            <i class="fas fa-paper-plane"></i>
+        </button>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/chatbot.js' %}"></script>
+{% endblock %}

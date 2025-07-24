@@ -10,12 +10,41 @@ class Conversation(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     is_archived = models.BooleanField(default=False)
+    is_pinned = models.BooleanField(default=False)  # Allow users to pin important conversations
+    
+    # New fields for session management
+    icon = models.CharField(max_length=50, blank=True, default="chat")  # Icon identifier for the conversation
+    summary = models.TextField(blank=True)  # Auto-generated summary of the conversation
 
     def __str__(self):
         return f"{self.title or 'Untitled'} - {self.user.username}"
     
+    def get_short_title(self):
+        """Get a short title for display in the session list"""
+        if self.title and len(self.title) > 30:
+            return f"{self.title[:30]}..."
+        return self.title or "New conversation"
+    
+    def get_message_preview(self):
+        """Get a preview of the last message"""
+        last_message = self.messages.order_by('created_at').last()
+        if last_message:
+            content = last_message.content[:50]
+            return f"{content}..." if len(last_message.content) > 50 else content
+        return ""
+    
+    def generate_title(self):
+        """Generate a title based on the first user message"""
+        first_message = self.messages.filter(message_type='user').order_by('created_at').first()
+        if first_message:
+            # Generate a title from the first message
+            title_text = first_message.content[:40]
+            self.title = title_text + ("..." if len(first_message.content) > 40 else "")
+            self.save(update_fields=['title'])
+        return self.title
+    
     class Meta:
-        ordering = ['-updated_at']
+        ordering = ['-is_pinned', '-updated_at']
 
 
 class Message(models.Model):
@@ -60,6 +89,9 @@ class ChatbotSetting(models.Model):
     
     # Notification preferences
     notifications_enabled = models.BooleanField(default=True)
+    
+    # Default session view (collapsed or expanded)
+    show_collapsed_sessions = models.BooleanField(default=False)
     
     def __str__(self):
         return f"Settings for {self.user.username}"
