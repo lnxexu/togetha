@@ -26,9 +26,11 @@ SECRET_KEY = 'django-insecure-+^2p59aom-1u1r7%z0pg_vi4wg^y%10swf-=1!rpp!q6sr)q0p
 DEBUG = True
 
 ALLOWED_HOSTS = [
-    'localhost',
-    '10.0.2.2',  # Remove 'http://' and port ':8000'
+    'localhost',  # Allow local development
+    '10.0.2.2',  # Android emulator
     '127.0.0.1',  # Also add this for local development
+    '192.168.1.X',  # Replace with your computer's actual IP address
+    '*',  # Temporarily allow all hosts for testing
 ]
 
 # Application definition
@@ -58,6 +60,8 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+CORS_ALLOW_ALL_ORIGINS = True
 
 ROOT_URLCONF = 'server.urls'
 

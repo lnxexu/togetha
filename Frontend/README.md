@@ -59,9 +59,7 @@ ________________________________________________________________________________
 1. Install the latest pip version by typing "pip install --upgrade"
 2. Kindly follow this line of commands in order:
     - pip install django
-    - pip install djangorestframework
     - pip install django-rest-authtoken
-    - pip install djangorestframework django-cors-headers
 3. Change the directory by typing "cd Backend/server"
 4. Type "python manage.py migrate" in order to update those pending migrations.
 5. Lastly type "python manage.py runserver" to run the entire server. 

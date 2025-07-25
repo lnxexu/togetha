@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 export interface OfflineSyncQueueItem {
   id: string;
   action: 'create' | 'update' | 'delete';
-  entityType: 'note' | 'folder' | 'audio';
+  entityType: 'note' | 'folder' | 'attachment';
   data: any;
   timestamp: number;
 }
@@ -17,12 +17,10 @@ class OfflineStorage {
   // Add an item to the sync queue
   async addToSyncQueue(item: Omit<OfflineSyncQueueItem, 'timestamp'>): Promise<void> {
     const queue = await this.getSyncQueue();
-    
     // Check if we already have an operation for this entity
     const existingIndex = queue.findIndex(
       q => q.id === item.id && q.entityType === item.entityType
     );
-    
     if (existingIndex >= 0) {
       // If the existing item is a create and the new one is a delete, just remove it entirely
       if (queue[existingIndex].action === 'create' && item.action === 'delete') {
@@ -41,7 +39,6 @@ class OfflineStorage {
         timestamp: Date.now()
       });
     }
-    
     await AsyncStorage.setItem(this.SYNC_QUEUE_KEY, JSON.stringify(queue));
   }
 
