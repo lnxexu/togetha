@@ -10,6 +10,8 @@ import {
   Text,
   TouchableOpacity,
   View,
+  SafeAreaView,
+  Platform,
 } from "react-native";
 import Navbar from "./NavBar";
 import { RootStackParamList } from "./navigation/AppNavigator";
@@ -47,7 +49,7 @@ const priorityTasks = [
 const quickAccess = [
   {
     id: 1,
-    title: "Recent Notes",
+    title: "Your Notes",
     icon: "note",
     count: "12",
     color: "#667EEA",
@@ -156,9 +158,6 @@ export default function Home() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Quick Access</Text>
-            <TouchableOpacity>
-              <Text style={styles.seeAllText}>See All</Text>
-            </TouchableOpacity>
           </View>
           <ScrollView
             horizontal
@@ -215,6 +214,8 @@ export default function Home() {
                 ]}
                 activeOpacity={0.8}
               >
+                
+                <View style={styles.borderLeft} />
                 <View style={styles.taskHeader}>
                   <View style={styles.taskInfo}>
                     <Text style={styles.taskTitle} numberOfLines={2}>
@@ -338,7 +339,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 24,
-    paddingTop: 56,
+    paddingTop: Platform.OS === 'ios' ? 40 : 40,
     paddingBottom: 24,
     backgroundColor: "#F8FAFC",
   },
@@ -354,7 +355,7 @@ const styles = StyleSheet.create({
   nameText: {
     fontSize: 28,
     fontFamily: "Inter-Bold",
-    color: "#1E293B",
+    color: "#6A009C",
     marginTop: 4,
     lineHeight: 32,
   },
@@ -446,7 +447,8 @@ const styles = StyleSheet.create({
   },
   horizontalScrollContainer: {
     paddingLeft: 24,
-    paddingRight: 12,
+    backgroundColor: "#f8fafc", // Ensure horizontal scroll area has background color
+    paddingBottom: 20, // Add some padding at the bottom for better spacing
   },
   firstCard: {
     marginLeft: 0,
@@ -459,12 +461,49 @@ const styles = StyleSheet.create({
     padding: 20,
     shadowColor: "#1E293B",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
+    shadowOpacity: 0.1,
     shadowRadius: 12,
-    elevation: 4,
-    borderLeftWidth: 4,
-    borderLeftColor: "#6A009C",
+    elevation: 6,
+    position: "relative", // Enable positioning for child elements
   },
+  
+  borderLeft: {
+    position: "absolute",
+    height: 32, // Match the lineHeight of taskTitle
+    width: 6,
+    backgroundColor: "#6A009C",
+    left: 0,
+    top: 20, // Align with taskTitle's vertical position (adjust as needed)
+    borderRadius: 3, // Optional: round the edges of the border
+  },
+  
+  taskTitle: {
+    fontSize: 18,
+    fontFamily: "Inter-Bold",
+    color: "#1E293B",
+    marginBottom: 6,
+    lineHeight: 22,
+  },
+  taskSubject: {
+    fontSize: 14,
+    color: "#6A009C",
+    fontFamily: "Inter-Medium",
+    backgroundColor: "#EDE7F6", // Light background for subject
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    alignSelf: "flex-start",
+  },
+  priorityBadge: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    minWidth: 70,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#D1D5DB", // Light border for badge
+  },
+  
   taskHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -475,23 +514,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingRight: 12,
   },
-  taskTitle: {
-    fontSize: 16,
-    fontFamily: "Inter-Bold",
-    color: "#1E293B",
-    marginBottom: 6,
-    lineHeight: 20,
-  },
-  taskSubject: {
-    fontSize: 13,
-    color: "#6A009C",
-    fontFamily: "Inter-Medium",
-    backgroundColor: "#f2e5f8ff",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    alignSelf: "flex-start",
-  },
+
   taskBody: {
     marginBottom: 16,
   },
@@ -500,13 +523,7 @@ const styles = StyleSheet.create({
     color: "#64748B",
     fontFamily: "Inter-Medium",
   },
-  priorityBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    minWidth: 60,
-    alignItems: "center",
-  },
+
   priorityText: {
     fontSize: 11,
     color: "#FFFFFF",

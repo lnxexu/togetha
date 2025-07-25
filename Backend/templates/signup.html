@@ -36,6 +36,7 @@
         }
         .form-group {
             margin-bottom: 20px;
+            position: relative;
         }
         label {
             display: block;
@@ -52,6 +53,13 @@
             border-radius: 5px;
             font-size: 16px;
             box-sizing: border-box;
+        }
+        .password-toggle {
+            position: absolute;
+            right: 10px;
+            top: 35px;
+            cursor: pointer;
+            color: #666;
         }
         .signup-button {
             background-color: #4285F4;
@@ -84,6 +92,7 @@
             display: none;
         }
     </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 </head>
 <body>
     <div class="signup-container">
@@ -91,6 +100,7 @@
         <h1>Create Account</h1>
         <div id="error-message" class="error-message"></div>
         <form id="signup-form">
+            {% csrf_token %}
             <div class="form-group">
                 <label for="username">Username</label>
                 <input type="text" id="username" name="username" required>
@@ -102,6 +112,16 @@
             <div class="form-group">
                 <label for="password">Password</label>
                 <input type="password" id="password" name="password" required>
+                <span class="password-toggle" onclick="togglePasswordVisibility('password')">
+                    <i class="fas fa-eye"></i>
+                </span>
+            </div>
+            <div class="form-group">
+                <label for="confirm-password">Confirm Password</label>
+                <input type="password" id="confirm-password" name="confirm-password" required>
+                <span class="password-toggle" onclick="togglePasswordVisibility('confirm-password')">
+                    <i class="fas fa-eye"></i>
+                </span>
             </div>
             <button type="submit" class="signup-button">Sign Up</button>
         </form>
@@ -111,6 +131,19 @@
     </div>
 
     <script>
+        function togglePasswordVisibility(fieldId) {
+            const passwordField = document.getElementById(fieldId);
+            const icon = event.currentTarget.querySelector('i');
+            
+            if (passwordField.type === "password") {
+                passwordField.type = "text";
+                icon.className = "fas fa-eye-slash";
+            } else {
+                passwordField.type = "password";
+                icon.className = "fas fa-eye";
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
             const signupForm = document.getElementById('signup-form');
             const errorMessage = document.getElementById('error-message');
@@ -121,12 +154,24 @@
                 const username = document.getElementById('username').value;
                 const email = document.getElementById('email').value;
                 const password = document.getElementById('password').value;
+                const confirmPassword = document.getElementById('confirm-password').value;
+                
+                // Validate password match
+                if (password !== confirmPassword) {
+                    errorMessage.textContent = "Passwords do not match";
+                    errorMessage.style.display = 'block';
+                    return;
+                }
+                
+                // Get CSRF token
+                const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
                 
                 // Send signup request
                 fetch('/signup', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken
                     },
                     body: JSON.stringify({
                         username: username,
@@ -148,7 +193,7 @@
                     localStorage.setItem('user', JSON.stringify(data.user));
                     
                     // Redirect to home page or dashboard
-                    window.location.href = '/chatbot/chat/';
+                    window.location.href = '/login_page/';
                 })
                 .catch(error => {
                     console.error('Error:', error);
@@ -162,6 +207,8 @@
                             errorText = `Email error: ${errorData.email.join(', ')}`;
                         } else if (errorData.password) {
                             errorText = `Password error: ${errorData.password.join(', ')}`;
+                        } else if (errorData.detail) {
+                            errorText = errorData.detail;
                         }
                         
                         errorMessage.textContent = errorText;

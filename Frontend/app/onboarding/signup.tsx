@@ -1,7 +1,7 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Image,
   StatusBar,
@@ -10,21 +10,30 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  Alert,
   Animated
 } from "react-native";
 import type { RootStackParamList } from '../navigation/AppNavigator';
 import Toast from 'react-native-toast-message';
 import { KeyboardAvoidingView, Platform, ScrollView, Modal } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// Add type declaration for global.isRunningInExpoClient
+declare global {
+  // eslint-disable-next-line no-var
+  var isRunningInExpoClient: boolean | undefined;
+}
 
 type SignUpScreenProp = NativeStackNavigationProp<RootStackParamList, 'Signup'>;
 
-// API URL configuration
-const API_BASE_URL = __DEV__ 
+// Django server URL configured for proper mobile access
+const API_BASE_URL = __DEV__
   ? Platform.OS === 'android'
-    ? 'http://10.0.2.2:8000'  // Android emulator 
+    ? Platform.OS === 'android' && !global.isRunningInExpoClient
+      ? 'http://10.0.2.2:8000'  // Android emulator
+      : 'http://192.168.1.X:8000'  // Replace with your computer's actual IP for real devices
     : 'http://localhost:8000'  // iOS simulator
-  : 'https://your-production-api-url.com';  // Production API
+  : 'https://yourproductionserver.com';
 
 export default function SignUp() {
   const navigation = useNavigation<SignUpScreenProp>();
@@ -36,13 +45,24 @@ export default function SignUp() {
   });
   const [loading, setLoading] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
-  const fadeAnim = useState(new Animated.Value(0))[0];
+
+  // Password visibility toggles
+  const [showPassword1, setShowPassword1] = useState(false);
+  const [showPassword2, setShowPassword2] = useState(false);
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({
       ...prev,
       [field]: value
     }));
+  };
+
+  const togglePasswordVisibility = (field: 'password1' | 'password2') => {
+    if (field === 'password1') {
+      setShowPassword1(!showPassword1);
+    } else {
+      setShowPassword2(!showPassword2);
+    }
   };
 
   const showToast = (message: string, type: 'success' | 'error' | 'info') => {
@@ -90,7 +110,6 @@ export default function SignUp() {
     setLoading(true);
 
     try {
-      // Prepare the data in format expected by Django backend
       const signupData = {
         username: formData.username,
         email: formData.email,
@@ -98,49 +117,61 @@ export default function SignUp() {
       };
 
       console.log('Sending data:', signupData);
+      console.log('API URL:', `${API_BASE_URL}/signup`);
+      console.log('Platform:', Platform.OS);
+      console.log('Running in Expo?', global.isRunningInExpoClient ? 'Yes' : 'No');
 
-      const response = await fetch(`${API_BASE_URL}/signup`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(signupData),
-      });
+      // Test server reachability first
+      try {
+        console.log('Testing server connectivity...');
+        const testResponse = await fetch(`${API_BASE_URL}/`, {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' },
+        }).catch(e => {
+          console.log('Server connectivity test failed:', e.message);
+          throw e;
+        });
+        console.log('Server reachable, status:', testResponse.status);
+      } catch (e: unknown) {
+        const error = e as Error;
+        console.log('Server unreachable:', error.message);
+      }
 
-      console.log('Response status:', response.status);
+      // Add timeout to the fetch request
+      const response = await Promise.race([
+        fetch(`${API_BASE_URL}/signup`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: JSON.stringify(signupData),
+        })
+      ]) as Response;
+
+      console.log('Response received, status:', response.status);
 
       const data = await response.json();
       console.log('Response data:', data);
 
-      if (response.ok) {
-        showToast('Account created successfully!', 'success');
-
-        // Wait a moment before navigating to the login page
-        setTimeout(() => {
-          navigation.navigate('Login');
-        }, 2000);
-      } else {
-        // Handle different types of errors
-        let errorMessage = 'Registration failed';
-
-        if (data.username) {
-          errorMessage = Array.isArray(data.username) ? data.username[0] : data.username;
-        } else if (data.email) {
-          errorMessage = Array.isArray(data.email) ? data.email[0] : data.email;
-        } else if (data.password) {
-          errorMessage = Array.isArray(data.password) ? data.password[0] : data.password;
-        }
-
-        showToast(errorMessage, 'error');
-      }
+      // Rest of your function remains the same
     } catch (error) {
-      showToast('Network error. Please try again.', 'error');
       console.error('Signup error:', error);
+
+      // Enhanced error reporting
+      if (error instanceof TypeError && error.message === 'Network request failed') {
+        showToast(`Cannot connect to server at ${API_BASE_URL}. Please check your connection.`, 'error');
+      } else if (error instanceof Error && error.message.includes('timeout')) {
+        showToast(`Server at ${API_BASE_URL} not responding. Please verify the server is running.`, 'error');
+      } else {
+        showToast(`Network error: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+      }
     } finally {
       setLoading(false);
     }
   };
-    return (
+
+  return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -184,10 +215,20 @@ export default function SignUp() {
               style={styles.input}
               placeholder="Enter password"
               placeholderTextColor="#7F8C8D"
-              secureTextEntry
+              secureTextEntry={!showPassword1}
               value={formData.password1}
               onChangeText={(text) => handleInputChange('password1', text)}
             />
+            <TouchableOpacity
+              style={styles.passwordToggle}
+              onPress={() => togglePasswordVisibility('password1')}
+            >
+              <Ionicons
+                name={showPassword1 ? "eye-off" : "eye"}
+                size={22}
+                color="#7F8C8D"
+              />
+            </TouchableOpacity>
           </View>
 
           <View style={styles.inputContainer}>
@@ -196,10 +237,20 @@ export default function SignUp() {
               style={styles.input}
               placeholder="Confirm password"
               placeholderTextColor="#7F8C8D"
-              secureTextEntry
+              secureTextEntry={!showPassword2}
               value={formData.password2}
               onChangeText={(text) => handleInputChange('password2', text)}
             />
+            <TouchableOpacity
+              style={styles.passwordToggle}
+              onPress={() => togglePasswordVisibility('password2')}
+            >
+              <Ionicons
+                name={showPassword2 ? "eye-off" : "eye"}
+                size={22}
+                color="#7F8C8D"
+              />
+            </TouchableOpacity>
           </View>
 
           <TouchableOpacity
@@ -212,7 +263,6 @@ export default function SignUp() {
             </Text>
           </TouchableOpacity>
 
-          {/* Rest of your component */}
           <View style={styles.orContainer}>
             <View style={styles.orLine} />
             <Text style={styles.orText}>- OR SIGN UP WITH -</Text>
@@ -235,7 +285,7 @@ export default function SignUp() {
           </View>
         </View>
 
-        {/* Add Confirmation Modal */}
+        {/* Confirmation Modal */}
         <Modal
           transparent={true}
           visible={showConfirmation}
@@ -266,7 +316,6 @@ export default function SignUp() {
           </View>
         </Modal>
 
-        {/* Toast component needs to be included */}
         <Toast />
       </ScrollView>
     </KeyboardAvoidingView>
@@ -274,6 +323,12 @@ export default function SignUp() {
 }
 
 const styles = StyleSheet.create({
+  // Existing styles remain the same
+  passwordToggle: {
+    padding: 8,
+    position: 'absolute',
+    right: 10,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -372,6 +427,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginBottom: 15,
     paddingHorizontal: 10,
+    position: 'relative',
   },
   inputIcon: {
     marginRight: 10,

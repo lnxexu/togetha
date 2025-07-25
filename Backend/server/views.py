@@ -8,7 +8,9 @@ from django.shortcuts import get_object_or_404, render
 from rest_framework.decorators import permission_classes, authentication_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.authentication import TokenAuthentication,SessionAuthentication
-from django.http import HttpResponse
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
+
 
 @api_view(['POST'])
 def login(request):
@@ -21,16 +23,54 @@ def login(request):
 
 @api_view(['POST'])
 def signup(request):
-    serializer = UserSerializer(data=request.data)
-    if serializer.is_valid():
-        serializer.save()
-        user = User.objects.get(username=serializer.data['username'])
-        user.set_password(request.data['password'])
-        user.save()
-        token = Token.objects.create(user=user)
-        return Response({'token': token.key, "user": serializer.data}, status=status.HTTP_201_CREATED)
+    # Extract data from request
+    username = request.data.get('username', '')
+    email = request.data.get('email', '')
+    password = request.data.get('password', '')
     
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST )
+    # Validate data
+    errors = {}
+    
+    if not username:
+        errors['username'] = ['Username is required']
+    elif User.objects.filter(username=username).exists():
+        errors['username'] = ['Username already exists']
+    
+    if not email:
+        errors['email'] = ['Email is required']
+    elif User.objects.filter(email=email).exists():
+        errors['email'] = ['Email already exists']
+    
+    if not password:
+        errors['password'] = ['Password is required']
+    else:
+        try:
+            # Use Django's password validation
+            validate_password(password)
+        except ValidationError as e:
+            errors['password'] = list(e.messages)
+    
+    if errors:
+        return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Create user
+    user = User.objects.create_user(
+        username=username,
+        email=email,
+        password=password
+    )
+    
+    # Generate auth token
+    token = Token.objects.create(user=user)
+    
+    # Serialize user data for response
+    serializer = UserSerializer(instance=user)
+    
+    return Response({
+        'token': token.key,
+        'user': serializer.data
+    }, status=status.HTTP_201_CREATED)
+
 
 @api_view(['GET'])
 @authentication_classes([TokenAuthentication, SessionAuthentication])

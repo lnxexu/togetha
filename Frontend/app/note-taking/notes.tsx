@@ -1,10 +1,9 @@
+
 import { MaterialIcons } from "@expo/vector-icons";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { Audio } from "expo-av";
 import React, { useState } from "react";
 import {
   Alert,
-  Animated,
   Dimensions,
   FlatList,
   KeyboardAvoidingView,
@@ -35,10 +34,18 @@ interface Note {
   content: string;
   createdAt: Date;
   updatedAt: Date;
-  type: "text" | "voice" | "image";
-  audioUri?: string;
+  type: "text" | "image";
   tags?: string[];
   linkedTaskId?: string;
+  attachments?: Attachment[];
+}
+
+interface Attachment {
+  id: string;
+  uri: string;
+  name: string;
+  type: "image" | "pdf";
+  timestamp: Date;
 }
 
 interface Folder {
@@ -70,16 +77,6 @@ const INITIAL_NOTES: Note[] = [
   },
   {
     id: "2",
-    title: "Clinical Assessment Recording",
-    content: "",
-    createdAt: new Date(2024, 10, 14),
-    updatedAt: new Date(2024, 10, 14),
-    type: "voice",
-    audioUri: "sample_uri",
-    tags: ["clinical", "assessment"],
-  },
-  {
-    id: "3",
     title: "Anatomy Study Notes",
     content:
       "Detailed notes on the cardiovascular system including heart structure, blood flow, and common pathologies.",
@@ -129,11 +126,8 @@ const FOLDER_ICONS: (keyof typeof MaterialIcons.glyphMap)[] = [
 export default function NotesScreen({ navigation }: NotesScreenProps) {
   const [notes, setNotes] = useState<Note[]>(INITIAL_NOTES);
   const [folders, setFolders] = useState<Folder[]>(DUMMY_FOLDERS);
-  const [recording, setRecording] = useState<Audio.Recording | null>(null);
-  const [isRecording, setIsRecording] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFilter, setSelectedFilter] = useState("all");
-  const [recordingAnimation] = useState(new Animated.Value(1));
   const [showFolderDropdown, setShowFolderDropdown] = useState(false);
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [showCreateFolderModal, setShowCreateFolderModal] = useState(false);
@@ -146,68 +140,6 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
   const [activeNoteOptions, setActiveNoteOptions] = useState<string | null>(
     null
   );
-
-  const startRecording = async () => {
-    try {
-      await Audio.requestPermissionsAsync();
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      setRecording(recording);
-      setIsRecording(true);
-
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(recordingAnimation, {
-            toValue: 1.3,
-            duration: 600,
-            useNativeDriver: true,
-          }),
-          Animated.timing(recordingAnimation, {
-            toValue: 1,
-            duration: 600,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-    } catch (err) {
-      console.error("Failed to start recording", err);
-    }
-  };
-
-  const stopRecording = async () => {
-    if (!recording) return;
-
-    try {
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
-      setRecording(null);
-      setIsRecording(false);
-      recordingAnimation.stopAnimation();
-      recordingAnimation.setValue(1);
-
-      if (uri) {
-        const newNote: Note = {
-          id: Date.now().toString(),
-          title: `Voice Note ${new Date().toLocaleString()}`,
-          content: "",
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          type: "voice",
-          audioUri: uri,
-          tags: ["voice"],
-        };
-        setNotes((prev) => [newNote, ...prev]);
-      }
-    } catch (err) {
-      console.error("Failed to stop recording", err);
-    }
-  };
 
   const handleDeleteNote = (noteId: string) => {
     Alert.alert(
@@ -301,7 +233,6 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
       <View
         style={[
           styles.noteContent,
-          item.type === "voice" && styles.voiceNoteContent,
           viewMode === "grid" && styles.gridNoteContent,
         ]}
       >
@@ -313,14 +244,14 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
                 viewMode === "grid" && styles.gridNoteTypeIcon,
                 {
                   backgroundColor:
-                    item.type === "voice" ? "#f2e5f8ff" : "#DBEAFE",
+                    item.type === "image" ? "#FEF3C7" : "#DBEAFE",
                 },
               ]}
             >
               <MaterialIcons
-                name={item.type === "voice" ? "mic" : "description"}
+                name={item.type === "image" ? "image" : "description"}
                 size={viewMode === "grid" ? 16 : 20}
-                color={item.type === "voice" ? "#6A009C" : "#3B82F6"}
+                color={item.type === "image" ? "#F59E0B" : "#3B82F6"}
               />
             </View>
             <View style={styles.noteTitleSection}>
@@ -386,58 +317,24 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
           )}
         </View>
 
-        {item.type === "voice" ? (
-          <View
-            style={[
-              styles.voiceNoteIndicator,
-              viewMode === "grid" && styles.gridVoiceNoteIndicator,
-            ]}
-          >
-            <View
-              style={[
-                styles.playButton,
-                viewMode === "grid" && styles.gridPlayButton,
-              ]}
-            >
-              <MaterialIcons
-                name="play-arrow"
-                size={viewMode === "grid" ? 20 : 24}
-                color="#FFFFFF"
-              />
-            </View>
-            {viewMode === "list" && (
-              <>
-                <View style={styles.waveform}>
-                  {[...Array(25)].map((_, i) => (
-                    <View
-                      key={i}
-                      style={[
-                        styles.waveformBar,
-                        {
-                          height: Math.random() * 24 + 8,
-                          backgroundColor: i < 8 ? "#6A009C" : "#aaaaaaff",
-                        },
-                      ]}
-                    />
-                  ))}
-                </View>
-                <Text style={styles.audioDuration}>2:34</Text>
-              </>
-            )}
-            {viewMode === "grid" && (
-              <Text style={styles.gridAudioDuration}>2:34</Text>
-            )}
+        <Text
+          style={[
+            styles.notePreview,
+            viewMode === "grid" && styles.gridNotePreview,
+          ]}
+          numberOfLines={viewMode === "grid" ? 4 : 3}
+        >
+          {item.content}
+        </Text>
+
+        {item.attachments && item.attachments.length > 0 && (
+          <View style={styles.attachmentsContainer}>
+            <MaterialIcons name="attach-file" size={16} color="#9CA3AF" />
+            <Text style={styles.attachmentCount}>
+              {item.attachments.length} attachment
+              {item.attachments.length !== 1 ? "s" : ""}
+            </Text>
           </View>
-        ) : (
-          <Text
-            style={[
-              styles.notePreview,
-              viewMode === "grid" && styles.gridNotePreview,
-            ]}
-            numberOfLines={viewMode === "grid" ? 4 : 3}
-          >
-            {item.content}
-          </Text>
         )}
 
         {item.tags && item.tags.length > 0 && viewMode === "list" && (
@@ -563,7 +460,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
                       onPress={() => setSelectedFolderColor(color)}
                     >
                       {selectedFolderColor === color && (
-                        <MaterialIcons name="check" size={20} color="#9C27B0" />
+                        <MaterialIcons name="check" size={20} color="#FFFFFF" />
                       )}
                     </TouchableOpacity>
                   ))}
@@ -644,6 +541,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
                   />
                   <Text style={styles.dropdownOptionText}>Create Folder</Text>
                 </TouchableOpacity>
+
                 <TouchableOpacity
                   style={styles.dropdownOption}
                   onPress={() => {
@@ -660,6 +558,21 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
                     {viewMode === "list" ? "Grid View" : "List View"}
                   </Text>
                 </TouchableOpacity>
+
+                <TouchableOpacity
+  style={styles.dropdownOption}
+  onPress={() => {
+    navigation.navigate("PDFs"); // Navigate to the ImportPDFPage
+    setShowOptionsDropdown(false); // Close the dropdown
+  }}
+>
+  <MaterialIcons
+    name="picture-as-pdf"
+    size={20}
+    color="#6A009C"
+  />
+  <Text style={styles.dropdownOptionText}>Import PDF</Text>
+</TouchableOpacity>
               </View>
             )}
           </View>
@@ -777,7 +690,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
           onPress={handleCreateNote}
           activeOpacity={0.8}
         >
-          <MaterialIcons name="note-add" size={28} color="#9C27B0" />
+          <MaterialIcons name="note-add" size={28} color="#6A009C" />
         </TouchableOpacity>
       </View>
 
@@ -794,7 +707,7 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 24,
-    paddingTop: Platform.OS === "ios" ? 60 : 40,
+    paddingTop: Platform.OS === "ios" ? 40 : 40,
     paddingBottom: 24,
     backgroundColor: "#F8FAFC",
   },
@@ -831,7 +744,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     shadowColor: "#6366F1",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 2,
   },
@@ -850,7 +763,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     shadowColor: "#1E293B",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
+    shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 2,
   },
@@ -960,10 +873,6 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 16,
   },
-  voiceNoteContent: {
-    borderLeftWidth: 4,
-    borderLeftColor: "#6A009C",
-  },
   noteHeader: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -1070,56 +979,16 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     marginBottom: 8,
   },
-  voiceNoteIndicator: {
+  attachmentsContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#f2e5f8ff",
-    borderRadius: 16,
-    padding: 16,
     marginBottom: 12,
   },
-  gridVoiceNoteIndicator: {
-    padding: 12,
-    marginBottom: 8,
-    justifyContent: "center",
-  },
-  playButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#6A009C",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 12,
-  },
-  gridPlayButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    marginRight: 8,
-  },
-  waveform: {
-    flexDirection: "row",
-    alignItems: "center",
-
-    flex: 1,
-    height: 32,
-    marginRight: 12,
-  },
-  waveformBar: {
-    width: 2,
-    borderRadius: 1,
-    marginHorizontal: 1,
-  },
-  audioDuration: {
+  attachmentCount: {
     fontSize: 12,
-    fontFamily: "Inter-Medium",
-    color: "#6A009C",
-  },
-  gridAudioDuration: {
-    fontSize: 11,
-    fontFamily: "Inter-Medium",
-    color: "#6A009C",
+    fontFamily: "Inter-Regular",
+    color: "#9CA3AF",
+    marginLeft: 4,
   },
   tagsContainer: {
     flexDirection: "row",
