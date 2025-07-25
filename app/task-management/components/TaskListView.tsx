@@ -196,9 +196,11 @@ const TaskListView: React.FC<TaskListViewProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    marginTop: 40,
   },
   matrixContainer: {
     paddingBottom: 20,
+    paddingHorizontal: 4,
   },
   quadrantSection: {
     marginBottom: 16,

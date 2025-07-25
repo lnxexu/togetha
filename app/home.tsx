@@ -10,7 +10,6 @@ import {
   Text,
   TouchableOpacity,
   View,
-  SafeAreaView,
   Platform,
 } from "react-native";
 import Navbar from "./NavBar";
@@ -136,15 +135,17 @@ export default function Home() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={styles.rootContainer}>
       <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Header */}
+      {/* Main Content Container */}
+      <View style={styles.container}>
+        
+        {/* Header positioned to overlay content */}
         <View style={styles.header}>
           <View style={styles.headerGreeting}>
             <Text style={styles.welcomeText}>Good morning,</Text>
-            <Text style={styles.nameText}>Orentt! 👋</Text>
+            <Text style={styles.nameText}>James! 👋</Text>
           </View>
           <TouchableOpacity style={styles.notificationIcon}>
             <View style={styles.notificationIconContainer}>
@@ -153,6 +154,11 @@ export default function Home() {
             </View>
           </TouchableOpacity>
         </View>
+        <ScrollView 
+          style={styles.content} 
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+        >
 
         {/* Quick Access */}
         <View style={styles.section}>
@@ -317,31 +323,47 @@ export default function Home() {
             ))}
           </ScrollView>
         </View>
-
-        {/* Bottom spacing for navbar */}
         <View style={{ height: 20 }} />
-      </ScrollView>
+        </ScrollView>
 
-      {/* Navigation Bar */}
-      <Navbar activeRoute="Home" />
+        {/* Navigation Bar - positioned to overlay content */}
+        <View style={styles.navbarContainer}>
+          <Navbar activeRoute="Home" />
+        </View>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  rootContainer: {
+    flex: 1,
+    backgroundColor: "#ffffffff",
+  },
   container: {
     flex: 1,
     backgroundColor: "#f8fafc",
-    paddingBottom: 80, // Space for the navbar
   },
   header: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 24,
-    paddingTop: Platform.OS === 'ios' ? 40 : 40,
-    paddingBottom: 24,
-    backgroundColor: "#F8FAFC",
+    paddingTop: Platform.OS === 'ios' ? 50 : 35,
+    paddingBottom: 20,
+    backgroundColor: "rgba(248, 250, 252, 0.95)",
+    borderBottomLeftRadius: 25,
+    borderBottomRightRadius: 25,
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+    zIndex: 1000,
   },
   headerGreeting: {
     flex: 1,
@@ -384,6 +406,26 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  scrollContent: {
+    paddingTop: 130, // Space for the header with increased padding
+    paddingBottom: 100,
+    marginTop: 30, // Space for the navbar
+  },
+  navbarContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "rgba(248, 250, 252, 0.95)",
+    borderTopLeftRadius: 25,
+    borderTopRightRadius: 25,
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+    zIndex: 1000,
   },
   section: {
     marginBottom: 32,

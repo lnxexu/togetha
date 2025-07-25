@@ -19,6 +19,9 @@ import NewNoteEditor from '../note-taking/NewNoteEditor';
 //task management components
 import AddTask from '../task-management/AddTask';
 import TaskDetails from '../task-management/TaskDetails';
+import EisenhowerListPage from '../task-management/EisenhowerListPage';
+
+import { Task } from '../task-management/types/Task';
 
 export type RootStackParamList = {
   Welcome: undefined;
@@ -45,6 +48,12 @@ export type RootStackParamList = {
   };
   AddTask: {
     quadrant?: 'urgent-important' | 'not-urgent-important' | 'urgent-not-important' | 'not-urgent-not-important';
+  };
+  EisenhowerList: {
+    tasks: Task[];
+    quadrant: 'urgent-important' | 'not-urgent-important' | 'urgent-not-important' | 'not-urgent-not-important';
+    onMarkComplete: (taskId: string) => void;
+    onDeleteTask: (taskId: string) => void;
   };
   PDFs: undefined;
   RINA: undefined;
@@ -77,6 +86,7 @@ const AppNavigator: React.FC = () => {
         {/* Task Management components */}
         <Stack.Screen name="TaskDetails" component={TaskDetails} />
         <Stack.Screen name="AddTask" component={AddTask} />
+        <Stack.Screen name="EisenhowerList" component={EisenhowerListPage} />
       </Stack.Navigator>
     </NavigationContainer>
   );

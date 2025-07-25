@@ -1,4 +1,3 @@
-
 import { MaterialIcons } from "@expo/vector-icons";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import React, { useState } from "react";
@@ -560,19 +559,19 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
                 </TouchableOpacity>
 
                 <TouchableOpacity
-  style={styles.dropdownOption}
-  onPress={() => {
-    navigation.navigate("PDFs"); // Navigate to the ImportPDFPage
-    setShowOptionsDropdown(false); // Close the dropdown
-  }}
->
-  <MaterialIcons
-    name="picture-as-pdf"
-    size={20}
-    color="#6A009C"
-  />
-  <Text style={styles.dropdownOptionText}>Import PDF</Text>
-</TouchableOpacity>
+                  style={styles.dropdownOption}
+                  onPress={() => {
+                    navigation.navigate("PDFs"); // Navigate to the ImportPDFPage
+                    setShowOptionsDropdown(false); // Close the dropdown
+                  }}
+                >
+                  <MaterialIcons
+                    name="picture-as-pdf"
+                    size={20}
+                    color="#6A009C"
+                  />
+                  <Text style={styles.dropdownOptionText}>Import PDF</Text>
+                </TouchableOpacity>
               </View>
             )}
           </View>
@@ -607,59 +606,60 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
             </View>
           </View>
         )}
-      </View>
 
-      <View style={styles.folderSection}>
-        <TouchableOpacity
-          style={styles.folderToggle}
-          onPress={() => setShowFolderDropdown(!showFolderDropdown)}
-          activeOpacity={0.7}
-        >
-          <View style={styles.folderToggleLeft}>
-            <MaterialIcons name="folder" size={22} color="#FFDE21" />
-            <Text style={styles.folderToggleText}>Folders</Text>
-          </View>
-          <MaterialIcons
-            name={showFolderDropdown ? "expand-less" : "expand-more"}
-            size={24}
-            color="#9CA3AF"
-          />
-        </TouchableOpacity>
+        {/* Folder Section inside Header */}
+        <View style={styles.folderSectionInHeader}>
+          <TouchableOpacity
+            style={styles.folderToggle}
+            onPress={() => setShowFolderDropdown(!showFolderDropdown)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.folderToggleLeft}>
+              <MaterialIcons name="folder" size={22} color="#FFDE21" />
+              <Text style={styles.folderToggleText}>Folders</Text>
+            </View>
+            <MaterialIcons
+              name={showFolderDropdown ? "expand-less" : "expand-more"}
+              size={24}
+              color="#9CA3AF"
+            />
+          </TouchableOpacity>
 
-        {showFolderDropdown && (
-          <View style={styles.folderDropdown}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.foldersScrollContent}
-            >
-              {folders.map((folder) => (
-                <TouchableOpacity
-                  key={folder.id}
-                  style={styles.folderCard}
-                  activeOpacity={0.8}
-                >
-                  <View
-                    style={[
-                      styles.folderIcon,
-                      { backgroundColor: folder.color },
-                    ]}
+          {showFolderDropdown && (
+            <View style={styles.folderDropdown}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.foldersScrollContent}
+              >
+                {folders.map((folder) => (
+                  <TouchableOpacity
+                    key={folder.id}
+                    style={styles.folderCard}
+                    activeOpacity={0.8}
                   >
-                    <MaterialIcons
-                      name={folder.icon}
-                      size={24}
-                      color="#FFFFFF"
-                    />
-                  </View>
-                  <Text style={styles.folderName}>{folder.name}</Text>
-                  <Text style={styles.folderCount}>
-                    {Math.floor(Math.random() * 12) + 1}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        )}
+                    <View
+                      style={[
+                        styles.folderIcon,
+                        { backgroundColor: folder.color },
+                      ]}
+                    >
+                      <MaterialIcons
+                        name={folder.icon}
+                        size={24}
+                        color="#FFFFFF"
+                      />
+                    </View>
+                    <Text style={styles.folderName}>{folder.name}</Text>
+                    <Text style={styles.folderCount}>
+                      {Math.floor(Math.random() * 12) + 1}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
+        </View>
       </View>
 
       <FlatList
@@ -706,10 +706,22 @@ const styles = StyleSheet.create({
     backgroundColor: "#F8FAFC",
   },
   header: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
     paddingHorizontal: 24,
-    paddingTop: Platform.OS === "ios" ? 40 : 40,
+    paddingTop: Platform.OS === "ios" ? 50 : 35,
     paddingBottom: 24,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "rgba(248, 250, 252, 0.95)",
+    borderBottomLeftRadius: 25,
+    borderBottomRightRadius: 25,
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+    zIndex: 1000,
   },
   headerTopRow: {
     flexDirection: "row",
@@ -780,9 +792,17 @@ const styles = StyleSheet.create({
     padding: 4,
     marginLeft: 8,
   },
+  folderSectionInHeader: {
+    marginTop: 16,
+  },
   folderSection: {
+    position: "absolute",
+    top: 140, // Position below the header
+    left: 0,
+    right: 0,
     paddingHorizontal: 24,
     marginBottom: 16,
+    zIndex: 999,
   },
   folderToggle: {
     flexDirection: "row",
@@ -849,7 +869,9 @@ const styles = StyleSheet.create({
   },
   notesList: {
     paddingHorizontal: 24,
-    paddingBottom: 120,
+    marginTop: 30,
+    paddingTop: 200, // Space for the expanded header with folder section
+    paddingBottom: 120, // Space for the navbar
   },
   noteItem: {
     marginVertical: 6,

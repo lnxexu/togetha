@@ -5,7 +5,6 @@ import {
     StyleSheet,
     TouchableOpacity,
     ScrollView,
-    SafeAreaView,
     Alert,
     Platform,
     Dimensions,
@@ -368,7 +367,7 @@ const ToDo: React.FC = () => {
     };
 
     return (
-        <SafeAreaView style={styles.container}>
+        <View style={styles.container}>
             {/* Header */}
             <View style={styles.header}>
                 <View style={styles.headerTopRow}>
@@ -462,33 +461,35 @@ const ToDo: React.FC = () => {
                     </TouchableOpacity>
                 </Modal>
 
-                {/* Dashboard */}
-                <View style={styles.dashboard}>
-                    <View style={styles.dashboardRow}>
-                        <View style={styles.dashboardCard}>
-                            <Text style={styles.dashboardNumber}>
-                                {tasks.filter(task => !task.completed && !task.overdue).length}
-                            </Text>
-                            <Text style={styles.dashboardLabel}>Pending</Text>
-                        </View>
-                        <View style={styles.dashboardCard}>
-                            <Text style={styles.dashboardNumber}>
-                                {tasks.filter(task => task.completed).length}
-                            </Text>
-                            <Text style={styles.dashboardLabel}>Completed</Text>
-                        </View>
-                        <View style={styles.dashboardCard}>
-                            <Text style={styles.dashboardNumber}>
-                                {tasks.filter(task => task.overdue && !task.completed).length}
-                            </Text>
-                            <Text style={styles.dashboardLabel}>Overdue</Text>
-                        </View>
-                        <View style={styles.dashboardCard}>
-                            <Text style={styles.dashboardNumber}>{tasks.length}</Text>
-                            <Text style={styles.dashboardLabel}>Total</Text>
+                {/* Dashboard (only show in matrix view) */}
+                {viewMode === 'matrix' && (
+                    <View style={styles.dashboard}>
+                        <View style={styles.dashboardRow}>
+                            <View style={styles.dashboardCard}>
+                                <Text style={styles.dashboardNumber}>
+                                    {tasks.filter(task => !task.completed && !task.overdue).length}
+                                </Text>
+                                <Text style={styles.dashboardLabel}>Pending</Text>
+                            </View>
+                            <View style={styles.dashboardCard}>
+                                <Text style={styles.dashboardNumber}>
+                                    {tasks.filter(task => task.completed).length}
+                                </Text>
+                                <Text style={styles.dashboardLabel}>Completed</Text>
+                            </View>
+                            <View style={styles.dashboardCard}>
+                                <Text style={styles.dashboardNumber}>
+                                    {tasks.filter(task => task.overdue && !task.completed).length}
+                                </Text>
+                                <Text style={styles.dashboardLabel}>Overdue</Text>
+                            </View>
+                            <View style={styles.dashboardCard}>
+                                <Text style={styles.dashboardNumber}>{tasks.length}</Text>
+                                <Text style={styles.dashboardLabel}>Total</Text>
+                            </View>
                         </View>
                     </View>
-                </View>
+                )}
 
                 {/* Status Buttons (only show in list view) */}
                 {viewMode === 'list' && (
@@ -564,7 +565,10 @@ const ToDo: React.FC = () => {
             </View>
 
             {/* Content */}
-            <View style={styles.content}>
+            <View style={[
+                styles.content,
+                viewMode === 'matrix' ? styles.contentMatrix : styles.contentList
+            ]}>
                 {viewMode === 'matrix' ? (
                     <EisenhowerMatrix
                         tasks={tasks}
@@ -595,7 +599,7 @@ const ToDo: React.FC = () => {
             </TouchableOpacity>
 
             <Navbar activeRoute="ToDo" />
-        </SafeAreaView>
+        </View>
     );
 };
 
@@ -605,11 +609,22 @@ const styles = StyleSheet.create({
         backgroundColor: '#f8f9fa',
     },
     header: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
         paddingHorizontal: 24,
-        paddingTop: Platform.OS === 'ios' ? 40 : 40,
+        paddingTop: Platform.OS === 'ios' ? 50 : 35,
         paddingBottom: 16,
-        backgroundColor: "#F8FAFC",
-        zIndex: 100,
+        backgroundColor: "rgba(248, 250, 252, 0.95)",
+        borderBottomLeftRadius: 25,
+        borderBottomRightRadius: 25,
+        shadowColor: "#1E293B",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+        elevation: 5,
+        zIndex: 1000,
         overflow: 'visible',
     },
     headerTopRow: {
@@ -855,6 +870,12 @@ const styles = StyleSheet.create({
         paddingHorizontal: 20,
         paddingBottom: 100, // Space for navbar
     },
+    contentMatrix: {
+        paddingTop: 260, // Space for header with dashboard
+    },
+    contentList: {
+        paddingTop: 180, // Reduced space for header without dashboard
+    },
     // List view filter styles
     listViewFilters: {
         marginBottom: 15,
@@ -1013,7 +1034,7 @@ const styles = StyleSheet.create({
     },
     // Dashboard styles
     dashboard: {
-        paddingTop: 16,
+        paddingTop: 8,
         paddingBottom: 8,
     },
     dashboardRow: {
@@ -1025,7 +1046,7 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: '#fff',
         borderRadius: 12,
-        padding: 16,
+        padding: 10,
         alignItems: 'center',
         shadowColor: '#1E293B',
         shadowOffset: { width: 0, height: 2 },
@@ -1055,7 +1076,7 @@ const styles = StyleSheet.create({
     statusButton: {
         flex: 1,
         paddingVertical: 12,
-        paddingHorizontal: 16,
+        paddingHorizontal: 0,
         borderRadius: 8,
         backgroundColor: '#fff',
         borderWidth: 1,

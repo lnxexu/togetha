@@ -8,7 +8,12 @@ import {
   Alert,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../../navigation/AppNavigator';
 import { Task } from '../types/Task';
+
+type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 interface EisenhowerMatrixProps {
   tasks: Task[];
@@ -69,8 +74,19 @@ const EisenhowerMatrix: React.FC<EisenhowerMatrixProps> = ({
   onDeleteTask,
   onMarkComplete,
 }) => {
+  const navigation = useNavigation<NavigationProp>();
+  
   const getTasksByQuadrant = (priority: string) => {
     return tasks.filter(task => task.priority === priority);
+  };
+
+  const handleQuadrantPress = (quadrantKey: string) => {
+    navigation.navigate('EisenhowerList', {
+      tasks,
+      quadrant: quadrantKey as any,
+      onMarkComplete,
+      onDeleteTask,
+    });
   };
 
   const handleTaskLongPress = (task: Task) => {
@@ -97,23 +113,31 @@ const EisenhowerMatrix: React.FC<EisenhowerMatrixProps> = ({
   const renderQuadrant = (quadrantKey: string) => {
     const quadrant = quadrants[quadrantKey];
     const quadrantTasks = getTasksByQuadrant(quadrant.priority);
+    const displayTasks = quadrantTasks.slice(0, 3); // Show only first 3 tasks
 
     return (
-      <View key={quadrantKey} style={[
-        styles.quadrant,
-        {
-          backgroundColor: quadrant.color,
-          borderLeftColor: quadrant.borderColor,
-          borderLeftWidth: 4,
-          borderColor: 'transparent',
-        },
-      ]}>
+      <View 
+        key={quadrantKey} 
+        style={[
+          styles.quadrant,
+          {
+            backgroundColor: quadrant.color,
+            borderLeftColor: quadrant.borderColor,
+            borderLeftWidth: 4,
+            borderColor: 'transparent',
+          },
+        ]}
+      >
         <View style={[styles.quadrantHeader, { backgroundColor: quadrant.color }]}> 
-          {/* Removed icon */}
           <Text style={styles.quadrantTitle}>{quadrant.title}</Text>
-          <View style={styles.taskCountContainer}>
-            <Text style={styles.taskCountText}>{quadrantTasks.length}</Text>
-          </View>
+          {quadrantTasks.length > 0 && (
+            <TouchableOpacity 
+              style={styles.seeAllButton}
+              onPress={() => handleQuadrantPress(quadrantKey)}
+            >
+              <Text style={styles.seeAllText}>See All</Text>
+            </TouchableOpacity>
+          )}
         </View>
         <Text style={styles.quadrantSubtitle}>{quadrant.subtitle}</Text>
         <ScrollView style={styles.taskList} showsVerticalScrollIndicator={false}>
@@ -126,33 +150,46 @@ const EisenhowerMatrix: React.FC<EisenhowerMatrixProps> = ({
               <Text style={styles.emptyText}>Add your first task</Text>
             </TouchableOpacity>
           ) : (
-            quadrantTasks.map(task => (
-              <View key={task.id} style={styles.taskRow}>
+            <>
+              {displayTasks.map(task => (
+                <View key={task.id} style={styles.taskRow}>
+                  <TouchableOpacity 
+                    style={styles.checkbox}
+                    onPress={() => onMarkComplete(task.id)}
+                  >
+                    <MaterialIcons 
+                      name={task.completed ? "check-box" : "check-box-outline-blank"}
+                      size={16} 
+                      color={task.completed ? '#27ae60' : (task.overdue ? '#e74c3c' : '#7f8c8d')} 
+                    />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.taskTextContainer}
+                    onPress={() => onTaskPress(task.id)}
+                    onLongPress={() => handleTaskLongPress(task)}
+                  >
+                    <Text style={[
+                      styles.taskText, 
+                      task.overdue && !task.completed && styles.overdueTaskText,
+                      task.completed && styles.completedTaskText
+                    ]} numberOfLines={2}>
+                      {task.title}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+              {quadrantTasks.length > 3 && (
                 <TouchableOpacity 
-                  style={styles.checkbox}
-                  onPress={() => onMarkComplete(task.id)}
+                  style={styles.moreTasksButton}
+                  onPress={() => handleQuadrantPress(quadrantKey)}
                 >
-                  <MaterialIcons 
-                    name={task.completed ? "check-box" : "check-box-outline-blank"}
-                    size={16} 
-                    color={task.completed ? '#27ae60' : (task.overdue ? '#e74c3c' : '#7f8c8d')} 
-                  />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.taskTextContainer}
-                  onPress={() => onTaskPress(task.id)}
-                  onLongPress={() => handleTaskLongPress(task)}
-                >
-                  <Text style={[
-                    styles.taskText, 
-                    task.overdue && !task.completed && styles.overdueTaskText,
-                    task.completed && styles.completedTaskText
-                  ]} numberOfLines={2}>
-                    {task.title}
+                  <Text style={styles.moreTasksText}>
+                    +{quadrantTasks.length - 3} more tasks
                   </Text>
+                  <MaterialIcons name="arrow-forward" size={14} color="#fff" />
                 </TouchableOpacity>
-              </View>
-            ))
+              )}
+            </>
           )}
         </ScrollView>
       </View>
@@ -178,9 +215,11 @@ const EisenhowerMatrix: React.FC<EisenhowerMatrixProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    marginTop: 0,
   },
   matrix: {
     flex: 1,
+    paddingHorizontal: 4,
   },
   matrixRow: {
     flexDirection: 'row',
@@ -229,6 +268,18 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: 'Inter-Medium',
   },
+  seeAllButton: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  seeAllText: {
+    color: '#fff',
+    fontSize: 11,
+    fontFamily: 'Inter-Medium',
+    fontWeight: '600',
+  },
 
   quadrantSubtitle: {
     fontSize: 10,
@@ -237,6 +288,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 4,
     fontFamily: 'Inter-Regular',
+  },
+  taskPreview: {
+    flex: 1,
+    padding: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   taskList: {
     flex: 1,
@@ -254,6 +311,18 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
     fontFamily: 'Inter-Regular',
+  },
+  taskSummary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
+  },
+  tapToViewText: {
+    fontSize: 12,
+    color: '#fff',
+    fontFamily: 'Inter-Medium',
+    marginRight: 8,
   },
   taskRow: {
     flexDirection: 'row',
@@ -283,6 +352,22 @@ const styles = StyleSheet.create({
     color: '#95a5a6',
     textDecorationLine: 'line-through',
     opacity: 0.7,
+  },
+  moreTasksButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 8,
+  },
+  moreTasksText: {
+    fontSize: 11,
+    color: '#fff',
+    fontFamily: 'Inter-Medium',
+    marginRight: 4,
   },
 });
 
