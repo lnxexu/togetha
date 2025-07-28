@@ -1,4 +1,3 @@
-
 import { MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useEffect, useRef, useState } from "react";
@@ -15,9 +14,11 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  ToastAndroid,
   TouchableOpacity,
   View,
 } from "react-native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 const { RichEditor, RichToolbar } = require("react-native-pell-rich-editor");
 
@@ -29,7 +30,9 @@ interface NoteEditorProps {
       initialNote?: {
         title: string;
         content: string;
+        formatted_content?: string; // Added formatted_content field
         tags?: string[];
+        folderId?: string | null;
         createdAt?: string;
         updatedAt?: string;
       };
@@ -42,7 +45,9 @@ interface Note {
   id: string;
   title: string;
   content: string;
+  formatted_content?: string;
   tags?: string[];
+  folderId?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -115,10 +120,6 @@ const RinaButton: React.FC<RinaPopupProps> = ({
   );
 };
 
-
-
-
-
 const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   // Refs
   const richTextRef = useRef<any>(null);
@@ -128,6 +129,9 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   const [title, setTitle] = useState(route.params?.initialNote?.title || "");
   const [content, setContent] = useState(
     route.params?.initialNote?.content || ""
+  );
+  const [formattedContent, setFormattedContent] = useState(
+    route.params?.initialNote?.formatted_content || ""
   );
   const [tags, setTags] = useState<string[]>(
     route.params?.initialNote?.tags || []
@@ -149,6 +153,58 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   const [currentColorAction, setCurrentColorAction] = useState<
     "text" | "background" | null
   >(null);
+  const [folders, setFolders] = useState<any[]>([]);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(
+    route.params?.initialNote?.folderId || null
+  );
+  const [showFolderModal, setShowFolderModal] = useState(false);
+  const [folderName, setFolderName] = useState<string>("Unorganized Notes");
+
+  // Update the useEffect hook that fetches folders to better handle the initial folder name
+  useEffect(() => {
+    fetchFolders();
+
+    // Set initial folder name if we have a folder ID
+    if (route.params?.initialNote?.folderId) {
+      setSelectedFolderId(route.params.initialNote.folderId);
+    }
+  }, []);
+
+  // Modify the fetchFolders function to ensure the folder name is updated
+  const fetchFolders = async () => {
+    try {
+      const token = await AsyncStorage.getItem("authToken");
+      if (!token) return;
+
+      const API_URL = "http://10.0.2.2:8000";
+      const response = await fetch(`${API_URL}/note_taking/folders/`, {
+        method: "GET",
+        headers: {
+          Authorization: `Token ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch folders");
+      }
+
+      const data = await response.json();
+      setFolders(data);
+
+      // Update folder name if we have a selected folder
+      if (selectedFolderId) {
+        const selectedFolder = data.find(
+          (f: any) => f.id.toString() === selectedFolderId
+        );
+        if (selectedFolder) {
+          setFolderName(selectedFolder.name);
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching folders:", error);
+    }
+  };
 
   // Effects
   useEffect(() => {
@@ -201,12 +257,25 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     { name: "cyan", hex: "#00FFFF" },
   ];
 
+  const handleFolderSelect = (folder: any | null) => {
+    if (folder) {
+      setSelectedFolderId(folder.id.toString());
+      setFolderName(folder.name);
+    } else {
+      setSelectedFolderId(null);
+      setFolderName("Unorganized Notes");
+    }
+    setShowFolderModal(false);
+  };
+
   const getCurrentNoteData = (): Note => {
     return {
       id: noteId,
       title,
       content,
+      formatted_content: formattedContent,
       tags,
+      folderId: selectedFolderId, // Include the selected folder ID
       createdAt:
         route.params?.initialNote?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -240,20 +309,124 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   };
 
   const syncToCloud = async (noteData: Note) => {
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    try {
+      const token = await AsyncStorage.getItem("authToken");
+      if (!token) return;
+
+      const API_URL = "http://10.0.2.2:8000"; // For Android emulator
+
+      console.log("Saving note to server:", {
+        id: noteData.id,
+        title: noteData.title,
+        content: noteData.content,
+        formatted_content: noteData.formatted_content,
+        tags: noteData.tags,
+        folderId: noteData.folderId, // Make sure to include the folder ID
+      });
+
+      // Prepare the request body
+      const requestBody = {
+        title: noteData.title,
+        content: noteData.content,
+        formatted_content: noteData.formatted_content,
+        tag_names: noteData.tags || [],
+        folder: noteData.folderId, // Send folder ID to the backend
+      };
+
+      // Check if this is a new note or an existing note
+      const isNewNote =
+        !route.params?.noteId || noteData.id.startsWith("note_");
+
+      const url = isNewNote
+        ? `${API_URL}/note_taking/notes/`
+        : `${API_URL}/note_taking/notes/${
+            route.params?.noteId || noteData.id
+          }/`;
+
+      const method = isNewNote ? "POST" : "PUT";
+
+      console.log(`Sending ${method} request to ${url}`);
+
+      const response = await fetch(url, {
+        method: method,
+        headers: {
+          Authorization: `Token ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        console.error(
+          "Server response not OK:",
+          response.status,
+          response.statusText
+        );
+        throw new Error("Failed to sync note");
+      }
+
+      const savedNote = await response.json();
+      console.log("Note saved successfully:", savedNote);
+
+      // If it was a new note, return the server note with its ID
+      if (isNewNote) {
+        return savedNote;
+      }
+
+      return null; // No need to return for existing notes
+    } catch (error) {
+      console.error("Error syncing note:", error);
+      throw error;
+    }
   };
 
   // Event handlers
+  // Helper function to show toast notifications on both iOS and Android
+  const showToast = (message: string) => {
+    if (Platform.OS === "android") {
+      ToastAndroid.show(message, ToastAndroid.SHORT);
+    } else {
+      // For iOS we'll use a temporary state and custom toast component
+      // This is simplified - we're just showing the sync status in the header
+      // You could implement a more sophisticated iOS toast if needed
+      setSyncStatus("saved");
+      setTimeout(() => {
+        if (syncStatus === "saved") setSyncStatus("saved");
+      }, 2000);
+    }
+  };
+
   const handleAutoSave = async () => {
     setSyncStatus("syncing");
     try {
-      await saveToLocalStorage(getCurrentNoteData());
-      const isOnline = true; // Replace with actual network check
+      const currentNote = getCurrentNoteData();
+      await saveToLocalStorage(currentNote);
+
+      // Check network connectivity
+      const isOnline = true; // Replace with actual network check like NetInfo.fetch()
+
       if (isOnline) {
-        await syncToCloud(getCurrentNoteData());
+        const savedNote = await syncToCloud(currentNote);
+
+        // If we got a new ID from the server (for newly created notes)
+        if (savedNote && savedNote.id && savedNote.id !== currentNote.id) {
+          // We can't update noteId directly since it's coming from useState
+          // But we can save the new note with the server ID
+          await saveToLocalStorage({
+            ...currentNote,
+            id: savedNote.id,
+          });
+
+          // For the next time we save, we'll use this ID instead
+          // Note: this is not perfect as the component won't rerender with the new ID
+          // A better approach would be to use navigation.replace to reload the editor with the new ID
+        }
+
         setSyncStatus("saved");
+        showToast("Note auto-saved successfully");
       } else {
         setSyncStatus("offline");
+        showToast("Auto-saved offline. Will sync when connected.");
       }
     } catch (error) {
       console.error("Auto-save failed:", error);
@@ -262,20 +435,56 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   };
 
   const handleSave = async () => {
+    // Prevent duplicate saves by checking if already saving
+    if (isSaving) {
+      return;
+    }
+
     setIsSaving(true);
     try {
       const noteData = getCurrentNoteData();
       await saveToLocalStorage(noteData);
-      const isOnline = true; // Replace with actual network check
+
+      // Check network connectivity
+      const isOnline = true; // Replace with actual network check like NetInfo.fetch()
+
       if (isOnline) {
-        await syncToCloud(noteData);
+        const savedNote = await syncToCloud(noteData);
+        console.log("Note saved to cloud successfully");
+
+        // If this was a new note and we received a server ID
+        if (savedNote && savedNote.id && savedNote.id !== noteData.id) {
+          // Save the note with the server ID before navigating back
+          await saveToLocalStorage({
+            ...noteData,
+            id: savedNote.id,
+          });
+        }
+
+        // Show toast notification instead of navigating back automatically
+        showToast("Note saved successfully");
+
+        // Update sync status in header
+        setSyncStatus("saved");
+      } else {
+        Alert.alert(
+          "Offline",
+          "Note saved locally. It will sync when you're back online."
+        );
+        setSyncStatus("offline");
       }
-      navigation.goBack();
+
+      // Don't automatically navigate back - let the user continue editing
+      // navigation.goBack();
     } catch (error) {
       console.error("Error saving note:", error);
       Alert.alert("Error", "Failed to save note. Please try again.");
     } finally {
-      setIsSaving(false);
+      // Add a slight delay before enabling the save button again
+      // This prevents rapid double-clicks even after save completes
+      setTimeout(() => {
+        setIsSaving(false);
+      }, 1000);
     }
   };
 
@@ -355,7 +564,23 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     >
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity
+          onPress={() => {
+            // If content has changed, show confirmation dialog before exiting
+            if (title.trim() || content.trim()) {
+              Alert.alert(
+                "Exit Editor",
+                "Are you sure you want to exit the editor? Your changes have been saved.",
+                [
+                  { text: "Cancel", style: "cancel" },
+                  { text: "Exit", onPress: () => navigation.goBack() },
+                ]
+              );
+            } else {
+              navigation.goBack();
+            }
+          }}
+        >
           <MaterialIcons name="arrow-back" size={24} color="#007AFF" />
         </TouchableOpacity>
 
@@ -387,14 +612,14 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
           )}
 
           <TouchableOpacity
-            style={styles.saveButton}
+            style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
             onPress={handleSave}
             disabled={isSaving}
           >
             <MaterialIcons
               name={isSaving ? "sync" : "check"}
               size={24}
-              color="#007AFF"
+              color={isSaving ? "#A3A3A3" : "#007AFF"}
             />
           </TouchableOpacity>
 
@@ -483,18 +708,151 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
               </View>
             ))}
           </View>
+
+          <View style={styles.folderSection}>
+            <TouchableOpacity
+              style={styles.folderSelector}
+              onPress={() => setShowFolderModal(true)}
+            >
+              <MaterialIcons
+                name="folder"
+                size={18}
+                color={selectedFolderId ? "#6A009C" : "#64748B"}
+              />
+              <Text
+                style={[
+                  styles.folderName,
+                  { color: selectedFolderId ? "#6A009C" : "#64748B" },
+                ]}
+              >
+                {folderName}
+              </Text>
+              <MaterialIcons name="chevron-right" size={18} color="#9CA3AF" />
+            </TouchableOpacity>
+          </View>
         </View>
+
+        <Modal
+          visible={showFolderModal}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setShowFolderModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Select Folder</Text>
+
+              <ScrollView
+                style={{ maxHeight: 300 }}
+                showsVerticalScrollIndicator={false}
+              >
+                {/* Unorganized Notes Option */}
+                <TouchableOpacity
+                  style={[
+                    styles.folderItem,
+                    !selectedFolderId && styles.selectedFolderItem,
+                  ]}
+                  onPress={() => handleFolderSelect(null)}
+                >
+                  <View
+                    style={[styles.folderIcon, { backgroundColor: "#64748B" }]}
+                  >
+                    <MaterialIcons name="notes" size={20} color="#FFFFFF" />
+                  </View>
+                  <Text style={styles.folderItemName}>Unorganized Notes</Text>
+                  {!selectedFolderId && (
+                    <MaterialIcons
+                      name="check-circle"
+                      size={22}
+                      color="#6A009C"
+                    />
+                  )}
+                </TouchableOpacity>
+
+                <View style={styles.folderDivider}>
+                  <View style={styles.folderDividerLine} />
+                  <Text style={styles.folderDividerText}>Folders</Text>
+                  <View style={styles.folderDividerLine} />
+                </View>
+
+                {/* Folder List */}
+                {folders.map((folder) => (
+                  <TouchableOpacity
+                    key={folder.id}
+                    style={[
+                      styles.folderItem,
+                      selectedFolderId === folder.id.toString() &&
+                        styles.selectedFolderItem,
+                    ]}
+                    onPress={() => handleFolderSelect(folder)}
+                  >
+                    <View
+                      style={[
+                        styles.folderIcon,
+                        { backgroundColor: folder.color || "#6A009C" },
+                      ]}
+                    >
+                      <MaterialIcons
+                        name={folder.icon || "folder"}
+                        size={20}
+                        color="#FFFFFF"
+                      />
+                    </View>
+                    <Text style={styles.folderItemName}>{folder.name}</Text>
+                    {selectedFolderId === folder.id.toString() && (
+                      <MaterialIcons
+                        name="check-circle"
+                        size={22}
+                        color="#6A009C"
+                      />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <TouchableOpacity
+                style={[
+                  styles.cancelButton,
+                  { marginTop: 16, alignSelf: "center", paddingVertical: 12 },
+                ]}
+                onPress={() => setShowFolderModal(false)}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
 
         {/* Rich Text Editor */}
         <View style={styles.editorWrapper}>
           <RichEditor
             ref={richTextRef}
             style={styles.customRichTextInput}
-            initialContentHTML={content}
-            onChange={setContent}
+            initialContentHTML={
+              route.params?.initialNote?.formatted_content || content
+            }
+            onChange={(html: string) => {
+              // Update both content (plain text) and formattedContent (HTML)
+              setContent(html.replace(/<[^>]*>/g, "")); // Strip HTML for plain text version
+              setFormattedContent(html); // Store the full HTML for rich content
+              console.log(
+                "Editor content changed, formatted content:",
+                html.substring(0, 50) + (html.length > 50 ? "..." : "")
+              );
+            }}
             placeholder="Start typing your notes here..."
             editorInitializedCallback={() => {
               console.log("Rich editor initialized - text selection enabled");
+              // Log initial content for debugging
+              if (route.params?.initialNote?.formatted_content) {
+                console.log(
+                  "Initializing with formatted content:",
+                  route.params.initialNote.formatted_content.substring(0, 50) +
+                    (route.params.initialNote.formatted_content.length > 50
+                      ? "..."
+                      : "")
+                );
+              }
             }}
             onCursorPosition={(scrollY: number) => {
               // This helps track cursor movement
@@ -522,16 +880,15 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
             }}
           />
         </View>
-
       </ScrollView>
 
       {/* Full-featured Rich Text Toolbar */}
       <RichToolbar
-  style={styles.floatingToolbarContainer} // Removed the dynamic bottom calculation
-  editor={richTextRef}
-  selectedIconTint="#007AFF"
-  disabledIconTint="#666"
-  actions={[
+        style={styles.floatingToolbarContainer} // Removed the dynamic bottom calculation
+        editor={richTextRef}
+        selectedIconTint="#007AFF"
+        disabledIconTint="#666"
+        actions={[
           "bold",
           "italic",
           "underline",
@@ -787,6 +1144,75 @@ const styles = StyleSheet.create({
     fontFamily: "Inter-Medium",
     fontSize: 14,
   },
+  folderSection: {
+    marginBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+    paddingBottom: 16,
+  },
+  folderSelector: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F8FAFC",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  folderName: {
+    flex: 1,
+    marginLeft: 8,
+    fontFamily: "Inter-Medium",
+    fontSize: 14,
+  },
+  folderItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+    marginBottom: 8,
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  selectedFolderItem: {
+    backgroundColor: "#E0F2FE",
+  },
+  folderIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  folderItemName: {
+    fontSize: 16,
+    fontFamily: "Inter-Medium",
+    color: "#374151",
+    marginLeft: 12,
+    flex: 1,
+  },
+  folderDivider: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+    marginBottom: 8,
+  },
+  folderDividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "#E2E8F0",
+  },
+  folderDividerText: {
+    fontSize: 14,
+    fontFamily: "Inter-Medium",
+    color: "#64748B",
+    marginHorizontal: 8,
+  },
   tagsContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -933,20 +1359,20 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   floatingToolbarContainer: {
-    position: 'absolute',
+    position: "absolute",
     left: 12,
     right: 12,
     zIndex: 1000,
-    maxWidth: '100%',
-    backgroundColor: '#fff',
+    maxWidth: "100%",
+    backgroundColor: "#fff",
     borderRadius: 28,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
     shadowRadius: 12,
     elevation: 8,
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.06)',
+    borderColor: "rgba(0,0,0,0.06)",
     paddingHorizontal: 12,
     paddingVertical: 8,
     bottom: 80, // Changed from dynamic calculation to fixed position
@@ -1157,6 +1583,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "bold",
     textAlign: "center",
+  },
+  saveButtonDisabled: {
+    backgroundColor: "#f5f5f5",
+    opacity: 0.6,
   },
 });
 

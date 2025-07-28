@@ -1,122 +1,168 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Task, TaskFormData } from '../types/Task';
-
-const TASKS_STORAGE_KEY = '@tasks';
+import { API_BASE_URL, API_ENDPOINTS } from '../../../constants/ApiConfig';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 class TaskService {
-  private async getTasks(): Promise<Task[]> {
+  private async getAuthToken(): Promise<string | null> {
     try {
-      const tasksJson = await AsyncStorage.getItem(TASKS_STORAGE_KEY);
-      if (!tasksJson) return [];
-      
-      const tasks = JSON.parse(tasksJson);
-      return tasks.map((task: any) => ({
-        ...task,
-        createdAt: new Date(task.createdAt),
-        updatedAt: new Date(task.updatedAt),
-        dueDate: task.dueDate ? new Date(task.dueDate) : undefined,
-        completedAt: task.completedAt ? new Date(task.completedAt) : undefined,
-        overdue: task.dueDate ? new Date(task.dueDate) < new Date() && !task.completed : false,
-      }));
+      return await AsyncStorage.getItem('authToken');
     } catch (error) {
-      console.error('Error loading tasks:', error);
-      return [];
+      console.error('Error getting auth token:', error);
+      return null;
     }
   }
 
-  private async saveTasks(tasks: Task[]): Promise<void> {
+  private async apiRequest<T>(
+    endpoint: string, 
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' = 'GET', 
+    body?: any
+  ): Promise<T> {
+    const token = await this.getAuthToken();
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+    };
+
+    if (token) {
+      headers['Authorization'] = `Token ${token}`;
+    }
+
+    const options: RequestInit = {
+      method,
+      headers,
+    };
+
+    if (body) {
+      options.body = JSON.stringify(body);
+    }
+
     try {
-      await AsyncStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(tasks));
+      console.log(`Making ${method} request to ${API_BASE_URL}${endpoint}`);
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
+      
+      if (!response.ok) {
+        throw new Error(`API Error: ${response.status} ${response.statusText}`);
+      }
+
+      if (method === 'DELETE') {
+        return {} as T; // DELETE typically returns no content
+      }
+
+      const data = await response.json();
+      return data as T;
     } catch (error) {
-      console.error('Error saving tasks:', error);
+      console.error('API request failed:', error);
       throw error;
     }
   }
 
+  // Helper method to format dates from API response
+ private formatTaskDates(task: any): Task {
+  // Convert backend priority format (with underscores) to frontend format (with hyphens)
+  const priority = task.priority?.replace(/_/g, '-') || 'not-urgent-not-important';
+  
+  return {
+    ...task,
+    createdAt: task.created_at ? new Date(task.created_at) : new Date(),
+    updatedAt: task.updated_at ? new Date(task.updated_at) : new Date(),
+    dueDate: task.due_date ? new Date(task.due_date) : undefined,
+    completedAt: task.completed_at ? new Date(task.completed_at) : undefined,
+    overdue: task.due_date ? new Date(task.due_date) < new Date() && !task.completed : false,
+    priority: priority,
+  };
+}
+
   async getAllTasks(): Promise<Task[]> {
-    return this.getTasks();
+    try {
+      const response = await this.apiRequest<any[]>(API_ENDPOINTS.TASKS);
+      return response.map((task: any) => this.formatTaskDates(task));
+    } catch (error) {
+      console.error('Error fetching tasks:', error);
+      return [];
+    }
   }
 
   async getTaskById(id: string): Promise<Task | undefined> {
-    const tasks = await this.getTasks();
-    return tasks.find(task => task.id === id);
+    try {
+      const response = await this.apiRequest<any>(API_ENDPOINTS.TASK_DETAIL(id));
+      return this.formatTaskDates(response);
+    } catch (error) {
+      console.error(`Error fetching task with id ${id}:`, error);
+      return undefined;
+    }
   }
 
   async createTask(taskData: TaskFormData): Promise<Task> {
-    const tasks = await this.getTasks();
-    
-    const newTask: Task = {
-      id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-      ...taskData,
+    // Transform data to match API expectations
+    const apiData: any = {
+      title: taskData.title,
+      description: taskData.description,
+      due_date: taskData.dueDate ? taskData.dueDate.toISOString().split('T')[0] : null,
       priority: taskData.priority || 'not-urgent-not-important',
+      subject: taskData.subject,
       completed: false,
-      overdue: taskData.dueDate ? taskData.dueDate < new Date() : false,
-      createdAt: new Date(),
-      updatedAt: new Date(),
     };
-
-    tasks.push(newTask);
-    await this.saveTasks(tasks);
-    return newTask;
+    const response = await this.apiRequest<any>(API_ENDPOINTS.TASKS, 'POST', apiData);
+    return this.formatTaskDates(response);
   }
 
   async updateTask(id: string, updates: Partial<TaskFormData>): Promise<Task> {
-    const tasks = await this.getTasks();
-    const taskIndex = tasks.findIndex(task => task.id === id);
+    // Transform data to match API expectations
+    const apiUpdates: any = {};
     
-    if (taskIndex === -1) {
-      throw new Error('Task not found');
-    }
+    if (updates.title !== undefined) apiUpdates.title = updates.title;
+    if (updates.description !== undefined) apiUpdates.description = updates.description;
+    if (updates.dueDate !== undefined) apiUpdates.due_date = updates.dueDate.toISOString().split('T')[0];
+    if (updates.priority !== undefined) apiUpdates.priority = updates.priority;
+    if (updates.subject !== undefined) apiUpdates.subject = updates.subject;
+    if (updates.completed !== undefined) apiUpdates.completed = updates.completed;
 
-    const updatedTask = {
-      ...tasks[taskIndex],
-      ...updates,
-      updatedAt: new Date(),
-      overdue: updates.dueDate ? updates.dueDate < new Date() && !tasks[taskIndex].completed : tasks[taskIndex].overdue,
-    };
-
-    tasks[taskIndex] = updatedTask;
-    await this.saveTasks(tasks);
-    return updatedTask;
+    const response = await this.apiRequest<any>(API_ENDPOINTS.TASK_DETAIL(id), 'PATCH', apiUpdates);
+    return this.formatTaskDates(response);
   }
 
   async deleteTask(id: string): Promise<void> {
-    const tasks = await this.getTasks();
-    const filteredTasks = tasks.filter(task => task.id !== id);
-    await this.saveTasks(filteredTasks);
+    await this.apiRequest(API_ENDPOINTS.TASK_DETAIL(id), 'DELETE');
   }
 
   async markTaskComplete(id: string): Promise<Task> {
-    const tasks = await this.getTasks();
-    const taskIndex = tasks.findIndex(task => task.id === id);
-    
-    if (taskIndex === -1) {
-      throw new Error('Task not found');
-    }
+    const apiUpdates = {
+      completed: true,
+      completed_at: new Date().toISOString()
+    };
 
-    tasks[taskIndex].completed = true;
-    tasks[taskIndex].overdue = false;
-    tasks[taskIndex].completedAt = new Date();
-    tasks[taskIndex].updatedAt = new Date();
-
-    await this.saveTasks(tasks);
-    return tasks[taskIndex];
+    const response = await this.apiRequest<any>(API_ENDPOINTS.TASK_DETAIL(id), 'PATCH', apiUpdates);
+    return this.formatTaskDates(response);
   }
 
   async getTasksByPriority(priority: string): Promise<Task[]> {
-    const tasks = await this.getTasks();
-    return tasks.filter(task => task.priority === priority);
+    try {
+      const allTasks = await this.getAllTasks();
+      return allTasks.filter(task => task.priority === priority);
+    } catch (error) {
+      console.error('Error fetching tasks by priority:', error);
+      return [];
+    }
   }
 
   async getTasksByStatus(completed: boolean): Promise<Task[]> {
-    const tasks = await this.getTasks();
-    return tasks.filter(task => task.completed === completed);
+    try {
+      const allTasks = await this.getAllTasks();
+      return allTasks.filter(task => task.completed === completed);
+    } catch (error) {
+      console.error('Error fetching tasks by status:', error);
+      return [];
+    }
   }
 
   async getOverdueTasks(): Promise<Task[]> {
-    const tasks = await this.getTasks();
-    return tasks.filter(task => task.overdue && !task.completed);
+    try {
+      const allTasks = await this.getAllTasks();
+      return allTasks.filter(task => task.overdue && !task.completed);
+    } catch (error) {
+      console.error('Error fetching overdue tasks:', error);
+      return [];
+    }
   }
-}
 
+}
 export const taskService = new TaskService();

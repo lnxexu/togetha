@@ -34,6 +34,7 @@ const TaskDetails: React.FC = () => {
     const [editedSubject, setEditedSubject] = useState('');
     const [showPriorityModal, setShowPriorityModal] = useState(false);
     const [showSubjectModal, setShowSubjectModal] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
 
     const priorityOptions = [
         { value: 'urgent-important', label: 'Urgent & Important', color: '#dc3545' },
@@ -61,91 +62,28 @@ const TaskDetails: React.FC = () => {
     );
 
     const loadTask = async () => {
-        try {
-            // Sample data for demonstration - in real app, fetch from taskService
-            const sampleTasks: Task[] = [
-                {
-                    id: '1',
-                    title: 'Submit Final Project Report',
-                    description: 'Complete and submit the final semester project report for Computer Science',
-                    priority: 'urgent-important',
-                    subject: 'Computer Science',
-                    dueDate: new Date('2025-07-22'),
-                    dueTime: '11:59 PM',
-                    completed: false,
-                    overdue: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                },
-                {
-                    id: '2',
-                    title: 'Prepare for Mathematics Exam',
-                    description: 'Study calculus and linear algebra topics for tomorrow\'s exam',
-                    priority: 'urgent-important',
-                    subject: 'Mathematics',
-                    dueDate: new Date('2025-07-22'),
-                    dueTime: '8:00 AM',
-                    completed: false,
-                    overdue: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                },
-                {
-                    id: '3',
-                    title: 'Doctor Appointment',
-                    description: 'Annual health checkup appointment',
-                    priority: 'urgent-important',
-                    subject: 'Health',
-                    dueDate: new Date('2025-07-21'),
-                    dueTime: '2:00 PM',
-                    completed: false,
-                    overdue: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                },
-                {
-                    id: '4',
-                    title: 'Start Research Paper',
-                    description: 'Begin research on AI ethics for next month\'s assignment',
-                    priority: 'not-urgent-important',
-                    subject: 'Computer Science',
-                    dueDate: new Date('2025-08-15'),
-                    completed: false,
-                    overdue: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                },
-                {
-                    id: '5',
-                    title: 'Learn New Programming Language',
-                    description: 'Start learning Python for data science applications',
-                    priority: 'not-urgent-important',
-                    subject: 'Programming',
-                    dueDate: new Date('2025-08-01'),
-                    completed: false,
-                    overdue: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                },
-            ];
-
-            const foundTask = sampleTasks.find(t => t.id === taskId);
-            if (foundTask) {
-                setTask(foundTask);
-                setEditedTitle(foundTask.title);
-                setEditedDescription(foundTask.description || '');
-                setEditedPriority(foundTask.priority);
-                setEditedSubject(foundTask.subject || '');
-            } else {
-                Alert.alert('Error', 'Task not found');
-                navigation.goBack();
-            }
-        } catch (error) {
-            console.error('Error loading task:', error);
-            Alert.alert('Error', 'Failed to load task');
-        }
-    };
-
+  try {
+    setIsLoading(true);
+    // Use taskService to fetch the task by ID from the backend
+    const fetchedTask = await taskService.getTaskById(taskId);
+    
+    if (fetchedTask) {
+      setTask(fetchedTask);
+      setEditedTitle(fetchedTask.title);
+      setEditedDescription(fetchedTask.description || '');
+      setEditedPriority(fetchedTask.priority);
+      setEditedSubject(fetchedTask.subject || '');
+    } else {
+      Alert.alert('Error', 'Task not found');
+      navigation.goBack();
+    }
+  } catch (error) {
+    console.error('Error loading task:', error);
+    Alert.alert('Error', 'Failed to load task');
+  } finally {
+    setIsLoading(false);
+  }
+};
     const handleEdit = () => {
         setIsEditing(true);
     };

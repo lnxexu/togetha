@@ -11,6 +11,7 @@ import ChatBot from '../chatbot/AI';
 import Home from '../home';
 import NotesScreen from '../note-taking/notes';
 import ToDo from '../task-management/ToDo';
+import AllItemsView from '../AllItemsView';
 
 //note-taking components
 import ImportPDFPage from '../note-taking/ImportPDFPage';
@@ -31,13 +32,16 @@ export type RootStackParamList = {
     initialNote?: {
       title: string;
       content: string;
+      formatted_content?: string; // Add formatted_content field
       subject?: string;
       linkedTask?: string;
       tags?: string[];
       attachments?: any[];
       createdAt?: string;
       updatedAt?: string;
+      folderId?: string | null; // Optional folderId for note organization
     };
+  
   } | undefined;
   ToDo: undefined;
   TaskDetails: {
@@ -45,6 +49,9 @@ export type RootStackParamList = {
   };
   AddTask: {
     quadrant?: 'urgent-important' | 'not-urgent-important' | 'urgent-not-important' | 'not-urgent-not-important';
+  };
+  AllItemsView: {
+    viewType: 'tasks' | 'activity';
   };
   PDFs: undefined;
   RINA: undefined;
@@ -77,6 +84,7 @@ const AppNavigator: React.FC = () => {
         {/* Task Management components */}
         <Stack.Screen name="TaskDetails" component={TaskDetails} />
         <Stack.Screen name="AddTask" component={AddTask} />
+        <Stack.Screen name="AllItemsView" component={AllItemsView} />
       </Stack.Navigator>
     </NavigationContainer>
   );

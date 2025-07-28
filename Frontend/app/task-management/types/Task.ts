@@ -26,4 +26,5 @@ export interface TaskFormData {
   priority?: Priority;
   dueDate?: Date;
   dueTime?: string;
+  completed?: boolean;
 }

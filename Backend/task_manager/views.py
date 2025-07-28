@@ -5,8 +5,8 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Q
 from datetime import datetime, timedelta
-from .models import Task, TaskCategory, Subtask
-from .serializers import TaskSerializer, TaskCategorySerializer, SubtaskSerializer
+from .models import Task, Subtask
+from .serializers import TaskSerializer, SubtaskSerializer
 
 @api_view(['GET', 'POST'])
 @authentication_classes([TokenAuthentication, SessionAuthentication])
@@ -78,46 +78,6 @@ def task_detail(request, pk):
     
     elif request.method == 'DELETE':
         task.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
-
-@api_view(['GET', 'POST'])
-@authentication_classes([TokenAuthentication, SessionAuthentication])
-@permission_classes([IsAuthenticated])
-def category_list(request):
-    if request.method == 'GET':
-        categories = TaskCategory.objects.filter(user=request.user)
-        serializer = TaskCategorySerializer(categories, many=True)
-        return Response(serializer.data)
-    
-    elif request.method == 'POST':
-        serializer = TaskCategorySerializer(data=request.data, context={'request': request})
-        if serializer.is_valid():
-            serializer.save(user=request.user)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-@api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
-@authentication_classes([TokenAuthentication, SessionAuthentication])
-@permission_classes([IsAuthenticated])
-def category_detail(request, pk):
-    try:
-        category = TaskCategory.objects.get(pk=pk, user=request.user)
-    except TaskCategory.DoesNotExist:
-        return Response(status=status.HTTP_404_NOT_FOUND)
-    
-    if request.method == 'GET':
-        serializer = TaskCategorySerializer(category)
-        return Response(serializer.data)
-    
-    elif request.method in ['PUT', 'PATCH']:
-        serializer = TaskCategorySerializer(category, data=request.data, partial=request.method=='PATCH', context={'request': request})
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-    elif request.method == 'DELETE':
-        category.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 @api_view(['POST', 'PUT', 'DELETE'])
