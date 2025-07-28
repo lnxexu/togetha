@@ -533,49 +533,23 @@ export default function Home() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+<View style={styles.rootContainer}>
       <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
 
-      <ScrollView 
-        style={styles.content} 
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={loading}
-            onRefresh={async () => {
-              // Refresh all data sources
-              setLoading(true);
-              
-              // Clear cache to force fresh data
-              await AsyncStorage.multiRemove([
-                "username", 
-                "notesCount", 
-                "priorityTasks", 
-                "recentActivity"
-              ]);
-              
-              // Re-run all the fetch useEffects
-              const token = await AsyncStorage.getItem("authToken");
-              if (!token) {
-                navigation.navigate("Login");
-                return;
-              }
-              
-              // The useEffects will run automatically
-              setLoading(false);
-            }}
-            colors={["#6A009C"]}
-            tintColor="#6A009C"
-          />
-        }
-      >
-        {/* Header with animation effect */}
+      {/* Main Content Container */}
+      <View style={styles.container}>
+        
+        {/* Header positioned to overlay content */}
         <View style={styles.header}>
           <View style={styles.headerGreeting}>
-            {/* Base the greeting on the time of day in the user's timezone */}
             <Text style={styles.welcomeText}>{getGreeting()},</Text>
             <Text style={styles.nameText}>{username}! 👋</Text>
+            <Text style={styles.descriptionText}>
+                  Ready to boost your productivity? Let's make today amazing!
+            </Text>
           </View>
+
+          
           <TouchableOpacity style={styles.notificationIcon}>
             <View style={styles.notificationIconContainer}>
               <MaterialIcons name="notifications" size={22} color="#6A009C" />
@@ -584,259 +558,306 @@ export default function Home() {
           </TouchableOpacity>
         </View>
 
-        {/* Quick Access */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Quick Access</Text>
-          </View>
-          {loadingQuickAccess ? (
-            <View style={styles.loaderContainer}>
-              <ActivityIndicator size="large" color="#6A009C" />
+        <ScrollView 
+          style={styles.content} 
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={loading}
+              onRefresh={async () => {
+                // Refresh all data sources
+                setLoading(true);
+                
+                // Clear cache to force fresh data
+                await AsyncStorage.multiRemove([
+                  "username", 
+                  "notesCount", 
+                  "priorityTasks", 
+                  "recentActivity"
+                ]);
+                
+                // Re-run all the fetch useEffects
+                const token = await AsyncStorage.getItem("authToken");
+                if (!token) {
+                  navigation.navigate("Login");
+                  return;
+                }
+                
+                // The useEffects will run automatically
+                setLoading(false);
+              }}
+              colors={["#6A009C"]}
+              tintColor="#6A009C"
+            />
+          }
+        >
+          {/* Quick Access */}
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Quick Access</Text>
             </View>
-          ) : (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.horizontalScrollContainer}
-            >
-              {quickAccess.map((item, index) => (
-                <TouchableOpacity
-                  key={item.id}
-                  style={[
-                    styles.quickAccessCardHorizontal,
-                    index === 0 && styles.firstCard,
-                  ]}
-                  activeOpacity={0.7}
-                  onPress={() => {
-                    if (item.title === "Your Notes") {
-                      navigation.navigate("Notes");
-                    } else if (item.title === "Ask RINA") {
-                      navigation.navigate("RINA");
-                    }
-                  }}
-                >
-                  <View
+            {loadingQuickAccess ? (
+              <View style={styles.loaderContainer}>
+                <ActivityIndicator size="large" color="#6A009C" />
+              </View>
+            ) : (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.horizontalScrollContainer}
+              >
+                {quickAccess.map((item, index) => (
+                  <TouchableOpacity
+                    key={item.id}
                     style={[
-                      styles.quickAccessIcon,
-                      { backgroundColor: item.color },
+                      styles.quickAccessCardHorizontal,
+                      index === 0 && styles.firstCard,
                     ]}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      if (item.title === "Your Notes") {
+                        navigation.navigate("Notes");
+                      } else if (item.title === "Ask RINA") {
+                        navigation.navigate("RINA");
+                      }
+                    }}
                   >
-                    <MaterialIcons
-                      name={getActivityIcon(item.icon)}
-                      size={24}
-                      color="#FFFFFF"
-                    />
-                  </View>
-                  <Text style={styles.quickAccessTitle}>{item.title}</Text>
-                  <Text style={styles.quickAccessCount}>{item.count}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          )}
-        </View>
-
-        {/* Priority Tasks */}
-        <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Priority Tasks</Text>
-          <TouchableOpacity onPress={() => navigation.navigate("AllItemsView", { viewType: 'tasks' })}>
-            <Text style={styles.seeAllText}>See All</Text>
-          </TouchableOpacity>
-        </View>
-          {loadingTasks ? (
-            <View style={styles.loaderContainer}>
-              <ActivityIndicator size="large" color="#6A009C" />
-            </View>
-          ) : tasksError ? (
-            <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>{tasksError}</Text>
-              <TouchableOpacity
-                style={styles.retryButton}
-                onPress={() => navigation.navigate("AddTask", { quadrant: 'urgent-important' })}
-              >
-                <Text style={styles.retryText}>View All Tasks</Text>
-              </TouchableOpacity>
-            </View>
-          ) : priorityTasks.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <MaterialIcons name="task-alt" size={48} color="#CBD5E0" />
-              <Text style={styles.emptyText}>No priority tasks yet</Text>
-              <TouchableOpacity
-                style={styles.addButton}
-                onPress={() => navigation.navigate("AddTask", { quadrant: 'urgent-important' })}
-              >
-                <Text style={styles.addButtonText}>Add a Task</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.horizontalScrollContainer}
-            >
-              {priorityTasks.map((task, index) => (
-                <TouchableOpacity
-                  key={task.id}
-                  style={[
-                    styles.taskCardHorizontal,
-                    index === 0 && styles.firstCard,
-                  ]}
-                  activeOpacity={0.8}
-                  onPress={() => navigation.navigate("AddTask", { quadrant: task.priority.toLowerCase() })}
-                >
-                  <View style={styles.borderLeft} />
-                  <View style={styles.taskHeader}>
-                    <View style={styles.taskInfo}>
-                      <Text style={styles.taskTitle} numberOfLines={2}>
-                        {task.title}
-                      </Text>
-                      <Text style={styles.taskSubject}>{task.subject}</Text>
-                    </View>
                     <View
                       style={[
-                        styles.priorityBadge,
-                        { backgroundColor: getPriorityColor(task.priority) },
+                        styles.quickAccessIcon,
+                        { backgroundColor: item.color },
                       ]}
                     >
-                      <Text style={styles.priorityText}>{task.priority}</Text>
+                      <MaterialIcons
+                        name={getActivityIcon(item.icon)}
+                        size={24}
+                        color="#FFFFFF"
+                      />
                     </View>
-                  </View>
+                    <Text style={styles.quickAccessCount}>{item.count}</Text>
+                    <Text style={styles.quickAccessTitle}>{item.title}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+          </View>
 
-                  <View style={styles.taskBody}>
-                    <Text style={styles.taskTime}>{task.time}</Text>
-                  </View>
-
-                  <View style={styles.taskFooter}>
-                    <View style={styles.statusContainer}>
+          {/* Priority Tasks */}
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Priority Tasks</Text>
+              <TouchableOpacity onPress={() => navigation.navigate("AllItemsView", { viewType: 'tasks' })}>
+                <Text style={styles.seeAllText}>See All</Text>
+              </TouchableOpacity>
+            </View>
+            {loadingTasks ? (
+              <View style={styles.loaderContainer}>
+                <ActivityIndicator size="large" color="#6A009C" />
+              </View>
+            ) : tasksError ? (
+              <View style={styles.errorContainer}>
+                <Text style={styles.errorText}>{tasksError}</Text>
+                <TouchableOpacity
+                  style={styles.retryButton}
+                  onPress={() => navigation.navigate("AddTask", { quadrant: 'urgent-important' })}
+                >
+                  <Text style={styles.retryText}>View All Tasks</Text>
+                </TouchableOpacity>
+              </View>
+            ) : priorityTasks.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <MaterialIcons name="task-alt" size={48} color="#CBD5E0" />
+                <Text style={styles.emptyText}>No priority tasks yet</Text>
+                <TouchableOpacity
+                  style={styles.addButton}
+                  onPress={() => navigation.navigate("AddTask", { quadrant: 'urgent-important' })}
+                >
+                  <Text style={styles.addButtonText}>Add a Task</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.horizontalScrollContainer}
+              >
+                {priorityTasks.map((task, index) => (
+                  <TouchableOpacity
+                    key={task.id}
+                    style={[
+                      styles.taskCardHorizontal,
+                      index === 0 && styles.firstCard,
+                    ]}
+                    activeOpacity={0.8}
+                    onPress={() => navigation.navigate("AddTask", { quadrant: task.priority.toLowerCase() })}
+                  >
+                    <View style={styles.borderLeft} />
+                    <View style={styles.taskHeader}>
+                      <View style={styles.taskInfo}>
+                        <Text style={styles.taskTitle} numberOfLines={2}>
+                          {task.title}
+                        </Text>
+                        <Text style={styles.taskSubject}>{task.subject}</Text>
+                      </View>
                       <View
                         style={[
-                          styles.statusDot,
-                          {
-                            backgroundColor:
-                              task.status === "Completed"
-                                ? "#10B981"
-                                : task.status === "In Progress"
-                                  ? "#F59E0B"
-                                  : "#EF4444",
-                          },
-                        ]}
-                      />
-                      <Text
-                        style={[
-                          styles.taskStatus,
-                          {
-                            color:
-                              task.status === "Completed"
-                                ? "#10B981"
-                                : task.status === "In Progress"
-                                  ? "#F59E0B"
-                                  : "#EF4444",
-                          },
+                          styles.priorityBadge,
+                          { backgroundColor: getPriorityColor(task.priority) },
                         ]}
                       >
-                        {task.status}
-                      </Text>
+                        <Text style={styles.priorityText}>{task.priority}</Text>
+                      </View>
                     </View>
-                    <TouchableOpacity style={styles.taskAction}>
-                      <MaterialIcons name="more-vert" size={18} color="#9CA3AF" />
-                    </TouchableOpacity>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          )}
+
+                    <View style={styles.taskBody}>
+                      <Text style={styles.taskTime}>{task.time}</Text>
+                    </View>
+
+                    <View style={styles.taskFooter}>
+                      <View style={styles.statusContainer}>
+                        <View
+                          style={[
+                            styles.statusDot,
+                            {
+                              backgroundColor:
+                                task.status === "Completed"
+                                  ? "#10B981"
+                                  : task.status === "In Progress"
+                                    ? "#F59E0B"
+                                    : "#EF4444",
+                            },
+                          ]}
+                        />
+                        <Text
+                          style={[
+                            styles.taskStatus,
+                            {
+                              color:
+                                task.status === "Completed"
+                                  ? "#10B981"
+                                  : task.status === "In Progress"
+                                    ? "#F59E0B"
+                                    : "#EF4444",
+                            },
+                          ]}
+                        >
+                          {task.status}
+                        </Text>
+                      </View>
+                      <TouchableOpacity style={styles.taskAction}>
+                        <MaterialIcons name="more-vert" size={18} color="#9CA3AF" />
+                      </TouchableOpacity>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+          </View>
+
+          {/* Recent Activity */}
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Recent Activity</Text>
+              <TouchableOpacity onPress={() => navigation.navigate("AllItemsView", { viewType: 'activity' })}>
+                <Text style={styles.seeAllText}>See All</Text>
+              </TouchableOpacity>
+            </View>
+            {loadingActivity ? (
+              <View style={styles.loaderContainer}>
+                <ActivityIndicator size="large" color="#6A009C" />
+              </View>
+            ) : activityError ? (
+              <View style={styles.errorContainer}>
+                <Text style={styles.errorText}>{activityError}</Text>
+              </View>
+            ) : recentActivity.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <MaterialIcons name="history" size={48} color="#CBD5E0" />
+                <Text style={styles.emptyText}>No recent activity</Text>
+              </View>
+            ) : (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.horizontalScrollContainer}
+              >
+                {recentActivity.map((activity, index) => (
+                  <TouchableOpacity
+                    key={`${activity.type}-${activity.id}`}
+                    style={[
+                      styles.activityCardHorizontal,
+                      index === 0 && styles.firstCard,
+                    ]}
+                    activeOpacity={0.8}
+                    onPress={() => {
+                      if (activity.type === 'note') {
+                        navigation.navigate("Notes");
+                      } else if (activity.type === 'task') {
+                        navigation.navigate("TaskDetails", {
+                          taskId: activity.id,
+                        });
+                      }
+                    }}
+                  >
+                    <View style={styles.activityIcon}>
+                      <MaterialIcons
+                        name={getActivityIcon(activity.type)}
+                        size={20}
+                        color="#6A009C"
+                      />
+                    </View>
+                    <View style={styles.activityContent}>
+                      <Text style={styles.activityTitle} numberOfLines={2}>
+                        {activity.title}
+                      </Text>
+                      <Text style={styles.activitySubject}>{activity.subject}</Text>
+                      <Text style={styles.activityTime}>{activity.time}</Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+          </View>
+
+          {/* Bottom spacing for navbar */}
+          <View style={{ height: 100 }} />
+        </ScrollView>
+
+        {/* Navigation Bar - positioned to overlay content */}
+        <View style={styles.navbarContainer}>
+          <Navbar activeRoute="Home" />
         </View>
-
-        {/* Recent Activity */}
-        <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recent Activity</Text>
-          <TouchableOpacity onPress={() => navigation.navigate("AllItemsView", { viewType: 'activity' })}>
-            <Text style={styles.seeAllText}>See All</Text>
-          </TouchableOpacity>
-        </View>          {loadingActivity ? (
-            <View style={styles.loaderContainer}>
-              <ActivityIndicator size="large" color="#6A009C" />
-            </View>
-          ) : activityError ? (
-            <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>{activityError}</Text>
-            </View>
-          ) : recentActivity.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <MaterialIcons name="history" size={48} color="#CBD5E0" />
-              <Text style={styles.emptyText}>No recent activity</Text>
-            </View>
-          ) : (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.horizontalScrollContainer}
-            >
-              {recentActivity.map((activity, index) => (
-                <TouchableOpacity
-                  key={`${activity.type}-${activity.id}`}
-                  style={[
-                    styles.activityCardHorizontal,
-                    index === 0 && styles.firstCard,
-                  ]}
-                  activeOpacity={0.8}
-                  onPress={() => {
-                    if (activity.type === 'note') {
-                      navigation.navigate("Notes");
-                    } else if (activity.type === 'task') {
-                      navigation.navigate("TaskDetails", {
-                        taskId: activity.id,
-                      });
-                    }
-                  }}
-                >
-                  <View style={styles.activityIcon}>
-                    <MaterialIcons
-                      name={getActivityIcon(activity.type)}
-                      size={20}
-                      color="#6A009C"
-                    />
-                  </View>
-                  <View style={styles.activityContent}>
-                    <Text style={styles.activityTitle} numberOfLines={2}>
-                      {activity.title}
-                    </Text>
-                    <Text style={styles.activitySubject}>{activity.subject}</Text>
-                    <Text style={styles.activityTime}>{activity.time}</Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          )}
-        </View>
-
-        {/* Bottom spacing for navbar */}
-        <View style={{ height: 20 }} />
-      </ScrollView>
-
-      {/* Navigation Bar */}
-      <Navbar activeRoute="Home" />
-    </SafeAreaView>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  rootContainer: {
+    flex: 1,
+    backgroundColor: "#ffffffff",
+  },
   container: {
     flex: 1,
     backgroundColor: "#f8fafc",
-    paddingBottom: 80, // Space for the navbar
   },
   header: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 24,
-    paddingTop: Platform.OS === 'ios' ? 20 : 40,
-    paddingBottom: 24,
-    backgroundColor: "#F8FAFC",
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(226, 232, 240, 0.6)",
+    paddingTop: Platform.OS === 'ios' ? 70 : 55,
+    paddingBottom: 30,
+    backgroundColor: "#F5E1FD",
+    borderBottomLeftRadius: 25,
+    borderBottomRightRadius: 25,
+    elevation: 5,
+    zIndex: 1000,
   },
   headerGreeting: {
     flex: 1,
@@ -853,6 +874,14 @@ const styles = StyleSheet.create({
     color: "#6A009C",
     marginTop: 4,
     lineHeight: 32,
+  },
+  descriptionText: {
+    fontSize: 14,
+    fontFamily: "Inter-Regular",
+    color: "#64748B",
+    marginTop: 8,
+    lineHeight: 20,
+    opacity: 0.9,
   },
   notificationIcon: {
     padding: 8,
@@ -879,6 +908,11 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  scrollContent: {
+    paddingTop: 130, // Space for the header with increased padding
+    paddingBottom: 100,
+    marginTop: 100, // Space for the navbar
   },
   section: {
     marginBottom: 32,
@@ -1197,5 +1231,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#64748B",
     fontFamily: "Inter-Regular",
+  },
+    navbarContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "rgba(248, 250, 252, 0.95)",
+    borderTopLeftRadius: 25,
+    borderTopRightRadius: 25,
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+    zIndex: 1000,
   },
 });

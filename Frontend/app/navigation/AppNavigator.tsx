@@ -21,6 +21,11 @@ import NewNoteEditor from '../note-taking/NewNoteEditor';
 import AddTask from '../task-management/AddTask';
 import TaskDetails from '../task-management/TaskDetails';
 
+//profile components
+import Profile from '../profile/Profile';
+import ManageProfile from '../profile/ManageProfile';
+import EditProfile from '../profile/EditProfile';
+
 export type RootStackParamList = {
   Welcome: undefined;
   Signup: undefined;
@@ -56,6 +61,8 @@ export type RootStackParamList = {
   PDFs: undefined;
   RINA: undefined;
   Profile: undefined;
+  ManageProfile: undefined;
+  EditProfile: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -76,6 +83,12 @@ const AppNavigator: React.FC = () => {
         <Stack.Screen name="Notes" component={NotesScreen} />
         <Stack.Screen name="ToDo" component={ToDo} />
         <Stack.Screen name="RINA" component={ChatBot} />
+        <Stack.Screen name="Profile" component={Profile} />
+
+        {/* Profile components */}
+        <Stack.Screen name="ManageProfile" component={ManageProfile} />
+        <Stack.Screen name="EditProfile" component={EditProfile} />
+
 
         {/* Note Taking components */}
         <Stack.Screen name="NoteEditor" component={NewNoteEditor} />
