@@ -15,7 +15,6 @@ import {
     StyleSheet,
     TouchableOpacity,
     ScrollView,
-    SafeAreaView,
     Alert,
     Platform,
     Dimensions,
@@ -216,7 +215,7 @@ const ToDo: React.FC = () => {
     };
 
     return (
-        <SafeAreaView style={styles.container}>
+        <View style={styles.container}>
             {/* Header */}
             <View style={styles.header}>
                 <View style={styles.headerTopRow}>
@@ -228,23 +227,18 @@ const ToDo: React.FC = () => {
                             style={styles.calendarButton}
                             onPress={() => setShowCalendarModal(true)}
                         >
-                            <MaterialIcons name="calendar-today" size={24} color="#6A009C" />
+                            <Text style={styles.calendarButtonText}>{getCurrentDateDisplay()}</Text>
                             <View style={styles.currentDateIndicator} />
                         </TouchableOpacity>
                         <TouchableOpacity
                             style={styles.viewToggleButton}
                             onPress={() => setViewMode(viewMode === 'matrix' ? 'list' : 'matrix')}
                         >
-                            <View style={styles.viewToggleContainer}>
-                                <MaterialIcons
-                                    name={viewMode === 'matrix' ? 'list' : 'grid-view'}
-                                    size={24}
-                                    color="#6A009C"
-                                />
-                                <Text style={styles.viewToggleText}>
-                                    {viewMode === 'matrix' ? 'List View' : 'Matrix View'}
-                                </Text>
-                            </View>
+                            <MaterialIcons 
+                                name={viewMode === 'matrix' ? 'list' : 'grid-view'} 
+                                size={24} 
+                                color="#6A009C" 
+                            />
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -315,47 +309,114 @@ const ToDo: React.FC = () => {
                     </TouchableOpacity>
                 </Modal>
 
-                {/* Dashboard */}
-                <View style={styles.dashboard}>
-                    <View style={styles.dashboardRow}>
-                        <View style={styles.dashboardCard}>
-                            <Text style={styles.dashboardNumber}>
-                                {tasks.filter(task => !task.completed && !task.overdue).length}
-                            </Text>
-                            <Text style={styles.dashboardLabel}>Pending</Text>
-                        </View>
-                        <View style={styles.dashboardCard}>
-                            <Text style={styles.dashboardNumber}>
-                                {tasks.filter(task => task.completed).length}
-                            </Text>
-                            <Text style={styles.dashboardLabel}>Completed</Text>
-                        </View>
-                        <View style={styles.dashboardCard}>
-                            <Text style={styles.dashboardNumber}>
-                                {tasks.filter(task => task.overdue && !task.completed).length}
-                            </Text>
-                            <Text style={styles.dashboardLabel}>Overdue</Text>
-                        </View>
-                        <View style={styles.dashboardCard}>
-                            <Text style={styles.dashboardNumber}>{tasks.length}</Text>
-                            <Text style={styles.dashboardLabel}>Total</Text>
+                {/* Dashboard (only show in matrix view) */}
+                {viewMode === 'matrix' && (
+                    <View style={styles.dashboard}>
+                        <View style={styles.dashboardRow}>
+                            <View style={styles.dashboardCard}>
+                                <Text style={styles.dashboardNumber}>
+                                    {tasks.filter(task => !task.completed && !task.overdue).length}
+                                </Text>
+                                <Text style={styles.dashboardLabel}>Pending</Text>
+                            </View>
+                            <View style={styles.dashboardCard}>
+                                <Text style={styles.dashboardNumber}>
+                                    {tasks.filter(task => task.completed).length}
+                                </Text>
+                                <Text style={styles.dashboardLabel}>Completed</Text>
+                            </View>
+                            <View style={styles.dashboardCard}>
+                                <Text style={styles.dashboardNumber}>
+                                    {tasks.filter(task => task.overdue && !task.completed).length}
+                                </Text>
+                                <Text style={styles.dashboardLabel}>Overdue</Text>
+                            </View>
+                            <View style={styles.dashboardCard}>
+                                <Text style={styles.dashboardNumber}>{tasks.length}</Text>
+                                <Text style={styles.dashboardLabel}>Total</Text>
+                            </View>
                         </View>
                     </View>
-                </View>
+                )}
+
+                {/* Status Buttons (only show in list view) */}
+                {viewMode === 'list' && (
+                    <View style={styles.statusButtons}>
+                        <TouchableOpacity
+                            style={[
+                                styles.statusButton,
+                                selectedStatus === 'all' && styles.activeStatusButton
+                            ]}
+                            onPress={() => handleStatusSelect('all')}
+                        >
+                            <Text style={[
+                                styles.statusButtonText,
+                                selectedStatus === 'all' && styles.activeStatusButtonText
+                            ]}>
+                                All
+                            </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[
+                                styles.statusButton,
+                                selectedStatus === 'pending' && styles.activeStatusButton
+                            ]}
+                            onPress={() => handleStatusSelect('pending')}
+                        >
+                            <Text style={[
+                                styles.statusButtonText,
+                                selectedStatus === 'pending' && styles.activeStatusButtonText
+                            ]}>
+                                Pending
+                            </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[
+                                styles.statusButton,
+                                selectedStatus === 'completed' && styles.activeStatusButton
+                            ]}
+                            onPress={() => handleStatusSelect('completed')}
+                        >
+                            <Text style={[
+                                styles.statusButtonText,
+                                selectedStatus === 'completed' && styles.activeStatusButtonText
+                            ]}>
+                                Completed
+                            </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[
+                                styles.statusButton,
+                                selectedStatus === 'overdue' && styles.activeStatusButton
+                            ]}
+                            onPress={() => handleStatusSelect('overdue')}
+                        >
+                            <Text style={[
+                                styles.statusButtonText,
+                                selectedStatus === 'overdue' && styles.activeStatusButtonText
+                            ]}>
+                                Overdue
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
 
                 {/* Dropdown Backdrop - Only show in list view */}
                 {viewMode === 'list' && false && (
                     <TouchableOpacity
                         style={styles.dropdownBackdrop}
                         activeOpacity={1}
-                        onPress={() => { }}
+                        onPress={() => {}}
                     />
                 )}
 
             </View>
 
             {/* Content */}
-            <View style={styles.content}>
+            <View style={[
+                styles.content,
+                viewMode === 'matrix' ? styles.contentMatrix : styles.contentList
+            ]}>
                 {isLoading ? (
                     <View style={styles.loadingContainer}>
                         <ActivityIndicator size="large" color="#6A009C" />
@@ -391,7 +452,7 @@ const ToDo: React.FC = () => {
             </TouchableOpacity>
 
             <Navbar activeRoute="ToDo" />
-        </SafeAreaView>
+        </View>
     );
 };
 
@@ -401,11 +462,22 @@ const styles = StyleSheet.create({
         backgroundColor: '#f8f9fa',
     },
     header: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
         paddingHorizontal: 24,
-        paddingTop: Platform.OS === 'ios' ? 40 : 40,
+        paddingTop: Platform.OS === 'ios' ? 50 : 35,
         paddingBottom: 16,
-        backgroundColor: "#F8FAFC",
-        zIndex: 100,
+        backgroundColor: "#F5E1FD",
+        borderBottomLeftRadius: 25,
+        borderBottomRightRadius: 25,
+        shadowColor: "#1E293B",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+        elevation: 5,
+        zIndex: 1000,
         overflow: 'visible',
     },
     headerTopRow: {
@@ -454,10 +526,10 @@ const styles = StyleSheet.create({
         backgroundColor: '#6A009C',
     },
     viewToggleButton: {
-        paddingHorizontal: 12,
+        width: 44,
         height: 44,
         borderRadius: 12,
-        backgroundColor: '#ffffffff',
+        backgroundColor: '#fff',
         justifyContent: 'center',
         alignItems: 'center',
         shadowColor: '#6366F1',
@@ -671,8 +743,15 @@ const styles = StyleSheet.create({
 
     content: {
         flex: 1,
-        paddingHorizontal: 20,
         paddingBottom: 100, // Space for navbar
+    },
+    contentMatrix: {
+        paddingTop: 200, // Adjust based on header height in matrix view
+        paddingHorizontal: 20,
+    },
+    contentList: {
+        paddingTop: 160, // Adjust based on header height in list view
+        paddingHorizontal: 20,
     },
     viewToggleContainer: {
         flexDirection: 'row',
@@ -842,7 +921,7 @@ const styles = StyleSheet.create({
     },
     // Dashboard styles
     dashboard: {
-        paddingTop: 16,
+        paddingTop: 8,
         paddingBottom: 8,
     },
     dashboardRow: {
@@ -854,7 +933,7 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: '#fff',
         borderRadius: 12,
-        padding: 16,
+        padding: 10,
         alignItems: 'center',
         shadowColor: '#1E293B',
         shadowOffset: { width: 0, height: 2 },
@@ -884,7 +963,7 @@ const styles = StyleSheet.create({
     statusButton: {
         flex: 1,
         paddingVertical: 12,
-        paddingHorizontal: 16,
+        paddingHorizontal: 0,
         borderRadius: 8,
         backgroundColor: '#fff',
         borderWidth: 1,
@@ -909,6 +988,7 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontFamily: 'Inter-SemiBold',
     },
+
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
