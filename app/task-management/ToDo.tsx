@@ -616,7 +616,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 24,
         paddingTop: Platform.OS === 'ios' ? 50 : 35,
         paddingBottom: 16,
-        backgroundColor: "rgba(248, 250, 252, 0.95)",
+        backgroundColor: "#F5E1FD",
         borderBottomLeftRadius: 25,
         borderBottomRightRadius: 25,
         shadowColor: "#1E293B",

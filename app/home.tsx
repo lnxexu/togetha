@@ -154,6 +154,8 @@ export default function Home() {
             </View>
           </TouchableOpacity>
         </View>
+
+        
         <ScrollView 
           style={styles.content} 
           showsVerticalScrollIndicator={false}
@@ -165,18 +167,11 @@ export default function Home() {
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Quick Access</Text>
           </View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.horizontalScrollContainer}
-          >
+          <View style={styles.flexWrapContainer}>
             {quickAccess.map((item, index) => (
               <TouchableOpacity
                 key={item.id}
-                style={[
-                  styles.quickAccessCardHorizontal,
-                  index === 0 && styles.firstCard,
-                ]}
+                style={styles.quickAccessCard}
                 activeOpacity={0.7}
               >
                 <View
@@ -187,7 +182,7 @@ export default function Home() {
                 >
                   <MaterialIcons
                     name={getActivityIcon(item.icon)}
-                    size={24}
+                    size={28}
                     color="#FFFFFF"
                   />
                 </View>
@@ -195,7 +190,7 @@ export default function Home() {
                 <Text style={styles.quickAccessCount}>{item.count}</Text>
               </TouchableOpacity>
             ))}
-          </ScrollView>
+          </View>
         </View>
 
         {/* Priority Tasks */}
@@ -355,7 +350,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: Platform.OS === 'ios' ? 50 : 35,
     paddingBottom: 20,
-    backgroundColor: "rgba(248, 250, 252, 0.95)",
+    backgroundColor: "#F5E1FD",
     borderBottomLeftRadius: 25,
     borderBottomRightRadius: 25,
     shadowColor: "#1E293B",
@@ -448,10 +443,33 @@ const styles = StyleSheet.create({
     fontFamily: "Inter-Medium",
     color: "#6366F1",
   },
+  flexWrapContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    paddingHorizontal: 16,
+    justifyContent: "space-between",
+    gap: 12,
+  },
   quickAccessGrid: {
     flexDirection: "row",
     paddingHorizontal: 24,
     justifyContent: "space-between",
+  },
+  quickAccessCard: {
+    backgroundColor: "#FFFFFF",
+    flex: 1,
+    minWidth: (width - 56) / 3, // Minimum width for 3 cards
+    maxWidth: (width - 40) / 2, // Maximum width for 2 cards on smaller screens
+    marginBottom: 16,
+    borderRadius: 20,
+    padding: 24,
+    alignItems: "center",
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 4,
+    minHeight: 140, // Ensure consistent height
   },
   quickAccessCardHorizontal: {
     backgroundColor: "#FFFFFF",
@@ -467,23 +485,23 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   quickAccessIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
+    width: 56,
+    height: 56,
+    borderRadius: 18,
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: 16,
   },
   quickAccessTitle: {
-    fontSize: 12,
+    fontSize: 14,
     color: "#64748B",
     fontFamily: "Inter-Medium",
     textAlign: "center",
-    marginBottom: 6,
-    lineHeight: 16,
+    marginBottom: 8,
+    lineHeight: 18,
   },
   quickAccessCount: {
-    fontSize: 16,
+    fontSize: 20,
     fontFamily: "Inter-Bold",
     color: "#1E293B",
   },
@@ -494,6 +512,19 @@ const styles = StyleSheet.create({
   },
   firstCard: {
     marginLeft: 0,
+  },
+  taskCard: {
+    backgroundColor: "#FFFFFF",
+    width: (width - 64) / 2, // Two cards per row with proper spacing
+    marginBottom: 16,
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 6,
+    position: "relative",
   },
   taskCardHorizontal: {
     backgroundColor: "#FFFFFF",
@@ -595,6 +626,18 @@ const styles = StyleSheet.create({
     padding: 8,
     borderRadius: 8,
     backgroundColor: "#F8FAFC",
+  },
+  activityCard: {
+    backgroundColor: "#FFFFFF",
+    width: (width - 64) / 2, // Two cards per row with proper spacing
+    marginBottom: 16,
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 3,
   },
   activityCardHorizontal: {
     backgroundColor: "#FFFFFF",

@@ -33,36 +33,67 @@ const WelcomeScreen: React.FC = () => {
       >
         {/* Page 1: Welcome Image with Title */}
         <View style={[styles.slide, { width, minHeight: height }]}>
-          <View style={styles.topSection}>
-            <Text style={[styles.topTitle, { fontSize: width * 0.08 } ]}>Togetha</Text>
-            <Image
-              source={require('../../assets/images/output-onlinepngtools.png')}
-              style={[styles.welcomeImage, { width: width * 0.6, height: width * 0.6, maxWidth: 300, maxHeight: 300 }]}
-              resizeMode="contain"
-            />
+          <View style={[styles.topSection, { marginTop: height * 0.05 }]}>
+            <Text style={[styles.topTitle, { fontSize: Math.min(width * 0.08, 36) }]}>Togetha</Text>
+            <View style={[styles.imageWrapper, { width: width * 0.7, height: width * 0.7, maxWidth: 350, maxHeight: 350 }]}>
+              <Image
+                source={require('../../assets/images/output-onlinepngtools.png')}
+                style={styles.welcomeImage}
+                resizeMode="contain"
+              />
+            </View>
           </View>
-          <View style={styles.textSection}>
-            <Text style={[styles.title, { fontSize: width * 0.05 } ]}>Gets things done with Togetha</Text>
-            <Text style={[styles.subtitle, { fontSize: width * 0.035, maxWidth: width * 0.85 } ]}>
+          <View style={[styles.textSection, { paddingHorizontal: width * 0.05, maxWidth: width * 0.9 }]}>
+            <Text style={[styles.title, { fontSize: Math.min(width * 0.06, 28), marginBottom: height * 0.02 }]}>
+              Gets things done with Togetha
+            </Text>
+            <Text style={[styles.subtitle, { 
+              fontSize: Math.min(width * 0.04, 18), 
+              lineHeight: Math.min(width * 0.06, 26),
+              marginBottom: height * 0.04 
+            }]}>
               No more juggling apps. With Togetha, your tasks, deadlines, and study materials are all in sync! So you can focus on what really matters.
             </Text>
             <TouchableOpacity
-              style={[styles.loginButton, { paddingVertical: width * 0.025, paddingHorizontal: width * 0.06, borderRadius: width * 0.05 }]}
+              style={[styles.loginButton, { 
+                paddingVertical: height * 0.018, 
+                paddingHorizontal: width * 0.08, 
+                borderRadius: Math.min(width * 0.06, 25),
+                minHeight: 50,
+                justifyContent: 'center'
+              }]}
               onPress={() => navigation.navigate('Login')}
             >
-              <Text style={[styles.loginButtonText, { fontSize: width * 0.04 }]}>Already have an account? Sign In</Text>
+              <Text style={[styles.loginButtonText, { fontSize: Math.min(width * 0.042, 16) }]}>
+                Already have an account? Sign In
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
 
         {/* Page 2: Reach Your Goals */}
         <View style={[styles.slide, { width, minHeight: height }]}>
-          <View style={styles.imageContainer}>
-            <Text style={[styles.topTitle, { fontSize: width * 0.08 } ]}>Togetha</Text>
-            <LearningSVG width={width * 0.6} height={width * 0.6} style={styles.welcomeImage} />
+          <View style={[styles.imageContainer, { marginTop: height * 0.08, marginBottom: height * 0.05 }]}>
+            <Text style={[styles.topTitle, { fontSize: Math.min(width * 0.08, 36), marginBottom: height * 0.03 }]}>Togetha</Text>
+            <View style={[styles.svgContainer, { width: width * 0.7, height: width * 0.6, maxWidth: 350, maxHeight: 300 }]}>
+              <LearningSVG width="100%" height="100%" style={styles.svgImage} />
+            </View>
           </View>
-          <Text style={[styles.title, { fontSize: width * 0.05 } ]}>Add Tasks Effortlessly</Text>
-          <Text style={[styles.subtitle, { fontSize: width * 0.035, maxWidth: width * 0.85 } ]}>Get a clear to do of your task.</Text>
+          <View style={[styles.contentSection, { paddingHorizontal: width * 0.05, maxWidth: width * 0.9 }]}>
+            <Text style={[styles.title, { 
+              fontSize: Math.min(width * 0.06, 28), 
+              marginBottom: height * 0.02 
+            }]}>
+              Add Tasks Effortlessly
+            </Text>
+            <Text style={[styles.subtitle, { 
+              fontSize: Math.min(width * 0.04, 18),
+              lineHeight: Math.min(width * 0.06, 26),
+              marginBottom: height * 0.04 
+            }]}>
+              Get a clear to do of your task and stay organized with our intuitive task management system.
+            </Text>
+          </View>
         </View>
 
         {/* Page 3: Future Prospects */}
@@ -88,31 +119,62 @@ const WelcomeScreen: React.FC = () => {
 const styles = StyleSheet.create({
   slide: {
     flex: 1,
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#F1D3FF', // Set primary color here
-    padding: 20,
+    backgroundColor: '#F1D3FF',
+    paddingVertical: 40,
+    paddingHorizontal: 20,
   },
   topSection: {
     alignItems: 'center',
-    marginBottom: 20,
+    flex: 2,
+    justifyContent: 'center',
   },
   topTitle: {
     color: '#6A009C',
     fontFamily: 'Lexend',
-    marginBottom: 10,
+    fontWeight: 'bold',
+    marginBottom: 20,
   },
-  welcomeImage: {
-    borderRadius: 10,
-  },
-  imageContainer: {
-    width: '80%',
-    minHeight: 100,
+  imageWrapper: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    width: '100%',
+    height: '100%',
+  },
+  welcomeImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 15,
+  },
+  imageContainer: {
+    flex: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
+  },
+  svgContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
+    height: '100%',
+  },
+  svgImage: {
+    borderRadius: 10,
   },
   textSection: {
+    flex: 1,
     alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingBottom: 20,
+  },
+  contentSection: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingBottom: 40,
   },
   stripedBlock: {
     flexDirection: 'row',
@@ -148,59 +210,60 @@ const styles = StyleSheet.create({
   title: {
     fontFamily: 'Inter-Bold',
     textAlign: 'center',
-    marginBottom: 10,
     color: '#A600F4',
+    fontWeight: 'bold',
   },
   subtitle: {
     fontFamily: 'Inter-Medium',
     textAlign: 'center',
-    color: '#000000',
-    marginBottom: 40,
-    paddingHorizontal: 20,
+    color: '#333333',
+    paddingHorizontal: 10,
   },
   paginationContainer: {
-    bottom: 50,
+    bottom: 80,
   },
   paginationDot: {
     backgroundColor: 'rgba(138, 43, 226, 0.4)',
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginHorizontal: 3,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginHorizontal: 4,
   },
   paginationActiveDot: {
     backgroundColor: '#8A2BE2',
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginHorizontal: 3,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginHorizontal: 4,
   },
   getStartedButton: {
     backgroundColor: '#A32EDA',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 5,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
     alignSelf: 'center',
-    marginTop: 10,
+    alignItems: 'center',
   },
   getStartedButtonText: {
     color: '#fff',
-    fontFamily: 'Inter-Medium',
+    fontFamily: 'Inter-Bold',
     textAlign: 'center',
+    fontWeight: 'bold',
   },
   loginButton: {
     backgroundColor: 'transparent',
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: '#A32EDA',
     alignSelf: 'center',
-    marginTop: 15,
+    alignItems: 'center',
   },
   loginButtonText: {
     color: '#A32EDA',
     fontFamily: 'Inter-Medium',
     textAlign: 'center',
+    fontWeight: '600',
   },
 });
 
