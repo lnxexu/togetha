@@ -521,8 +521,6 @@ const AddTask: React.FC = () => {
         </View>
       </ScrollView>
       </TouchableOpacity>
-
-      {/* Note: Removed complex modal-based date/time pickers */}
     </SafeAreaView>
   );
 };

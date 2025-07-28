@@ -18,47 +18,47 @@ interface EisenhowerMatrixProps {
   onMarkComplete: (taskId: string) => void;
 }
 
-interface QuadrantData {
+type QuadrantData = {
   title: string;
   subtitle: string;
   color: string;
   borderColor: string;
   priority: string;
-  icon: string;
-}
+  icon: 'priority-high' | 'event' | 'person-add' | 'not-interested' | 'add-circle-outline' | 'check-box-outline-blank';
+};
 
 const quadrants: Record<string, QuadrantData> = {
   'urgent-important': {
-    title: 'Urgent & Important',
-    subtitle: 'DO FIRST',
-    color: '#rgba(248, 113, 113, 0.5)',
-    borderColor: '#FF4444',
+    title: 'Do First',
+    subtitle: 'Urgent & Important',
+    color: '#FFEBEE',
+    borderColor: '#D32F2F',
     priority: 'urgent-important',
-    icon: '',
+    icon: 'priority-high',
   },
   'not-urgent-important': {
-    title: 'Urgent & Not Important',
-    subtitle: 'SCHEDULE',
-    color: '#rgba(52, 211, 153, 0.5)',
-    borderColor: '#34D399',
+    title: 'Schedule',
+    subtitle: 'Important, Not Urgent',
+    color: '#E8F5E9',
+    borderColor: '#388E3C',
     priority: 'not-urgent-important',
-    icon: '',
+    icon: 'event',
   },
   'urgent-not-important': {
-    title: 'Not Urgent & Important',
-    subtitle: 'DELEGATE',
-    color: '#rgba(251, 191, 36, 0.5)',
-    borderColor: '#FBBF24',
+    title: 'Delegate',
+    subtitle: 'Urgent, Not Important',
+    color: '#FFF8E1',
+    borderColor: '#FFA000',
     priority: 'urgent-not-important',
-    icon: '',
+    icon: 'person-add',
   },
   'not-urgent-not-important': {
-    title: 'Not Urgent & Not Important',
-    subtitle: 'ELIMINATE',
-    color: '#rgba(156, 163, 175, 0.5)',
-    borderColor: '#888888',
+    title: 'Eliminate',
+    subtitle: 'Neither Urgent nor Important',
+    color: '#E0E0E0',
+    borderColor: '#757575',
     priority: 'not-urgent-not-important',
-    icon: '',
+    icon: 'not-interested',
   },
 };
 
@@ -69,6 +69,18 @@ const EisenhowerMatrix: React.FC<EisenhowerMatrixProps> = ({
   onDeleteTask,
   onMarkComplete,
 }) => {
+
+  const showMatrixHelp = () => {
+    Alert.alert(
+      "Eisenhower Matrix",
+      "The Eisenhower Matrix helps you prioritize tasks based on urgency and importance:\n\n" +
+      "• Do First: Urgent and important tasks that require immediate attention\n" +
+      "• Schedule: Important but not urgent tasks that you should plan time for\n" +
+      "• Delegate: Urgent but less important tasks that could be delegated\n" +
+      "• Eliminate: Neither urgent nor important tasks that you might reconsider",
+      [{ text: "Got it" }]
+    );
+  };
   const getTasksByQuadrant = (priority: string) => {
     return tasks.filter(task => task.priority === priority && !task.completed);
   };
@@ -108,8 +120,8 @@ const EisenhowerMatrix: React.FC<EisenhowerMatrixProps> = ({
           borderColor: 'transparent',
         },
       ]}>
-        <View style={[styles.quadrantHeader, { backgroundColor: quadrant.color }]}> 
-          {/* Removed icon */}
+        <View style={[styles.quadrantHeader, { backgroundColor: quadrant.borderColor }]}> 
+          <MaterialIcons name={quadrant.icon} size={18} color="#ffffff" />
           <Text style={styles.quadrantTitle}>{quadrant.title}</Text>
           <View style={styles.taskCountContainer}>
             <Text style={styles.taskCountText}>{quadrantTasks.length}</Text>
@@ -157,6 +169,12 @@ const EisenhowerMatrix: React.FC<EisenhowerMatrixProps> = ({
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      <View style={styles.helpButtonContainer}>
+        <TouchableOpacity style={styles.helpButton} onPress={showMatrixHelp}>
+          <MaterialIcons name="help-outline" size={16} color="#666" />
+          <Text style={styles.helpButtonText}>What's this?</Text>
+        </TouchableOpacity>
+      </View>
       <View style={styles.matrix}>
         <View style={styles.matrixRow}>
           {renderQuadrant('urgent-important')}
@@ -174,6 +192,26 @@ const EisenhowerMatrix: React.FC<EisenhowerMatrixProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  helpButtonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  helpButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0f0f0',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  helpButtonText: {
+    fontSize: 12,
+    color: '#666',
+    marginLeft: 4,
+    fontFamily: 'Inter-Regular',
   },
   matrix: {
     flex: 1,
@@ -205,10 +243,11 @@ const styles = StyleSheet.create({
   },
   quadrantTitle: {
     flex: 1,
-    fontSize: 13,
+    fontSize: 14,
     fontFamily: 'Inter-Medium',
     color: '#fff',
-    // marginLeft removed since no icon
+    marginLeft: 8,
+    fontWeight: 'bold',
   },
   taskCountContainer: {
     backgroundColor: 'rgba(255,255,255,0.2)',
@@ -227,11 +266,11 @@ const styles = StyleSheet.create({
   },
 
   quadrantSubtitle: {
-    fontSize: 10,
-    color: '#ffffffff',
+    fontSize: 11,
+    color: '#333333',
     textAlign: 'center',
     paddingHorizontal: 12,
-    paddingTop: 4,
+    paddingVertical: 6,
     fontFamily: 'Inter-Regular',
   },
   taskList: {
@@ -267,7 +306,7 @@ const styles = StyleSheet.create({
   taskText: {
     fontSize: 12,
     fontWeight: '400',
-    color: '#ffffffff',
+    color: '#333333',
     lineHeight: 16,
     fontFamily: 'Inter-Regular',
   },

@@ -29,10 +29,10 @@ type SignUpScreenProp = NativeStackNavigationProp<RootStackParamList, 'Signup'>;
 // Django server URL configured for proper mobile access
 const API_BASE_URL = __DEV__
   ? Platform.OS === 'android'
-    ? Platform.OS === 'android' && !global.isRunningInExpoClient
-      ? 'http://10.0.2.2:8000'  // Android emulator
-      : 'http://192.168.1.X:8000'  // Replace with your computer's actual IP for real devices
-    : 'http://localhost:8000'  // iOS simulator
+    ? global.isRunningInExpoClient
+      ? 'http://192.168.0.153:8000'  // Expo Go on Android (use your actual IP)
+      : 'http://10.0.2.2:8000'     // Android emulator
+    : 'http://localhost:8000'      // iOS simulator
   : 'https://yourproductionserver.com';
 
 export default function SignUp() {
@@ -49,6 +49,26 @@ export default function SignUp() {
   // Password visibility toggles
   const [showPassword1, setShowPassword1] = useState(false);
   const [showPassword2, setShowPassword2] = useState(false);
+
+  // Add this function to detect network connectivity
+  const checkNetworkConnectivity = async () => {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      
+      const response = await fetch('https://www.google.com', {
+        method: 'HEAD',
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      return response.status >= 200 && response.status < 300;
+    } catch (error) {
+      console.log('Network connectivity check failed:', error);
+      return false;
+    }
+  };
+
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({
@@ -110,6 +130,14 @@ export default function SignUp() {
     setLoading(true);
 
     try {
+      // First check if device is connected to internet
+      const isConnected = await checkNetworkConnectivity();
+      if (!isConnected) {
+        showToast('No internet connection. Please check your network settings.', 'error');
+        setLoading(false);
+        return;
+      }
+
       const signupData = {
         username: formData.username,
         email: formData.email,
@@ -121,55 +149,57 @@ export default function SignUp() {
       console.log('Platform:', Platform.OS);
       console.log('Running in Expo?', global.isRunningInExpoClient ? 'Yes' : 'No');
 
-      // Test server reachability first
-      try {
-        console.log('Testing server connectivity...');
-        const testResponse = await fetch(`${API_BASE_URL}/`, {
-          method: 'GET',
-          headers: { 'Accept': 'application/json' },
-        }).catch(e => {
-          console.log('Server connectivity test failed:', e.message);
-          throw e;
-        });
-        console.log('Server reachable, status:', testResponse.status);
-      } catch (e: unknown) {
-        const error = e as Error;
-        console.log('Server unreachable:', error.message);
-      }
-
       // Add timeout to the fetch request
-      const response = await Promise.race([
-        fetch(`${API_BASE_URL}/signup`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-          },
-          body: JSON.stringify(signupData),
-        })
-      ]) as Response;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
+      const response = await fetch(`${API_BASE_URL}/signup`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify(signupData),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
       console.log('Response received, status:', response.status);
 
       const data = await response.json();
       console.log('Response data:', data);
 
-      // Rest of your function remains the same
+      if (response.ok) {
+        showToast('Account created successfully!', 'success');
+        // Save user data or token if provided
+        if (data.token) {
+          await AsyncStorage.setItem('userToken', data.token);
+        }
+        // Navigate to login or next screen
+        setTimeout(() => {
+          navigation.navigate('Login');
+        }, 1000);
+      } else {
+        // Handle server error responses
+        const errorMessage = data.message || data.error || 'Signup failed. Please try again.';
+        showToast(errorMessage, 'error');
+      }
     } catch (error) {
       console.error('Signup error:', error);
 
       // Enhanced error reporting
-      if (error instanceof TypeError && error.message === 'Network request failed') {
-        showToast(`Cannot connect to server at ${API_BASE_URL}. Please check your connection.`, 'error');
-      } else if (error instanceof Error && error.message.includes('timeout')) {
-        showToast(`Server at ${API_BASE_URL} not responding. Please verify the server is running.`, 'error');
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        showToast('Request timed out. Server may be down or unreachable.', 'error');
+      } else if (error instanceof TypeError && error.message === 'Network request failed') {
+        showToast(`Cannot connect to server. Please check that your backend is running at ${API_BASE_URL}`, 'error');
       } else {
-        showToast(`Network error: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+        showToast(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
       }
     } finally {
       setLoading(false);
     }
   };
+
 
   return (
     <KeyboardAvoidingView

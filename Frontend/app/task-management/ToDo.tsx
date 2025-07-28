@@ -1,4 +1,14 @@
 import React, { useState, useCallback } from 'react';
+import { MaterialIcons } from '@expo/vector-icons';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../navigation/AppNavigator';
+import Navbar from '../NavBar';
+import EisenhowerMatrix from './components/EisenhowerMatrix';
+import TaskListView from './components/TaskListView';
+import { Task } from './types/Task';
+import { taskService } from './services/taskService';
+import { ActivityIndicator } from 'react-native';
 import {
     View,
     Text,
@@ -11,19 +21,11 @@ import {
     Dimensions,
     Modal,
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../navigation/AppNavigator';
-import Navbar from '../NavBar';
-import EisenhowerMatrix from './components/EisenhowerMatrix';
-import TaskListView from './components/TaskListView';
-import { Task } from './types/Task';
-import { taskService } from './services/taskService';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 const ToDo: React.FC = () => {
+    const [isLoading, setIsLoading] = useState<boolean>(false);
     const navigation = useNavigation<NavigationProp>();
     const [viewMode, setViewMode] = useState<'matrix' | 'list'>('matrix');
     const [tasks, setTasks] = useState<Task[]>([]);
@@ -63,7 +65,7 @@ const ToDo: React.FC = () => {
         const currentDay = today.getDay();
         const startOfWeek = new Date(today);
         startOfWeek.setDate(today.getDate() - currentDay);
-        
+
         const weekDates = [];
         for (let i = 0; i < 7; i++) {
             const date = new Date(startOfWeek);
@@ -77,12 +79,12 @@ const ToDo: React.FC = () => {
     const getCalendarDays = () => {
         const year = calendarDate.getFullYear();
         const month = calendarDate.getMonth();
-        
+
         const firstDay = new Date(year, month, 1);
         const lastDay = new Date(year, month + 1, 0);
         const startDate = new Date(firstDay);
         startDate.setDate(startDate.getDate() - firstDay.getDay());
-        
+
         const days = [];
         for (let i = 0; i < 42; i++) { // 6 weeks * 7 days
             const date = new Date(startDate);
@@ -106,153 +108,18 @@ const ToDo: React.FC = () => {
 
     const loadTasks = async () => {
         try {
-            // Sample data for demonstration
-            const sampleTasks: Task[] = [
-                // Urgent & Important
-                {
-                    id: '1',
-                    title: 'Submit Final Project Report',
-                    description: 'Complete and submit the final semester project report for Computer Science',
-                    priority: 'urgent-important',
-                    subject: 'Computer Science',
-                    dueDate: new Date('2025-07-22'),
-                    dueTime: '11:59 PM',
-                    completed: false,
-                    overdue: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                },
-                {
-                    id: '2',
-                    title: 'Prepare for Mathematics Exam',
-                    description: 'Study calculus and linear algebra topics for tomorrow\'s exam',
-                    priority: 'urgent-important',
-                    subject: 'Mathematics',
-                    dueDate: new Date('2025-07-22'),
-                    dueTime: '8:00 AM',
-                    completed: false,
-                    overdue: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                },
-                {
-                    id: '3',
-                    title: 'Doctor Appointment',
-                    description: 'Annual health checkup appointment',
-                    priority: 'urgent-important',
-                    subject: 'Health',
-                    dueDate: new Date('2025-07-21'),
-                    dueTime: '2:00 PM',
-                    completed: false,
-                    overdue: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                },
-                // Important, Not Urgent
-                {
-                    id: '4',
-                    title: 'Start Research Paper',
-                    description: 'Begin research on AI ethics for next month\'s assignment',
-                    priority: 'not-urgent-important',
-                    subject: 'Computer Science',
-                    dueDate: new Date('2025-08-15'),
-                    completed: false,
-                    overdue: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                },
-                {
-                    id: '5',
-                    title: 'Learn New Programming Language',
-                    description: 'Start learning Python for data science applications',
-                    priority: 'not-urgent-important',
-                    subject: 'Programming',
-                    dueDate: new Date('2025-08-01'),
-                    completed: false,
-                    overdue: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                },
-                {
-                    id: '6',
-                    title: 'Exercise Routine',
-                    description: 'Plan and start a regular exercise routine for better health',
-                    priority: 'not-urgent-important',
-                    subject: 'Health',
-                    completed: false,
-                    overdue: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                },
-                // Urgent, Not Important
-                {
-                    id: '7',
-                    title: 'Reply to Group Chat',
-                    description: 'Respond to non-critical messages in study group chat',
-                    priority: 'urgent-not-important',
-                    subject: 'Social',
-                    dueDate: new Date('2025-07-21'),
-                    completed: false,
-                    overdue: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                },
-                {
-                    id: '8',
-                    title: 'Organize Desktop Files',
-                    description: 'Clean up and organize files on computer desktop',
-                    priority: 'urgent-not-important',
-                    subject: 'Personal',
-                    completed: false,
-                    overdue: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                },
-                // Neither Urgent nor Important
-                {
-                    id: '9',
-                    title: 'Watch Movie',
-                    description: 'Watch that new sci-fi movie everyone is talking about',
-                    priority: 'not-urgent-not-important',
-                    subject: 'Entertainment',
-                    dueDate: new Date('2025-07-22'),
-                    completed: false,
-                    overdue: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                },
-                {
-                    id: '10',
-                    title: 'Browse Social Media',
-                    description: 'Check latest updates on social media platforms',
-                    priority: 'not-urgent-not-important',
-                    subject: 'Entertainment',
-                    dueDate: new Date('2025-07-22'),
-                    completed: false,
-                    overdue: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                },
-                {
-                    id: '11',
-                    title: 'Play Video Games',
-                    description: 'Play that new RPG game that was just released',
-                    priority: 'not-urgent-not-important',
-                    subject: 'Entertainment',
-                    dueDate: new Date('2025-07-22'),
-                    completed: false,
-                    overdue: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                },
-            ];
+            setIsLoading(true);
+            console.log('Fetching tasks from the server...');
 
-            // In a real app, you would fetch from the service
-            // const loadedTasks = await taskService.getAllTasks();
-            setTasks(sampleTasks);
+            const loadedTasks = await taskService.getAllTasks();
+
+            console.log(`Successfully loaded ${loadedTasks.length} tasks from the server`);
+            setTasks(loadedTasks);
         } catch (error) {
             console.error('Error loading tasks:', error);
-            Alert.alert('Error', 'Failed to load tasks');
+            Alert.alert('Error', 'Failed to load tasks. Please check your connection and try again.');
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -361,18 +228,23 @@ const ToDo: React.FC = () => {
                             style={styles.calendarButton}
                             onPress={() => setShowCalendarModal(true)}
                         >
-                            <Text style={styles.calendarButtonText}>{getCurrentDateDisplay()}</Text>
+                            <MaterialIcons name="calendar-today" size={24} color="#6A009C" />
                             <View style={styles.currentDateIndicator} />
                         </TouchableOpacity>
                         <TouchableOpacity
                             style={styles.viewToggleButton}
                             onPress={() => setViewMode(viewMode === 'matrix' ? 'list' : 'matrix')}
                         >
-                            <MaterialIcons 
-                                name={viewMode === 'matrix' ? 'list' : 'grid-view'} 
-                                size={24} 
-                                color="#6A009C" 
-                            />
+                            <View style={styles.viewToggleContainer}>
+                                <MaterialIcons
+                                    name={viewMode === 'matrix' ? 'list' : 'grid-view'}
+                                    size={24}
+                                    color="#6A009C"
+                                />
+                                <Text style={styles.viewToggleText}>
+                                    {viewMode === 'matrix' ? 'List View' : 'Matrix View'}
+                                </Text>
+                            </View>
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -384,14 +256,14 @@ const ToDo: React.FC = () => {
                     animationType="fade"
                     onRequestClose={() => setShowCalendarModal(false)}
                 >
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         style={styles.modalOverlay}
                         activeOpacity={1}
                         onPress={() => setShowCalendarModal(false)}
                     >
                         <View style={styles.calendarModal}>
                             <View style={styles.calendarHeader}>
-                                <TouchableOpacity 
+                                <TouchableOpacity
                                     style={styles.monthNavButton}
                                     onPress={() => navigateMonth('prev')}
                                 >
@@ -400,7 +272,7 @@ const ToDo: React.FC = () => {
                                 <Text style={styles.monthYearText}>
                                     {monthNames[calendarDate.getMonth()]} {calendarDate.getFullYear()}
                                 </Text>
-                                <TouchableOpacity 
+                                <TouchableOpacity
                                     style={styles.monthNavButton}
                                     onPress={() => navigateMonth('next')}
                                 >
@@ -471,74 +343,12 @@ const ToDo: React.FC = () => {
                     </View>
                 </View>
 
-                {/* Status Buttons (only show in list view) */}
-                {viewMode === 'list' && (
-                    <View style={styles.statusButtons}>
-                        <TouchableOpacity
-                            style={[
-                                styles.statusButton,
-                                selectedStatus === 'all' && styles.activeStatusButton
-                            ]}
-                            onPress={() => handleStatusSelect('all')}
-                        >
-                            <Text style={[
-                                styles.statusButtonText,
-                                selectedStatus === 'all' && styles.activeStatusButtonText
-                            ]}>
-                                All
-                            </Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[
-                                styles.statusButton,
-                                selectedStatus === 'pending' && styles.activeStatusButton
-                            ]}
-                            onPress={() => handleStatusSelect('pending')}
-                        >
-                            <Text style={[
-                                styles.statusButtonText,
-                                selectedStatus === 'pending' && styles.activeStatusButtonText
-                            ]}>
-                                Pending
-                            </Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[
-                                styles.statusButton,
-                                selectedStatus === 'completed' && styles.activeStatusButton
-                            ]}
-                            onPress={() => handleStatusSelect('completed')}
-                        >
-                            <Text style={[
-                                styles.statusButtonText,
-                                selectedStatus === 'completed' && styles.activeStatusButtonText
-                            ]}>
-                                Completed
-                            </Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[
-                                styles.statusButton,
-                                selectedStatus === 'overdue' && styles.activeStatusButton
-                            ]}
-                            onPress={() => handleStatusSelect('overdue')}
-                        >
-                            <Text style={[
-                                styles.statusButtonText,
-                                selectedStatus === 'overdue' && styles.activeStatusButtonText
-                            ]}>
-                                Overdue
-                            </Text>
-                        </TouchableOpacity>
-                    </View>
-                )}
-
                 {/* Dropdown Backdrop - Only show in list view */}
                 {viewMode === 'list' && false && (
                     <TouchableOpacity
                         style={styles.dropdownBackdrop}
                         activeOpacity={1}
-                        onPress={() => {}}
+                        onPress={() => { }}
                     />
                 )}
 
@@ -546,7 +356,12 @@ const ToDo: React.FC = () => {
 
             {/* Content */}
             <View style={styles.content}>
-                {viewMode === 'matrix' ? (
+                {isLoading ? (
+                    <View style={styles.loadingContainer}>
+                        <ActivityIndicator size="large" color="#6A009C" />
+                        <Text style={styles.loadingText}>Loading tasks...</Text>
+                    </View>
+                ) : viewMode === 'matrix' ? (
                     <EisenhowerMatrix
                         tasks={tasks}
                         onTaskPress={handleTaskPress}
@@ -556,7 +371,7 @@ const ToDo: React.FC = () => {
                     />
                 ) : (
                     <TaskListView
-                        tasks={filteredTasks}
+                        tasks={filteredTasks} // Use filtered tasks here
                         onTaskPress={handleTaskPress}
                         onDeleteTask={handleDeleteTask}
                         onMarkComplete={handleMarkComplete}
@@ -618,10 +433,10 @@ const styles = StyleSheet.create({
         backgroundColor: '#fff',
         justifyContent: 'center',
         alignItems: 'center',
-            shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
+        shadowColor: "#1E293B",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.08,
+        shadowRadius: 8,
         position: 'relative',
     },
     calendarButtonText: {
@@ -639,7 +454,7 @@ const styles = StyleSheet.create({
         backgroundColor: '#6A009C',
     },
     viewToggleButton: {
-        width: 44,
+        paddingHorizontal: 12,
         height: 44,
         borderRadius: 12,
         backgroundColor: '#ffffffff',
@@ -703,28 +518,51 @@ const styles = StyleSheet.create({
     daysContainer: {
         flexDirection: 'row',
         flexWrap: 'wrap',
-        gap: 4,
+        justifyContent: 'space-between',
+        gap: 0, // Remove gap to prevent wrapping issues
     },
     calendarDay: {
-        width: '13.2%',
+        width: '14.28%', // Exactly 1/7 of the container width
         aspectRatio: 1,
         justifyContent: 'center',
         alignItems: 'center',
         borderRadius: 8,
+        margin: 0,
+        padding: 0,
+        backgroundColor: 'transparent', // No background color for normal days
+        shadowColor: '#000',
+
     },
     inactiveDay: {
         opacity: 0.3,
     },
     todayCalendarDay: {
         backgroundColor: '#AD00FF',
+        borderRadius: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 3.84,
+        elevation: 2,
     },
     selectedCalendarDay: {
         backgroundColor: '#6A009C',
+        borderRadius: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 3.84,
+        elevation: 2,
     },
     calendarDayText: {
         fontSize: 14,
         color: '#495057',
         fontFamily: 'Inter-Medium',
+        textAlign: 'center',
+        fontWeight: '600',
+        paddingVertical: 4,
+        paddingHorizontal: 8,
+        backgroundColor: 'transparent', // No background color for normal days
     },
     inactiveDayText: {
         color: '#adb5bd',
@@ -830,11 +668,21 @@ const styles = StyleSheet.create({
     activeToggleText: {
         color: '#fff',
     },
-    
+
     content: {
         flex: 1,
         paddingHorizontal: 20,
         paddingBottom: 100, // Space for navbar
+    },
+    viewToggleContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    viewToggleText: {
+        fontSize: 12,
+        fontFamily: 'Inter-Medium',
+        color: '#6A009C',
+        marginLeft: 4,
     },
     // List view filter styles
     listViewFilters: {
@@ -1060,6 +908,18 @@ const styles = StyleSheet.create({
     activeStatusButtonText: {
         color: '#fff',
         fontFamily: 'Inter-SemiBold',
+    },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 24,
+    },
+    loadingText: {
+        marginTop: 16,
+        fontSize: 16,
+        color: '#6A009C',
+        fontFamily: 'Inter-Medium',
     },
 });
 

@@ -3,9 +3,9 @@ from .models import Task, TaskCategory, Subtask
 
 @admin.register(Task)
 class TaskAdmin(admin.ModelAdmin):
-    list_display = ('text', 'user', 'priority', 'status', 'completed', 'due_date', 'category', 'created_at')
-    list_filter = ('completed', 'priority', 'status', 'due_date', 'category')
-    search_fields = ('text', 'description', 'user__username')
+    list_display = ('title', 'user', 'priority', 'completed', 'due_date', 'created_at')
+    list_filter = ('completed', 'priority', 'due_date')
+    search_fields = ('title', 'description', 'user__username')
     date_hierarchy = 'created_at'
 
 @admin.register(TaskCategory)
@@ -18,4 +18,4 @@ class TaskCategoryAdmin(admin.ModelAdmin):
 class SubtaskAdmin(admin.ModelAdmin):
     list_display = ('text', 'task', 'completed', 'created_at')
     list_filter = ('completed', 'created_at')
-    search_fields = ('text', 'task__text')
+    search_fields = ('text', 'task__title')
