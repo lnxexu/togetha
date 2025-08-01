@@ -1,4 +1,5 @@
 import { MaterialIcons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import React, { useState, useEffect } from "react";
@@ -15,37 +16,51 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import Navbar from "./NavBar";
 import { RootStackParamList } from "./navigation/AppNavigator";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { API_BASE_URL, API_ENDPOINTS } from "../constants/ApiConfig";
 
 const { width } = Dimensions.get("window");
 
-// API URL
-const API_URL = "http://10.0.2.2:8000"; // For Android emulator
-// const API_URL = "http://localhost:8000"; // For iOS simulator
-
-const initialQuickAccess = [
+// Quick Stats data
+const initialQuickStats = [
   {
     id: 1,
-    title: "Your Notes",
-    icon: "note",
-    count: "0",
-    color: "#667EEA",
+    title: "Tasks Today",
+    value: "0/3",
+    icon: "check-circle",
+    color: "#10B981",
+    type: "stat",
   },
   {
     id: 2,
-    title: "Study Materials",
-    icon: "library-books",
-    count: "0",
-    color: "#F093FB",
+    title: "Notes Created",
+    value: "0",
+    icon: "note-add",
+    color: "#3B82F6",
+    type: "stat",
   },
+];
+
+// Quick Actions data
+const initialQuickActions = [
   {
     id: 3,
+    title: "New Note",
+    icon: "note-add",
+    color: "#F59E0B",
+    type: "action",
+    action: "Notes",
+  },
+  {
+    id: 4,
     title: "Ask RINA",
     icon: "psychology",
-    count: "AI",
-    color: "#4FACFE",
+    color: "#8B5CF6",
+    type: "action",
+    action: "RINA",
   },
 ];
 
@@ -70,19 +85,24 @@ export default function Home() {
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const weekDates = getCurrentWeek();
   const [username, setUsername] = useState("User");
-  // State for data
-  const [quickAccess, setQuickAccess] = useState(initialQuickAccess);
+  // State for data - combine stats and actions
+  const [quickCards] = useState([...initialQuickStats, ...initialQuickActions]);
   const [priorityTasks, setPriorityTasks] = useState<any[]>([]);
-  const [recentActivity, setRecentActivity] = useState<any[]>([]);
+  const [todayTasksCount, setTodayTasksCount] = useState({
+    completed: 0,
+    total: 0,
+  });
+  const [notesCount, setNotesCount] = useState(0);
+  const [notesFolders, setNotesFolders] = useState<any[]>([]);
 
   // Loading states
   const [loadingTasks, setLoadingTasks] = useState(true);
-  const [loadingActivity, setLoadingActivity] = useState(true);
   const [loadingQuickAccess, setLoadingQuickAccess] = useState(true);
+  const [loadingFolders, setLoadingFolders] = useState(true);
 
   // Error states
   const [tasksError, setTasksError] = useState<string | null>(null);
-  const [activityError, setActivityError] = useState<string | null>(null);
+  const [foldersError, setFoldersError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Greeting based on time of day
@@ -101,13 +121,12 @@ export default function Home() {
     }
   };
 
-
   // Fetch user info with optimized error handling
   useEffect(() => {
     const fetchUserInfo = async () => {
       try {
         setLoading(true);
-        
+
         // First try to get username from local storage for immediate display
         const cachedUsername = await AsyncStorage.getItem("username");
         if (cachedUsername) {
@@ -116,7 +135,7 @@ export default function Home() {
         } else {
           setUsername("User"); // Default while fetching
         }
-        
+
         const token = await AsyncStorage.getItem("authToken");
         if (!token) {
           console.log("No auth token found");
@@ -125,31 +144,32 @@ export default function Home() {
 
         // Using Promise.race to use whichever endpoint responds first
         const endpoints = [
-          fetch(`${API_URL}/auth/user/`, {
+          fetch(`${API_BASE_URL}/auth/user/`, {
             method: "GET",
             headers: {
-              "Authorization": `Token ${token}`,
-              "Cache-Control": "no-cache"
+              Authorization: `Token ${token}`,
+              "Cache-Control": "no-cache",
             },
           }),
-          fetch(`${API_URL}/get_username/`, {
+          fetch(`${API_BASE_URL}${API_ENDPOINTS.GET_USERNAME}`, {
             method: "GET",
             headers: {
-              "Authorization": `Token ${token}`,
-              "Cache-Control": "no-cache"
+              Authorization: `Token ${token}`,
+              "Cache-Control": "no-cache",
             },
-          })
+          }),
         ];
 
         // Wait for the fastest response
         const fastestResponse = await Promise.race(endpoints);
-        
+
         if (fastestResponse.ok) {
           const contentType = fastestResponse.headers.get("content-type");
           if (contentType && contentType.includes("application/json")) {
             const userData = await fastestResponse.json();
             if (userData) {
-              const extractedUsername = userData.username || userData.name || userData.user?.username;
+              const extractedUsername =
+                userData.username || userData.name || userData.user?.username;
               if (extractedUsername) {
                 setUsername(extractedUsername);
                 // Cache the username for faster loading next time
@@ -163,13 +183,16 @@ export default function Home() {
         // If the fastest endpoint didn't work, try the other one
         const allResponses = await Promise.allSettled(endpoints);
         for (const result of allResponses) {
-          if (result.status === 'fulfilled' && result.value.ok) {
+          if (result.status === "fulfilled" && result.value.ok) {
             try {
               const contentType = result.value.headers.get("content-type");
               if (contentType && contentType.includes("application/json")) {
                 const userData = await result.value.json();
                 if (userData) {
-                  const extractedUsername = userData.username || userData.name || userData.user?.username;
+                  const extractedUsername =
+                    userData.username ||
+                    userData.name ||
+                    userData.user?.username;
                   if (extractedUsername) {
                     setUsername(extractedUsername);
                     await AsyncStorage.setItem("username", extractedUsername);
@@ -182,7 +205,6 @@ export default function Home() {
             }
           }
         }
-
       } catch (error) {
         console.error("Error in user info fetch process:", error);
         // Keep using default or cached username
@@ -194,50 +216,38 @@ export default function Home() {
     fetchUserInfo();
   }, []);
 
-  // Fetch notes count for Quick Access with optimized caching
+  // Fetch notes count for Quick Stats with optimized caching
   useEffect(() => {
     const fetchNotesCount = async () => {
       try {
         setLoadingQuickAccess(true);
-        
+
         // Try to get cached count first for immediate display
         const cachedCount = await AsyncStorage.getItem("notesCount");
         if (cachedCount) {
-          const updatedQuickAccess = [...quickAccess];
-          const noteIndex = updatedQuickAccess.findIndex(item => item.title === "Your Notes");
-          if (noteIndex !== -1) {
-            updatedQuickAccess[noteIndex].count = cachedCount;
-            setQuickAccess(updatedQuickAccess);
-          }
+          setNotesCount(parseInt(cachedCount));
         }
-        
+
         const token = await AsyncStorage.getItem("authToken");
         if (!token) {
           navigation.navigate("Login");
           return;
         }
 
-        const response = await fetch(`${API_URL}/note_taking/notes/`, {
+        const response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.NOTES}`, {
           headers: {
-            "Authorization": `Token ${token}`,
-            "Cache-Control": "no-cache"
+            Authorization: `Token ${token}`,
+            "Cache-Control": "no-cache",
           },
         });
 
         if (response.ok) {
           const notes = await response.json();
+          const count = notes.length;
+          setNotesCount(count);
 
-          // Update the notes count in quickAccess
-          const updatedQuickAccess = [...quickAccess];
-          const noteIndex = updatedQuickAccess.findIndex(item => item.title === "Your Notes");
-          if (noteIndex !== -1) {
-            const count = notes.length.toString();
-            updatedQuickAccess[noteIndex].count = count;
-            setQuickAccess(updatedQuickAccess);
-            
-            // Cache the count for faster loading next time
-            await AsyncStorage.setItem("notesCount", count);
-          }
+          // Cache the count for faster loading next time
+          await AsyncStorage.setItem("notesCount", count.toString());
         }
       } catch (error) {
         console.error("Error fetching notes count:", error);
@@ -255,13 +265,13 @@ export default function Home() {
       try {
         setLoadingTasks(true);
         setTasksError(null);
-        
+
         // Try to get cached tasks first for immediate display
         const cachedTasks = await AsyncStorage.getItem("priorityTasks");
         if (cachedTasks) {
           setPriorityTasks(JSON.parse(cachedTasks));
         }
-        
+
         const token = await AsyncStorage.getItem("authToken");
         if (!token) {
           navigation.navigate("Login");
@@ -270,18 +280,21 @@ export default function Home() {
 
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-        
+
         try {
-          const response = await fetch(`${API_URL}/task_manager/tasks/?filter=active`, {
-            headers: {
-              "Authorization": `Token ${token}`,
-              "Cache-Control": "no-cache"
-            },
-            signal: controller.signal
-          });
-          
+          const response = await fetch(
+            `${API_BASE_URL}${API_ENDPOINTS.TASKS}?filter=active`,
+            {
+              headers: {
+                Authorization: `Token ${token}`,
+                "Cache-Control": "no-cache",
+              },
+              signal: controller.signal,
+            }
+          );
+
           clearTimeout(timeoutId);
-          
+
           if (!response.ok) {
             throw new Error("Failed to fetch tasks");
           }
@@ -293,25 +306,56 @@ export default function Home() {
             .filter((task: any) => !task.completed)
             .sort((a: any, b: any) => {
               // Sort by priority: high > medium > low
-              const priorityOrder = { urgent_important: 3, not_urgent_important: 2, urgent_not_important: 1, not_urgent_not_important: 0 };
-              return priorityOrder[b.priority as keyof typeof priorityOrder] - priorityOrder[a.priority as keyof typeof priorityOrder];
+              const priorityOrder = {
+                urgent_important: 3,
+                not_urgent_important: 2,
+                urgent_not_important: 1,
+                not_urgent_not_important: 0,
+              };
+              return (
+                priorityOrder[b.priority as keyof typeof priorityOrder] -
+                priorityOrder[a.priority as keyof typeof priorityOrder]
+              );
             })
             .slice(0, 3) // Get top 3 priority tasks
             .map((task: any) => ({
               id: task.id,
               title: task.text,
-              subject: task.category ? task.category.name : "General",
-              time: task.due_date ? new Date(task.due_date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "No due date",
+              category: task.category ? task.category.name : "General",
+              time: task.due_date
+                ? new Date(task.due_date).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })
+                : "No due date",
               priority: mapPriority(task.priority),
               status: mapStatus(task.status),
             }));
 
           setPriorityTasks(transformedTasks);
-          
+
+          // Update today's tasks count
+          const today = new Date();
+          const todayTasks = tasks.filter((task: any) => {
+            if (!task.due_date) return false;
+            const taskDate = new Date(task.due_date);
+            return taskDate.toDateString() === today.toDateString();
+          });
+          const completedTodayTasks = todayTasks.filter(
+            (task: any) => task.completed
+          );
+          setTodayTasksCount({
+            completed: completedTodayTasks.length,
+            total: todayTasks.length,
+          });
+
           // Cache the tasks for faster loading next time
-          await AsyncStorage.setItem("priorityTasks", JSON.stringify(transformedTasks));
+          await AsyncStorage.setItem(
+            "priorityTasks",
+            JSON.stringify(transformedTasks)
+          );
         } catch (error: any) {
-          if (error.name === 'AbortError') {
+          if (error.name === "AbortError") {
             console.warn("Fetch tasks request timed out");
           } else {
             throw error;
@@ -326,25 +370,25 @@ export default function Home() {
     };
 
     fetchTasks();
-    
+
     // Set up a refresh interval
     const refreshInterval = setInterval(fetchTasks, 60000); // Refresh every minute
-    
+
     // Clean up on component unmount
     return () => clearInterval(refreshInterval);
   }, []);
 
-  // Fetch recent activity with optimized performance
+  // Fetch notes folders with optimized performance
   useEffect(() => {
-    const fetchRecentActivity = async () => {
+    const fetchNotesFolders = async () => {
       try {
-        setLoadingActivity(true);
-        setActivityError(null);
+        setLoadingFolders(true);
+        setFoldersError(null);
 
-        // Try to get cached activity first for immediate display
-        const cachedActivity = await AsyncStorage.getItem("recentActivity");
-        if (cachedActivity) {
-          setRecentActivity(JSON.parse(cachedActivity));
+        // Try to get cached folders first for immediate display
+        const cachedFolders = await AsyncStorage.getItem("notesFolders");
+        if (cachedFolders) {
+          setNotesFolders(JSON.parse(cachedFolders));
         }
 
         const token = await AsyncStorage.getItem("authToken");
@@ -357,148 +401,159 @@ export default function Home() {
         const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
         try {
-          // Fetch notes and tasks for recent activity in parallel
-          const [notesResponse, tasksResponse] = await Promise.all([
-            fetch(`${API_URL}/note_taking/notes/`, {
-              headers: { 
-                "Authorization": `Token ${token}`,
-                "Cache-Control": "no-cache"
+          // Fetch notes to organize by folders
+          const response = await fetch(
+            `${API_BASE_URL}${API_ENDPOINTS.NOTES}`,
+            {
+              headers: {
+                Authorization: `Token ${token}`,
+                "Cache-Control": "no-cache",
               },
-              signal: controller.signal
-            }),
-            fetch(`${API_URL}/task_manager/tasks/`, {
-              headers: { 
-                "Authorization": `Token ${token}`,
-                "Cache-Control": "no-cache"
-              },
-              signal: controller.signal
-            })
-          ]);
+              signal: controller.signal,
+            }
+          );
 
           clearTimeout(timeoutId);
 
-          if (!notesResponse.ok || !tasksResponse.ok) {
-            throw new Error("Failed to fetch activity data");
+          if (!response.ok) {
+            throw new Error("Failed to fetch notes for folders");
           }
 
-          // Process responses in parallel
-          const [notes, tasks] = await Promise.all([
-            notesResponse.json(),
-            tasksResponse.json()
-          ]);
+          const notes = await response.json();
 
-          // Pre-compute the current date to avoid creating multiple Date objects
-          const now = new Date();
+          // Organize notes by folders/categories
+          const folderMap = new Map();
 
-          // Process notes and tasks in parallel using map
-          const noteActivities = notes.map((note: any) => ({
-            id: note.id,
-            type: "note",
-            title: note.title || "Untitled Note",
-            subject: getSubjectFromTags(note.tags),
-            time: formatTimeAgo(new Date(note.updated_at), now),
-            updatedAt: new Date(note.updated_at),
-          }));
+          // Add unorganized notes folder first
+          folderMap.set("Unorganized", {
+            id: "unorganized",
+            name: "Unorganized",
+            color: "#94A3B8", // Gray color for unorganized
+            notes: [],
+            count: 0,
+          });
 
-          const taskActivities = tasks.map((task: any) => ({
-            id: task.id,
-            type: "task",
-            title: task.text || "Unnamed Task",
-            subject: task.category?.name || "General",
-            time: formatTimeAgo(new Date(task.updated_at), now),
-            updatedAt: new Date(task.updated_at),
-          }));
+          // Process notes and categorize them
+          notes.forEach((note: any) => {
+            if (note.tags && note.tags.length > 0) {
+              // Use the first tag as the folder
+              const folderTag = note.tags[0];
+              const folderName =
+                typeof folderTag === "object" ? folderTag.name : folderTag;
 
-          // Combine activities
-          const combinedActivity = [...noteActivities, ...taskActivities];
+              if (!folderMap.has(folderName)) {
+                folderMap.set(folderName, {
+                  id: folderName.toLowerCase().replace(/\s+/g, "-"),
+                  name: folderName,
+                  color: getFolderColor(folderName),
+                  notes: [],
+                  count: 0,
+                });
+              }
 
-          // Sort by most recent
-          combinedActivity.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
-          
-          const recentActivities = combinedActivity.slice(0, 5); // Get top 5
-          setRecentActivity(recentActivities);
-          
+              const folder = folderMap.get(folderName);
+              folder.notes.push(note);
+              folder.count++;
+            } else {
+              // Add to unorganized folder
+              const unorganizedFolder = folderMap.get("Unorganized");
+              unorganizedFolder.notes.push(note);
+              unorganizedFolder.count++;
+            }
+          });
+
+          // Convert map to array and sort by most recent activity
+          const foldersArray = Array.from(folderMap.values())
+            .filter((folder) => folder.count > 0) // Only show folders with notes
+            .sort((a, b) => {
+              // Sort unorganized first, then by count
+              if (a.name === "Unorganized") return -1;
+              if (b.name === "Unorganized") return 1;
+              return b.count - a.count;
+            })
+            .slice(0, 5); // Get top 5 folders
+
+          setNotesFolders(foldersArray);
+
           // Cache the result for faster loading next time
-          await AsyncStorage.setItem("recentActivity", JSON.stringify(recentActivities));
-          
+          await AsyncStorage.setItem(
+            "notesFolders",
+            JSON.stringify(foldersArray)
+          );
         } catch (error: any) {
-          if (error.name === 'AbortError') {
-            console.warn("Fetch activity request timed out");
+          if (error.name === "AbortError") {
+            console.warn("Fetch folders request timed out");
           } else {
             throw error;
           }
         }
       } catch (error) {
-        console.error("Error fetching recent activity:", error);
-        setActivityError("Failed to load activity");
+        console.error("Error fetching notes folders:", error);
+        setFoldersError("Failed to load folders");
       } finally {
-        setLoadingActivity(false);
+        setLoadingFolders(false);
       }
     };
 
-    fetchRecentActivity();
-    
-    // Set up a refresh interval for recent activity
-    const refreshInterval = setInterval(fetchRecentActivity, 60000); // Refresh every minute
-    
+    fetchNotesFolders();
+
+    // Set up a refresh interval for folders
+    const refreshInterval = setInterval(fetchNotesFolders, 60000); // Refresh every minute
+
     // Clean up on component unmount
     return () => clearInterval(refreshInterval);
   }, []);
 
-  // Helper function to get subject from tags
-  const getSubjectFromTags = (tags: any[]) => {
-    if (!tags || tags.length === 0) return "General";
-    return typeof tags[0] === 'object' ? tags[0].name : tags[0];
-  };
+  // Helper function to get folder color based on folder name
+  const getFolderColor = (folderName: string) => {
+    const colors = [
+      "#3B82F6", // Blue
+      "#10B981", // Green
+      "#F59E0B", // Amber
+      "#EF4444", // Red
+      "#8B5CF6", // Purple
+      "#06B6D4", // Cyan
+      "#84CC16", // Lime
+      "#F97316", // Orange
+      "#EC4899", // Pink
+      "#6366F1", // Indigo
+    ];
 
-  // Helper function to format time ago with improved performance
-  const formatTimeAgo = (date: Date, now?: Date) => {
-    // Use provided now or create a new Date
-    const currentTime = now || new Date();
-    const diffInMs = currentTime.getTime() - date.getTime();
-    
-    const diffInMinutes = Math.floor(diffInMs / (1000 * 60));
-    const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
-    const diffInDays = Math.floor(diffInHours / 24);
-
-    if (diffInMinutes < 1) {
-      return "Just now";
-    } else if (diffInMinutes < 60) {
-      return `${diffInMinutes} ${diffInMinutes === 1 ? 'minute' : 'minutes'} ago`;
-    } else if (diffInHours < 24) {
-      return `${diffInHours} ${diffInHours === 1 ? 'hour' : 'hours'} ago`;
-    } else {
-      return `${diffInDays} ${diffInDays === 1 ? 'day' : 'days'} ago`;
+    // Use a simple hash function to consistently assign colors
+    let hash = 0;
+    for (let i = 0; i < folderName.length; i++) {
+      hash = folderName.charCodeAt(i) + ((hash << 5) - hash);
     }
+    return colors[Math.abs(hash) % colors.length];
   };
 
   // Helper function to map priority from backend to UI
   const mapPriority = (priority: string) => {
     switch (priority) {
-      case 'urgent_important':
-        return 'High';
-      case 'not_urgent_important':
-        return 'Medium';
-      case 'urgent_not_important':
-        return 'Medium';
-      case 'not_urgent_not_important':
-        return 'Low';
+      case "urgent_important":
+        return "High";
+      case "not_urgent_important":
+        return "Medium";
+      case "urgent_not_important":
+        return "Medium";
+      case "not_urgent_not_important":
+        return "Low";
       default:
-        return 'Medium';
+        return "Medium";
     }
   };
 
   // Helper function to map status from backend to UI
   const mapStatus = (status: string) => {
     switch (status) {
-      case 'not_started':
-        return 'Pending';
-      case 'in_progress':
-        return 'In Progress';
-      case 'completed':
-        return 'Completed';
+      case "not_started":
+        return "Pending";
+      case "in_progress":
+        return "In Progress";
+      case "completed":
+        return "Completed";
       default:
-        return 'Pending';
+        return "Pending";
     }
   };
 
@@ -515,314 +570,375 @@ export default function Home() {
     }
   };
 
-  const getActivityIcon = (
-    type: string
-  ): keyof typeof MaterialIcons.glyphMap => {
-    switch (type) {
-      case 'note':
-        return 'note';
-      case 'task':
-        return 'check-circle';
-      case 'quiz':
-        return 'quiz';
-      case 'study':
-        return 'school';
-      default:
-        return 'history';
-    }
-  };
-
   return (
-<View style={styles.rootContainer}>
+    <View style={styles.rootContainer}>
       <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
 
-      {/* Main Content Container */}
+      {/* Container for both header and content */}
       <View style={styles.container}>
-        
-        {/* Header positioned to overlay content */}
-        <View style={styles.header}>
-          <View style={styles.headerGreeting}>
-            <Text style={styles.welcomeText}>{getGreeting()},</Text>
-            <Text style={styles.nameText}>{username}! 👋</Text>
-            <Text style={styles.descriptionText}>
-                  Ready to boost your productivity? Let's make today amazing!
-            </Text>
-          </View>
-
-          
-          <TouchableOpacity style={styles.notificationIcon}>
-            <View style={styles.notificationIconContainer}>
-              <MaterialIcons name="notifications" size={22} color="#6A009C" />
-              <View style={styles.notificationDot} />
-            </View>
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView 
-          style={styles.content} 
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContent}
-          refreshControl={
-            <RefreshControl
-              refreshing={loading}
-              onRefresh={async () => {
-                // Refresh all data sources
-                setLoading(true);
-                
-                // Clear cache to force fresh data
-                await AsyncStorage.multiRemove([
-                  "username", 
-                  "notesCount", 
-                  "priorityTasks", 
-                  "recentActivity"
-                ]);
-                
-                // Re-run all the fetch useEffects
-                const token = await AsyncStorage.getItem("authToken");
-                if (!token) {
-                  navigation.navigate("Login");
-                  return;
-                }
-                
-                // The useEffects will run automatically
-                setLoading(false);
-              }}
-              colors={["#6A009C"]}
-              tintColor="#6A009C"
-            />
-          }
+        {/* Header positioned behind content */}
+        <LinearGradient
+          colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.header}
         >
-          {/* Quick Access */}
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Quick Access</Text>
-            </View>
-            {loadingQuickAccess ? (
-              <View style={styles.loaderContainer}>
-                <ActivityIndicator size="large" color="#6A009C" />
-              </View>
-            ) : (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.horizontalScrollContainer}
+          <View style={styles.headerContent}>
+            <View style={styles.headerLeftSection}>
+              <TouchableOpacity
+                style={styles.profilePicture}
+                onPress={() => navigation.navigate("EditProfile")}
+                activeOpacity={0.7}
               >
-                {quickAccess.map((item, index) => (
-                  <TouchableOpacity
-                    key={item.id}
-                    style={[
-                      styles.quickAccessCardHorizontal,
-                      index === 0 && styles.firstCard,
-                    ]}
-                    activeOpacity={0.7}
-                    onPress={() => {
-                      if (item.title === "Your Notes") {
-                        navigation.navigate("Notes");
-                      } else if (item.title === "Ask RINA") {
-                        navigation.navigate("RINA");
-                      }
-                    }}
-                  >
-                    <View
-                      style={[
-                        styles.quickAccessIcon,
-                        { backgroundColor: item.color },
-                      ]}
-                    >
-                      <MaterialIcons
-                        name={getActivityIcon(item.icon)}
-                        size={24}
-                        color="#FFFFFF"
-                      />
-                    </View>
-                    <Text style={styles.quickAccessCount}>{item.count}</Text>
-                    <Text style={styles.quickAccessTitle}>{item.title}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            )}
-          </View>
-
-          {/* Priority Tasks */}
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Priority Tasks</Text>
-              <TouchableOpacity onPress={() => navigation.navigate("AllItemsView", { viewType: 'tasks' })}>
-                <Text style={styles.seeAllText}>See All</Text>
+                <View style={styles.profilePlaceholder}>
+                  <Text style={styles.profileInitial}>
+                    {username.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
               </TouchableOpacity>
+
+              <View style={styles.headerGreeting}>
+                <Text style={styles.welcomeText}>{getGreeting()},</Text>
+                <Text style={styles.nameText}>{username}! 👋</Text>
+              </View>
             </View>
-            {loadingTasks ? (
-              <View style={styles.loaderContainer}>
-                <ActivityIndicator size="large" color="#6A009C" />
+
+            <TouchableOpacity
+              style={styles.notificationIcon}
+              onPress={() => navigation.navigate("Notifications")}
+            >
+              <Ionicons
+                name="notifications"
+                size={22}
+                color="#fcfcfcff"
+                elevation={10}
+                shadowColor="#2c2c2cff"
+                shadowOffset={{ width: 0, height: 2 }}
+                shadowOpacity={0.8}
+                shadowRadius={8}
+              />
+              <View style={styles.notificationDot} />
+            </TouchableOpacity>
+          </View>
+        </LinearGradient>
+
+        {/* Main Content Container positioned above header */}
+        <View style={styles.mainContentContainer}>
+          <ScrollView
+            style={styles.content}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.scrollContent}
+            refreshControl={
+              <RefreshControl
+                refreshing={loading}
+                onRefresh={async () => {
+                  // Refresh all data sources
+                  setLoading(true);
+
+                  // Clear cache to force fresh data
+                  await AsyncStorage.multiRemove([
+                    "username",
+                    "notesCount",
+                    "priorityTasks",
+                    "notesFolders",
+                    "todayTasksCount",
+                  ]);
+
+                  // Re-run all the fetch useEffects
+                  const token = await AsyncStorage.getItem("authToken");
+                  if (!token) {
+                    navigation.navigate("Login");
+                    return;
+                  }
+
+                  // The useEffects will run automatically
+                  setLoading(false);
+                }}
+                colors={["#6A009C"]}
+                tintColor="#6A009C"
+              />
+            }
+          >
+            {/* Quick Stats & Actions */}
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Quick Overview</Text>
               </View>
-            ) : tasksError ? (
-              <View style={styles.errorContainer}>
-                <Text style={styles.errorText}>{tasksError}</Text>
-                <TouchableOpacity
-                  style={styles.retryButton}
-                  onPress={() => navigation.navigate("AddTask", { quadrant: 'urgent-important' })}
-                >
-                  <Text style={styles.retryText}>View All Tasks</Text>
-                </TouchableOpacity>
-              </View>
-            ) : priorityTasks.length === 0 ? (
-              <View style={styles.emptyContainer}>
-                <MaterialIcons name="task-alt" size={48} color="#CBD5E0" />
-                <Text style={styles.emptyText}>No priority tasks yet</Text>
-                <TouchableOpacity
-                  style={styles.addButton}
-                  onPress={() => navigation.navigate("AddTask", { quadrant: 'urgent-important' })}
-                >
-                  <Text style={styles.addButtonText}>Add a Task</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.horizontalScrollContainer}
-              >
-                {priorityTasks.map((task, index) => (
+              {loadingQuickAccess ? (
+                <View style={styles.loaderContainer}>
+                  <ActivityIndicator size="large" color="#6A009C" />
+                </View>
+              ) : (
+                <View style={styles.quickCardsGrid}>
+                  {/* Quick Stats */}
+                  <View style={[styles.quickCard, styles.tasksCard]}>
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={32}
+                      color="#10B981"
+                    />
+                    <Text style={styles.cardValue}>
+                      {todayTasksCount.completed}/{todayTasksCount.total}
+                    </Text>
+                    <Text style={styles.cardTitle}>Tasks Today</Text>
+                    <Text style={styles.cardSubtitle}>Focus on your tasks</Text>
+                  </View>
+
+                  <View style={[styles.quickCard, styles.notesCard]}>
+                    <Ionicons name="document-text" size={32} color="#3B82F6" />
+                    <Text style={styles.cardValue}>{notesCount}</Text>
+                    <Text style={styles.cardTitle}>Notes Created</Text>
+                    <Text style={styles.cardSubtitle}>
+                      Keep track of your notes
+                    </Text>
+                  </View>
+
+                  {/* Quick Actions */}
                   <TouchableOpacity
-                    key={task.id}
-                    style={[
-                      styles.taskCardHorizontal,
-                      index === 0 && styles.firstCard,
-                    ]}
-                    activeOpacity={0.8}
-                    onPress={() => navigation.navigate("AddTask", { quadrant: task.priority.toLowerCase() })}
+                    onPress={() => navigation.navigate("Notes")}
+                    activeOpacity={0.7}
                   >
-                    <View style={styles.borderLeft} />
-                    <View style={styles.taskHeader}>
-                      <View style={styles.taskInfo}>
-                        <Text style={styles.taskTitle} numberOfLines={2}>
-                          {task.title}
-                        </Text>
-                        <Text style={styles.taskSubject}>{task.subject}</Text>
-                      </View>
-                      <View
-                        style={[
-                          styles.priorityBadge,
-                          { backgroundColor: getPriorityColor(task.priority) },
-                        ]}
-                      >
-                        <Text style={styles.priorityText}>{task.priority}</Text>
-                      </View>
+                    <View style={[styles.quickCard, styles.newNoteCard]}>
+                      <Ionicons name="add-circle" size={32} color="#F59E0B" />
+                      <Text style={styles.cardActionText}>New Note</Text>
+                      <Text style={styles.cardSubtitle}>Create a new note</Text>
                     </View>
+                  </TouchableOpacity>
 
-                    <View style={styles.taskBody}>
-                      <Text style={styles.taskTime}>{task.time}</Text>
+                  <TouchableOpacity
+                    onPress={() => navigation.navigate("RINA")}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.quickCard, styles.rinaCard]}>
+                      <Ionicons
+                        name="chatbubble-ellipses"
+                        size={32}
+                        color="#8B5CF6"
+                      />
+                      <Text style={styles.cardActionText}>Ask RINA</Text>
+                      <Text style={styles.cardSubtitle}>
+                        Get help from RINA
+                      </Text>
                     </View>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
 
-                    <View style={styles.taskFooter}>
-                      <View style={styles.statusContainer}>
+            {/* Priority Tasks */}
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Today's Focus</Text>
+                <TouchableOpacity
+                  onPress={() =>
+                    navigation.navigate("AllItemsView", { viewType: "tasks" })
+                  }
+                >
+                  <Text style={styles.seeAllText}>See All</Text>
+                </TouchableOpacity>
+              </View>
+              {loadingTasks ? (
+                <View style={styles.loaderContainer}>
+                  <ActivityIndicator size="large" color="#6A009C" />
+                </View>
+              ) : tasksError ? (
+                <View style={styles.errorContainer}>
+                  <Text style={styles.errorText}>{tasksError}</Text>
+                  <TouchableOpacity
+                    style={styles.retryButton}
+                    onPress={() =>
+                      navigation.navigate("AddTask", {
+                        quadrant: "urgent-important",
+                      })
+                    }
+                  >
+                    <Text style={styles.retryText}>View All Tasks</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : priorityTasks.length === 0 ? (
+                <View style={styles.emptyContainer}>
+                  <MaterialIcons name="task-alt" size={48} color="#CBD5E0" />
+                  <Text style={styles.emptyText}>No priority tasks yet</Text>
+                  <TouchableOpacity
+                    style={styles.addButton}
+                    onPress={() =>
+                      navigation.navigate("AddTask", {
+                        quadrant: "urgent-important",
+                      })
+                    }
+                  >
+                    <Text style={styles.addButtonText}>Add a Task</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.horizontalScrollContainer}
+                >
+                  {priorityTasks.map((task, index) => (
+                    <TouchableOpacity
+                      key={task.id}
+                      style={[
+                        styles.taskCardHorizontal,
+                        index === 0 && styles.firstCard,
+                      ]}
+                      activeOpacity={0.8}
+                      onPress={() =>
+                        navigation.navigate("AddTask", {
+                          quadrant: task.priority.toLowerCase(),
+                        })
+                      }
+                    >
+                      <View style={styles.borderLeft} />
+                      <View style={styles.taskHeader}>
+                        <View style={styles.taskInfo}>
+                          <Text style={styles.taskTitle} numberOfLines={2}>
+                            {task.title}
+                          </Text>
+                          <Text style={styles.taskCategory}>{task.category}</Text>
+                        </View>
                         <View
                           style={[
-                            styles.statusDot,
+                            styles.priorityBadge,
                             {
-                              backgroundColor:
-                                task.status === "Completed"
-                                  ? "#10B981"
-                                  : task.status === "In Progress"
-                                    ? "#F59E0B"
-                                    : "#EF4444",
-                            },
-                          ]}
-                        />
-                        <Text
-                          style={[
-                            styles.taskStatus,
-                            {
-                              color:
-                                task.status === "Completed"
-                                  ? "#10B981"
-                                  : task.status === "In Progress"
-                                    ? "#F59E0B"
-                                    : "#EF4444",
+                              backgroundColor: getPriorityColor(task.priority),
                             },
                           ]}
                         >
-                          {task.status}
-                        </Text>
+                          <Text style={styles.priorityText}>
+                            {task.priority}
+                          </Text>
+                        </View>
                       </View>
-                      <TouchableOpacity style={styles.taskAction}>
-                        <MaterialIcons name="more-vert" size={18} color="#9CA3AF" />
-                      </TouchableOpacity>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            )}
-          </View>
 
-          {/* Recent Activity */}
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Recent Activity</Text>
-              <TouchableOpacity onPress={() => navigation.navigate("AllItemsView", { viewType: 'activity' })}>
-                <Text style={styles.seeAllText}>See All</Text>
-              </TouchableOpacity>
+                      <View style={styles.taskBody}>
+                        <Text style={styles.taskTime}>{task.time}</Text>
+                      </View>
+                      {/* Divider between time and footer */}
+                      <View style={styles.taskDivider} />
+                      <View style={styles.taskFooter}>
+                        <View style={styles.statusContainer}>
+                          <View
+                            style={[
+                              styles.statusDot,
+                              {
+                                backgroundColor:
+                                  task.status === "Completed"
+                                    ? "#10B981"
+                                    : task.status === "In Progress"
+                                    ? "#F59E0B"
+                                    : "#EF4444",
+                              },
+                            ]}
+                          />
+                          <Text
+                            style={[
+                              styles.taskStatus,
+                              {
+                                color:
+                                  task.status === "Completed"
+                                    ? "#10B981"
+                                    : task.status === "In Progress"
+                                    ? "#F59E0B"
+                                    : "#EF4444",
+                              },
+                            ]}
+                          >
+                            {task.status}
+                          </Text>
+                        </View>
+                        <TouchableOpacity style={styles.taskAction}>
+                          <MaterialIcons
+                            name="more-vert"
+                            size={18}
+                            color="#9CA3AF"
+                          />
+                        </TouchableOpacity>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              )}
             </View>
-            {loadingActivity ? (
-              <View style={styles.loaderContainer}>
-                <ActivityIndicator size="large" color="#6A009C" />
-              </View>
-            ) : activityError ? (
-              <View style={styles.errorContainer}>
-                <Text style={styles.errorText}>{activityError}</Text>
-              </View>
-            ) : recentActivity.length === 0 ? (
-              <View style={styles.emptyContainer}>
-                <MaterialIcons name="history" size={48} color="#CBD5E0" />
-                <Text style={styles.emptyText}>No recent activity</Text>
-              </View>
-            ) : (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.horizontalScrollContainer}
-              >
-                {recentActivity.map((activity, index) => (
-                  <TouchableOpacity
-                    key={`${activity.type}-${activity.id}`}
-                    style={[
-                      styles.activityCardHorizontal,
-                      index === 0 && styles.firstCard,
-                    ]}
-                    activeOpacity={0.8}
-                    onPress={() => {
-                      if (activity.type === 'note') {
-                        navigation.navigate("Notes");
-                      } else if (activity.type === 'task') {
-                        navigation.navigate("TaskDetails", {
-                          taskId: activity.id,
-                        });
-                      }
-                    }}
-                  >
-                    <View style={styles.activityIcon}>
-                      <MaterialIcons
-                        name={getActivityIcon(activity.type)}
-                        size={20}
-                        color="#6A009C"
-                      />
-                    </View>
-                    <View style={styles.activityContent}>
-                      <Text style={styles.activityTitle} numberOfLines={2}>
-                        {activity.title}
-                      </Text>
-                      <Text style={styles.activitySubject}>{activity.subject}</Text>
-                      <Text style={styles.activityTime}>{activity.time}</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            )}
-          </View>
 
-          {/* Bottom spacing for navbar */}
-          <View style={{ height: 100 }} />
-        </ScrollView>
+            {/* Notes Folders */}
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Notes Folders</Text>
+                <TouchableOpacity onPress={() => navigation.navigate("Notes")}>
+                  <Text style={styles.seeAllText}>See All</Text>
+                </TouchableOpacity>
+              </View>
+              {loadingFolders ? (
+                <View style={styles.loaderContainer}>
+                  <ActivityIndicator size="large" color="#6A009C" />
+                </View>
+              ) : foldersError ? (
+                <View style={styles.errorContainer}>
+                  <Text style={styles.errorText}>{foldersError}</Text>
+                </View>
+              ) : notesFolders.length === 0 ? (
+                <View style={styles.emptyContainer}>
+                  <MaterialIcons name="folder" size={48} color="#CBD5E0" />
+                  <Text style={styles.emptyText}>No folders yet</Text>
+                  <TouchableOpacity
+                    style={styles.addButton}
+                    onPress={() => navigation.navigate("Notes")}
+                  >
+                    <Text style={styles.addButtonText}>Create Note</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={styles.foldersContainer}>
+                  {notesFolders.map((folder, index) => (
+                    <TouchableOpacity
+                      key={folder.id}
+                      style={[
+                        styles.folderCard,
+                        { backgroundColor: `${folder.color}15` },
+                      ]}
+                      activeOpacity={0.8}
+                      onPress={() => navigation.navigate("Notes")}
+                    >
+                      <View style={styles.folderContent}>
+                        <View
+                          style={[
+                            styles.folderIcon,
+                            { backgroundColor: `${folder.color}30` },
+                          ]}
+                        >
+                          <MaterialIcons
+                            name="folder"
+                            size={24}
+                            color={folder.color}
+                          />
+                        </View>
+                        <View style={styles.folderInfo}>
+                          <Text style={styles.folderTitle} numberOfLines={1}>
+                            {folder.name}
+                          </Text>
+                          <Text style={styles.folderCount}>
+                            {folder.count}{" "}
+                            {folder.count === 1 ? "note" : "notes"}
+                          </Text>
+                        </View>
+                      </View>
+                      <MaterialIcons
+                        name="chevron-right"
+                        size={20}
+                        color={folder.color}
+                      />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
+
+            {/* Bottom spacing for navbar */}
+            <View style={{ height: 100 }} />
+          </ScrollView>
+        </View>
 
         {/* Navigation Bar - positioned to overlay content */}
         <View style={styles.navbarContainer}>
@@ -840,10 +956,10 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    backgroundColor: "#f8fafc",
+    backgroundColor: "#ffffffff",
   },
   header: {
-    position: 'absolute',
+    position: "absolute",
     top: 0,
     left: 0,
     right: 0,
@@ -851,34 +967,79 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 24,
-    paddingTop: Platform.OS === 'ios' ? 70 : 55,
-    paddingBottom: 30,
-    backgroundColor: "#F5E1FD",
-    borderBottomLeftRadius: 25,
-    borderBottomRightRadius: 25,
-    elevation: 5,
+    paddingTop: Platform.OS === "ios" ? 50 : 35,
+    paddingBottom: 100,
+    zIndex: 1,
+  },
+  mainContentContainer: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    marginTop: 160, // Position it below the header
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 10,
     zIndex: 1000,
+    overflow: "hidden",
+  },
+  headerContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    flex: 1,
   },
   headerGreeting: {
     flex: 1,
+    paddingLeft: 12,
+  },
+  headerLeftSection: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    paddingTop: 20,
+  },
+  profilePicture: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    overflow: "hidden",
+  },
+  profilePlaceholder: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "rgba(255, 255, 255, 0.3)",
+  },
+  profileInitial: {
+    fontSize: 18,
+    fontFamily: "Inter-Bold",
+    color: "#FFFFFF",
+    textTransform: "uppercase",
   },
   welcomeText: {
     fontSize: 16,
-    fontFamily: "Inter-Medium",
-    color: "#64748B",
+    fontFamily: "Lexend",
+    color: "#ffffffff",
     lineHeight: 20,
   },
   nameText: {
     fontSize: 28,
-    fontFamily: "Inter-Bold",
-    color: "#6A009C",
+    fontFamily: "Lexend",
+    color: "#ffffffff",
     marginTop: 4,
     lineHeight: 32,
   },
   descriptionText: {
     fontSize: 14,
-    fontFamily: "Inter-Regular",
-    color: "#64748B",
+    fontFamily: "Lexend",
+    color: "#ffffffff",
     marginTop: 8,
     lineHeight: 20,
     opacity: 0.9,
@@ -886,17 +1047,7 @@ const styles = StyleSheet.create({
   notificationIcon: {
     padding: 8,
   },
-  notificationIconContainer: {
-    position: "relative",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    padding: 12,
-    shadowColor: "#6A009C",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 4,
-  },
+
   notificationDot: {
     position: "absolute",
     top: 8,
@@ -910,9 +1061,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingTop: 130, // Space for the header with increased padding
+    paddingTop: 20, // Reduced since content is in separate container
     paddingBottom: 100,
-    marginTop: 100, // Space for the navbar
   },
   section: {
     marginBottom: 32,
@@ -945,20 +1095,20 @@ const styles = StyleSheet.create({
   },
   loaderContainer: {
     height: 150,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   errorContainer: {
     height: 150,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     marginHorizontal: 24,
-    backgroundColor: '#FEF2F2',
+    backgroundColor: "#FEF2F2",
     borderRadius: 16,
   },
   errorText: {
-    color: '#EF4444',
-    fontFamily: 'Inter-Medium',
+    color: "#EF4444",
+    fontFamily: "Inter-Medium",
     fontSize: 16,
     marginBottom: 8,
   },
@@ -966,20 +1116,20 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingVertical: 8,
     paddingHorizontal: 16,
-    backgroundColor: '#6A009C',
+    backgroundColor: "#6A009C",
     borderRadius: 8,
   },
   retryText: {
-    color: '#FFFFFF',
-    fontFamily: 'Inter-Medium',
+    color: "#FFFFFF",
+    fontFamily: "Inter-Medium",
     fontSize: 14,
   },
   emptyContainer: {
     height: 180,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     marginHorizontal: 24,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderRadius: 24,
     shadowColor: "#1E293B",
     shadowOffset: { width: 0, height: 4 },
@@ -991,18 +1141,18 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   emptyText: {
-    color: '#94A3B8',
-    fontFamily: 'Inter-Medium',
+    color: "#94A3B8",
+    fontFamily: "Inter-Medium",
     fontSize: 16,
     marginTop: 12,
     marginBottom: 16,
-    textAlign: 'center',
+    textAlign: "center",
   },
   addButton: {
     marginTop: 8,
     paddingVertical: 12,
     paddingHorizontal: 24,
-    backgroundColor: '#6A009C',
+    backgroundColor: "#6A009C",
     borderRadius: 12,
     shadowColor: "#6A009C",
     shadowOffset: { width: 0, height: 4 },
@@ -1011,14 +1161,97 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   addButtonText: {
-    color: '#FFFFFF',
-    fontFamily: 'Inter-SemiBold',
+    color: "#FFFFFF",
+    fontFamily: "Inter-SemiBold",
     fontSize: 16,
   },
   quickAccessGrid: {
     flexDirection: "row",
     paddingHorizontal: 24,
     justifyContent: "space-between",
+  },
+  quickCardsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    paddingHorizontal: 24,
+    justifyContent: "space-between",
+  },
+  quickCard: {
+    width: (width - 64) / 2, // Two cards per row with padding
+    height: 150, // Fixed height for consistent 2x2 grid
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    elevation: 6,
+    borderWidth: 1,
+    borderColor: "rgba(226, 232, 240, 0.6)",
+  },
+  tasksCard: {
+    backgroundColor: "#F0FDF4", // Soft green background for tasks
+    borderColor: "rgba(16, 185, 129, 0.2)",
+  },
+  notesCard: {
+    backgroundColor: "#EFF6FF", // Soft blue background for notes
+    borderColor: "rgba(59, 130, 246, 0.2)",
+  },
+  newNoteCard: {
+    backgroundColor: "#FFFBEB", // Soft amber background for new note
+    borderColor: "rgba(245, 158, 11, 0.2)",
+  },
+  rinaCard: {
+    backgroundColor: "#F5F3FF", // Soft purple background for RINA
+    borderColor: "rgba(139, 92, 246, 0.2)",
+  },
+  cardIcon: {
+    width: 54,
+    height: 54,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+  },
+  cardValue: {
+    fontSize: 28,
+    fontFamily: "Inter-Bold",
+    color: "#1E293B",
+    marginBottom: 6,
+    marginTop: 12,
+  },
+  cardTitle: {
+    fontSize: 15,
+    color: "#64748B",
+    fontFamily: "Inter-SemiBold",
+    textAlign: "center",
+    lineHeight: 18,
+  },
+  cardSubtitle: {
+    fontSize: 12,
+    color: "#9CA3AF",
+    fontFamily: "Inter-Regular",
+    textAlign: "center",
+    lineHeight: 16,
+    marginTop: 4,
+  },
+  cardActionText: {
+    fontSize: 17,
+    color: "#1E293B",
+    fontFamily: "Inter-Bold",
+    textAlign: "center",
+    lineHeight: 20,
+    marginTop: 12,
   },
   quickAccessCardHorizontal: {
     backgroundColor: "#FFFFFF",
@@ -1062,7 +1295,6 @@ const styles = StyleSheet.create({
   },
   horizontalScrollContainer: {
     paddingLeft: 24,
-    backgroundColor: "#f8fafc", // Ensure horizontal scroll area has background color
     paddingBottom: 24, // Add some padding at the bottom for better spacing
     paddingTop: 8, // Add padding at the top for better spacing
   },
@@ -1092,7 +1324,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#6A009C",
     left: 0,
     top: 20, // Align with taskTitle's vertical position
-    borderTopLeftRadius: 3, 
+    borderTopLeftRadius: 3,
     borderBottomLeftRadius: 3,
     shadowColor: "#000",
     shadowOffset: { width: 1, height: 0 },
@@ -1107,11 +1339,11 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     lineHeight: 22,
   },
-  taskSubject: {
+  taskCategory: {
     fontSize: 14,
     color: "#6A009C",
     fontFamily: "Inter-Medium",
-    backgroundColor: "#EDE7F6", // Light background for subject
+    backgroundColor: "#EDE7F6", // Light background for category
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 10,
@@ -1153,6 +1385,13 @@ const styles = StyleSheet.create({
     fontFamily: "Inter-Bold",
     textTransform: "uppercase",
   },
+    taskDivider: {
+    height: 1,
+    backgroundColor: '#c9ccceff',
+    marginVertical: 8,
+    marginHorizontal: 5, // extend to card edges
+    opacity: 0.9,
+  },
   taskFooter: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1177,63 +1416,55 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: "#F8FAFC",
   },
-  activityCardHorizontal: {
+  foldersContainer: {
+    paddingHorizontal: 24,
+  },
+  folderCard: {
     backgroundColor: "#FFFFFF",
-    width: width * 0.65,
-    marginRight: 16,
     borderRadius: 16,
     padding: 16,
+    marginBottom: 12,
     shadowColor: "#1E293B",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
     shadowRadius: 12,
     elevation: 5,
     borderWidth: 1,
-    borderColor: "rgba(226, 232, 240, 0.6)",
-  },
-  activityIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    backgroundColor: "#f1e6ff",
-    justifyContent: "center",
+    borderColor: "rgba(226, 232, 240, 0.3)",
+    flexDirection: "row",
     alignItems: "center",
-    marginBottom: 12,
-    alignSelf: "flex-start",
-    shadowColor: "#6A009C",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    justifyContent: "space-between",
   },
-  activityContent: {
+  folderContent: {
+    flexDirection: "row",
+    alignItems: "center",
     flex: 1,
   },
-  activityTitle: {
-    fontSize: 15,
+  folderIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 16,
+  },
+  folderInfo: {
+    flex: 1,
+  },
+  folderTitle: {
+    fontSize: 16,
     fontFamily: "Inter-Bold",
     color: "#1E293B",
-    marginBottom: 6,
-    lineHeight: 18,
+    marginBottom: 4,
+    lineHeight: 20,
   },
-  activitySubject: {
-    fontSize: 12,
-    color: "#6A009C",
-    fontFamily: "Inter-Medium",
-    backgroundColor: "#f2e5f8ff",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    alignSelf: "flex-start",
-    marginBottom: 8,
-  },
-  activityTime: {
-    fontSize: 12,
+  folderCount: {
+    fontSize: 14,
     color: "#64748B",
-    fontFamily: "Inter-Regular",
+    fontFamily: "Inter-Medium",
   },
-    navbarContainer: {
-    position: 'absolute',
+  navbarContainer: {
+    position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,

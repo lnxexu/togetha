@@ -16,13 +16,7 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import LoginIllustration from "../../assets/illustrations/undraw_access-account_aydp (1).svg";
 import type { RootStackParamList } from "../navigation/AppNavigator";
-
-
-// Ensure the API URL is set correctly
-// const API_URL = 'http://192.168.0.153:8000';
-// const API_URL = 'http://localhost:8081';
-// const API_URL = 'http://127.0.0.1:8000';
-const API_URL = "http://10.0.2.2:8000";
+import { API_BASE_URL, API_ENDPOINTS } from "../../constants/ApiConfig";
 
 
 
@@ -49,10 +43,14 @@ export default function SignIn() {
       setIsLoading(true);
       setError("");
       
-      console.log(`Making API request to ${API_URL}/login`);
+      console.log(`Making API request to ${API_BASE_URL}${API_ENDPOINTS.LOGIN}`);
       console.log("Request payload:", { username, password: "***" });
       
-      const response = await fetch(`${API_URL}/login`, {
+      // Add timeout to the request (10 seconds)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      
+      const response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.LOGIN}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -61,7 +59,10 @@ export default function SignIn() {
           username,
           password,
         }),
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       console.log("Response status:", response.status);
       console.log("Response headers:", JSON.stringify(response.headers, null, 2));
@@ -89,7 +90,22 @@ export default function SignIn() {
       console.error("Login error:", err);
       console.log("Error type:", typeof err);
       console.log("Error details:", JSON.stringify(err, null, 2));
-      setError(err instanceof Error ? err.message : "Login failed. Please try again.");
+      
+      let errorMessage = "Login failed. Please try again.";
+      
+      if (err instanceof Error) {
+        if (err.name === 'AbortError') {
+          errorMessage = "Request timed out. Please check your internet connection.";
+        } else if (err.message.includes('Network request failed')) {
+          errorMessage = "Cannot connect to server. Please check if the server is running.";
+        } else if (err.message.includes('timeout')) {
+          errorMessage = "Connection timeout. Please try again.";
+        } else {
+          errorMessage = err.message;
+        }
+      }
+      
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }

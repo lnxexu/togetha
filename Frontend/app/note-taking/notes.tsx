@@ -20,14 +20,13 @@ import {
   useWindowDimensions,
   TouchableWithoutFeedback,
 } from "react-native";
-// Add Material Icons import
 import { MaterialIcons } from "@expo/vector-icons";
-// Note: This will need to be installed via npm install react-native-render-html
 import RenderHtml from "react-native-render-html";
 import Navbar from "../NavBar";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { RefreshControl } from "react-native";
+import { LinearGradient } from 'expo-linear-gradient';
 
 const { width } = Dimensions.get("window");
 
@@ -146,13 +145,8 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
   const [isSelectMode, setIsSelectMode] = useState(false);
   const { width: windowWidth } = useWindowDimensions();
   const [folderCounts, setFolderCounts] = useState<Record<string, number>>({});
-  const [currentView, setCurrentView] = useState<"folders" | "notes">(
-    "folders"
-  );
-  const [activeTab, setActiveTab] = useState<"folders" | "allNotes">("folders");
-  const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
-  const [activeFolderName, setActiveFolderName] = useState<string>("");
-  const [showUnorganizedNotes, setShowUnorganizedNotes] = useState(false);
+  const [showFolderDropdown, setShowFolderDropdown] = useState(false);
+  const [selectedFilterFolder, setSelectedFilterFolder] = useState<string | null>(null); // null means "All Notes"
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
   const [editingFolderName, setEditingFolderName] = useState("");
   const [showEditFolderModal, setShowEditFolderModal] = useState(false);
@@ -333,26 +327,6 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
     calculateFolderCounts();
   }, [notes, folders, calculateFolderCounts]);
 
-  // Then update the folder card rendering to use the actual count
-  {
-    folders.map((folder) => (
-      <TouchableOpacity
-        key={folder.id}
-        style={styles.folderCard}
-        activeOpacity={0.8}
-      >
-        <View style={[styles.folderIcon, { backgroundColor: folder.color }]}>
-          <MaterialIcons name={folder.icon} size={24} color="#FFFFFF" />
-        </View>
-        <Text style={styles.folderName}>{folder.name}</Text>
-        <Text style={styles.folderCount}>
-          <Text>{folderCounts[folder.id] || 0}</Text> <Text>notes</Text>{" "}
-          {/* Display actual count instead of random */}
-        </Text>
-      </TouchableOpacity>
-    ));
-  }
-
   // Set up auto-refresh for real-time editing with improved performance
   useEffect(() => {
     // Initial fetch
@@ -375,10 +349,9 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
 
   // Handle tab changes - fetch all notes when switching to "All Notes" tab
   useEffect(() => {
-    if (currentView === "folders" && activeTab === "allNotes") {
-      fetchNotes(false); // Fetch all notes without showing loading spinner
-    }
-  }, [activeTab, currentView]);
+    // Always fetch all notes since we only have one view now
+    fetchNotes(false);
+  }, [selectedFilterFolder]); // Refetch when filter folder changes
 
   // Add useFocusEffect to refresh notes when screen comes into focus (returning from editor)
   useFocusEffect(
@@ -492,17 +465,9 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
       // Add pagination parameters to reduce data load
       let endpoint = `${API_URL}/note_taking/notes/?limit=50`;
 
-      // Only add filters if not fetching all notes for the "All Notes" tab
-      if (currentView === "folders" && activeTab === "allNotes") {
-        // For "All Notes" tab, fetch all notes without filters
-        endpoint = `${API_URL}/note_taking/notes/`;
-      } else {
-        // Add filter for current folder if in folder view
-        if (currentView === "notes" && activeFolderId) {
-          endpoint += `&folder=${activeFolderId}`;
-        } else if (showUnorganizedNotes) {
-          endpoint += `&unorganized=true`;
-        }
+      // Add filter for selected folder if one is chosen
+      if (selectedFilterFolder) {
+        endpoint += `&folder=${selectedFilterFolder}`;
       }
 
       const response = await fetch(endpoint, {
@@ -549,11 +514,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
 
         // Only show toast for background refreshes when there are actual changes
         if (!showLoading && hasChanges) {
-          showToast(
-            currentView === "folders"
-              ? "Folders and notes updated"
-              : `Notes in ${activeFolderName} updated`
-          );
+          showToast("Notes updated");
         }
       }
     } catch (error) {
@@ -626,15 +587,8 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
       setNotes(updatedNotes);
       showToast("Note moved to Unorganized Notes");
 
-      // If we're viewing a specific folder, and this was the only note, we might need to refresh
-      if (
-        currentView === "notes" &&
-        !showUnorganizedNotes &&
-        updatedNotes.filter((note) => note.folderId === activeFolderId)
-          .length === 0
-      ) {
+        // If we're filtering by a specific folder, we might need to refresh
         fetchNotes();
-      }
     } catch (error) {
       console.error("Error removing note from folder:", error);
       Alert.alert(
@@ -726,21 +680,8 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
   };
 
   const handleCreateNote = () => {
-    // If we're in a folder view, pre-select that folder, otherwise show folder selection modal
-    if (currentView === "notes" && activeFolderId) {
-      // Navigate to editor with pre-selected folder
-      const initialNoteData = {
-        title: "",
-        content: "",
-        folderId: activeFolderId,
-      };
-      navigation.navigate("NoteEditor", {
-        initialNote: initialNoteData,
-      });
-    } else {
-      // Show folder selection modal first
-      setShowFolderSelectionModal(true);
-    }
+    // Show folder selection modal first
+    setShowFolderSelectionModal(true);
   };
 
   const createNoteWithFolder = (folderId: string | null) => {
@@ -1039,11 +980,6 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
 
   // Function to handle editing folder name
   const handleEditFolderName = (folderId: string, currentName: string) => {
-    // Don't allow editing of "Unorganized Notes"
-    if (showUnorganizedNotes) {
-      return;
-    }
-
     // Alert.prompt is iOS only, so we need to handle Android differently
     if (Platform.OS === "android") {
       // For Android, we'll implement a custom modal with TextInput
@@ -1108,11 +1044,6 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
           folder.id === folderId ? { ...folder, name: newName } : folder
         )
       );
-
-      // Update active folder name if it's the current folder
-      if (activeFolderId === folderId) {
-        setActiveFolderName(newName);
-      }
 
       showToast("Folder name updated successfully");
     } catch (error) {
@@ -1230,10 +1161,13 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
 
   // Pre-memoized data for notes view to avoid conditional hook rendering
   const notesViewData = useMemo(() => {
-    return showUnorganizedNotes
-      ? filteredNotes.filter((note) => !note.folderId)
-      : filteredNotes.filter((note) => note.folderId === activeFolderId);
-  }, [filteredNotes, showUnorganizedNotes, activeFolderId]);
+    if (selectedFilterFolder === 'unorganized') {
+      return filteredNotes.filter((note) => !note.folderId);
+    } else if (selectedFilterFolder) {
+      return filteredNotes.filter((note) => note.folderId === selectedFilterFolder);
+    }
+    return filteredNotes;
+  }, [filteredNotes, selectedFilterFolder]);
 
   // Pre-memoized separator component to avoid conditional hook rendering
   const NoteSeparatorComponent = useMemo(
@@ -1247,23 +1181,25 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
       (
         <View style={styles.emptyState}>
           <MaterialIcons
-            name={showUnorganizedNotes ? "folder" : "description"}
+            name="description"
             size={64}
             color="#CBD5E0"
           />
           <Text style={styles.emptyStateTitle}>
-            {showUnorganizedNotes
+            {selectedFilterFolder === 'unorganized' 
               ? "No unorganized notes"
-              : "No notes in this folder"}
+              : selectedFilterFolder
+              ? "No notes in this folder"
+              : "No notes found"}
           </Text>
           <Text style={styles.emptyStateSubtitle}>
             {searchQuery
               ? "Try adjusting your search terms"
               : isLoading
               ? "Loading your notes..."
-              : showUnorganizedNotes
+              : selectedFilterFolder === 'unorganized'
               ? "All your notes are organized in folders"
-              : "Create a new note or add existing notes to this folder"}
+              : "Create a new note to get started"}
           </Text>
           <TouchableOpacity
             style={styles.createButton}
@@ -1272,279 +1208,269 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
             <Text style={styles.createButtonText}>Create Note</Text>
           </TouchableOpacity>
 
-          {showUnorganizedNotes && (
+          {selectedFilterFolder === 'unorganized' && (
             <Text style={styles.emptyStateHint}>
               Notes that are not assigned to any folder will appear here
             </Text>
           )}
         </View>
       ),
-    [searchQuery, isLoading, showUnorganizedNotes, handleCreateNote]
+    [searchQuery, isLoading, selectedFilterFolder, handleCreateNote]
   );
 
-  // Memoize the note item renderer to prevent unnecessary re-renders
-  // Memoize the note item renderer to prevent unnecessary re-renders
-  const renderNoteItem = useCallback(
-    ({ item }: { item: Note }) => (
-      <TouchableOpacity
+
+const renderNoteItem = useCallback(
+  ({ item }: { item: Note }) => (
+    <TouchableOpacity
+      style={[
+        viewMode === "list" ? styles.noteItem : styles.gridNoteItem,
+        isSelectMode &&
+          selectedNotes.includes(item.id) &&
+          styles.selectedNoteItem,
+      ]}
+      activeOpacity={0.8}
+      onPress={() => {
+        if (isSelectMode) {
+          toggleNoteSelection(item.id);
+        } else {
+          handleNotePress(item);
+        }
+      }}
+      onLongPress={() => {
+        if (!isSelectMode) {
+          setIsSelectMode(true);
+          toggleNoteSelection(item.id);
+        }
+      }}
+    >
+      <View
         style={[
-          viewMode === "list" ? styles.noteItem : styles.gridNoteItem,
-          isSelectMode &&
-            selectedNotes.includes(item.id) &&
-            styles.selectedNoteItem,
+          styles.noteContent,
+          viewMode === "grid" && styles.gridNoteContent,
         ]}
-        activeOpacity={0.8}
-        onPress={() => {
-          if (isSelectMode) {
-            toggleNoteSelection(item.id);
-          } else {
-            handleNotePress(item);
-          }
-        }}
-        onLongPress={() => {
-          if (!isSelectMode) {
-            setIsSelectMode(true);
-            toggleNoteSelection(item.id);
-          }
-        }}
       >
-        <View
-          style={[
-            styles.noteContent,
-            viewMode === "grid" && styles.gridNoteContent,
-          ]}
-        >
-          {/* Show folder badge if we're in a view that shows notes from multiple folders */}
-          {currentView === "folders" && item.folderId && (
-            <View style={styles.folderBadge}>
-              <MaterialIcons name="folder" size={10} color="#6A009C" />
-              <Text style={styles.folderBadgeText}>
-                {folders.find((f) => f.id === item.folderId)?.name || "Folder"}
+        {/* Show folder badge if we're showing all notes */}
+        {!selectedFilterFolder && item.folderId && (
+          <View style={styles.folderBadge}>
+            <MaterialIcons name="folder" size={10} color="#6A009C" />
+            <Text style={styles.folderBadgeText}>
+              {folders.find((f) => f.id === item.folderId)?.name || "Folder"}
+            </Text>
+          </View>
+        )}
+
+        <View style={styles.noteHeader}>
+          <View style={styles.noteTitleContainer}>
+            <View
+              style={[
+                styles.noteTypeIcon,
+                viewMode === "grid" && styles.gridNoteTypeIcon,
+                {
+                  backgroundColor:
+                    item.type === "image" ? "#FEF3C7" : "#d9e7f8ff",
+                },
+              ]}
+            >
+              <MaterialIcons
+                name={item.type === "image" ? "image" : "text-snippet"}
+                size={viewMode === "grid" ? 16 : 22}
+                color={item.type === "image" ? "#D97706" : "#3B82F6"}
+              />
+            </View>
+            <View style={styles.noteTitleSection}>
+              <Text
+                style={[
+                  styles.noteTitle,
+                  viewMode === "grid" && styles.gridNoteTitle,
+                ]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                {item.title || "Untitled Note"}
+              </Text>
+              
+              {/* Moved date up here */}
+              <Text style={styles.noteDate}>
+                {item.updatedAt.toLocaleDateString("en-US", {
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric",
+                })}
               </Text>
             </View>
-          )}
+          </View>
 
-          <View style={styles.noteHeader}>
-            <View style={styles.noteTitleContainer}>
-              <View
-                style={[
-                  styles.noteTypeIcon,
-                  viewMode === "grid" && styles.gridNoteTypeIcon,
-                  {
-                    backgroundColor:
-                      item.type === "image" ? "#FEF3C7" : "#F3E8FF",
-                  },
-                ]}
-              >
-                <MaterialIcons
-                  name={item.type === "image" ? "image" : "text-snippet"}
-                  size={viewMode === "grid" ? 16 : 22}
-                  color={item.type === "image" ? "#D97706" : "#7E22CE"}
-                />
-              </View>
-              <View style={styles.noteTitleSection}>
-                <Text
-                  style={[
-                    styles.noteTitle,
-                    viewMode === "grid" && styles.gridNoteTitle,
-                  ]}
-                  numberOfLines={1}
-                  ellipsizeMode="tail"
-                >
-                  {item.title || "Untitled Note"}
-                </Text>
-
-                {/* Show folder info with date in the note item */}
-                <View style={styles.folderStatsRow}>
-                  {item.folderId && (
-                    <>
-                      <View style={styles.folderBadgeInline}>
-                        <Text style={styles.noteDate}>
-                          {item.updatedAt.toLocaleDateString("en-US", {
-                            year: "numeric",
-                            month: "short",
-                            day: "numeric",
-                          })}
-                        </Text>
-                      </View>
-                    </>
-                  )}
-                </View>
-              </View>
-            </View>
-
-            {!isSelectMode && (
-              <TouchableWithoutFeedback
-                onPress={(e) => {
-                  // Completely prevent any event bubbling
-                  e.stopPropagation();
-                  setActiveNoteOptions(
-                    activeNoteOptions === item.id ? null : item.id
-                  );
-                }}
-              >
-                <View
-                  style={
-                    viewMode === "grid"
-                      ? styles.gridNoteOptionsButton
-                      : styles.noteOptionsButton
-                  }
-                >
-                  <MaterialIcons
-                    name="more-vert"
-                    size={viewMode === "grid" ? 16 : 20}
-                    color="#9CA3AF"
-                  />
-                </View>
-              </TouchableWithoutFeedback>
-            )}
-
-            {activeNoteOptions === item.id && (
+          {!isSelectMode && (
+            <TouchableWithoutFeedback
+              onPress={(e) => {
+                e.stopPropagation();
+                setActiveNoteOptions(
+                  activeNoteOptions === item.id ? null : item.id
+                );
+              }}
+            >
               <View
                 style={
                   viewMode === "grid"
-                    ? styles.gridNoteOptionsDropdown
-                    : styles.noteOptionsDropdown
+                    ? styles.gridNoteOptionsButton
+                    : styles.noteOptionsButton
                 }
               >
-                <TouchableWithoutFeedback
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    handleAddToFolder(item.id);
-                  }}
-                >
-                  <View style={styles.noteOptionItem}>
-                    <MaterialIcons name="folder" size={18} color="#6A009C" />
-                    <Text style={styles.noteOptionText}>
-                      {item.folderId ? "Move to Folder" : "Add to Folder"}
-                    </Text>
-                  </View>
-                </TouchableWithoutFeedback>
-
-                {item.folderId && (
-                  <TouchableWithoutFeedback
-                    onPress={(e) => {
-                      e.stopPropagation();
-                      handleRemoveFromFolder(item.id);
-                    }}
-                  >
-                    <View style={styles.noteOptionItem}>
-                      <MaterialIcons
-                        name="folder-off"
-                        size={18}
-                        color="#6A009C"
-                      />
-                      <Text style={styles.noteOptionText}>
-                        Remove from Folder
-                      </Text>
-                    </View>
-                  </TouchableWithoutFeedback>
-                )}
-
-                <TouchableWithoutFeedback
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    handleDeleteNote(item.id);
-                  }}
-                >
-                  <View style={styles.noteOptionItem}>
-                    <MaterialIcons name="delete" size={18} color="#EF4444" />
-                    <Text style={styles.noteOptionText}>Delete Note</Text>
-                  </View>
-                </TouchableWithoutFeedback>
+                <MaterialIcons
+                  name="more-vert"
+                  size={viewMode === "grid" ? 16 : 20}
+                  color="#9CA3AF"
+                />
               </View>
-            )}
-          </View>
+            </TouchableWithoutFeedback>
+          )}
 
-          {/* Show tags */}
-          {item.tags && item.tags.length > 0 && (
+          {activeNoteOptions === item.id && (
             <View
-              style={[
-                styles.tagsContainer,
-                viewMode === "grid" && styles.gridTagsContainer,
-              ]}
+              style={
+                viewMode === "grid"
+                  ? styles.gridNoteOptionsDropdown
+                  : styles.noteOptionsDropdown
+              }
             >
-              {item.tags
-                .slice(0, viewMode === "grid" ? 1 : 3)
-                .map((tag, idx) => (
-                  <View
-                    key={idx}
-                    style={[styles.tag, viewMode === "grid" && styles.gridTag]}
-                  >
-                    <Text
-                      style={[
-                        styles.tagText,
-                        viewMode === "grid" && styles.gridTagText,
-                      ]}
-                    >
-                      {typeof tag === "string"
-                        ? tag
-                        : tag && typeof tag === "object" && "name" in tag
-                        ? tag.name
-                        : ""}
+              <TouchableWithoutFeedback
+                onPress={(e) => {
+                  e.stopPropagation();
+                  handleAddToFolder(item.id);
+                }}
+              >
+                <View style={styles.noteOptionItem}>
+                  <MaterialIcons name="folder" size={18} color="#6A009C" />
+                  <Text style={styles.noteOptionText}>
+                    {item.folderId ? "Move to Folder" : "Add to Folder"}
+                  </Text>
+                </View>
+              </TouchableWithoutFeedback>
+
+              {item.folderId && (
+                <TouchableWithoutFeedback
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    handleRemoveFromFolder(item.id);
+                  }}
+                >
+                  <View style={styles.noteOptionItem}>
+                    <MaterialIcons
+                      name="folder-off"
+                      size={18}
+                      color="#6A009C"
+                    />
+                    <Text style={styles.noteOptionText}>
+                      Remove from Folder
                     </Text>
                   </View>
-                ))}
-              {item.tags.length > (viewMode === "grid" ? 1 : 3) && (
+                </TouchableWithoutFeedback>
+              )}
+
+              <TouchableWithoutFeedback
+                onPress={(e) => {
+                  e.stopPropagation();
+                  handleDeleteNote(item.id);
+                }}
+              >
+                <View style={styles.noteOptionItem}>
+                  <MaterialIcons name="delete" size={18} color="#EF4444" />
+                  <Text style={styles.noteOptionText}>Delete Note</Text>
+                </View>
+              </TouchableWithoutFeedback>
+            </View>
+          )}
+        </View>
+
+        {/* Show tags */}
+        {item.tags && item.tags.length > 0 && (
+          <View
+            style={[
+              styles.tagsContainer,
+              viewMode === "grid" && styles.gridTagsContainer,
+            ]}
+          >
+            {item.tags
+              .slice(0, viewMode === "grid" ? 1 : 3)
+              .map((tag, idx) => (
                 <View
-                  style={[
-                    styles.moreTagsIndicator,
-                    viewMode === "grid" && styles.gridMoreTagsIndicator,
-                  ]}
+                  key={idx}
+                  style={[styles.tag, viewMode === "grid" && styles.gridTag]}
                 >
                   <Text
                     style={[
-                      styles.moreTagsText,
-                      viewMode === "grid" && styles.gridMoreTagsText,
+                      styles.tagText,
+                      viewMode === "grid" && styles.gridTagText,
                     ]}
                   >
-                    +{item.tags.length - (viewMode === "grid" ? 1 : 3)}
+                    {typeof tag === "string"
+                      ? tag
+                      : tag && typeof tag === "object" && "name" in tag
+                      ? tag.name
+                      : ""}
                   </Text>
                 </View>
-              )}
-            </View>
-          )}
+              ))}
+            {item.tags.length > (viewMode === "grid" ? 1 : 3) && (
+              <View
+                style={[
+                  styles.moreTagsIndicator,
+                  viewMode === "grid" && styles.gridMoreTagsIndicator,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.moreTagsText,
+                    viewMode === "grid" && styles.gridMoreTagsText,
+                  ]}
+                >
+                  +{item.tags.length - (viewMode === "grid" ? 1 : 3)}
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
 
-          {/* Note content preview */}
-          {item.formatted_content ? (
-            <View
-              style={[
-                styles.htmlPreviewContainer,
-                viewMode === "grid" && styles.gridHtmlPreviewContainer,
-              ]}
-            >
-              <RenderHtml
-                contentWidth={windowWidth - (viewMode === "grid" ? 96 : 88)}
-                source={{ html: item.formatted_content }}
-              />
-              <View style={styles.fadeOverlay} />
-            </View>
-          ) : (
-            <Text
-              style={[
-                styles.notePreview,
-                viewMode === "grid" && styles.gridNotePreview,
-              ]}
-              numberOfLines={viewMode === "grid" ? 2 : 3}
-              ellipsizeMode="tail"
-            >
-              {item.content}
-            </Text>
-          )}
-        </View>
-      </TouchableOpacity>
-    ),
-    [
-      viewMode,
-      isSelectMode,
-      selectedNotes,
-      activeNoteOptions,
-      folders,
-      htmlTagStyles,
-      currentView,
-      windowWidth,
-    ]
-  );
+        {/* Note content preview - now appears below the date */}
+        {item.formatted_content ? (
+          <View
+            style={[
+              styles.htmlPreviewContainer,
+              viewMode === "grid" && styles.gridHtmlPreviewContainer,
+            ]}
+          >
+            <RenderHtml
+              contentWidth={windowWidth - (viewMode === "grid" ? 96 : 88)}
+              source={{ html: item.formatted_content }}
+            />
+            <View style={styles.fadeOverlay} />
+          </View>
+        ) : (
+          <Text
+            style={[
+              styles.notePreview,
+              viewMode === "grid" && styles.gridNotePreview,
+            ]}
+            numberOfLines={viewMode === "grid" ? 2 : 3}
+            ellipsizeMode="tail"
+          >
+            {item.content}
+          </Text>
+        )}
+      </View>
+    </TouchableOpacity>
+  ),
+  [
+    viewMode,
+    isSelectMode,
+    selectedNotes,
+    activeNoteOptions,
+    folders,
+    htmlTagStyles,
+    selectedFilterFolder,
+    windowWidth,
+  ]
+);
 
   // Modal for selecting which folder to add notes to
   const renderSortNotesModal = () => (
@@ -1918,32 +1844,15 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
           </View>
         </View>
       )}
-      <View style={styles.header}>
+        <LinearGradient
+          colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.header}
+        >
         <View style={styles.headerTopRow}>
           <View style={styles.headerTitleSection}>
-            <Text style={styles.headerTitle}>
-              {currentView === "folders" 
-                ? (activeTab === "folders" ? "My Folders" : "All Notes")
-                : activeFolderName
-              }
-            </Text>
-            <Text style={styles.headerSubtitle}>
-              {currentView === "folders"
-                ? activeTab === "folders" 
-                  ? `${folders.length} ${folders.length === 1 ? "folder" : "folders"}`
-                  : `${filteredNotes.length} ${filteredNotes.length === 1 ? "note" : "notes"}`
-                : `${
-                    filteredNotes.filter(
-                      (note) => note.folderId === activeFolderId
-                    ).length
-                  } ${
-                    filteredNotes.filter(
-                      (note) => note.folderId === activeFolderId
-                    ).length === 1
-                      ? "note"
-                      : "notes"
-                  }`}
-            </Text>
+            <Text style={styles.headerTitle}>All Notes</Text>
           </View>
           <View style={styles.headerActions}>
             <TouchableOpacity
@@ -1953,65 +1862,24 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
               ]}
               onPress={toggleSearch}
             >
-              <MaterialIcons name="search" size={22} color="#6A009C" />
+              <MaterialIcons name="search" size={22} color="#ffffffff"                 
+                elevation={10}
+                shadowColor="#2c2c2cff"
+                shadowOffset={{ width: 0, height: 2 }}
+                shadowOpacity={0.8}
+                shadowRadius={8} />
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.headerActionButton}
               onPress={() => setShowOptionsDropdown(!showOptionsDropdown)}
             >
-              <MaterialIcons name="more-vert" size={22} color="#6A009C" />
+              <MaterialIcons name="more-vert" size={22} color="#ffffffff"
+                elevation={10}
+                shadowColor="#2c2c2cff"
+                shadowOffset={{ width: 0, height: 2 }}
+                shadowOpacity={0.8}
+                shadowRadius={8} />
             </TouchableOpacity>
-
-            {showOptionsDropdown && (
-              <View style={styles.optionsDropdown}>
-                <TouchableOpacity
-                  style={styles.dropdownOption}
-                  onPress={() => {
-                    setShowCreateFolderModal(true);
-                    setShowOptionsDropdown(false);
-                  }}
-                >
-                  <MaterialIcons
-                    name="create-new-folder"
-                    size={20}
-                    color="#6A009C"
-                  />
-                  <Text style={styles.dropdownOptionText}>Create Folder</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.dropdownOption}
-                  onPress={() => {
-                    setViewMode(viewMode === "list" ? "grid" : "list");
-                    setShowOptionsDropdown(false);
-                  }}
-                >
-                  <MaterialIcons
-                    name={viewMode === "list" ? "grid-view" : "view-list"}
-                    size={20}
-                    color="#6A009C"
-                  />
-                  <Text style={styles.dropdownOptionText}>
-                    {viewMode === "list" ? "Grid View" : "List View"}
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.dropdownOption}
-                  onPress={() => {
-                    navigation.navigate("PDFs"); // Navigate to the ImportPDFPage
-                    setShowOptionsDropdown(false); // Close the dropdown
-                  }}
-                >
-                  <MaterialIcons
-                    name="picture-as-pdf"
-                    size={20}
-                    color="#6A009C"
-                  />
-                  <Text style={styles.dropdownOptionText}>Import PDF</Text>
-                </TouchableOpacity>
-              </View>
-            )}
           </View>
         </View>
 
@@ -2045,326 +1913,188 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
           </View>
         )}
         
-        {/* Tab Navigation - inside header when in folders view */}
-        {currentView === "folders" && (
-          <View style={styles.tabContainer}>
-            <TouchableOpacity
-              style={[
-                styles.tabButton,
-                activeTab === "folders" && styles.activeTabButton,
-              ]}
-              onPress={() => setActiveTab("folders")}
-            >
-              <Text
-                style={[
-                  styles.tabButtonText,
-                  activeTab === "folders" && styles.activeTabButtonText,
-                ]}
-              >
-                Folders
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.tabButton,
-                activeTab === "allNotes" && styles.activeTabButton,
-              ]}
-              onPress={() => setActiveTab("allNotes")}
-            >
-              <Text
-                style={[
-                  styles.tabButtonText,
-                  activeTab === "allNotes" && styles.activeTabButtonText,
-                ]}
-              >
-                All Notes
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
-        
-        {/* Path Navigation - inside header when viewing notes within a folder */}
-        {currentView === "notes" && (activeFolderId || showUnorganizedNotes) && (
-          <View style={styles.pathNavigationBar}>
-            <TouchableOpacity
-              style={styles.pathBackButton}
-              onPress={() => {
-                setCurrentView("folders");
-                setActiveFolderId(null);
-                setActiveFolderName("");
-                setShowUnorganizedNotes(false);
-                setActiveTab("folders"); // Reset to folders tab when going back
-              }}
-            >
-              <MaterialIcons name="arrow-back" size={20} color="#6A009C" />
-            </TouchableOpacity>
-            <View style={styles.pathContainer}>
-              <TouchableOpacity
-                style={styles.pathSegment}
-                onPress={() => {
-                  setCurrentView("folders");
-                  setActiveFolderId(null);
-                  setActiveFolderName("");
-                  setShowUnorganizedNotes(false);
-                  setActiveTab("folders");
-                }}
-              >
-                <Text style={styles.pathSegmentText}>Folders</Text>
-              </TouchableOpacity>
-              <MaterialIcons name="chevron-right" size={16} color="#64748B" />
-              <View
-                style={[
-                  styles.pathCurrentSegment,
-                  showUnorganizedNotes && styles.unorganizedPathSegment,
-                ]}
-              >
-                <MaterialIcons
-                  name={showUnorganizedNotes ? "notes" : "folder"}
-                  size={16}
-                  color={showUnorganizedNotes ? "#64748B" : "#6A009C"}
-                  style={{ marginRight: 6 }}
-                />
-                <Text
-                  style={[
-                    styles.pathCurrentSegmentText,
-                    showUnorganizedNotes && { color: "#64748B" },
-                  ]}
-                >
-                  {activeFolderName || (showUnorganizedNotes ? "Unorganized Notes" : "")}
-                </Text>
-              </View>
-            </View>
-          </View>
-        )}
-      </View>
-      
-      {/* Show folders grid when in folders view and folders tab is active */}
-      {currentView === "folders" && activeTab === "folders" && (
-        <FlatList
-          data={folders}
-          // Performance optimizations
-          removeClippedSubviews={true}
-          maxToRenderPerBatch={8}
-          initialNumToRender={8}
-          windowSize={5}
-          ListHeaderComponent={() => (
-            <TouchableOpacity
-              style={[styles.folderCardLarge, styles.unorganizedNotesCard]}
-              activeOpacity={0.8}
-              onPress={() => {
-                setShowUnorganizedNotes(true);
-                setCurrentView("notes");
-                setActiveFolderName("Unorganized Notes");
-                setActiveFolderId(null); // Make sure activeFolderId is null for unorganized notes
-              }}
-            >
-              <View
-                style={[
-                  styles.folderIconLarge,
-                  { backgroundColor: "#64748B" }, // Neutral color for unorganized
-                ]}
-              >
-                <MaterialIcons name="notes" size={32} color="#FFFFFF" />
-              </View>
-              <View style={styles.folderCardContent}>
-                <Text style={styles.folderNameLarge}>Unorganized Notes</Text>
-              </View>
-
-              <View style={styles.folderCountContainer}>
-                <Text style={styles.folderCountText}>
-                  {notes.filter((note) => !note.folderId).length}{" "}
-                  {notes.filter((note) => !note.folderId).length === 1
-                    ? "note"
-                    : "notes"}
-                </Text>
-                <MaterialIcons
-                  name="chevron-right"
-                  size={24}
-                  color="#9CA3AF"
-                  style={styles.folderCardArrow}
-                />
-              </View>
-            </TouchableOpacity>
-          )}
-          // In the FlatList renderItem for folders
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={styles.folderCardLarge}
-              activeOpacity={0.8}
-              onPress={() => {
-                setActiveFolderId(item.id);
-                setActiveFolderName(item.name);
-                setCurrentView("notes");
-                setShowUnorganizedNotes(false);
-              }}
-            >
-              <View
-                style={[
-                  styles.folderIconLarge,
-                  { backgroundColor: item.color || "#667EEA" },
-                ]}
-              >
-                <MaterialIcons
-                  // Make sure the icon is valid by checking if it exists in MaterialIcons
-                  name={
-                    FOLDER_ICONS.includes(
-                      item.icon as keyof typeof MaterialIcons.glyphMap
-                    )
-                      ? item.icon
-                      : "folder"
-                  }
-                  size={32}
-                  color="#FFFFFF"
-                />
-              </View>
-              <View style={styles.folderCardContent}>
-                <Text style={styles.folderNameLarge}>{item.name}</Text>
-              </View>
-
-              <View style={styles.folderCountContainer}>
-                <Text style={styles.folderCountText}>
-                  {folderCounts[item.id] || 0}{" "}
-                  {folderCounts[item.id] === 1 ? "note" : "notes"}
-                </Text>
-                <MaterialIcons
-                  name="chevron-right"
-                  size={24}
-                  color="#9CA3AF"
-                  style={styles.folderCardArrow}
-                />
-              </View>
-            </TouchableOpacity>
-          )}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.folderGrid}
-          showsVerticalScrollIndicator={false}
-          ItemSeparatorComponent={() => <View style={styles.folderSeparator} />}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              colors={["#6A009C"]}
-            />
-          }
-          ListEmptyComponent={() => (
-            <View style={styles.emptyState}>
-              <MaterialIcons name="folder-off" size={64} color="#CBD5E0" />
-              <Text style={styles.emptyStateTitle}>No folders yet</Text>
-              <Text style={styles.emptyStateSubtitle}>
-                {isLoading
-                  ? "Loading your folders..."
-                  : "Create your first folder to organize your notes"}
-              </Text>
-              <TouchableOpacity
-                style={styles.createButton}
-                onPress={() => setShowCreateFolderModal(true)}
-              >
-                <Text style={styles.createButtonText}>Create Folder</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        />
-      )}
-      
-      {/* Show all notes when in folders view and all notes tab is active */}
-      {currentView === "folders" && activeTab === "allNotes" && (
-        <FlatList
-          data={filteredNotes}
-          renderItem={renderNoteItem}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.notesList}
-          showsVerticalScrollIndicator={false}
-          ItemSeparatorComponent={NoteSeparatorComponent}
-          numColumns={viewMode === "grid" ? 2 : 1}
-          key={`allNotes-${viewMode}`}
-          // Performance optimizations
-          removeClippedSubviews={true}
-          maxToRenderPerBatch={10}
-          windowSize={10}
-          initialNumToRender={8}
-          updateCellsBatchingPeriod={50}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              colors={["#6A009C"]}
-            />
-          }
-          ListEmptyComponent={() => (
-            <View style={styles.emptyState}>
-              <MaterialIcons name="note" size={64} color="#CBD5E0" />
-              <Text style={styles.emptyStateTitle}>No notes yet</Text>
-              <Text style={styles.emptyStateSubtitle}>
-                {isLoading
-                  ? "Loading your notes..."
-                  : "Create your first note to get started"}
-              </Text>
-              <TouchableOpacity
-                style={styles.createButton}
-                onPress={handleCreateNote}
-              >
-                <Text style={styles.createButtonText}>Create Note</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        />
-      )}
-      
-      {/* Show notes list when in notes view - with performance optimizations */}
-      {currentView === "notes" && (
-        <FlatList
-          data={notesViewData}
-          renderItem={renderNoteItem}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.notesList}
-          showsVerticalScrollIndicator={false}
-          ItemSeparatorComponent={NoteSeparatorComponent}
-          numColumns={viewMode === "grid" ? 2 : 1}
-          key={viewMode}
-          // Performance optimizations
-          removeClippedSubviews={true} // Detach views outside viewport
-          maxToRenderPerBatch={10} // Render fewer items at a time
-          windowSize={10} // Reduce window size for better memory usage
-          initialNumToRender={8} // Start with fewer items
-          updateCellsBatchingPeriod={50} // Batch render updates
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              colors={["#6A009C"]}
-            />
-          }
-          ListEmptyComponent={NotesEmptyListComponent}
-        />
-      )}
-      <View style={styles.fabContainer}>
-        {currentView === "folders" ? (
-          activeTab === "folders" ? (
-            <TouchableOpacity
-              style={[styles.fabButton, styles.textFab]}
-              onPress={() => setShowCreateFolderModal(true)}
-              activeOpacity={0.8}
-            >
-              <MaterialIcons name="create-new-folder" size={28} color="#6A009C" />
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={[styles.fabButton, styles.textFab]}
-              onPress={handleCreateNote}
-              activeOpacity={0.8}
-            >
-              <MaterialIcons name="note-add" size={28} color="#6A009C" />
-            </TouchableOpacity>
-          )
-        ) : (
+        {/* Folder Section inside Header */}
+        <View style={styles.folderSectionInHeader}>
           <TouchableOpacity
-            style={[styles.fabButton, styles.textFab]}
-            onPress={handleCreateNote}
-            activeOpacity={0.8}
+            style={styles.folderToggle}
+            onPress={() => setShowFolderDropdown(!showFolderDropdown)}
+            activeOpacity={0.7}
           >
-            <MaterialIcons name="note-add" size={28} color="#6A009C" />
+            <View style={styles.folderToggleLeft}>
+              <MaterialIcons name="folder" size={22} color="#FFDE21" elevation={50} shadowOpacity={5} shadowRadius={50} shadowColor="#000000" />
+              <Text style={styles.folderToggleText}>Folders</Text>
+            </View>
+            <MaterialIcons
+              name={showFolderDropdown ? "expand-less" : "expand-more"}
+              size={24}
+              color="#9CA3AF"
+            />
           </TouchableOpacity>
-        )}
+
+          {showFolderDropdown && (
+            <View style={styles.folderDropdownContainer}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.foldersScrollContent}
+              >
+                {folders.map((folder) => (
+                  <TouchableOpacity
+                    key={folder.id}
+                    style={[
+                      styles.folderCard,
+                      selectedFilterFolder === folder.id && styles.selectedFolderCard
+                    ]}
+                    activeOpacity={0.8}
+                    onPress={() => {
+                      setSelectedFilterFolder(selectedFilterFolder === folder.id ? null : folder.id);
+                      setShowFolderDropdown(false);
+                    }}
+                  >
+                    <View
+                      style={[
+                        styles.folderIcon,
+                        { backgroundColor: folder.color },
+                      ]}
+                    >
+                      <MaterialIcons
+                        name={folder.icon}
+                        size={24}
+                        color="#FFFFFF"
+                      />
+                    </View>
+                    <Text style={styles.folderName}>{folder.name}</Text>
+                    <Text style={styles.folderCount}>
+                      {Math.floor(Math.random() * 12) + 1}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+                
+                {/* Unorganized folder */}
+                <TouchableOpacity
+                  style={[
+                    styles.folderCard,
+                    selectedFilterFolder === 'unorganized' && styles.selectedFolderCard
+                  ]}
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    setSelectedFilterFolder(selectedFilterFolder === 'unorganized' ? null : 'unorganized');
+                    setShowFolderDropdown(false);
+                  }}
+                >
+                  <View
+                    style={[
+                      styles.folderIcon,
+                      { backgroundColor: "#64748B" },
+                    ]}
+                  >
+                    <MaterialIcons
+                      name="folder-open"
+                      size={24}
+                      color="#FFFFFF"
+                    />
+                  </View>
+                  <Text style={styles.folderName}>Unorganized</Text>
+                  <Text style={styles.folderCount}>
+                    {Math.floor(Math.random() * 5) + 1}
+                  </Text>
+                </TouchableOpacity>
+              </ScrollView>
+            </View>
+          )}
+        </View>
+      </LinearGradient>
+      
+      {/* Options Dropdown - positioned outside header for proper overlay */}
+      {showOptionsDropdown && (
+        <View style={styles.optionsDropdownContainer}>
+          <View style={styles.optionsDropdown}>
+            <TouchableOpacity
+              style={styles.dropdownOption}
+              onPress={() => {
+                setShowCreateFolderModal(true);
+                setShowOptionsDropdown(false);
+              }}
+            >
+              <MaterialIcons
+                name="create-new-folder"
+                size={20}
+                color="#6A009C"
+              />
+              <Text style={styles.dropdownOptionText}>Create Folder</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.dropdownOption}
+              onPress={() => {
+                setViewMode(viewMode === "list" ? "grid" : "list");
+                setShowOptionsDropdown(false);
+              }}
+            >
+              <MaterialIcons
+                name={viewMode === "list" ? "grid-view" : "view-list"}
+                size={20}
+                color="#6A009C"
+              />
+              <Text style={styles.dropdownOptionText}>
+                {viewMode === "list" ? "Grid View" : "List View"}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.dropdownOption}
+              onPress={() => {
+                navigation.navigate("PDFs"); // Navigate to the ImportPDFPage
+                setShowOptionsDropdown(false); // Close the dropdown
+              }}
+            >
+              <MaterialIcons
+                name="picture-as-pdf"
+                size={20}
+                color="#6A009C"
+              />
+              <Text style={styles.dropdownOptionText}>Import PDF</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+      
+      {/* Main Notes List */}
+      <FlatList
+        data={notesViewData}
+        renderItem={renderNoteItem}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.notesList}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={["#6A009C"]}
+          />
+        }
+        ListEmptyComponent={NotesEmptyListComponent}
+        ItemSeparatorComponent={NoteSeparatorComponent}
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={10}
+        initialNumToRender={10}
+        windowSize={10}
+        getItemLayout={(data, index) => ({
+          length: viewMode === "grid" ? 180 : 120,
+          offset: (viewMode === "grid" ? 180 : 120) * index,
+          index,
+        })}
+      />
+      
+      {/* Floating Action Button */}
+      <View style={styles.fabContainer}>
+        <TouchableOpacity
+          style={[styles.fabButton, styles.textFab]}
+          onPress={handleCreateNote}
+          activeOpacity={0.8}
+        >
+          <MaterialIcons name="note-add" size={28} color="#ffffffff" />
+        </TouchableOpacity>
       </View>
       <Navbar activeRoute="Notes" />
       {renderCreateFolderModal()}
@@ -2377,260 +2107,26 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8fafc",
-    paddingTop: Platform.OS === 'ios' ? 200 : 185, // Increased for path navigation in header
-  },
-  // Tab navigation styles
-  tabContainer: {
-    flexDirection: "row",
-    backgroundColor: "#FFFFFF",
-    marginHorizontal: 20,
-    marginTop: 16,
-    marginBottom: 8,
-    borderRadius: 16,
-    padding: 4,
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    elevation: 8,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-  },
-  tabButton: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    marginHorizontal: 2,
-    // Add subtle transition effect
-    transform: [{ scale: 1 }],
-  },
-  activeTabButton: {
-    backgroundColor: "#6A009C",
-    shadowColor: "#6A009C",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 6,
-    // Add subtle gradient effect through border
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
-    transform: [{ scale: 1.02 }],
-  },
-  tabButtonText: {
-    fontSize: 14,
-    fontFamily: "Inter-SemiBold",
-    color: "#64748B",
-    letterSpacing: -0.2,
-  },
-  activeTabButtonText: {
-    color: "#FFFFFF",
-    fontFamily: "Inter-Bold",
-    textShadowColor: "rgba(0, 0, 0, 0.1)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
-  },
-  // Path navigation styles
-  pathNavigationBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 24,
-    paddingVertical: 8,
-    marginTop: 12,
-    backgroundColor: "rgba(255, 255, 255, 0.7)",
-    borderRadius: 12,
-    marginHorizontal: 24,
-    borderWidth: 1,
-    borderColor: "rgba(106, 0, 156, 0.1)",
-  },
-  pathBackButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 12,
-    backgroundColor: "rgba(106, 0, 156, 0.1)",
-  },
-  pathContainer: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    overflow: "hidden",
-  },
-  pathSegment: {
-    paddingVertical: 2,
-    paddingHorizontal: 6,
-    borderRadius: 6,
-    backgroundColor: "rgba(106, 0, 156, 0.1)",
-    marginRight: 8,
-  },
-  pathSegmentText: {
-    fontSize: 12,
-    fontFamily: "Inter-Medium",
-    color: "#6A009C",
-  },
-  pathCurrentSegment: {
-    flex: 1,
-    paddingVertical: 2,
-    paddingHorizontal: 6,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(106, 0, 156, 0.15)",
-    borderRadius: 6,
-    marginLeft: 8,
-  },
-  pathCurrentSegmentText: {
-    fontSize: 12,
-    fontFamily: "Inter-SemiBold",
-    color: "#6A009C",
-  },
-  unorganizedPathSegment: {
-    backgroundColor: "rgba(100, 116, 139, 0.1)",
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: "rgba(100, 116, 139, 0.2)",
-  },
-  editFolderNameButton: {
-    padding: 4,
-    marginRight: 6,
-  },
-  // Folder grid styles
-  folderGrid: {
-    paddingHorizontal: 24,
-    paddingTop: 90, // Reduced since container now has proper padding for header
-  },
-  folderSeparator: {
-    height: 16,
-  },
-  folderCardLarge: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 20,
-    padding: 20,
-    flexDirection: "row",
-    alignItems: "center",
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 20,
-    elevation: 8,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
-    // Add subtle gradient effect through background
-    overflow: "hidden",
-  },
-  folderIconLarge: {
-    width: 64,
-    height: 64,
-    borderRadius: 16,
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-
-  folderCardContent: {
-    flex: 1,
-    marginLeft: 20,
-  },
-
-  folderNameLarge: {
-    fontSize: 19,
-    fontFamily: "Inter-SemiBold",
-    color: "#1E293B",
-    marginBottom: 4,
-    letterSpacing: -0.2,
-  },
-
-  folderCountContainer: {
-    flexDirection: "row",
-    alignItems: "center",
     backgroundColor: "#F8FAFC",
-    paddingLeft: 16,
-    paddingRight: 8,
-    paddingVertical: 8,
-    borderRadius: 14,
-    marginLeft: 8,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
   },
-
-  folderCountText: {
-    fontSize: 13,
-    color: "#64748B",
-    fontFamily: "Inter-Medium",
-    marginRight: 6,
-  },
-
-  folderCardArrow: {
-    marginLeft: 2,
-  },
-  htmlContainer: {
-    marginTop: 4,
-  },
-  htmlPreviewContainer: {
-    marginTop: 8,
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: "#F8FAFC", // Slightly lighter background
-    shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
-    height: 60,
-    overflow: "hidden",
-    position: "relative",
-    borderWidth: 1,
-    borderColor: "#E2E8F0", // Added border
-  },
-
-  fadeOverlay: {
-    position: "absolute",
-    bottom: 0, // Changed from top:0 to bottom:0
-    left: 0,
-    right: 0,
-    height: 30, // Only fade the bottom portion
-    backgroundColor: "rgba(255, 255, 255, 0.95)", // More transparent
-    borderBottomLeftRadius: 12,
-    borderBottomRightRadius: 12,
-  },
-
-  gridHtmlPreviewContainer: {
-    padding: 8,
-    borderRadius: 12,
-    backgroundColor: "#F1F5F9",
-    height: 80, // Smaller fixed height for grid mode
-  },
-  header: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: 24,
-    paddingTop: Platform.OS === 'ios' ? 70 : 55,
-    paddingBottom: 30,
-    backgroundColor: "#F5E1FD",
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
-    shadowColor: "#6A009C",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 24,
-    elevation: 10,
-    zIndex: 1000,
-    // Add subtle gradient overlay effect
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255, 255, 255, 0.2)",
-  },
+header: {
+  position: "absolute",
+  top: 0,
+  left: 0,
+  right: 0,
+  paddingHorizontal: 24,
+  paddingTop: Platform.OS === "ios" ? 50 : 35,
+  paddingBottom: 24,
+  // backgroundColor: "#F5E1FD", // REMOVE or COMMENT THIS LINE
+  borderBottomLeftRadius: 25,
+  borderBottomRightRadius: 25,
+  shadowColor: "#1E293B",
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.1,
+  shadowRadius: 8,
+  elevation: 5,
+  zIndex: 1000,
+},
   headerTopRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -2641,43 +2137,26 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 32,
-    fontFamily: "Inter-Bold",
-    color: "#6A009C",
+    fontFamily: "Lexend",
+    color: "#ffffffff",
     marginBottom: 4,
   },
-  headerSubtitle: {
-    fontSize: 16,
-    fontFamily: "Inter-Medium",
-    color: "#64748B",
-  },
+
   headerActions: {
     flexDirection: "row",
     gap: 8,
     position: "relative",
   },
   headerActionButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    backgroundColor: "#FFFFFF",
+    width: 44,
+    height: 44,
+    borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
-    shadowColor: "#6A009C",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 6,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
+    elevation: 2,
   },
   activeSearchButton: {
     backgroundColor: "#6A009C",
-    shadowColor: "#6A009C",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    elevation: 8,
-    transform: [{ scale: 1.05 }],
   },
   searchContainer: {
     marginTop: 16,
@@ -2704,75 +2183,12 @@ const styles = StyleSheet.create({
     fontFamily: "Inter-Regular",
     color: "#1F2937",
   },
-  folderItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: "#FFFFFF",
-    marginBottom: 8,
-    shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  selectedFolderItem: {
-    backgroundColor: "#E0F2FE",
-  },
-  unorganizedFolderItem: {
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    borderStyle: "dashed",
-  },
-  folderDivider: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 8,
-    marginBottom: 8,
-  },
-  folderDividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: "#E2E8F0",
-  },
-  folderDividerText: {
-    fontSize: 14,
-    fontFamily: "Inter-Medium",
-    color: "#64748B",
-    marginHorizontal: 8,
-  },
-  // Add to your StyleSheet
-  folderBadgeInline: {
-    flexDirection: "row",
-    alignItems: "center",
-    width: 130,
-  },
-  metaSeparator: {
-    color: "#CBD5E0",
-    fontSize: 12,
-    marginHorizontal: 8,
-  },
-  folderIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  folderName: {
-    fontSize: 16,
-    fontFamily: "Inter-Medium",
-    color: "#374151",
-    marginLeft: 12,
-  },
   clearSearchButton: {
     padding: 4,
     marginLeft: 8,
   },
-  folderSection: {
-    paddingHorizontal: 24,
-    marginBottom: 16,
+  folderSectionInHeader: {
+    marginTop: 16,
   },
   folderToggle: {
     flexDirection: "row",
@@ -2798,7 +2214,7 @@ const styles = StyleSheet.create({
     color: "#374151",
     marginLeft: 12,
   },
-  folderDropdown: {
+  folderDropdownContainer: {
     marginTop: 16,
   },
   foldersScrollContent: {
@@ -2817,6 +2233,31 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
   },
+  selectedFolderCard: {
+    backgroundColor: "#6A009C",
+    shadowColor: "#6A009C",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 6,
+    transform: [{ scale: 1.05 }],
+  },
+  folderIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  folderName: {
+    fontSize: 15,
+    fontFamily: "Inter-Bold",
+    color: "#ffffffff",
+    textAlign: "center",
+    marginBottom: 4,
+    marginLeft: 4,
+  },
   folderCount: {
     fontSize: 11,
     fontFamily: "Inter-Regular",
@@ -2824,34 +2265,31 @@ const styles = StyleSheet.create({
   },
   notesList: {
     paddingHorizontal: 24,
-    paddingBottom: 120,
-    marginTop: 100,
+    marginTop: 30,
+    paddingTop: 200, // Space for the expanded header with folder section
+    paddingBottom: 120, // Space for the navbar
   },
   noteItem: {
-    marginVertical: 8,
+    marginVertical: 6,
   },
   gridNoteItem: {
     flex: 1,
-    marginHorizontal: 6,
+    marginHorizontal: 4,
     maxWidth: (width - 72) / 2, // Account for padding and gap
   },
   noteContent: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 24,
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.1,
-    shadowRadius: 24,
-    elevation: 10,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
-    // Add subtle backdrop blur effect
-    overflow: "hidden",
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 3,
   },
   gridNoteContent: {
-    padding: 20,
-    borderRadius: 20,
+    padding: 16,
+    borderRadius: 16,
   },
   noteHeader: {
     flexDirection: "row",
@@ -2863,47 +2301,22 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   noteTypeIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 16,
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 6,
-  },
-  gridNoteTypeIcon: {
     width: 40,
     height: 40,
-    borderRadius: 14,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
     marginRight: 12,
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    elevation: 4,
+  },
+  gridNoteTypeIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    marginRight: 8,
   },
   noteTitleSection: {
     flex: 1,
     justifyContent: "center",
-  },
-  folderStatsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 4,
-    flexWrap: "wrap",
-    gap: 8, // Add gap between items
-  },
-  folderStatsText: {
-    fontSize: 13,
-    fontFamily: "Inter-Regular",
-    color: "#9CA3AF",
-    marginLeft: 4,
-    flex: 1,
-    gap: 0,
   },
   noteTitle: {
     fontSize: 16,
@@ -2911,10 +2324,9 @@ const styles = StyleSheet.create({
     color: "#1E293B",
     marginBottom: 4,
     lineHeight: 20,
-    gap: 4,
   },
   gridNoteTitle: {
-    fontSize: 15,
+    fontSize: 14,
     lineHeight: 18,
   },
   noteOptionsContainer: {
@@ -2930,37 +2342,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#F8FAFC",
   },
-
   noteOptionsDropdown: {
     position: "absolute",
-    right: -8, // Move slightly to the right to avoid clipping
-    top: 36, // Position below the kebab button
+    right: 0,
+    top: 40,
     backgroundColor: "#FFFFFF",
     borderRadius: 8,
-    width: 170, // Make slightly wider
-    paddingVertical: 4, // Add some padding
     shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
     shadowRadius: 12,
-    elevation: 20, // Increased elevation for Android
-    zIndex: 9999, // High z-index
-  },
-
-  gridNoteOptionsDropdown: {
-    position: "absolute",
-    right: -8, // Move slightly to the right to avoid clipping
-    top: 32, // Position below the kebab button
-    backgroundColor: "#FFFFFF",
-    borderRadius: 8,
-    width: 170, // Make slightly wider
-    paddingVertical: 4, // Add some padding
-    shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 20, // Increased elevation for Android
-    zIndex: 9999, // High z-index
+    elevation: 3,
+    zIndex: 10,
   },
   noteOptionItem: {
     flexDirection: "row",
@@ -2985,23 +2378,23 @@ const styles = StyleSheet.create({
     backgroundColor: "#F8FAFC",
   },
   notePreview: {
-    fontSize: 15, // Increased from 14
+    fontSize: 14,
     fontFamily: "Inter-Regular",
-    color: "#1E293B", // Darker color than before
-    lineHeight: 21,
+    color: "#374151",
+    lineHeight: 20,
     marginBottom: 12,
   },
   noteDate: {
     fontSize: 12,
-    fontFamily: "Inter-Medium", // Changed from Regular to Medium
-    color: "#64748B", // Slightly darker than before
+    fontFamily: "Inter-Regular",
+    color: "#9CA3AF",
   },
   gridNoteDate: {
     fontSize: 11,
   },
   gridNotePreview: {
-    fontSize: 13, // Increased from 12
-    lineHeight: 18,
+    fontSize: 12,
+    lineHeight: 16,
     marginBottom: 8,
   },
   attachmentsContainer: {
@@ -3019,10 +2412,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     alignItems: "center",
-    marginBottom: 5, // Change from marginTop to marginBottom
-  },
-  gridTagsContainer: {
-    marginBottom: 8, // Change from marginTop to marginBottom
   },
   tag: {
     backgroundColor: "#EEF2FF",
@@ -3031,23 +2420,11 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginRight: 8,
     marginBottom: 4,
-    borderWidth: 1,
-    borderColor: "#DDD6FE", // Light border for better definition
-  },
-  gridTag: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
-    marginRight: 6,
-    marginBottom: 3,
   },
   tagText: {
-    fontSize: 12, // Increased from 11
-    fontFamily: "Inter-SemiBold", // Changed from Medium to SemiBold
-    color: "#4F46E5", // Brighter color
-  },
-  gridTagText: {
-    fontSize: 10, // Increased from 9
+    fontSize: 11,
+    fontFamily: "Inter-Medium",
+    color: "#6366F1",
   },
   moreTagsIndicator: {
     backgroundColor: "#F1F5F9",
@@ -3055,36 +2432,10 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 8,
   },
-  noteMetaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  inlineFolderBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginRight: 2,
-  },
-
-  inlineFolderText: {
-    fontSize: 12, // Increased from 11
-    color: "#6A009C",
-    fontFamily: "Inter-SemiBold", // Changed from Medium
-    marginLeft: 2,
-  },
-
-  gridMoreTagsIndicator: {
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
   moreTagsText: {
     fontSize: 10,
     fontFamily: "Inter-Medium",
     color: "#64748B",
-  },
-  gridMoreTagsText: {
-    fontSize: 8,
   },
   noteSeparator: {
     height: 8,
@@ -3108,14 +2459,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 8,
   },
-  emptyStateHint: {
-    fontSize: 12,
-    color: "#94A3B8",
-    textAlign: "center",
-    marginTop: 16,
-    fontStyle: "italic",
-    fontFamily: "Inter-Regular",
-  },
   fabContainer: {
     position: "absolute",
     right: 24,
@@ -3123,23 +2466,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   fabButton: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     justifyContent: "center",
     alignItems: "center",
     shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.3,
-    shadowRadius: 24,
-    elevation: 12,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.24,
+    shadowRadius: 16,
+    elevation: 8,
     marginBottom: 16,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
   },
 
   textFab: {
-    backgroundColor: "#ffffff",
+    backgroundColor: "#9C27B0",
   },
   // Modal Styles
   modalContainer: {
@@ -3190,19 +2531,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderWidth: 1,
     borderColor: "#E2E8F0",
-  },
-  unorganizedNotesCard: {
-    marginBottom: 24,
-    borderStyle: "dashed",
-    borderWidth: 2,
-    borderColor: "#CBD5E0",
-    backgroundColor: "rgba(248, 250, 252, 0.6)",
-    borderRadius: 20,
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 12,
-    elevation: 2,
   },
   modalBody: {
     flex: 1,
@@ -3329,18 +2657,15 @@ const styles = StyleSheet.create({
   createButton: {
     flex: 1,
     backgroundColor: "#6A009C",
-    borderRadius: 20,
-    paddingVertical: 18,
-    paddingHorizontal: 28,
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
     alignItems: "center",
     shadowColor: "#6A009C",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    elevation: 10,
-    // Add subtle gradient effect through border
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   createButtonText: {
     fontSize: 16,
@@ -3348,10 +2673,19 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     letterSpacing: -0.1,
   },
+  optionsDropdownContainer: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 5000,
+    pointerEvents: "box-none", // Allow touches to pass through to underlying elements except the dropdown
+  },
   optionsDropdown: {
     position: "absolute",
-    top: 50,
-    right: 0,
+    top: Platform.OS === "ios" ? 100 : 85, // Position below the header
+    right: 24,
     backgroundColor: "#FFFFFF",
     borderRadius: 12,
     paddingVertical: 8,
@@ -3360,8 +2694,8 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 12,
-    elevation: 8,
-    zIndex: 100,
+    elevation: 10,
+    zIndex: 5000,
   },
   dropdownOption: {
     flexDirection: "row",
@@ -3375,128 +2709,195 @@ const styles = StyleSheet.create({
     color: "#1E293B",
     marginLeft: 12,
   },
-
-  loadingOverlay: {
+  selectionModeHeader: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
-    bottom: 0,
-    justifyContent: "center",
+    backgroundColor: "#F5E1FD",
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.7)",
     zIndex: 1000,
   },
-  errorContainer: {
+  selectionModeContent: {
     padding: 16,
-    alignItems: "center",
-    justifyContent: "center",
   },
-  errorText: {
-    color: "#EF4444",
+  selectionModeFooter: {
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: "#E5E7EB",
+  },
+  selectionModeText: {
     fontSize: 16,
-    marginBottom: 8,
     fontFamily: "Inter-Medium",
-    textAlign: "center",
+    color: "#1E293B",
   },
-  retryButton: {
-    backgroundColor: "#6A009C",
-    paddingVertical: 8,
+  selectionModeIcon: {
+    width: 24,
+    height: 24,
+  },
+  selectionModeCloseButton: {
+    width: 24,
+    height: 24,
+  },
+  // Additional styles for folder selection modal
+  folderItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
     paddingHorizontal: 16,
-    borderRadius: 8,
+    borderRadius: 12,
+    marginBottom: 8,
   },
-  retryButtonText: {
-    color: "#FFFFFF",
+  unorganizedFolderItem: {
+    backgroundColor: "#F8FAFC",
+  },
+  selectedFolderItem: {
+    backgroundColor: "#6A009C",
+  },
+  folderDivider: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: 16,
+  },
+  folderDividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "#E2E8F0",
+  },
+  folderDividerText: {
+    fontSize: 12,
+    fontFamily: "Inter-Medium",
+    color: "#64748B",
+    marginHorizontal: 12,
+  },
+  createNoteButton: {
+    backgroundColor: "#6A009C",
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    alignItems: "center",
+    marginTop: 16,
+  },
+  createNoteButtonText: {
     fontSize: 14,
     fontFamily: "Inter-Medium",
+    color: "#FFFFFF",
   },
-
-  // New styles for note selection and sorting
+  emptyStateHint: {
+    fontSize: 12,
+    fontFamily: "Inter-Regular",
+    color: "#94A3B8",
+    textAlign: "center",
+    marginTop: 8,
+  },
   selectedNoteItem: {
-    borderWidth: 2,
+    backgroundColor: "#EDE9FE",
     borderColor: "#6A009C",
-    shadowColor: "#6A009C",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 8,
+    borderWidth: 2,
   },
-  selectionModeHeader: {
+  folderBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#EDE9FE",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  folderBadgeText: {
+    fontSize: 10,
+    fontFamily: "Inter-Medium",
+    color: "#6A009C",
+    marginLeft: 4,
+  },
+  folderStatsRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: "#6A009C",
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    marginBottom: 10,
+    marginTop: 8,
+  },
+  folderBadgeInline: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#EDE9FE",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  gridNoteOptionsDropdown: {
+    position: "absolute",
+    top: 40,
+    right: 8,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 8,
+    paddingVertical: 4,
+    width: 140,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+    zIndex: 100,
+  },
+  gridTagsContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginTop: 8,
+    gap: 4,
+  },
+  gridTag: {
+    fontSize: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  gridTagText: {
+    fontSize: 9,
+    fontFamily: "Inter-Medium",
+  },
+  gridMoreTagsIndicator: {
+    backgroundColor: "#E2E8F0",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
     borderRadius: 8,
   },
-  selectionModeText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontFamily: "Inter-Bold",
+  gridMoreTagsText: {
+    fontSize: 9,
+    fontFamily: "Inter-Medium",
+    color: "#64748B",
+  },
+  htmlPreviewContainer: {
+    marginTop: 8,
+    maxHeight: 60,
+    overflow: "hidden",
+  },
+  gridHtmlPreviewContainer: {
+    marginTop: 6,
+    maxHeight: 40,
+    overflow: "hidden",
+  },
+  fadeOverlay: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 20,
+    backgroundColor: "rgba(255, 255, 255, 0.8)",
   },
   selectionModeActions: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 12,
   },
   selectionModeButton: {
-    marginLeft: 12,
-    padding: 8,
-    backgroundColor: "rgba(255,255,255,0.2)",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: "#6A009C",
     borderRadius: 8,
-    minWidth: 50,
     alignItems: "center",
     justifyContent: "center",
-  },
-  folderBadge: {
-    position: "absolute",
-    left: -2,
-    backgroundColor: "rgba(106, 0, 156, 0.1)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    zIndex: 5,
-  },
-  folderBadgeText: {
-    fontSize: 10,
-    color: "#6A009C",
-    fontFamily: "Inter-Medium",
-    marginLeft: 4,
-  },
-
-  headerBackButton: {
-    marginBottom: 16,
-    marginTop: -8,
-  },
-  backButtonContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    alignSelf: "flex-start",
-  },
-  backButtonText: {
-    fontSize: 16,
-    fontFamily: "Inter-Medium",
-    color: "#6A009C",
-  },
-  createNoteButton: {
-    backgroundColor: "#6A009C",
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-
-    shadowColor: "#6A009C",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  createNoteButtonText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontFamily: "Inter-Medium",
   },
 });

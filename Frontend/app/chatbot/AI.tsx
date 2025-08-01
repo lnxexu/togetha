@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as DocumentPicker from 'expo-document-picker';
+import { LinearGradient } from 'expo-linear-gradient';
 import React, { useState } from 'react';
 import {
     Alert,
@@ -13,6 +14,8 @@ import {
     TouchableOpacity,
     View,
     Platform,
+    Modal,
+    FlatList,
 } from 'react-native';
 import { RootStackParamList } from '../navigation/AppNavigator';
 
@@ -23,6 +26,14 @@ interface Message {
   text: string;
   isUser: boolean;
   timestamp: Date;
+}
+
+interface ChatSession {
+  id: string;
+  title: string;
+  lastMessage: string;
+  timestamp: Date;
+  messageCount: number;
 }
 
 interface ChatBotProps {
@@ -40,6 +51,37 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
   ]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [showChatHistory, setShowChatHistory] = useState(false);
+  const [chatSessions, setChatSessions] = useState<ChatSession[]>([
+    {
+      id: '1',
+      title: 'Study Session - Math',
+      lastMessage: 'Can you help me with calculus derivatives?',
+      timestamp: new Date(Date.now() - 86400000), // 1 day ago
+      messageCount: 12,
+    },
+    {
+      id: '2',
+      title: 'Physics Homework',
+      lastMessage: 'Explain quantum mechanics principles',
+      timestamp: new Date(Date.now() - 172800000), // 2 days ago
+      messageCount: 8,
+    },
+    {
+      id: '3',
+      title: 'Essay Writing Help',
+      lastMessage: 'Help me structure my thesis statement',
+      timestamp: new Date(Date.now() - 259200000), // 3 days ago
+      messageCount: 15,
+    },
+    {
+      id: '4',
+      title: 'Chemistry Lab Report',
+      lastMessage: 'Summarize the experiment results',
+      timestamp: new Date(Date.now() - 604800000), // 1 week ago
+      messageCount: 6,
+    },
+  ]);
 
   const suggestedPrompts = [
     {
@@ -144,6 +186,51 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
     navigation.goBack(); // Use navigation.goBack() instead of useRouter()
   };
 
+  const handleMenuPress = () => {
+    setShowChatHistory(true);
+  };
+
+  const handleCloseChatHistory = () => {
+    setShowChatHistory(false);
+  };
+
+  const handleSelectChatSession = (sessionId: string) => {
+    // Here you would load the selected chat session
+    // For now, we'll just close the modal
+    setShowChatHistory(false);
+    // You could implement loading historical messages here
+    console.log('Selected chat session:', sessionId);
+  };
+
+  const handleDeleteChatSession = (sessionId: string) => {
+    Alert.alert(
+      'Delete Chat',
+      'Are you sure you want to delete this chat session?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            setChatSessions(prev => prev.filter(session => session.id !== sessionId));
+          },
+        },
+      ]
+    );
+  };
+
+  const handleNewChat = () => {
+    setShowChatHistory(false);
+    setMessages([
+      {
+        id: '1',
+        text: 'Hello! How can I assist you today?',
+        isUser: false,
+        timestamp: new Date(),
+      },
+    ]);
+  };
+
   const handlePromptSelection = (prompt: string) => {
     setInputText(prompt);
   };
@@ -165,9 +252,14 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
       <StatusBar barStyle="dark-content" backgroundColor="#f8f9fa" />
 
       {/* Header */}
-      <View style={styles.header}>
+      <LinearGradient
+        colors={['#A855F7', '#8B5CF6', '#7C3AED']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.header}
+      >
         <TouchableOpacity style={styles.backButton} onPress={handleGoBack}>
-          <Ionicons name="chevron-back" size={24} color="#333" />
+          <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
         </TouchableOpacity>
         <View style={styles.headerInfo}>
           <View style={styles.avatar}>
@@ -178,10 +270,10 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
             <Text style={styles.botDescription}>Your AI Tutoring Assistant</Text>
           </View>
         </View>
-        <TouchableOpacity style={styles.menuButton}>
-          <Ionicons name="menu" size={24} color="#333" />
+        <TouchableOpacity style={styles.menuButton} onPress={handleMenuPress}>
+          <Ionicons name="menu" size={24} color="#FFFFFF" />
         </TouchableOpacity>
-      </View>
+      </LinearGradient>
 
       {/* Messages */}
       <ScrollView style={styles.messagesContainer}>
@@ -324,6 +416,83 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
           <Ionicons name="send" size={20} color="#fff" />
         </TouchableOpacity>
       </View>
+
+      {/* Chat History Modal */}
+      <Modal
+        visible={showChatHistory}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={handleCloseChatHistory}
+      >
+        <SafeAreaView style={styles.chatHistoryContainer}>
+          {/* Chat History Header */}
+          <LinearGradient
+            colors={['#A855F7', '#8B5CF6', '#7C3AED']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.chatHistoryHeader}
+          >
+            <TouchableOpacity style={styles.closeButton} onPress={handleCloseChatHistory}>
+              <Ionicons name="close" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+            <Text style={styles.chatHistoryTitle}>Chat History</Text>
+            <TouchableOpacity style={styles.newChatButton} onPress={handleNewChat}>
+              <Ionicons name="add" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+          </LinearGradient>
+
+          {/* Chat Sessions List */}
+          <View style={styles.chatHistoryContent}>
+            <FlatList
+              data={chatSessions}
+              keyExtractor={(item) => item.id}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.chatSessionsList}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.chatSessionCard}
+                  onPress={() => handleSelectChatSession(item.id)}
+                >
+                  <View style={styles.chatSessionContent}>
+                    <View style={styles.chatSessionIcon}>
+                      <Ionicons name="chatbubble-ellipses" size={24} color="#6B46C1" />
+                    </View>
+                    <View style={styles.chatSessionInfo}>
+                      <Text style={styles.chatSessionTitle}>{item.title}</Text>
+                      <Text style={styles.chatSessionLastMessage} numberOfLines={2}>
+                        {item.lastMessage}
+                      </Text>
+                      <View style={styles.chatSessionMeta}>
+                        <Text style={styles.chatSessionTime}>
+                          {item.timestamp.toLocaleDateString()}
+                        </Text>
+                        <Text style={styles.chatSessionCount}>
+                          {item.messageCount} messages
+                        </Text>
+                      </View>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.deleteSessionButton}
+                      onPress={() => handleDeleteChatSession(item.id)}
+                    >
+                      <Ionicons name="trash-outline" size={20} color="#EF4444" />
+                    </TouchableOpacity>
+                  </View>
+                </TouchableOpacity>
+              )}
+              ListEmptyComponent={
+                <View style={styles.emptyChatHistory}>
+                  <Ionicons name="chatbubbles-outline" size={48} color="#D1D5DB" />
+                  <Text style={styles.emptyChatHistoryText}>No chat history yet</Text>
+                  <Text style={styles.emptyChatHistorySubtext}>
+                    Start a conversation to see your chat history here
+                  </Text>
+                </View>
+              }
+            />
+          </View>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -342,9 +511,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     paddingTop: Platform.OS === 'ios' ? 50 : 35,
-    backgroundColor: '#F5E1FD',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e9ecef',
     borderBottomLeftRadius: 25,
     borderBottomRightRadius: 25,
     shadowColor: "#1E293B",
@@ -366,24 +532,26 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#6A009C',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
   },
   avatarText: {
-    color: '#fff',
+    color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
   },
   botName: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
+    fontFamily: 'Lexend',
+    color: '#FFFFFF',
   },
   botDescription: {
     fontSize: 13,
-    color: '#666',
+    color: 'rgba(255, 255, 255, 0.8)',
     marginTop: 2,
   },
   menuButton: {
@@ -689,6 +857,130 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#333',
     flex: 1,
+  },
+  
+  // Chat History Modal Styles
+  chatHistoryContainer: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
+  },
+  chatHistoryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    paddingTop: Platform.OS === 'ios' ? 50 : 35,
+    paddingBottom: 20,
+  },
+  closeButton: {
+    padding: 4,
+  },
+  chatHistoryTitle: {
+    fontSize: 20,
+    fontFamily: 'Lexend',
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+  },
+  newChatButton: {
+    padding: 4,
+  },
+  chatHistoryContent: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 25,
+    borderTopRightRadius: 25,
+    marginTop: -10,
+    paddingTop: 20,
+  },
+  chatSessionsList: {
+    paddingHorizontal: 16,
+    paddingBottom: 20,
+  },
+  chatSessionCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    marginBottom: 12,
+    shadowColor: '#1E293B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(226, 232, 240, 0.6)',
+  },
+  chatSessionContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+  },
+  chatSessionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  chatSessionInfo: {
+    flex: 1,
+  },
+  chatSessionTitle: {
+    fontSize: 16,
+    fontFamily: 'Inter-Bold',
+    color: '#1E293B',
+    marginBottom: 4,
+  },
+  chatSessionLastMessage: {
+    fontSize: 14,
+    color: '#64748B',
+    fontFamily: 'Inter-Regular',
+    marginBottom: 8,
+    lineHeight: 18,
+  },
+  chatSessionMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  chatSessionTime: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontFamily: 'Inter-Medium',
+  },
+  chatSessionCount: {
+    fontSize: 12,
+    color: '#6B46C1',
+    fontFamily: 'Inter-Medium',
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  deleteSessionButton: {
+    padding: 8,
+    marginLeft: 8,
+  },
+  emptyChatHistory: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  emptyChatHistoryText: {
+    fontSize: 18,
+    fontFamily: 'Inter-SemiBold',
+    color: '#64748B',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptyChatHistorySubtext: {
+    fontSize: 14,
+    color: '#94A3B8',
+    fontFamily: 'Inter-Regular',
+    textAlign: 'center',
+    lineHeight: 20,
+    paddingHorizontal: 40,
   },
 });
 

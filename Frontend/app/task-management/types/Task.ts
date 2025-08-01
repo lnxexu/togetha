@@ -8,7 +8,7 @@ export interface Task {
   id: string;
   title: string;
   description?: string;
-  subject?: string;
+  category?: string;
   priority: Priority;
   dueDate?: Date;
   dueTime?: string;
@@ -22,7 +22,7 @@ export interface Task {
 export interface TaskFormData {
   title: string;
   description?: string;
-  subject?: string;
+  category?: string;
   priority?: Priority;
   dueDate?: Date;
   dueTime?: string;

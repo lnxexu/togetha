@@ -1,5 +1,18 @@
+import { Platform } from 'react-native';
+
+// Function to get the correct API URL based on platform
+const getApiUrl = () => {
+  if (Platform.OS === 'ios') {
+    // Using your Wi-Fi IP address for iOS devices/simulator
+    return 'http://192.168.1.8:8000'; 
+  } else {
+    // Android emulator uses 10.0.2.2 to access host machine
+    return 'http://10.0.2.2:8000';
+  }
+};
+
 // API configuration settings
-export const API_BASE_URL = 'http://10.0.2.2:8000'; // Change to your Django server URL
+export const API_BASE_URL = getApiUrl();
 
 // API endpoint paths
 export const API_ENDPOINTS = {

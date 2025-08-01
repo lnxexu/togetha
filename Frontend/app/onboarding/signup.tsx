@@ -17,6 +17,7 @@ import Toast from 'react-native-toast-message';
 import { KeyboardAvoidingView, Platform, ScrollView, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_BASE_URL, API_ENDPOINTS } from '../../constants/ApiConfig';
 
 // Add type declaration for global.isRunningInExpoClient
 declare global {
@@ -25,15 +26,6 @@ declare global {
 }
 
 type SignUpScreenProp = NativeStackNavigationProp<RootStackParamList, 'Signup'>;
-
-// Django server URL configured for proper mobile access
-const API_BASE_URL = __DEV__
-  ? Platform.OS === 'android'
-    ? global.isRunningInExpoClient
-      ? 'http://192.168.0.153:8000'  // Expo Go on Android (use your actual IP)
-      : 'http://10.0.2.2:8000'     // Android emulator
-    : 'http://localhost:8000'      // iOS simulator
-  : 'https://yourproductionserver.com';
 
 export default function SignUp() {
   const navigation = useNavigation<SignUpScreenProp>();
@@ -145,7 +137,7 @@ export default function SignUp() {
       };
 
       console.log('Sending data:', signupData);
-      console.log('API URL:', `${API_BASE_URL}/signup`);
+      console.log('API URL:', `${API_BASE_URL}${API_ENDPOINTS.SIGNUP}`);
       console.log('Platform:', Platform.OS);
       console.log('Running in Expo?', global.isRunningInExpoClient ? 'Yes' : 'No');
 
@@ -153,7 +145,7 @@ export default function SignUp() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
-      const response = await fetch(`${API_BASE_URL}/signup`, {
+      const response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.SIGNUP}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
