@@ -796,7 +796,9 @@ export default function Home() {
                           <Text style={styles.taskTitle} numberOfLines={2}>
                             {task.title}
                           </Text>
-                          <Text style={styles.taskCategory}>{task.category}</Text>
+                          <Text style={styles.taskCategory}>
+                            {task.category}
+                          </Text>
                         </View>
                         <View
                           style={[
@@ -1385,9 +1387,9 @@ const styles = StyleSheet.create({
     fontFamily: "Inter-Bold",
     textTransform: "uppercase",
   },
-    taskDivider: {
+  taskDivider: {
     height: 1,
-    backgroundColor: '#c9ccceff',
+    backgroundColor: "#c9ccceff",
     marginVertical: 8,
     marginHorizontal: 5, // extend to card edges
     opacity: 0.9,
