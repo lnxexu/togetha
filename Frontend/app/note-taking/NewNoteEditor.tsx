@@ -1,4 +1,4 @@
-import { MaterialIcons } from "@expo/vector-icons";
+import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useEffect, useRef, useState } from "react";
 import {
@@ -19,6 +19,7 @@ import {
   View,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 
 
 const { RichEditor, RichToolbar } = require("react-native-pell-rich-editor");
@@ -563,176 +564,367 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => {
-            // If content has changed, show confirmation dialog before exiting
-            if (title.trim() || content.trim()) {
-              Alert.alert(
-                "Exit Editor",
-                "Are you sure you want to exit the editor? Your changes have been saved.",
-                [
-                  { text: "Cancel", style: "cancel" },
-                  { text: "Exit", onPress: () => navigation.goBack() },
-                ]
-              );
-            } else {
-              navigation.goBack();
-            }
-          }}
+      <View style={styles.rootContainer}>
+        {/* Header with LinearGradient positioned behind content */}
+        <LinearGradient
+          colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.header}
         >
-          <MaterialIcons name="arrow-back" size={24} color="#007AFF" />
-        </TouchableOpacity>
-
-        <View style={styles.headerCenter}>
-          <MaterialIcons
-            name={getSyncStatusIcon()}
-            size={16}
-            color={getSyncStatusColor()}
-          />
-          <Text style={[styles.syncStatus, { color: getSyncStatusColor() }]}>
-            {syncStatus === "syncing"
-              ? "Syncing..."
-              : syncStatus === "offline"
-              ? "Offline"
-              : "Saved"}
-          </Text>
-        </View>
-
-        <View style={styles.headerActions}>
-          {keyboardHeight > 0 && (
-            <TouchableOpacity
-              style={styles.keyboardDismissButton}
-              onPress={() => {
-                Keyboard.dismiss();
-              }}
-            >
-              <MaterialIcons name="keyboard-hide" size={24} color="#007AFF" />
-            </TouchableOpacity>
-          )}
-
-          <TouchableOpacity
-            style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
-            onPress={handleSave}
-            disabled={isSaving}
-          >
-            <MaterialIcons
-              name={isSaving ? "sync" : "check"}
-              size={24}
-              color={isSaving ? "#A3A3A3" : "#007AFF"}
-            />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.moreButton}
-            onPress={() => setShowMoreOptions((prev) => !prev)}
-          >
-            <MaterialIcons name="more-vert" size={24} color="#007AFF" />
-          </TouchableOpacity>
-
-          {showMoreOptions && (
-            <View style={styles.moreOptionsMenu}>
+          <View style={styles.headerContent}>
+            <View style={styles.headerTopRow}>
               <TouchableOpacity
-                style={styles.optionItem}
-                onPress={() => setShowMoreOptions(false)}
-              >
-                <MaterialIcons name="keyboard-voice" size={20} color="#666" />
-                <Text style={styles.optionText}>Voice Recording</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.optionItem}>
-                <MaterialIcons name="psychology" size={20} color="#9C27B0" />
-                <Text style={styles.optionText}>AI Suggest</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.optionItem}
+                style={styles.backButton}
                 onPress={() => {
-                  setShowMoreOptions(false);
-                  // Get current content and simulate text selection
-                  if (content.trim()) {
-                    // Extract first 50 characters as "selected" text for demo
-                    const textContent = content.replace(/<[^>]*>/g, "").trim(); // Remove HTML tags
-                    const selectedText =
-                      textContent.slice(0, 50) +
-                      (textContent.length > 50 ? "..." : "");
-                    handleTextSelection(selectedText, { x: 150, y: 200 });
-                  } else {
-                    handleTextSelection(
-                      "Demo: Select text in the editor to see Ask RINA button",
-                      { x: 150, y: 200 }
+                  // If content has changed, show confirmation dialog before exiting
+                  if (title.trim() || content.trim()) {
+                    Alert.alert(
+                      "Exit Editor",
+                      "Are you sure you want to exit the editor? Your changes have been saved.",
+                      [
+                        { text: "Cancel", style: "cancel" },
+                        { text: "Exit", onPress: () => navigation.goBack() },
+                      ]
                     );
+                  } else {
+                    navigation.goBack();
                   }
                 }}
               >
-                <MaterialIcons name="psychology" size={20} color="#7C3AED" />
-                <Text style={styles.optionText}>Demo RINA Selection</Text>
+                <Ionicons name="chevron-back" size={24} color="#fff" />
               </TouchableOpacity>
-            </View>
-          )}
-        </View>
-      </View>
 
-      {/* Main Editor */}
-      <ScrollView
-        style={styles.editorContainer}
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{
-          paddingBottom: keyboardHeight > 0 ? keyboardHeight + 60 : 100,
-        }}
-      >
-        <TextInput
-          style={styles.titleInput}
-          placeholder="Note Title"
-          placeholderTextColor="#A3A3A3"
-          value={title}
-          onChangeText={setTitle}
-          maxLength={100}
-        />
+              <View style={styles.headerTitleSection}>
+                <Text style={styles.headerTitle}>Note Editor</Text>
+                <View style={styles.headerCenter}>
+                  <MaterialIcons
+                    name={getSyncStatusIcon()}
+                    size={16}
+                    color={getSyncStatusColor()}
+                  />
+                  <Text
+                    style={[styles.syncStatus, { color: getSyncStatusColor() }]}
+                  >
+                    {syncStatus === "syncing"
+                      ? "Syncing..."
+                      : syncStatus === "offline"
+                      ? "Offline"
+                      : "Saved"}
+                  </Text>
+                </View>
+              </View>
 
-        {/* Tags */}
-        <View style={styles.tagsSection}>
-          <TouchableOpacity
-            style={styles.addTagButton}
-            onPress={() => setShowTagModal(true)}
-          >
-            <MaterialIcons name="add" size={16} color="#007AFF" />
-            <Text style={styles.addTagText}>Add Tag</Text>
-          </TouchableOpacity>
+              <View style={styles.headerActions}>
+                {keyboardHeight > 0 && (
+                  <TouchableOpacity
+                    style={styles.keyboardDismissButton}
+                    onPress={() => {
+                      Keyboard.dismiss();
+                    }}
+                  >
+                    <MaterialIcons
+                      name="keyboard-hide"
+                      size={20}
+                      color="#fff"
+                    />
+                  </TouchableOpacity>
+                )}
 
-          <View style={styles.tagsContainer}>
-            {tags.map((tag, index) => (
-              <View key={index} style={styles.tag}>
-                <Text style={styles.tagText}>{tag}</Text>
-                <TouchableOpacity onPress={() => removeTag(tag)}>
-                  <MaterialIcons name="close" size={14} color="#666" />
+                <TouchableOpacity
+                  style={[
+                    styles.saveButton,
+                    isSaving && styles.saveButtonDisabled,
+                  ]}
+                  onPress={handleSave}
+                  disabled={isSaving}
+                >
+                  <MaterialIcons
+                    name={isSaving ? "sync" : "check"}
+                    size={20}
+                    color="#fff"
+                  />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.moreButton}
+                  onPress={() => setShowMoreOptions((prev) => !prev)}
+                >
+                  <MaterialIcons name="more-vert" size={20} color="#fff" />
                 </TouchableOpacity>
               </View>
-            ))}
+            </View>
           </View>
+        </LinearGradient>
 
-          <View style={styles.folderSection}>
-            <TouchableOpacity
-              style={styles.folderSelector}
-              onPress={() => setShowFolderModal(true)}
-            >
-              <MaterialIcons
-                name="folder"
-                size={18}
-                color={selectedFolderId ? "#6A009C" : "#64748B"}
-              />
-              <Text
-                style={[
-                  styles.folderName,
-                  { color: selectedFolderId ? "#6A009C" : "#64748B" },
-                ]}
+        {/* Main Content Container positioned above header */}
+        <View style={styles.mainContentContainer}>
+          <ScrollView
+            style={styles.content}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{
+              paddingBottom: keyboardHeight > 0 ? keyboardHeight + 60 : 100,
+            }}
+          >
+            <TextInput
+              style={styles.titleInput}
+              placeholder="Note Title"
+              placeholderTextColor="#A3A3A3"
+              value={title}
+              onChangeText={setTitle}
+              maxLength={100}
+            />
+
+            {/* Tags */}
+            <View style={styles.tagsSection}>
+              <TouchableOpacity
+                style={styles.addTagButton}
+                onPress={() => setShowTagModal(true)}
               >
-                {folderName}
-              </Text>
-              <MaterialIcons name="chevron-right" size={18} color="#9CA3AF" />
-            </TouchableOpacity>
-          </View>
+                <MaterialIcons name="add" size={16} color="#007AFF" />
+                <Text style={styles.addTagText}>Add Tag</Text>
+              </TouchableOpacity>
+
+              <View style={styles.tagsContainer}>
+                {tags.map((tag, index) => (
+                  <View key={index} style={styles.tag}>
+                    <Text style={styles.tagText}>{tag}</Text>
+                    <TouchableOpacity onPress={() => removeTag(tag)}>
+                      <MaterialIcons name="close" size={14} color="#666" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+
+              <View style={styles.folderSection}>
+                <TouchableOpacity
+                  style={styles.folderSelector}
+                  onPress={() => setShowFolderModal(true)}
+                >
+                  <MaterialIcons
+                    name="folder"
+                    size={18}
+                    color={selectedFolderId ? "#6A009C" : "#64748B"}
+                  />
+                  <Text
+                    style={[
+                      styles.folderName,
+                      { color: selectedFolderId ? "#6A009C" : "#64748B" },
+                    ]}
+                  >
+                    {folderName}
+                  </Text>
+                  <MaterialIcons
+                    name="chevron-right"
+                    size={18}
+                    color="#9CA3AF"
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Rich Text Editor */}
+            <View style={styles.editorWrapper}>
+              <RichEditor
+                ref={richTextRef}
+                style={styles.customRichTextInput}
+                initialContentHTML={
+                  route.params?.initialNote?.formatted_content || content
+                }
+                onChange={(html: string) => {
+                  // Update both content (plain text) and formattedContent (HTML)
+                  setContent(html.replace(/<[^>]*>/g, "")); // Strip HTML for plain text version
+                  setFormattedContent(html); // Store the full HTML for rich content
+                  console.log(
+                    "Editor content changed, formatted content:",
+                    html.substring(0, 50) + (html.length > 50 ? "..." : "")
+                  );
+                }}
+                placeholder="Start typing your notes here..."
+                editorInitializedCallback={() => {
+                  console.log(
+                    "Rich editor initialized - text selection enabled"
+                  );
+                  // Log initial content for debugging
+                  if (route.params?.initialNote?.formatted_content) {
+                    console.log(
+                      "Initializing with formatted content:",
+                      route.params.initialNote.formatted_content.substring(
+                        0,
+                        50
+                      ) +
+                        (route.params.initialNote.formatted_content.length > 50
+                          ? "..."
+                          : "")
+                    );
+                  }
+                }}
+                onCursorPosition={(scrollY: number) => {
+                  // This helps track cursor movement
+                }}
+                onMessage={(message: any) => {
+                  // Handle messages from the editor
+                  if (message.type === "selection" && message.text) {
+                    const text = message.text.trim();
+                    if (text.length > 0) {
+                      handleTextSelection(text, {
+                        x: message.x || 100,
+                        y: message.y || 100,
+                      });
+                    }
+                  }
+                }}
+                onSelectionChange={(data: any) => {
+                  // Handle text selection from the rich editor
+                  if (data && data.selection && data.selection.length > 0) {
+                    const selectedText = data.selection;
+                    // Get approximate position - you might need to adjust this based on your needs
+                    const position = { x: 150, y: 300 };
+                    handleTextSelection(selectedText, position);
+                  }
+                }}
+              />
+            </View>
+          </ScrollView>
         </View>
 
+        {/* More Options Menu - Moved to root level for proper z-index */}
+        {showMoreOptions && (
+          <View style={styles.moreOptionsMenu}>
+            <TouchableOpacity
+              style={styles.optionItem}
+              onPress={() => setShowMoreOptions(false)}
+            >
+              <MaterialIcons name="keyboard-voice" size={20} color="#666" />
+              <Text style={styles.optionText}>Voice Recording</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.optionItem}>
+              <MaterialIcons name="psychology" size={20} color="#9C27B0" />
+              <Text style={styles.optionText}>AI Suggest</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.optionItem}
+              onPress={() => {
+                setShowMoreOptions(false);
+                // Get current content and simulate text selection
+                if (content.trim()) {
+                  // Extract first 50 characters as "selected" text for demo
+                  const textContent = content.replace(/<[^>]*>/g, "").trim(); // Remove HTML tags
+                  const selectedText =
+                    textContent.slice(0, 50) +
+                    (textContent.length > 50 ? "..." : "");
+                  handleTextSelection(selectedText, { x: 150, y: 200 });
+                } else {
+                  handleTextSelection(
+                    "Demo: Select text in the editor to see Ask RINA button",
+                    { x: 150, y: 200 }
+                  );
+                }
+              }}
+            >
+              <MaterialIcons name="psychology" size={20} color="#7C3AED" />
+              <Text style={styles.optionText}>Demo RINA Selection</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Full-featured Rich Text Toolbar */}
+        <RichToolbar
+          style={styles.floatingToolbarContainer}
+          editor={richTextRef}
+          selectedIconTint="#007AFF"
+          disabledIconTint="#666"
+          actions={[
+            "bold",
+            "italic",
+            "underline",
+            "strikethrough",
+            "heading1",
+            "heading2",
+            "heading3",
+            "heading4",
+            "heading5",
+            "heading6",
+            "blockquote",
+            "code",
+            "line",
+            "unorderedList",
+            "orderedList",
+            "alignLeft",
+            "alignCenter",
+            "alignRight",
+            "alignFull",
+            "undo",
+            "redo",
+            "insertLink",
+            "insertImage",
+            "foreColor",
+            "hiliteColor",
+            "removeFormat",
+          ]}
+          iconMap={{
+            bold: () => <MaterialIcons name="format-bold" size={20} />,
+            italic: () => <MaterialIcons name="format-italic" size={20} />,
+            underline: () => (
+              <MaterialIcons name="format-underlined" size={20} />
+            ),
+            strikethrough: () => (
+              <MaterialIcons name="strikethrough-s" size={20} />
+            ),
+            heading1: () => <Text style={styles.headingText}>H1</Text>,
+            heading2: () => <Text style={styles.headingText}>H2</Text>,
+            heading3: () => <Text style={styles.headingText}>H3</Text>,
+            heading4: () => <Text style={styles.headingText}>H4</Text>,
+            heading5: () => <Text style={styles.headingText}>H5</Text>,
+            heading6: () => <Text style={styles.headingText}>H6</Text>,
+            blockquote: () => <MaterialIcons name="format-quote" size={20} />,
+            code: () => <MaterialIcons name="code" size={20} />,
+            line: () => <MaterialIcons name="horizontal-rule" size={20} />,
+            unorderedList: () => (
+              <MaterialIcons name="format-list-bulleted" size={20} />
+            ),
+            orderedList: () => (
+              <MaterialIcons name="format-list-numbered" size={20} />
+            ),
+            alignLeft: () => (
+              <MaterialIcons name="format-align-left" size={20} />
+            ),
+            alignCenter: () => (
+              <MaterialIcons name="format-align-center" size={20} />
+            ),
+            alignRight: () => (
+              <MaterialIcons name="format-align-right" size={20} />
+            ),
+            alignFull: () => (
+              <MaterialIcons name="format-align-justify" size={20} />
+            ),
+            undo: () => <MaterialIcons name="undo" size={20} />,
+            redo: () => <MaterialIcons name="redo" size={20} />,
+            insertLink: () => <MaterialIcons name="link" size={20} />,
+            insertImage: () => <MaterialIcons name="image" size={20} />,
+            foreColor: () => (
+              <TouchableOpacity onPress={() => openColorPicker("text")}>
+                <MaterialIcons name="format-color-text" size={20} />
+              </TouchableOpacity>
+            ),
+            hiliteColor: () => (
+              <TouchableOpacity onPress={() => openColorPicker("background")}>
+                <MaterialIcons name="format-color-fill" size={20} />
+              </TouchableOpacity>
+            ),
+          }}
+        />
+
+        {/* RINA Button for Text Selection */}
+        <RinaButton
+          visible={showRinaPopup}
+          selectedText={selectedText}
+          position={selectionPosition}
+          onClose={() => setShowRinaPopup(false)}
+          onAskRina={handleAskRina}
+        />
+
+        {/* Modals remain the same... */}
         <Modal
           visible={showFolderModal}
           transparent
@@ -824,271 +1016,168 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
           </View>
         </Modal>
 
-        {/* Rich Text Editor */}
-        <View style={styles.editorWrapper}>
-          <RichEditor
-            ref={richTextRef}
-            style={styles.customRichTextInput}
-            initialContentHTML={
-              route.params?.initialNote?.formatted_content || content
-            }
-            onChange={(html: string) => {
-              // Update both content (plain text) and formattedContent (HTML)
-              setContent(html.replace(/<[^>]*>/g, "")); // Strip HTML for plain text version
-              setFormattedContent(html); // Store the full HTML for rich content
-              console.log(
-                "Editor content changed, formatted content:",
-                html.substring(0, 50) + (html.length > 50 ? "..." : "")
-              );
-            }}
-            placeholder="Start typing your notes here..."
-            editorInitializedCallback={() => {
-              console.log("Rich editor initialized - text selection enabled");
-              // Log initial content for debugging
-              if (route.params?.initialNote?.formatted_content) {
-                console.log(
-                  "Initializing with formatted content:",
-                  route.params.initialNote.formatted_content.substring(0, 50) +
-                    (route.params.initialNote.formatted_content.length > 50
-                      ? "..."
-                      : "")
-                );
-              }
-            }}
-            onCursorPosition={(scrollY: number) => {
-              // This helps track cursor movement
-            }}
-            onMessage={(message: any) => {
-              // Handle messages from the editor
-              if (message.type === "selection" && message.text) {
-                const text = message.text.trim();
-                if (text.length > 0) {
-                  handleTextSelection(text, {
-                    x: message.x || 100,
-                    y: message.y || 100,
-                  });
-                }
-              }
-            }}
-            onSelectionChange={(data: any) => {
-              // Handle text selection from the rich editor
-              if (data && data.selection && data.selection.length > 0) {
-                const selectedText = data.selection;
-                // Get approximate position - you might need to adjust this based on your needs
-                const position = { x: 150, y: 300 };
-                handleTextSelection(selectedText, position);
-              }
-            }}
-          />
-        </View>
-      </ScrollView>
+        <Modal
+          visible={showColorPicker}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setShowColorPicker(false)}
+        >
+          <View style={styles.colorPickerModal}>
+            <View style={styles.colorPickerContainer}>
+              <Text style={styles.colorPickerTitle}>
+                Select {currentColorAction === "text" ? "Text" : "Background"}{" "}
+                Color
+              </Text>
 
-      {/* Full-featured Rich Text Toolbar */}
-      <RichToolbar
-        style={styles.floatingToolbarContainer} // Removed the dynamic bottom calculation
-        editor={richTextRef}
-        selectedIconTint="#007AFF"
-        disabledIconTint="#666"
-        actions={[
-          "bold",
-          "italic",
-          "underline",
-          "strikethrough",
-          "heading1",
-          "heading2",
-          "heading3",
-          "heading4",
-          "heading5",
-          "heading6",
-          "blockquote",
-          "code",
-          "line",
-          "unorderedList",
-          "orderedList",
-          "alignLeft",
-          "alignCenter",
-          "alignRight",
-          "alignFull",
-          "undo",
-          "redo",
-          "insertLink",
-          "insertImage",
-          "foreColor",
-          "hiliteColor",
-          "removeFormat",
-        ]}
-        iconMap={{
-          bold: () => <MaterialIcons name="format-bold" size={20} />,
-          italic: () => <MaterialIcons name="format-italic" size={20} />,
-          underline: () => <MaterialIcons name="format-underlined" size={20} />,
-          strikethrough: () => (
-            <MaterialIcons name="strikethrough-s" size={20} />
-          ),
-          heading1: () => <Text style={styles.headingText}>H1</Text>,
-          heading2: () => <Text style={styles.headingText}>H2</Text>,
-          heading3: () => <Text style={styles.headingText}>H3</Text>,
-          heading4: () => <Text style={styles.headingText}>H4</Text>,
-          heading5: () => <Text style={styles.headingText}>H5</Text>,
-          heading6: () => <Text style={styles.headingText}>H6</Text>,
-          blockquote: () => <MaterialIcons name="format-quote" size={20} />,
-          code: () => <MaterialIcons name="code" size={20} />,
-          line: () => <MaterialIcons name="horizontal-rule" size={20} />,
-          unorderedList: () => (
-            <MaterialIcons name="format-list-bulleted" size={20} />
-          ),
-          orderedList: () => (
-            <MaterialIcons name="format-list-numbered" size={20} />
-          ),
-          alignLeft: () => <MaterialIcons name="format-align-left" size={20} />,
-          alignCenter: () => (
-            <MaterialIcons name="format-align-center" size={20} />
-          ),
-          alignRight: () => (
-            <MaterialIcons name="format-align-right" size={20} />
-          ),
-          alignFull: () => (
-            <MaterialIcons name="format-align-justify" size={20} />
-          ),
-          undo: () => <MaterialIcons name="undo" size={20} />,
-          redo: () => <MaterialIcons name="redo" size={20} />,
-          insertLink: () => <MaterialIcons name="link" size={20} />,
-          insertImage: () => <MaterialIcons name="image" size={20} />,
-          foreColor: () => (
-            <TouchableOpacity onPress={() => openColorPicker("text")}>
-              <MaterialIcons name="format-color-text" size={20} />
-            </TouchableOpacity>
-          ),
-          hiliteColor: () => (
-            <TouchableOpacity onPress={() => openColorPicker("background")}>
-              <MaterialIcons name="format-color-fill" size={20} />
-            </TouchableOpacity>
-          ),
-        }}
-      />
-      <Modal
-        visible={showColorPicker}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowColorPicker(false)}
-      >
-        <View style={styles.colorPickerModal}>
-          <View style={styles.colorPickerContainer}>
-            <Text style={styles.colorPickerTitle}>
-              Select {currentColorAction === "text" ? "Text" : "Background"}{" "}
-              Color
-            </Text>
-
-            <View style={styles.colorGrid}>
-              {basicColors.map((color) => (
-                <TouchableOpacity
-                  key={color.name}
-                  style={[styles.colorSwatch, { backgroundColor: color.hex }]}
-                  onPress={() => applyColor(color.name, color.hex)}
-                >
-                  <Text
-                    style={[
-                      styles.colorName,
-                      { color: color.name === "black" ? "white" : "black" },
-                    ]}
+              <View style={styles.colorGrid}>
+                {basicColors.map((color) => (
+                  <TouchableOpacity
+                    key={color.name}
+                    style={[styles.colorSwatch, { backgroundColor: color.hex }]}
+                    onPress={() => applyColor(color.name, color.hex)}
                   >
-                    {color.name}
-                  </Text>
+                    <Text
+                      style={[
+                        styles.colorName,
+                        { color: color.name === "black" ? "white" : "black" },
+                      ]}
+                    >
+                      {color.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.colorPickerButton,
+                  styles.colorPickerCancelButton,
+                ]}
+                onPress={() => setShowColorPicker(false)}
+              >
+                <Text style={styles.colorPickerCancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal visible={showTagModal} transparent animationType="slide">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Add Tag</Text>
+              <TextInput
+                style={styles.tagInput}
+                placeholder="Enter tag name"
+                value={newTag}
+                onChangeText={setNewTag}
+                autoFocus
+              />
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={styles.modalActionButton}
+                  onPress={() => {
+                    addTag();
+                    setShowTagModal(false);
+                  }}
+                >
+                  <Text style={styles.modalActionText}>Add</Text>
                 </TouchableOpacity>
-              ))}
-            </View>
-
-            <TouchableOpacity
-              style={[styles.colorPickerButton, styles.colorPickerCancelButton]}
-              onPress={() => setShowColorPicker(false)}
-            >
-              <Text style={styles.colorPickerCancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* RINA Button for Text Selection */}
-      <RinaButton
-        visible={showRinaPopup}
-        selectedText={selectedText}
-        position={selectionPosition}
-        onClose={() => setShowRinaPopup(false)}
-        onAskRina={handleAskRina}
-      />
-
-      {/* Modals */}
-      <Modal visible={showTagModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Add Tag</Text>
-            <TextInput
-              style={styles.tagInput}
-              placeholder="Enter tag name"
-              value={newTag}
-              onChangeText={setNewTag}
-              autoFocus
-            />
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={styles.modalActionButton}
-                onPress={() => {
-                  addTag();
-                  setShowTagModal(false);
-                }}
-              >
-                <Text style={styles.modalActionText}>Add</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalActionButton, styles.cancelButton]}
-                onPress={() => {
-                  setNewTag("");
-                  setShowTagModal(false);
-                }}
-              >
-                <Text style={styles.modalCancelText}>Cancel</Text>
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalActionButton, styles.cancelButton]}
+                  onPress={() => {
+                    setNewTag("");
+                    setShowTagModal(false);
+                  }}
+                >
+                  <Text style={styles.modalCancelText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
+      </View>
     </KeyboardAvoidingView>
   );
 };
 
+// Update the styles section with these changes:
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#f8fafc",
-    paddingBottom: 90,
+  },
+  rootContainer: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
   },
   header: {
-    position: 'absolute',
+    position: "absolute",
     top: 0,
     left: 0,
     right: 0,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 70 : 55,
-    paddingBottom: 20,
-    backgroundColor: "#F5E1FD",
-    borderBottomLeftRadius: 25,
-    borderBottomRightRadius: 25,
+    paddingHorizontal: 24,
+    paddingTop: Platform.OS === "ios" ? 60 : 45,
+    paddingBottom: "100%",
+    zIndex: 1,
+  },
+  headerContent: {
+    flex: 1,
+  },
+  mainContentContainer: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    marginTop: 120, // Position it below the header
     shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
+    shadowRadius: 12,
+    elevation: 10,
     zIndex: 1000,
+    overflow: "hidden",
+  },
+  headerTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  headerTitleSection: {
+    flex: 1,
+  },
+  headerTitle: {
+    fontSize: 24,
+    color: "#FFFFFF",
+    fontFamily: "Inter-Bold",
+    lineHeight: 28,
   },
   headerCenter: {
     flexDirection: "row",
     alignItems: "center",
+    marginTop: 2,
   },
   headerActions: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 8,
+  },
+  content: {
+    flex: 1,
+    paddingTop: 30,
+    paddingHorizontal: 16,
+    paddingBottom: 100,
   },
   voiceButton: {
     padding: 10,
@@ -1106,18 +1195,59 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   saveButton: {
-    padding: 8,
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
   },
   keyboardDismissButton: {
-    padding: 8,
-    marginRight: 8,
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  moreButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
   },
   editorContainer: {
-    flex: 1,
+     flex: 1,
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
     paddingHorizontal: 16,
-    paddingTop: 130, // Space for the absolute positioned header
+    paddingTop: 50, // Reduced space since header is behind
     paddingBottom: 100,
+    marginTop: 120, // Position it below the header
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 10,
+    zIndex: 1000,
+    overflow: "hidden",
   },
+
   titleInput: {
     fontSize: 24,
     fontFamily: "Inter-Bold",
@@ -1405,22 +1535,23 @@ const styles = StyleSheet.create({
     minHeight: 300,
     width: "100%",
   },
-  moreButton: {
-    marginLeft: 10,
-  },
   moreOptionsMenu: {
     position: "absolute",
-    top: 50,
-    right: 0,
+    top: Platform.OS === "ios" ? 120 : 105, // Adjust for header height
+    right: 24, // Match header padding
     backgroundColor: "#fff",
-    borderRadius: 6,
-    paddingVertical: 4,
-    elevation: 4,
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    minWidth: 200,
+    elevation: 25, // Very high elevation for Android
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    zIndex: 9999,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    zIndex: 999999, // Extremely high z-index
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.08)",
   },
   optionItem: {
     flexDirection: "row",
