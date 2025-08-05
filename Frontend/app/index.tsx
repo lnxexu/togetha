@@ -8,7 +8,8 @@ export default function Index() {
     'Inter-Medium': require('../assets/fonts/Inter_24pt-Medium.ttf'),
     'Inter-Regular': require('../assets/fonts/Inter_24pt-Regular.ttf'),
     'Inter-Bold': require('../assets/fonts/Inter_24pt-SemiBold.ttf'),
-    'Lexend': require('../assets/fonts/Lexend-SemiBold.ttf'),
+    'Lexend-Regular': require('../assets/fonts/Lexend-Regular.ttf'),
+    'Lexend-SemiBold': require('../assets/fonts/Lexend-SemiBold.ttf'),
   });
 
   if (!fontsLoaded) {

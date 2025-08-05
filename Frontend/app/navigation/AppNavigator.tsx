@@ -12,6 +12,7 @@ import Home from '../home';
 import NotesScreen from '../note-taking/notes';
 import ToDo from '../task-management/ToDo';
 import AllItemsView from '../AllItemsView';
+import Notifications from '../notifications';
 
 //note-taking components
 import ImportPDFPage from '../note-taking/ImportPDFPage';
@@ -20,6 +21,7 @@ import NewNoteEditor from '../note-taking/NewNoteEditor';
 //task management components
 import AddTask from '../task-management/AddTask';
 import TaskDetails from '../task-management/TaskDetails';
+import EisenhowerListPage from '../task-management/EisenhowerListPage';
 
 //profile components
 import Profile from '../profile/Profile';
@@ -32,6 +34,7 @@ export type RootStackParamList = {
   Login: undefined;
   Home: undefined;
   Notes: undefined;
+  Notifications: undefined;
   NoteEditor: {
     noteId?: string;
     initialNote?: {
@@ -55,8 +58,19 @@ export type RootStackParamList = {
   AddTask: {
     quadrant?: 'urgent-important' | 'not-urgent-important' | 'urgent-not-important' | 'not-urgent-not-important';
   };
+  editTaskId: { editTaskId: string } | undefined;
   AllItemsView: {
     viewType: 'tasks' | 'activity';
+  };
+  EisenhowerList: {
+    tasks: any[];
+    quadrant: string;
+    onTaskPress?: (taskId: string) => void;
+    onAddTask?: () => void;
+    onEditTask?: (taskId: string) => void;
+    onDeleteTask?: (taskId: string) => void;
+    onMarkComplete?: (taskId: string) => void;
+    onViewAll?: () => void;
   };
   PDFs: undefined;
   RINA: undefined;
@@ -81,6 +95,7 @@ const AppNavigator: React.FC = () => {
         {/* Main Screens */}
         <Stack.Screen name="Home" component={Home} />
         <Stack.Screen name="Notes" component={NotesScreen} />
+        <Stack.Screen name="Notifications" component={Notifications} />
         <Stack.Screen name="ToDo" component={ToDo} />
         <Stack.Screen name="RINA" component={ChatBot} />
         <Stack.Screen name="Profile" component={Profile} />
@@ -97,6 +112,8 @@ const AppNavigator: React.FC = () => {
         {/* Task Management components */}
         <Stack.Screen name="TaskDetails" component={TaskDetails} />
         <Stack.Screen name="AddTask" component={AddTask} />
+        <Stack.Screen name="editTaskId" component={AddTask} />
+        <Stack.Screen name="EisenhowerList" component={EisenhowerListPage} />
         <Stack.Screen name="AllItemsView" component={AllItemsView} />
       </Stack.Navigator>
     </NavigationContainer>

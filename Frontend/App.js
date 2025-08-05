@@ -2,7 +2,10 @@ import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import React, { useEffect } from 'react';
 import { ActivityIndicator, View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AppNavigator from './app/navigation/AppNavigator';
+// Remove the import here - we'll move this to AppNavigator
+// import useSessionMonitor from './hooks/Session-Monitoring';
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
@@ -14,6 +17,9 @@ export default function App() {
     'Inter-Bold': require('./assets/fonts/Inter_24pt-SemiBold.ttf'),
     'Lexend': require('./assets/fonts/Lexend-SemiBold.ttf'),
   });
+  
+  // Remove this line - it's causing the error
+  // useSessionMonitor();
 
   useEffect(() => {
     if (fontsLoaded) {
@@ -24,10 +30,14 @@ export default function App() {
   if (!fontsLoaded) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#6A009C" />
+        <ActivityIndicator size="large" color="#6A009C" />  
       </View>
     );
   }
 
-  return <AppNavigator />;
+  return (
+    <SafeAreaProvider>
+      <AppNavigator />
+    </SafeAreaProvider>
+  );
 }

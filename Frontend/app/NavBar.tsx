@@ -1,4 +1,4 @@
-import { MaterialIcons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import React from "react";
@@ -21,7 +21,7 @@ export default function Navbar({ activeRoute = "Home" }: NavbarProps) {
           style={styles.navItem}
           onPress={() => navigation.navigate("Home")}
         >
-          <MaterialIcons
+          <Ionicons
             name="home"
             size={24}
             color={activeRoute === "Home" ? "#AD00FF" : "#7F8C8D"}
@@ -38,17 +38,17 @@ export default function Navbar({ activeRoute = "Home" }: NavbarProps) {
 
         <TouchableOpacity
           style={styles.navItem}
-          onPress={() => navigation.navigate("ToDo")} // Changed from "PDFs" to "ToDo"
+          onPress={() => navigation.navigate("ToDo")}
         >
-          <MaterialIcons
-            name="check-box" // You can change the icon if needed
+          <Ionicons
+            name="checkbox"
             size={24}
-            color={activeRoute === "ToDo" ? "#AD00FF" : "#7F8C8D"} // Updated activeRoute check
+            color={activeRoute === "ToDo" ? "#AD00FF" : "#7F8C8D"}
           />
           <Text
             style={[
               styles.navText,
-              activeRoute === "ToDo" && styles.activeNavText, // Updated activeRoute check
+              activeRoute === "ToDo" && styles.activeNavText,
             ]}
           >
             To Do
@@ -80,8 +80,8 @@ export default function Navbar({ activeRoute = "Home" }: NavbarProps) {
           style={styles.navItem}
           onPress={() => navigation.navigate("Notes")}
         >
-          <MaterialIcons
-            name="edit-note"
+          <Ionicons
+            name="document-text"
             size={24}
             color={activeRoute === "Notes" ? "#AD00FF" : "#7F8C8D"}
           />
@@ -99,7 +99,7 @@ export default function Navbar({ activeRoute = "Home" }: NavbarProps) {
           style={styles.navItem}
           onPress={() => navigation.navigate("Profile")}
         >
-          <MaterialIcons
+          <Ionicons
             name="person"
             size={24}
             color={activeRoute === "Profile" ? "#AD00FF" : "#7F8C8D"}

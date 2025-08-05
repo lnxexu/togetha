@@ -721,7 +721,7 @@
                     taskItem.innerHTML = `
                         <input type="checkbox" class="task-checkbox" data-id="${task.id}">
                         <div style="margin-left: 10px; flex: 1;">
-                            ${task.text} ${dueDateDisplay}
+                            ${task.title} ${dueDateDisplay}
                         </div>
                         <button class="edit-btn" data-id="${task.id}" style="background: none; border: none; cursor: pointer; color: #4285F4;">✏️</button>
                     `;
@@ -1012,7 +1012,7 @@
                                 data-id="${task.id}">
                             <div class="task-text">
                                 <div style="display: flex; align-items: center; margin-bottom: 3px;">
-                                    ${task.text}
+                                    ${task.title}
                                     ${categoryDisplay}
                                     ${dueDateDisplay}
                                 </div>
@@ -1064,7 +1064,7 @@
                                         ${subtask.completed ? 'checked' : ''} 
                                         data-task-id="${task.id}" 
                                         data-subtask-id="${subtask.id}">
-                                    <span style="${subtask.completed ? 'text-decoration: line-through; color: #999;' : ''}">${subtask.text}</span>
+                                    <span style="${subtask.completed ? 'text-decoration: line-through; color: #999;' : ''}">${subtask.title}</span>
                                 `;
                                 subtasksContainer.appendChild(subtaskItem);
                             });
@@ -1100,7 +1100,7 @@
                 if (!text) return;
                 
                 const taskData = {
-                    text: text,
+                    title: text,
                     completed: false,
                     priority: 'not_urgent_important', // Default to "Schedule" quadrant
                     status: 'not_started'
@@ -1217,7 +1217,7 @@
                 const task = tasks.find(t => t.id === taskId);
                 
                 editingTaskId = taskId;
-                editTaskText.value = task.text || '';
+                editTaskText.value = task.title || '';
                 editTaskDescription.value = task.description || '';
                 editTaskPriority.value = task.priority || 'not_urgent_important';
                 editTaskStatus.value = task.status || 'not_started';
@@ -1243,12 +1243,12 @@
                     
                     const subtaskInput = document.createElement('input');
                     subtaskInput.type = 'text';
-                    subtaskInput.value = subtask.text;
+                    subtaskInput.value = subtask.title;
                     subtaskInput.style.flex = '1';
                     subtaskInput.style.marginRight = '5px';
                     subtaskInput.dataset.index = index;
                     subtaskInput.addEventListener('change', function() {
-                        subtasks[index].text = this.value;
+                        subtasks[index].title = this.value;
                     });
                     
                     const subtaskCheckbox = document.createElement('input');
@@ -1284,7 +1284,7 @@
             // Add new subtask
             function addNewSubtask() {
                 subtasks.push({
-                    text: '',
+                    title: '',
                     completed: false
                 });
                 renderSubtasks();
@@ -1353,7 +1353,7 @@
                 if (!editingTaskId) return;
                 
                 const taskData = {
-                    text: editTaskText.value,
+                    title: editTaskText.value,
                     description: editTaskDescription.value,
                     priority: editTaskPriority.value,
                     status: editTaskStatus.value,
@@ -1393,7 +1393,7 @@
                                     },
                                     body: JSON.stringify({
                                         id: subtask.id,
-                                        text: subtask.text,
+                                        title: subtask.text,
                                         completed: subtask.completed
                                     })
                                 })
@@ -1408,7 +1408,7 @@
                                         'Authorization': `Token ${token}`
                                     },
                                     body: JSON.stringify({
-                                        text: subtask.text,
+                                        title: subtask.text,
                                         completed: subtask.completed
                                     })
                                 })
