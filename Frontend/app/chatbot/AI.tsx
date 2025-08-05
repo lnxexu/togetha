@@ -1,7 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as DocumentPicker from 'expo-document-picker';
-import React, { useState } from 'react';
+import { LinearGradient } from 'expo-linear-gradient';
+import React, { useEffect, useState } from 'react';
+import chatbotServices from './services/chatbotServices';
 import {
     Alert,
     SafeAreaView,
@@ -13,8 +15,12 @@ import {
     TouchableOpacity,
     View,
     Platform,
+    Modal,
+    FlatList,
+    
 } from 'react-native';
 import { RootStackParamList } from '../navigation/AppNavigator';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type ChatBotNavigationProp = NativeStackNavigationProp<RootStackParamList, 'RINA'>;
 
@@ -23,6 +29,14 @@ interface Message {
   text: string;
   isUser: boolean;
   timestamp: Date;
+}
+
+interface ChatSession {
+  id: string;
+  title: string;
+  lastMessage: string;
+  timestamp: Date;
+  messageCount: number;
 }
 
 interface ChatBotProps {
@@ -40,6 +54,37 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
   ]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [showChatHistory, setShowChatHistory] = useState(false);
+  const [chatSessions, setChatSessions] = useState<ChatSession[]>([
+    {
+      id: '1',
+      title: 'Study Session - Math',
+      lastMessage: 'Can you help me with calculus derivatives?',
+      timestamp: new Date(Date.now() - 86400000), // 1 day ago
+      messageCount: 12,
+    },
+    {
+      id: '2',
+      title: 'Physics Homework',
+      lastMessage: 'Explain quantum mechanics principles',
+      timestamp: new Date(Date.now() - 172800000), // 2 days ago
+      messageCount: 8,
+    },
+    {
+      id: '3',
+      title: 'Essay Writing Help',
+      lastMessage: 'Help me structure my thesis statement',
+      timestamp: new Date(Date.now() - 259200000), // 3 days ago
+      messageCount: 15,
+    },
+    {
+      id: '4',
+      title: 'Chemistry Lab Report',
+      lastMessage: 'Summarize the experiment results',
+      timestamp: new Date(Date.now() - 604800000), // 1 week ago
+      messageCount: 6,
+    },
+  ]);
 
   const suggestedPrompts = [
     {
@@ -67,8 +112,37 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
       icon: '�',
     },
   ];
+  
+  useEffect(() => {
+    checkAuthentication();
+  }, []);
 
-  const handleSendMessage = async () => {
+  const checkAuthentication = async () => {
+    const token = await AsyncStorage.getItem('authToken');
+    if (!token) {
+      handleLogout();
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      // Clear all authentication data
+      await AsyncStorage.removeItem('authToken');
+      await AsyncStorage.removeItem('token');
+      await AsyncStorage.removeItem('username');
+      await AsyncStorage.removeItem('session_id');
+      
+      // Navigate to login screen
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Login' }],
+      });
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  };
+
+   const handleSendMessage = async () => {
     if (inputText.trim() === '') return;
 
     const userMessage: Message = {
@@ -95,6 +169,7 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
     }, 1500);
   };
 
+  
   const handleFileImport = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -104,21 +179,65 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
 
       if (result.assets && result.assets.length > 0) {
         const file = result.assets[0];
+        
+        // Check if token exists before attempting OCR
+        const token = await AsyncStorage.getItem('authToken');
+        if (!token) {
+          Alert.alert(
+            'Authentication Required', 
+            'Please log in to use the OCR feature.',
+            [
+              { 
+                text: 'Login', 
+                onPress: () => handleLogout() // This will redirect to login
+              },
+              { 
+                text: 'Cancel', 
+                style: 'cancel' 
+              }
+            ]
+          );
+          return;
+        }
+        
         Alert.alert(
           'File Imported',
           `File "${file.name}" has been imported and is ready for processing.`,
           [
             {
-              text: 'Summarize',
-              onPress: () => handlePromptSelection(`Please summarize the content of ${file.name}`),
-            },
-            {
-              text: 'Explain',
-              onPress: () => handlePromptSelection(`Please explain the content of ${file.name}`),
-            },
-            {
-              text: 'Generate Quiz',
-              onPress: () => handlePromptSelection(`Please generate a quiz based on ${file.name}`),
+              text: 'Extract Text',
+              onPress: async () => {
+                try {
+                  setIsLoading(true); // Show loading indicator
+                  const extractedText = await chatbotServices.extractTextFromImages(file.uri);
+                  setIsLoading(false);
+                  
+                  if (extractedText.trim()) {
+                    setInputText(`Extracted Text: ${extractedText}`);
+                  } else {
+                    Alert.alert('No Text Found', 'The system couldn\'t detect any text in this image.');
+                  }
+                } catch (error) {
+                  setIsLoading(false);
+                  const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                  
+                  if (errorMessage.includes('401')) {
+                    Alert.alert(
+                      'Session Expired', 
+                      'Your session has expired. Please log in again.',
+                      [
+                        { 
+                          text: 'Login', 
+                          onPress: () => handleLogout() // Logout and redirect to login
+                        }
+                      ]
+                    );
+                  } else {
+                    Alert.alert('Error', 'Failed to extract text from the image');
+                    console.error('OCR Error:', error);
+                  }
+                }
+              },
             },
             { text: 'Cancel', style: 'cancel' },
           ]
@@ -144,6 +263,51 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
     navigation.goBack(); // Use navigation.goBack() instead of useRouter()
   };
 
+  const handleMenuPress = () => {
+    setShowChatHistory(true);
+  };
+
+  const handleCloseChatHistory = () => {
+    setShowChatHistory(false);
+  };
+
+  const handleSelectChatSession = (sessionId: string) => {
+    // Here you would load the selected chat session
+    // For now, we'll just close the modal
+    setShowChatHistory(false);
+    // You could implement loading historical messages here
+    console.log('Selected chat session:', sessionId);
+  };
+
+  const handleDeleteChatSession = (sessionId: string) => {
+    Alert.alert(
+      'Delete Chat',
+      'Are you sure you want to delete this chat session?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            setChatSessions(prev => prev.filter(session => session.id !== sessionId));
+          },
+        },
+      ]
+    );
+  };
+
+  const handleNewChat = () => {
+    setShowChatHistory(false);
+    setMessages([
+      {
+        id: '1',
+        text: 'Hello! How can I assist you today?',
+        isUser: false,
+        timestamp: new Date(),
+      },
+    ]);
+  };
+
   const handlePromptSelection = (prompt: string) => {
     setInputText(prompt);
   };
@@ -160,14 +324,23 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
     handlePromptSelection('Please generate a quiz based on the uploaded document');
   };
 
+  const handleOCR = () => {
+    handlePromptSelection('Please extract text from the uploaded document');
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#f8f9fa" />
 
       {/* Header */}
-      <View style={styles.header}>
+      <LinearGradient
+        colors={['#A855F7', '#8B5CF6', '#7C3AED']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.header}
+      >
         <TouchableOpacity style={styles.backButton} onPress={handleGoBack}>
-          <Ionicons name="chevron-back" size={24} color="#333" />
+          <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
         </TouchableOpacity>
         <View style={styles.headerInfo}>
           <View style={styles.avatar}>
@@ -178,10 +351,10 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
             <Text style={styles.botDescription}>Your AI Tutoring Assistant</Text>
           </View>
         </View>
-        <TouchableOpacity style={styles.menuButton}>
-          <Ionicons name="menu" size={24} color="#333" />
+        <TouchableOpacity style={styles.menuButton} onPress={handleMenuPress}>
+          <Ionicons name="menu" size={24} color="#FFFFFF" />
         </TouchableOpacity>
-      </View>
+      </LinearGradient>
 
       {/* Messages */}
       <ScrollView style={styles.messagesContainer}>
@@ -286,20 +459,30 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
 
       {/* Action Buttons */}
       <View style={styles.actionsContainer}>
-        <TouchableOpacity style={styles.actionButton} onPress={handleSummarize}>
-          <Ionicons name="document-text" size={16} color="#6B46C1" />
-          <Text style={styles.actionButtonText}>Summarize</Text>
-        </TouchableOpacity>
+        <ScrollView
+  horizontal
+  showsHorizontalScrollIndicator={false}
+  contentContainerStyle={styles.actionsContainer}
+>
+  <TouchableOpacity style={styles.actionButton} onPress={handleSummarize}>
+    <Ionicons name="document-text" size={16} color="#6B46C1" />
+    <Text style={styles.actionButtonText}>Summarize</Text>
+  </TouchableOpacity>
 
-        <TouchableOpacity style={styles.actionButton} onPress={handleExplain}>
-          <Ionicons name="bulb" size={16} color="#6B46C1" />
-          <Text style={styles.actionButtonText}>Explain</Text>
-        </TouchableOpacity>
+  <TouchableOpacity style={styles.actionButton} onPress={handleExplain}>
+    <Ionicons name="bulb" size={16} color="#6B46C1" />
+    <Text style={styles.actionButtonText}>Explain</Text>
+  </TouchableOpacity>
 
-        <TouchableOpacity style={styles.actionButton} onPress={handleGenerateQuiz}>
-          <Ionicons name="help-circle" size={16} color="#6B46C1" />
-          <Text style={styles.actionButtonText}>Generate Quiz</Text>
-        </TouchableOpacity>
+  <TouchableOpacity style={styles.actionButton} onPress={handleGenerateQuiz}>
+    <Ionicons name="help-circle" size={16} color="#6B46C1" />
+    <Text style={styles.actionButtonText}>Generate Quiz</Text>
+  </TouchableOpacity>
+  <TouchableOpacity style={styles.actionButton} onPress={handleOCR}>
+    <Ionicons name="help-circle" size={16} color="#6B46C1" />
+    <Text style={styles.actionButtonText}>Extract Text</Text>
+  </TouchableOpacity>
+</ScrollView>
       </View>
 
       {/* Input Area */}
@@ -324,6 +507,83 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
           <Ionicons name="send" size={20} color="#fff" />
         </TouchableOpacity>
       </View>
+
+      {/* Chat History Modal */}
+      <Modal
+        visible={showChatHistory}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={handleCloseChatHistory}
+      >
+        <SafeAreaView style={styles.chatHistoryContainer}>
+          {/* Chat History Header */}
+          <LinearGradient
+            colors={['#A855F7', '#8B5CF6', '#7C3AED']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.chatHistoryHeader}
+          >
+            <TouchableOpacity style={styles.closeButton} onPress={handleCloseChatHistory}>
+              <Ionicons name="close" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+            <Text style={styles.chatHistoryTitle}>Chat History</Text>
+            <TouchableOpacity style={styles.newChatButton} onPress={handleNewChat}>
+              <Ionicons name="add" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+          </LinearGradient>
+
+          {/* Chat Sessions List */}
+          <View style={styles.chatHistoryContent}>
+            <FlatList
+              data={chatSessions}
+              keyExtractor={(item) => item.id}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.chatSessionsList}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.chatSessionCard}
+                  onPress={() => handleSelectChatSession(item.id)}
+                >
+                  <View style={styles.chatSessionContent}>
+                    <View style={styles.chatSessionIcon}>
+                      <Ionicons name="chatbubble-ellipses" size={24} color="#6B46C1" />
+                    </View>
+                    <View style={styles.chatSessionInfo}>
+                      <Text style={styles.chatSessionTitle}>{item.title}</Text>
+                      <Text style={styles.chatSessionLastMessage} numberOfLines={2}>
+                        {item.lastMessage}
+                      </Text>
+                      <View style={styles.chatSessionMeta}>
+                        <Text style={styles.chatSessionTime}>
+                          {item.timestamp.toLocaleDateString()}
+                        </Text>
+                        <Text style={styles.chatSessionCount}>
+                          {item.messageCount} messages
+                        </Text>
+                      </View>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.deleteSessionButton}
+                      onPress={() => handleDeleteChatSession(item.id)}
+                    >
+                      <Ionicons name="trash-outline" size={20} color="#EF4444" />
+                    </TouchableOpacity>
+                  </View>
+                </TouchableOpacity>
+              )}
+              ListEmptyComponent={
+                <View style={styles.emptyChatHistory}>
+                  <Ionicons name="chatbubbles-outline" size={48} color="#D1D5DB" />
+                  <Text style={styles.emptyChatHistoryText}>No chat history yet</Text>
+                  <Text style={styles.emptyChatHistorySubtext}>
+                    Start a conversation to see your chat history here
+                  </Text>
+                </View>
+              }
+            />
+          </View>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -342,9 +602,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     paddingTop: Platform.OS === 'ios' ? 50 : 35,
-    backgroundColor: '#F5E1FD',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e9ecef',
     borderBottomLeftRadius: 25,
     borderBottomRightRadius: 25,
     shadowColor: "#1E293B",
@@ -366,24 +623,26 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#6A009C',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
   },
   avatarText: {
-    color: '#fff',
+    color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
   },
   botName: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
+    fontFamily: 'Lexend',
+    color: '#FFFFFF',
   },
   botDescription: {
     fontSize: 13,
-    color: '#666',
+    color: 'rgba(255, 255, 255, 0.8)',
     marginTop: 2,
   },
   menuButton: {
@@ -466,12 +725,12 @@ const styles = StyleSheet.create({
   },
   actionsContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
     paddingHorizontal: 16,
     paddingVertical: 8,
     backgroundColor: '#fff',
     borderTopWidth: 1,
     borderTopColor: '#e9ecef',
+    gap: 8,
   },
   actionButton: {
     flexDirection: 'row',
@@ -689,6 +948,130 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#333',
     flex: 1,
+  },
+  
+  // Chat History Modal Styles
+  chatHistoryContainer: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
+  },
+  chatHistoryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    paddingTop: Platform.OS === 'ios' ? 50 : 35,
+    paddingBottom: 20,
+  },
+  closeButton: {
+    padding: 4,
+  },
+  chatHistoryTitle: {
+    fontSize: 20,
+    fontFamily: 'Lexend',
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+  },
+  newChatButton: {
+    padding: 4,
+  },
+  chatHistoryContent: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 25,
+    borderTopRightRadius: 25,
+    marginTop: -10,
+    paddingTop: 20,
+  },
+  chatSessionsList: {
+    paddingHorizontal: 16,
+    paddingBottom: 20,
+  },
+  chatSessionCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    marginBottom: 12,
+    shadowColor: '#1E293B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(226, 232, 240, 0.6)',
+  },
+  chatSessionContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+  },
+  chatSessionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  chatSessionInfo: {
+    flex: 1,
+  },
+  chatSessionTitle: {
+    fontSize: 16,
+    fontFamily: 'Inter-Bold',
+    color: '#1E293B',
+    marginBottom: 4,
+  },
+  chatSessionLastMessage: {
+    fontSize: 14,
+    color: '#64748B',
+    fontFamily: 'Inter-Regular',
+    marginBottom: 8,
+    lineHeight: 18,
+  },
+  chatSessionMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  chatSessionTime: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontFamily: 'Inter-Medium',
+  },
+  chatSessionCount: {
+    fontSize: 12,
+    color: '#6B46C1',
+    fontFamily: 'Inter-Medium',
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  deleteSessionButton: {
+    padding: 8,
+    marginLeft: 8,
+  },
+  emptyChatHistory: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  emptyChatHistoryText: {
+    fontSize: 18,
+    fontFamily: 'Inter-SemiBold',
+    color: '#64748B',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptyChatHistorySubtext: {
+    fontSize: 14,
+    color: '#94A3B8',
+    fontFamily: 'Inter-Regular',
+    textAlign: 'center',
+    lineHeight: 20,
+    paddingHorizontal: 40,
   },
 });
 

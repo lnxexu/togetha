@@ -20,6 +20,7 @@ import {
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
+
 const { RichEditor, RichToolbar } = require("react-native-pell-rich-editor");
 
 // Types
@@ -1057,16 +1058,29 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#fff",
+    backgroundColor: "#f8fafc",
     paddingBottom: 90,
   },
   header: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'ios' ? 70 : 55,
+    paddingBottom: 20,
+    backgroundColor: "#F5E1FD",
+    borderBottomLeftRadius: 25,
+    borderBottomRightRadius: 25,
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+    zIndex: 1000,
   },
   headerCenter: {
     flexDirection: "row",
@@ -1100,7 +1114,8 @@ const styles = StyleSheet.create({
   },
   editorContainer: {
     flex: 1,
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingTop: 130, // Space for the absolute positioned header
     paddingBottom: 100,
   },
   titleInput: {

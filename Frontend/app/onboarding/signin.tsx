@@ -16,16 +16,8 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import LoginIllustration from "../../assets/illustrations/undraw_access-account_aydp (1).svg";
 import type { RootStackParamList } from "../navigation/AppNavigator";
-
-
-// Ensure the API URL is set correctly
-// const API_URL = 'http://192.168.0.153:8000';
-// const API_URL = 'http://localhost:8081';
-// const API_URL = 'http://127.0.0.1:8000';
-const API_URL = "http://10.0.2.2:8000";
-
-
-
+import AuthService from "./service/AuthService";
+import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
 
 export default function SignIn() {
   const navigation =
@@ -36,9 +28,11 @@ export default function SignIn() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // Update the handleLogin function
+
   const handleLogin = async () => {
     console.log("Login attempt started with username:", username);
-    
+
     if (!username.trim() || !password.trim()) {
       setError("Please enter both username and password");
       console.log("Login validation failed: empty username or password");
@@ -48,48 +42,96 @@ export default function SignIn() {
     try {
       setIsLoading(true);
       setError("");
-      
-      console.log(`Making API request to ${API_URL}/login`);
-      console.log("Request payload:", { username, password: "***" });
-      
-      const response = await fetch(`${API_URL}/login`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          username,
-          password,
-        }),
-      });
 
-      console.log("Response status:", response.status);
-      console.log("Response headers:", JSON.stringify(response.headers, null, 2));
-      
-      const data = await response.json();
-      console.log("Response data:", JSON.stringify(data, null, 2));
+      // Before login attempt, explicitly logout any previous session to ensure clean state
+      const authService = AuthService.getInstance();
+      await authService.logout();
 
-      if (!response.ok) {
-        console.log("Login failed with server error:", data.error);
-        throw new Error(data.error || "Login failed");
+      // Add timeout to the request (10 seconds)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      try {
+        // Perform login
+        const response = await authService.login(username, password);
+        clearTimeout(timeoutId);
+
+        // Force reload app state by resetting to Home screen
+        navigation.reset({
+          index: 0,
+          routes: [{ name: "Home" }],
+        });
+      } catch (loginError: any) {
+        clearTimeout(timeoutId);
+
+        // Check if this is a session conflict error
+        if (
+          loginError.message &&
+          loginError.message.includes("already in use")
+        ) {
+          // Show session conflict dialog
+          Alert.alert(
+            "Account Already In Use",
+            "Your account is already logged in on another device. Would you like to log out of all other devices and login here?",
+            [
+              {
+                text: "Cancel",
+                style: "cancel",
+              },
+              {
+                text: "Yes, Log Out Other Sessions",
+                onPress: async () => {
+                  try {
+                    // Force login by adding force parameter
+                    setIsLoading(true);
+                    // API call to force logout other sessions
+                    const forceResponse = await fetch(`${API_URL}${API_ENDPOINTS.LOGIN}`, {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                      },
+                      body: JSON.stringify({
+                        username,
+                        password,  
+                        force: true, // Indicate we want to force login
+                      }),
+                    });
+
+                    if (forceResponse.ok) {
+                      const data = await forceResponse.json();
+                      if (data.token) {
+                        // Store authentication data
+                        await AsyncStorage.setItem("token", data.token);
+                        await AsyncStorage.setItem("authToken", data.token);
+                        await AsyncStorage.setItem("username", username);
+                        await AsyncStorage.setItem(
+                          "session_id",
+                          data.session_id
+                        );
+                      }
+                    } else {
+                      setError("Failed to force login. Please try again.");
+                    }
+                  } catch (error) {
+                    console.error("Force login error:", error);
+                    setError("Network error. Please try again.");
+                  } finally {
+                    setIsLoading(false);
+                  }
+                },
+              },
+            ]
+          );
+        } else {
+          // Handle other login errors
+          setError(
+            loginError.message || "Login failed. Please check your credentials."
+          );
+        }
       }
-
-      // Store the auth token
-      console.log("Login successful, storing auth token and user data");
-      await AsyncStorage.setItem("authToken", data.token);
-      await AsyncStorage.setItem("userData", JSON.stringify(data.user));
-      
-      // Navigate to home screen
-      console.log("Navigating to Home screen");
-      navigation.reset({
-        index: 0,
-        routes: [{ name: "Home" }],
-      });
-    } catch (err) {
-      console.error("Login error:", err);
-      console.log("Error type:", typeof err);
-      console.log("Error details:", JSON.stringify(err, null, 2));
-      setError(err instanceof Error ? err.message : "Login failed. Please try again.");
+    } catch (err: any) {
+      console.error("Login process error:", err);
+      setError("An unexpected error occurred. Please try again.");
     } finally {
       setIsLoading(false);
     }

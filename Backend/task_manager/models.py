@@ -28,13 +28,13 @@ class Task(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=200, default="Untitled Task")  # Add default here
     description = models.TextField(blank=True, null=True)
-    due_date = models.DateField(blank=True, null=True)
+    due_datetime = models.DateTimeField(blank=True, null=True)
     priority = models.CharField(
         max_length=30, 
         choices=PRIORITY_CHOICES,
         default='not-urgent-not-important'
     )
-    subject = models.CharField(max_length=100, blank=True, null=True)
+    category = models.CharField(max_length=100, blank=True, null=True)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='tasks')
     completed = models.BooleanField(default=False)
     completed_at = models.DateTimeField(blank=True, null=True)
@@ -45,17 +45,5 @@ class Task(models.Model):
         return self.title
 
     class Meta:
-        ordering = ['-due_date', '-priority', '-created_at']
+        ordering = ['-due_datetime', '-priority', '-created_at']
 
-class Subtask(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name='subtasks')
-    text = models.CharField(max_length=255)
-    completed = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-    
-    def __str__(self):
-        return self.text
-    
-    class Meta:
-        ordering = ['created_at']

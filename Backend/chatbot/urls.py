@@ -11,6 +11,7 @@ urlpatterns = [
     path('clear-conversations/', views.clear_conversations, name='clear-conversations'),
     path('chat/', views.chat_interface, name='chat-interface'),
     path('api/send/', views.send_message_api, name='send-message-api'),  # New endpoint for API calls
-    path('api/messages/', views.get_messages, name='get-messages'),  # New endpoint to get message history
+    path('api/messages/', views.get_messages, name='get-messages'), 
+    path('api/ocr/', views.extract_text_from_images, name='ocr-image-upload'),  # New endpoint for OCR
     path('', views.chat_interface, name='chatbot-index'),
 ]   

@@ -19,12 +19,10 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { RootStackParamList } from "./navigation/AppNavigator";
 import Navbar from "./NavBar";
+import { API_URL, API_ENDPOINTS } from "../constants/ApiConfig";
 
 const { width } = Dimensions.get("window");
 
-// API URL
-const API_URL = "http://10.0.2.2:8000"; // For Android emulator
-// const API_URL = "http://localhost:8000"; // For iOS simulator
 
 type RouteParams = {
     viewType: "tasks" | "activity";
@@ -34,12 +32,13 @@ type RouteParams = {
 type Task = {
     id: string;
     title: string;
-    subject: string;
+    category: string;
     time: string;
     priority: string;
     status: string;
-    due_date?: string;
-    type?: 'task'; // Add type property for type checking
+    due_datetime?: string;
+    type?: 'task';
+
 };
 
 type Activity = {
@@ -85,7 +84,7 @@ export default function AllItemsView() {
             }
 
             if (viewType === "tasks") {
-                const response = await fetch(`${API_URL}/task_manager/tasks/?filter=active`, {
+                const response = await fetch(`${API_URL}/task_manager/tasks/`, {
                     headers: {
                         "Authorization": `Token ${token}`,
                         "Cache-Control": "no-cache",
@@ -275,10 +274,10 @@ export default function AllItemsView() {
             <View style={[styles.borderLeft, { backgroundColor: getPriorityColor(item.priority) }]} />
             <View style={styles.taskHeader}>
                 <View style={styles.taskInfo}>
-                    <Text style={styles.taskTitle} numberOfLines={2}>
+                    <Text style={styles.taskTitle} numberOfLines={1}>
                         {item.title}
                     </Text>
-                    <Text style={styles.taskSubject}>{item.subject}</Text>
+                    <Text style={styles.taskSubject}>{item.category}</Text>
                 </View>
                 <View
                     style={[
@@ -292,9 +291,9 @@ export default function AllItemsView() {
 
             <View style={styles.taskBody}>
                 <Text style={styles.taskTime}>{item.time}</Text>
-                {item.due_date && (
+                {item.due_datetime && (
                     <Text style={styles.taskDueDate}>
-                        Due: {new Date(item.due_date).toLocaleDateString()}
+                        Due: {new Date(item.due_datetime).toLocaleDateString()}
                     </Text>
                 )}
             </View>

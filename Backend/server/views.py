@@ -1,5 +1,6 @@
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
+from users.models import UserSession
 from .serializers import UserSerializer
 from rest_framework import status
 from rest_framework.authtoken.models import Token
@@ -81,15 +82,39 @@ def test_token(request):
         return Response({"error": "Authentication required"}, status=status.HTTP_401_UNAUTHORIZED)
     return Response({"message": f"Hello, {user.username}!"}, status=status.HTTP_200_OK)
 
-# get username of the currently logged in user
+
 @api_view(['GET'])
 @authentication_classes([TokenAuthentication, SessionAuthentication])
 @permission_classes([IsAuthenticated])
-def get_username(request):
+def get_user_info(request):
     user = request.user
     if not user.is_authenticated:
         return Response({"error": "Authentication required"}, status=status.HTTP_401_UNAUTHORIZED)
-    return Response({"username": user.username}, status=status.HTTP_200_OK)
+    return Response({
+        "username": user.username,
+        "email": user.email,
+        "date_joined": user.date_joined
+    }, status=status.HTTP_200_OK)
+
+# logout user
+@api_view(['POST'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def logout_view(request):
+    session_id = request.data.get('session_id')
+    if session_id:
+        # End specific session
+        UserSession.objects.filter(
+            user=request.user, 
+            session_id=session_id
+        ).update(is_active=False)
+    else:
+        # End all sessions for this user
+        UserSession.objects.filter(user=request.user).update(is_active=False)
+    
+    # Delete token
+    request.user.auth_token.delete()
+    return Response({'success': 'Successfully logged out'})
 
 def login_page(request):
     return render(request, 'login.html')
@@ -111,3 +136,26 @@ def notes_page(request):
 
 def task_manager_page(request):
     return render(request, 'tasks.html')
+
+def my_profile(request):
+    return render(request, 'myProfile.html')
+
+def forgot_password(request):
+    from django.contrib.auth.forms import PasswordResetForm
+    from django.contrib import messages
+    from django.shortcuts import redirect
+    if request.method == 'POST':
+        form = PasswordResetForm(request.POST)
+        if form.is_valid():
+            form.save(
+                request=request,
+                use_https=request.is_secure(),
+                email_template_name='forgotPassword.html',
+            )
+            messages.success(request, 'A password reset link has been sent to your email.')
+            return redirect('forgot_password')
+        else:
+            messages.error(request, 'Please enter a valid email address.')
+    else:
+        form = PasswordResetForm()
+    return render(request, 'forgotPassword.html', {'form': form})

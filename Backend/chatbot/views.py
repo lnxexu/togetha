@@ -10,6 +10,58 @@ from .models import Conversation, Message, ChatbotSetting
 from .serializers import ConversationSerializer, MessageSerializer, ChatbotSettingSerializer
 from django.shortcuts import render, get_object_or_404
 from django.contrib.auth.decorators import login_required
+from rest_framework.parsers import MultiPartParser, FormParser
+import pytesseract
+from PIL import Image
+from rest_framework.decorators import parser_classes
+import os
+import glob
+import pytesseract
+from PIL import Image
+from langchain.schema import Document
+import tempfile
+
+DOCS_FOLDER = "docs"
+
+@api_view(['POST'])
+@authentication_classes([TokenAuthentication, SessionAuthentication])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
+def extract_text_from_images(request):
+    if 'image' not in request.FILES:
+        return Response({'error': 'No image file provided'}, status=400)
+    
+    try:
+        # Get the uploaded file
+        image_file = request.FILES['image']
+        
+        # Create a temporary file to save the uploaded image
+        import os
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(image_file.name)[1]) as temp:
+            for chunk in image_file.chunks():
+                temp.write(chunk)
+                
+        # Process the image using OCR
+        try:
+            from PIL import Image
+            import pytesseract
+            pytesseract.pytesseract.tesseract_cmd = r"C:/Program Files/Tesseract-OCR/tesseract.exe"  # Update this path if necessary
+            
+            image = Image.open(temp.name)
+            text = pytesseract.image_to_string(image).strip()
+            
+            # Clean up the temporary file
+            os.unlink(temp.name)
+            
+            if text:
+                return Response({'text': text})
+            else:
+                return Response({'error': 'No text was detected in the image'}, status=400)
+        except Exception as e:
+            return Response({'error': f'OCR processing error: {str(e)}'}, status=500)
+    except Exception as e:
+        return Response({'error': f'Server error: {str(e)}'}, status=500)
 
 
 class ConversationListView(APIView):
