@@ -36,9 +36,9 @@ urlpatterns = [
     re_path('login_page/', views.login_page, name='login_page'),
     re_path('signup_page/', views.signup_page, name='signup_page'),
     re_path('test_token_page/', views.test_token_page, name='test_token_page'),
-    re_path('login', views.login),
-    re_path('signup', views.signup),
-    re_path('test_token', views.test_token),
+    re_path('login/', views.login),
+    re_path('signup/', views.signup),
+    re_path('test_token/', views.test_token),
 
     # Navigation URLs
     re_path('chatbot_page/', views.chatbot_page, name='chatbot_page'),

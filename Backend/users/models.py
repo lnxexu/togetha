@@ -10,7 +10,7 @@ class UserProfile(models.Model):
         ('O', 'Other'),
     )
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
-    username = models.CharField(max_length=150, unique=True, blank=True)
+    username = models.CharField(max_length=150, blank=True)
     profile_picture = models.ImageField(upload_to='profile_pics/', blank=True, null=True)
     full_name = models.CharField(max_length=100, blank=True)
     phone_number = models.CharField(max_length=20, blank=True)

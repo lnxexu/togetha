@@ -1,7 +1,19 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
+from users.models import UserProfile, UserProgress
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['id', 'username', 'email', 'first_name', 'last_name']
+
+@receiver(post_save, sender=User)
+def create_user_profile(sender, instance, created, **kwargs):
+    if created:
+        # Create profile with username set to match the user's username
+        UserProfile.objects.create(
+            user=instance,
+            username=instance.username  # Set username to match the user's username
+        )

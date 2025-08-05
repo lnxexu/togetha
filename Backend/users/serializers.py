@@ -1,15 +1,13 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from .models import UserProfile, UserProgress
-from django.db.models.signals import post_save
-from django.dispatch import receiver    
 
 class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserProfile
         fields = [
-            'profile_picture', 'full_name', 'phone_number', 'address',
-            'bio', 'gender', 'birthdate', 'username'
+            'username','profile_picture', 'full_name', 'phone_number', 'address',
+            'bio', 'gender', 'birthdate'
         ]
 
 class UserSerializer(serializers.ModelSerializer):
@@ -37,11 +35,6 @@ class UserSerializer(serializers.ModelSerializer):
                 setattr(profile, attr, value)
             profile.save()
         return instance
-    
-@receiver(post_save, sender=User)
-def create_user_profile(sender, instance, created, **kwargs):
-    if created:
-        UserProfile.objects.create(user=instance)
 
 class UserProgressSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source='user.username', read_only=True)

@@ -17,7 +17,8 @@ import Toast from 'react-native-toast-message';
 import { KeyboardAvoidingView, Platform, ScrollView, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_URL, API_ENDPOINTS } from '../../constants/ApiConfig';
+import { API_URL, API_ENDPOINTS, getUserTimezone } from '../../constants/ApiConfig';
+import { time } from 'console';
 
 // Add type declaration for global.isRunningInExpoClient
 declare global {
@@ -133,7 +134,8 @@ export default function SignUp() {
       const signupData = {
         username: formData.username,
         email: formData.email,
-        password: formData.password1
+        password: formData.password1,
+        timezone: getUserTimezone() // Get user's timezone
       };
 
       console.log('Sending data:', signupData);

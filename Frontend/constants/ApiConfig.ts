@@ -1,7 +1,6 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
-
 // API configuration settings that can versatilely be used across the application like emulators, real devices, etc.
 function getApiBaseUrl() {
     // If running on Android emulator, use 10.0.2.2 to access host machine
@@ -17,12 +16,14 @@ function getApiBaseUrl() {
         return process.env.REACT_APP_API_URL || 'http://localhost:8000';
     }
     // For real devices, use your machine's local IP address or production URL
-    return 'https://172.16.5.215:8000'
-    // return "http://192.168.36.165:8000"; // Replace with your actual local IP address or production URL
-    // Kobe's local IP address is used here for demonstration purposes
-    // return 'http://192.168.0.153:8000';
-    // Paul's local IP address is used here for demonstration purposes
-    // return 'http://192.168.1.177:8000';
+
+    // return 'http://192.168.81.162:8000'; // IP for ITRC
+    
+    // return 'http://172.16.5.215:8000'; // IP for Student3
+  
+    return 'http://192.168.0.153:8000';   // Kobe's local IP address 
+    
+    // return 'http://192.168.1.177:8000';// Paul's local IP address 
 }
 
 export const API_URL = getApiBaseUrl();
@@ -58,3 +59,11 @@ export const API_ENDPOINTS = {
     CHATBOT_CONVERSATIONS: '/chatbot/conversations/',
     CHATBOT_MESSAGES: '/chatbot/api/messages/',
 };
+
+export function getUserTimezone(): string {
+    try {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    } catch {
+        return 'UTC';
+    }
+}
