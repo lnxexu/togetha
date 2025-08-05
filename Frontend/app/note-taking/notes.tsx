@@ -157,6 +157,14 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
   const [selectedFilterFolder, setSelectedFilterFolder] = useState<
     string | null
   >(null);
+
+  // Fix 3: Either use folderCounts or use _ to indicate unused variable
+  const [_, setFolderCounts] = useState<Record<string, number>>({});
+
+  const [showFolderDropdown, setShowFolderDropdown] = useState(false);
+  const [selectedFilterFolder, setSelectedFilterFolder] = useState<
+    string | null
+  >(null);
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
   const [editingFolderName, setEditingFolderName] = useState("");
   const [showEditFolderModal, setShowEditFolderModal] = useState(false);
@@ -314,6 +322,9 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
     // Always fetch all notes since we only have one view now
     fetchNotes(false);
   }, [selectedFilterFolder]); // Refetch when filter folder changes
+    // Always fetch all notes since we only have one view now
+    fetchNotes(false);
+  }, [selectedFilterFolder]); // Refetch when filter folder changes
 
   // Add useFocusEffect to refresh notes when screen comes into focus (returning from editor)
   useFocusEffect(
@@ -424,6 +435,9 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
       // Add pagination parameters to reduce data load
       let endpoint = `${API_URL}/note_taking/notes/?limit=50`;
 
+      // Add filter for selected folder if one is chosen
+      if (selectedFilterFolder) {
+        endpoint += `&folder=${selectedFilterFolder}`;
       // Add filter for selected folder if one is chosen
       if (selectedFilterFolder) {
         endpoint += `&folder=${selectedFilterFolder}`;
@@ -615,156 +629,20 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
   };
 
   const handleCreateNote = () => {
-    // Show folder selection modal first
-    setShowFolderSelectionModal(true);
-  };
-
-  const createNoteWithFolder = (folderId: string | null) => {
     // Show toast message
     showToast("Creating new note...");
 
     const initialNoteData = {
       title: "",
       content: "",
-      folderId: folderId,
+      folderId: null,
     };
 
-    // Navigate to the editor
+    // Navigate directly to the editor
     navigation.navigate("NoteEditor", {
       initialNote: initialNoteData,
     });
-
-    // Reset state
-    setShowFolderSelectionModal(false);
-    setNewNoteFolder(null);
   };
-
-  const renderFolderSelectionModal = () => (
-    <Modal
-      visible={showFolderSelectionModal}
-      transparent={true}
-      animationType="slide"
-      onRequestClose={() => setShowFolderSelectionModal(false)}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Select Folder for New Note</Text>
-            <TouchableOpacity
-              onPress={() => setShowFolderSelectionModal(false)}
-              style={styles.modalCloseButton}
-            >
-              <MaterialIcons name="close" size={24} color="#9CA3AF" />
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView
-            style={styles.modalBody}
-            showsVerticalScrollIndicator={false}
-          >
-            {/* Option for unorganized notes */}
-            <TouchableOpacity
-              style={[
-                styles.folderItem,
-                styles.unorganizedFolderItem,
-                newNoteFolder === null && styles.selectedFolderItem,
-              ]}
-              onPress={() => {
-                setNewNoteFolder(null);
-                createNoteWithFolder(null);
-              }}
-            >
-              <View style={[styles.folderIcon, { backgroundColor: "#64748B" }]}>
-                <MaterialIcons name="notes" size={20} color="#FFFFFF" />
-              </View>
-              <Text style={styles.folderName}>Unorganized Notes</Text>
-              {newNoteFolder === null && (
-                <MaterialIcons name="check-circle" size={22} color="#6A009C" />
-              )}
-            </TouchableOpacity>
-
-            <View style={styles.folderDivider}>
-              <View style={styles.folderDividerLine} />
-              <Text style={styles.folderDividerText}>Folders</Text>
-              <View style={styles.folderDividerLine} />
-            </View>
-            {folders.map((folder) => (
-              <TouchableOpacity
-                key={folder.id}
-                style={[
-                  styles.folderItem,
-                  selectedFolder === folder.id && styles.selectedFolderItem,
-                ]}
-                onPress={() => {
-                  setSelectedFolder(folder.id);
-                  // Immediately assign selected notes to this folder
-                  assignNotesToFolder(folder.id, selectedNotes);
-                  setShowSortNotesModal(false);
-                }}
-              >
-                <View
-                  style={[
-                    styles.folderIcon,
-                    { backgroundColor: folder.color || "#667EEA" },
-                  ]}
-                >
-                  <MaterialIcons
-                    name={
-                      folder.icon && MaterialIcons.hasOwnProperty(folder.icon)
-                        ? folder.icon
-                        : "folder"
-                    }
-                    size={20}
-                    color="#FFFFFF"
-                  />
-                </View>
-                <Text style={styles.folderName}>{folder.name}</Text>
-                {selectedFolder === folder.id && (
-                  <MaterialIcons
-                    name="check-circle"
-                    size={22}
-                    color="#6A009C"
-                  />
-                )}
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-
-          {/* Footer with Cancel button */}
-
-          <View style={styles.modalFooter}>
-            <TouchableOpacity
-              style={styles.cancelButton}
-              onPress={() => setShowFolderSelectionModal(false)}
-            >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.createNoteButton}
-              onPress={() => {
-                if (newNoteFolder) {
-                  createNoteWithFolder(newNoteFolder);
-                } else {
-                  createNoteWithFolder(null); // Unorganized notes
-                }
-              }}
-            >
-              <Text style={styles.createNoteButtonText}>Create Note</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.modalFooter}>
-            <TouchableOpacity
-              style={styles.cancelButton}
-              onPress={() => setShowFolderSelectionModal(false)}
-            >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
 
   const assignNotesToFolder = async (folderID: string, noteIDs: string[]) => {
     try {
@@ -1169,29 +1047,23 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
                 </Text>
 
                 <View style={styles.noteDateContainer}>
-                  
-
-                {!selectedFilterFolder && item.folderId && (
-                  <View style={styles.folderBadge}>
-                    <MaterialIcons name="folder" size={10} color="#6A009C" />
-                    <Text style={styles.folderBadgeText}>
-                      {folders.find((f) => f.id === item.folderId)?.name ||
-                        "Folder"}
-                    </Text>
-                  </View>
-                )}
-
-                <Text style={styles.noteDate}>
-                  {item.updatedAt.toLocaleDateString("en-US", {
-                    year: "numeric",
-                    month: "short",
-                    day: "numeric",
-                  })}
-                </Text>
-                  </View>
-
-                
-                
+                  <Text style={styles.noteDate}>
+                    {item.updatedAt.toLocaleDateString("en-US", {
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
+                    })}
+                  </Text>
+                  {!selectedFilterFolder && item.folderId && (
+                    <View style={[styles.folderBadge, { marginRight: 8 }]}>
+                      <MaterialIcons name="folder" size={10} color="#6A009C" />
+                      <Text style={styles.folderBadgeText}>
+                        {folders.find((f) => f.id === item.folderId)?.name ||
+                          "Folder"}
+                      </Text>
+                    </View>
+                  )}
+                </View>
               </View>
             </View>
 
@@ -1752,6 +1624,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
         <View style={styles.headerTopRow}>
           <View style={styles.headerTitleSection}>
             <Text style={styles.headerTitle}>All Notes</Text>
+            <Text style={styles.headerTitle}>All Notes</Text>
           </View>
           <View style={styles.headerActions}>
             <TouchableOpacity
@@ -1934,10 +1807,20 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
           <View style={styles.optionsDropdown}>
             <TouchableOpacity
               style={styles.dropdownOption}
+              style={styles.dropdownOption}
               onPress={() => {
                 setShowCreateFolderModal(true);
                 setShowOptionsDropdown(false);
+                setShowCreateFolderModal(true);
+                setShowOptionsDropdown(false);
               }}
+            >
+              <MaterialIcons
+                name="create-new-folder"
+                size={20}
+                color="#6A009C"
+              />
+              <Text style={styles.dropdownOptionText}>Create Folder</Text>
             >
               <MaterialIcons
                 name="create-new-folder"
@@ -1962,6 +1845,20 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
               <Text style={styles.dropdownOptionText}>
                 {viewMode === "list" ? "Grid View" : "List View"}
               </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.dropdownOption}
+              onPress={() => {
+                navigation.navigate("PDFs"); // Navigate to the ImportPDFPage
+                setShowOptionsDropdown(false); // Close the dropdown
+              }}
+            >
+              <MaterialIcons name="picture-as-pdf" size={20} color="#6A009C" />
+              <Text style={styles.dropdownOptionText}>Import PDF</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -2021,7 +1918,6 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
       <Navbar activeRoute="Notes" />
       {renderCreateFolderModal()}
       {renderSortNotesModal()}
-      {renderFolderSelectionModal()}
       {renderEditFolderModal()}
     </TouchableOpacity>
   );
@@ -2033,11 +1929,23 @@ const styles = StyleSheet.create({
     backgroundColor: "#F8FAFC",
   },
   header: {
+  },
+  header: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
     paddingHorizontal: 24,
+    paddingTop: Platform.OS === "ios" ? 50 : 35,
+    paddingBottom: 24,
+    // backgroundColor: "#F5E1FD", // REMOVE or COMMENT THIS LINE
+    borderBottomLeftRadius: 25,
+    borderBottomRightRadius: 25,
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
     paddingTop: Platform.OS === "ios" ? 50 : 35,
     paddingBottom: 24,
     // backgroundColor: "#F5E1FD", // REMOVE or COMMENT THIS LINE
@@ -2074,8 +1982,12 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 12,
+    width: 44,
+    height: 44,
+    borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
+    elevation: 2,
     elevation: 2,
   },
   activeSearchButton: {
@@ -2175,8 +2087,8 @@ const styles = StyleSheet.create({
   },
   folderName: {
     fontSize: 15,
-    fontFamily: "Inter-Bold",
-    color: "#1E293B",
+    fontFamily: "Inter-Medium",
+    color: "#333333",
     textAlign: "center",
     marginBottom: 4,
     marginLeft: 4,
@@ -2193,9 +2105,11 @@ const styles = StyleSheet.create({
   },
   noteItem: {
     marginVertical: 6,
+    marginVertical: 6,
   },
   gridNoteItem: {
     flex: 1,
+    marginHorizontal: 4,
     marginHorizontal: 4,
     maxWidth: (width - 72) / 2, // Account for padding and gap
   },
@@ -2208,8 +2122,17 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 12,
     elevation: 3,
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 3,
   },
   gridNoteContent: {
+    padding: 16,
+    borderRadius: 16,
     padding: 16,
     borderRadius: 16,
   },
@@ -2226,11 +2149,19 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 12,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
+    marginRight: 12,
   },
   gridNoteTypeIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    marginRight: 8,
     width: 32,
     height: 32,
     borderRadius: 10,
@@ -2251,10 +2182,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 18,
   },
-  noteOptionsContainer: {
+  noteDateContainer: {
     flexDirection: "row",
     alignItems: "center",
-    marginLeft: 12,
   },
   noteOptionsButton: {
     width: 32,
@@ -2310,7 +2240,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: "Inter-Regular",
     color: "#9CA3AF",
-    marginBottom: 9,
+    marginRight: 12,
   },
   gridNoteDate: {
     fontSize: 11,
@@ -2343,7 +2273,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginRight: 8,
     marginBottom: 4,
-    top: 0
   },
   tagText: {
     fontSize: 11,
@@ -2383,8 +2312,10 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 8,
   },
-  fabContainer: {
+
+  fabButton: {
     position: "absolute",
+    bottom: 100, // Above the navbar
     right: 24,
     bottom: 100,
     alignItems: "center",
@@ -2404,6 +2335,7 @@ const styles = StyleSheet.create({
   },
 
   textFab: {
+    backgroundColor: "#9C27B0",
     backgroundColor: "#9C27B0",
   },
   // Modal Styles
@@ -2584,8 +2516,15 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingVertical: 16,
     paddingHorizontal: 24,
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
     alignItems: "center",
     shadowColor: "#6A009C",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -2596,11 +2535,6 @@ const styles = StyleSheet.create({
     fontFamily: "Inter-Medium",
     color: "#FFFFFF",
     letterSpacing: -0.1,
-  },
-  noteDateContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap : 6,  
   },
   optionsDropdownContainer: {
     position: "absolute",
@@ -2674,16 +2608,12 @@ const styles = StyleSheet.create({
   },
   // Additional styles for folder selection modal
   folderItem: {
-    // make the folder item dynamic based on the text content
+    flexDirection: "row",
+    alignItems: "center",
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 12,
-    flexDirection: "row",
-    alignItems: "center",
     marginBottom: 8,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-
   },
   unorganizedFolderItem: {
     backgroundColor: "#F8FAFC",
@@ -2739,8 +2669,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
-    marginBottom: 8,
-    alignSelf: "flex-start", // This makes the width dynamic based on content
   },
   folderBadgeText: {
     fontSize: 10,
@@ -2761,7 +2689,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
-    alignSelf: "flex-start", // This makes the width dynamic based on content
   },
   gridNoteOptionsDropdown: {
     position: "absolute",
