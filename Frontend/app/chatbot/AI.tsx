@@ -1,28 +1,31 @@
-import { Ionicons } from '@expo/vector-icons';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import * as DocumentPicker from 'expo-document-picker';
-import { LinearGradient } from 'expo-linear-gradient';
-import React, { useEffect, useState } from 'react';
-import chatbotServices from './services/chatbotServices';
+import { Ionicons } from "@expo/vector-icons";
+import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import * as DocumentPicker from "expo-document-picker";
+import { LinearGradient } from "expo-linear-gradient";
+import React, { useEffect, useState } from "react";
+import chatbotServices from "./services/chatbotServices";
 import {
-    Alert,
-    SafeAreaView,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
-    Platform,
-    Modal,
-    FlatList,
-    
-} from 'react-native';
-import { RootStackParamList } from '../navigation/AppNavigator';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+  Alert,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+  Platform,
+  Modal,
+  FlatList,
+  KeyboardAvoidingView,
+} from "react-native";
+import { RootStackParamList } from "../navigation/AppNavigator";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
-type ChatBotNavigationProp = NativeStackNavigationProp<RootStackParamList, 'RINA'>;
+type ChatBotNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  "RINA"
+>;
 
 interface Message {
   id: string;
@@ -46,41 +49,41 @@ interface ChatBotProps {
 const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
   const [messages, setMessages] = useState<Message[]>([
     {
-      id: '1',
-      text: 'Hello! How can I assist you today?',
+      id: "1",
+      text: "Hello! How can I assist you today?",
       isUser: false,
       timestamp: new Date(),
     },
   ]);
-  const [inputText, setInputText] = useState('');
+  const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showChatHistory, setShowChatHistory] = useState(false);
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([
     {
-      id: '1',
-      title: 'Study Session - Math',
-      lastMessage: 'Can you help me with calculus derivatives?',
+      id: "1",
+      title: "Study Session - Math",
+      lastMessage: "Can you help me with calculus derivatives?",
       timestamp: new Date(Date.now() - 86400000), // 1 day ago
       messageCount: 12,
     },
     {
-      id: '2',
-      title: 'Physics Homework',
-      lastMessage: 'Explain quantum mechanics principles',
+      id: "2",
+      title: "Physics Homework",
+      lastMessage: "Explain quantum mechanics principles",
       timestamp: new Date(Date.now() - 172800000), // 2 days ago
       messageCount: 8,
     },
     {
-      id: '3',
-      title: 'Essay Writing Help',
-      lastMessage: 'Help me structure my thesis statement',
+      id: "3",
+      title: "Essay Writing Help",
+      lastMessage: "Help me structure my thesis statement",
       timestamp: new Date(Date.now() - 259200000), // 3 days ago
       messageCount: 15,
     },
     {
-      id: '4',
-      title: 'Chemistry Lab Report',
-      lastMessage: 'Summarize the experiment results',
+      id: "4",
+      title: "Chemistry Lab Report",
+      lastMessage: "Summarize the experiment results",
       timestamp: new Date(Date.now() - 604800000), // 1 week ago
       messageCount: 6,
     },
@@ -88,37 +91,37 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
 
   const suggestedPrompts = [
     {
-      id: '1',
-      text: 'Help me understand complex concepts',
-      description: 'Break down difficult topics into simpler explanations',
-      icon: '🧠',
+      id: "1",
+      text: "Help me understand complex concepts",
+      description: "Break down difficult topics into simpler explanations",
+      icon: "🧠",
     },
     {
-      id: '2',
-      text: 'Create practice questions',
-      description: 'Generate quiz questions from your study materials',
-      icon: '�',
+      id: "2",
+      text: "Create practice questions",
+      description: "Generate quiz questions from your study materials",
+      icon: "�",
     },
     {
-      id: '3',
-      text: 'Summarize documents',
-      description: 'Get concise summaries of lengthy texts',
-      icon: '📄',
+      id: "3",
+      text: "Summarize documents",
+      description: "Get concise summaries of lengthy texts",
+      icon: "📄",
     },
     {
-      id: '4',
-      text: 'Explain with examples',
-      description: 'Provide real-world examples for better understanding',
-      icon: '�',
+      id: "4",
+      text: "Explain with examples",
+      description: "Provide real-world examples for better understanding",
+      icon: "�",
     },
   ];
-  
+
   useEffect(() => {
     checkAuthentication();
   }, []);
 
   const checkAuthentication = async () => {
-    const token = await AsyncStorage.getItem('authToken');
+    const token = await AsyncStorage.getItem("authToken");
     if (!token) {
       handleLogout();
     }
@@ -127,23 +130,23 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
   const handleLogout = async () => {
     try {
       // Clear all authentication data
-      await AsyncStorage.removeItem('authToken');
-      await AsyncStorage.removeItem('token');
-      await AsyncStorage.removeItem('username');
-      await AsyncStorage.removeItem('session_id');
-      
+      await AsyncStorage.removeItem("authToken");
+      await AsyncStorage.removeItem("token");
+      await AsyncStorage.removeItem("username");
+      await AsyncStorage.removeItem("session_id");
+
       // Navigate to login screen
       navigation.reset({
         index: 0,
-        routes: [{ name: 'Login' }],
+        routes: [{ name: "Login" }],
       });
     } catch (error) {
-      console.error('Logout error:', error);
+      console.error("Logout error:", error);
     }
   };
 
-   const handleSendMessage = async () => {
-    if (inputText.trim() === '') return;
+  const handleSendMessage = async () => {
+    if (inputText.trim() === "") return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -153,14 +156,14 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
     };
 
     setMessages((prev) => [...prev, userMessage]);
-    setInputText('');
+    setInputText("");
     setIsLoading(true);
 
     // Simulate AI response using LLama 3.0 (replace with actual API call)
     setTimeout(() => {
       const aiResponse: Message = {
         id: (Date.now() + 1).toString(),
-        text: 'I understand your question and I\'m here to help! As your AI tutoring assistant, I can help you with explanations, summaries, practice questions, and more. What specific topic would you like to explore?',
+        text: "I understand your question and I'm here to help! As your AI tutoring assistant, I can help you with explanations, summaries, practice questions, and more. What specific topic would you like to explore?",
         isUser: false,
         timestamp: new Date(),
       };
@@ -169,7 +172,6 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
     }, 1500);
   };
 
-  
   const handleFileImport = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -179,82 +181,91 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
 
       if (result.assets && result.assets.length > 0) {
         const file = result.assets[0];
-        
+
         // Check if token exists before attempting OCR
-        const token = await AsyncStorage.getItem('authToken');
+        const token = await AsyncStorage.getItem("authToken");
         if (!token) {
           Alert.alert(
-            'Authentication Required', 
-            'Please log in to use the OCR feature.',
+            "Authentication Required",
+            "Please log in to use the OCR feature.",
             [
-              { 
-                text: 'Login', 
-                onPress: () => handleLogout() // This will redirect to login
+              {
+                text: "Login",
+                onPress: () => handleLogout(), // This will redirect to login
               },
-              { 
-                text: 'Cancel', 
-                style: 'cancel' 
-              }
+              {
+                text: "Cancel",
+                style: "cancel",
+              },
             ]
           );
           return;
         }
-        
+
         Alert.alert(
-          'File Imported',
+          "File Imported",
           `File "${file.name}" has been imported and is ready for processing.`,
           [
             {
-              text: 'Extract Text',
+              text: "Extract Text",
               onPress: async () => {
                 try {
                   setIsLoading(true); // Show loading indicator
-                  const extractedText = await chatbotServices.extractTextFromImages(file.uri);
+                  const extractedText =
+                    await chatbotServices.extractTextFromImages(file.uri);
                   setIsLoading(false);
-                  
+
                   if (extractedText.trim()) {
                     setInputText(`Extracted Text: ${extractedText}`);
                   } else {
-                    Alert.alert('No Text Found', 'The system couldn\'t detect any text in this image.');
+                    Alert.alert(
+                      "No Text Found",
+                      "The system couldn't detect any text in this image."
+                    );
                   }
                 } catch (error) {
                   setIsLoading(false);
-                  const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                  
-                  if (errorMessage.includes('401')) {
+                  const errorMessage =
+                    error instanceof Error ? error.message : "Unknown error";
+
+                  if (errorMessage.includes("401")) {
                     Alert.alert(
-                      'Session Expired', 
-                      'Your session has expired. Please log in again.',
+                      "Session Expired",
+                      "Your session has expired. Please log in again.",
                       [
-                        { 
-                          text: 'Login', 
-                          onPress: () => handleLogout() // Logout and redirect to login
-                        }
+                        {
+                          text: "Login",
+                          onPress: () => handleLogout(), // Logout and redirect to login
+                        },
                       ]
                     );
                   } else {
-                    Alert.alert('Error', 'Failed to extract text from the image');
-                    console.error('OCR Error:', error);
+                    Alert.alert(
+                      "Error",
+                      "Failed to extract text from the image"
+                    );
+                    console.error("OCR Error:", error);
                   }
                 }
               },
             },
-            { text: 'Cancel', style: 'cancel' },
+            { text: "Cancel", style: "cancel" },
           ]
         );
       }
     } catch (error: unknown) {
       // Check if the error is because user cancelled the document picker
-      const isCancelled = error instanceof Error &&
-        (error.name === 'canceled' ||
-          error.message?.includes('canceled') ||
-          error.message?.includes('cancelled'));
+      const isCancelled =
+        error instanceof Error &&
+        (error.name === "canceled" ||
+          error.message?.includes("canceled") ||
+          error.message?.includes("cancelled"));
 
       if (isCancelled) {
         // User cancelled the picker
       } else {
-        Alert.alert('Error', 'Failed to import file');
-        console.log('Document picker error:', error);
+        Alert.alert("Error", "Failed to import file");
+        console.log("Document picker error:", error);
       }
     }
   };
@@ -276,20 +287,22 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
     // For now, we'll just close the modal
     setShowChatHistory(false);
     // You could implement loading historical messages here
-    console.log('Selected chat session:', sessionId);
+    console.log("Selected chat session:", sessionId);
   };
 
   const handleDeleteChatSession = (sessionId: string) => {
     Alert.alert(
-      'Delete Chat',
-      'Are you sure you want to delete this chat session?',
+      "Delete Chat",
+      "Are you sure you want to delete this chat session?",
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: "Cancel", style: "cancel" },
         {
-          text: 'Delete',
-          style: 'destructive',
+          text: "Delete",
+          style: "destructive",
           onPress: () => {
-            setChatSessions(prev => prev.filter(session => session.id !== sessionId));
+            setChatSessions((prev) =>
+              prev.filter((session) => session.id !== sessionId)
+            );
           },
         },
       ]
@@ -300,8 +313,8 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
     setShowChatHistory(false);
     setMessages([
       {
-        id: '1',
-        text: 'Hello! How can I assist you today?',
+        id: "1",
+        text: "Hello! How can I assist you today?",
         isUser: false,
         timestamp: new Date(),
       },
@@ -313,19 +326,23 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
   };
 
   const handleSummarize = () => {
-    handlePromptSelection('Please summarize the uploaded document');
+    handlePromptSelection("Please summarize the uploaded document");
   };
 
   const handleExplain = () => {
-    handlePromptSelection('Please explain the key concepts in the uploaded document');
+    handlePromptSelection(
+      "Please explain the key concepts in the uploaded document"
+    );
   };
 
   const handleGenerateQuiz = () => {
-    handlePromptSelection('Please generate a quiz based on the uploaded document');
+    handlePromptSelection(
+      "Please generate a quiz based on the uploaded document"
+    );
   };
 
   const handleOCR = () => {
-    handlePromptSelection('Please extract text from the uploaded document');
+    handlePromptSelection("Please extract text from the uploaded document");
   };
 
   return (
@@ -334,7 +351,7 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
 
       {/* Header */}
       <LinearGradient
-        colors={['#A855F7', '#8B5CF6', '#7C3AED']}
+        colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
         style={styles.header}
@@ -348,7 +365,9 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
           </View>
           <View>
             <Text style={styles.botName}>Rina</Text>
-            <Text style={styles.botDescription}>Your AI Tutoring Assistant</Text>
+            <Text style={styles.botDescription}>
+              Your AI Tutoring Assistant
+            </Text>
           </View>
         </View>
         <TouchableOpacity style={styles.menuButton} onPress={handleMenuPress}>
@@ -356,8 +375,13 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
         </TouchableOpacity>
       </LinearGradient>
 
-      {/* Messages */}
-      <ScrollView style={styles.messagesContainer}>
+      <KeyboardAvoidingView 
+        style={styles.keyboardAvoidingView}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+      >
+        {/* Messages */}
+        <ScrollView style={styles.messagesContainer}>
         {/* Welcome Message */}
         {messages.length === 1 && (
           <View style={styles.welcomeContainer}>
@@ -366,11 +390,15 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
                 <Text style={styles.welcomeAvatarText}>✨</Text>
               </View>
               <Text style={styles.welcomeTitle}>Welcome to Rina!</Text>
-              <Text style={styles.welcomeSubtitle}>Your intelligent AI tutoring assistant</Text>
+              <Text style={styles.welcomeSubtitle}>
+                Your intelligent AI tutoring assistant
+              </Text>
             </View>
-            
+
             <View style={styles.featuresContainer}>
-              <Text style={styles.featuresTitle}>What I can help you with:</Text>
+              <Text style={styles.featuresTitle}>
+                What I can help you with:
+              </Text>
               <View style={styles.suggestedPromptsGrid}>
                 {suggestedPrompts.map((prompt) => (
                   <TouchableOpacity
@@ -380,7 +408,9 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
                   >
                     <Text style={styles.promptIcon}>{prompt.icon}</Text>
                     <Text style={styles.promptTitle}>{prompt.text}</Text>
-                    <Text style={styles.promptDescription}>{prompt.description}</Text>
+                    <Text style={styles.promptDescription}>
+                      {prompt.description}
+                    </Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -413,7 +443,10 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
               {message.text}
             </Text>
             <Text style={styles.messageTime}>
-              {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              {message.timestamp.toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
             </Text>
           </View>
         ))}
@@ -426,11 +459,12 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
                 <Text style={styles.aiAvatarText}>R</Text>
               </View>
             </View>
-            <Text style={styles.aiMessageText}>
-              {messages[0].text}
-            </Text>
+            <Text style={styles.aiMessageText}>{messages[0].text}</Text>
             <Text style={styles.messageTime}>
-              {messages[0].timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              {messages[0].timestamp.toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
             </Text>
           </View>
         )}
@@ -460,55 +494,66 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
       {/* Action Buttons */}
       <View style={styles.actionsContainer}>
         <ScrollView
-  horizontal
-  showsHorizontalScrollIndicator={false}
-  contentContainerStyle={styles.actionsContainer}
->
-  <TouchableOpacity style={styles.actionButton} onPress={handleSummarize}>
-    <Ionicons name="document-text" size={16} color="#6B46C1" />
-    <Text style={styles.actionButtonText}>Summarize</Text>
-  </TouchableOpacity>
-
-  <TouchableOpacity style={styles.actionButton} onPress={handleExplain}>
-    <Ionicons name="bulb" size={16} color="#6B46C1" />
-    <Text style={styles.actionButtonText}>Explain</Text>
-  </TouchableOpacity>
-
-  <TouchableOpacity style={styles.actionButton} onPress={handleGenerateQuiz}>
-    <Ionicons name="help-circle" size={16} color="#6B46C1" />
-    <Text style={styles.actionButtonText}>Generate Quiz</Text>
-  </TouchableOpacity>
-  <TouchableOpacity style={styles.actionButton} onPress={handleOCR}>
-    <Ionicons name="help-circle" size={16} color="#6B46C1" />
-    <Text style={styles.actionButtonText}>Extract Text</Text>
-  </TouchableOpacity>
-</ScrollView>
-      </View>
-
-      {/* Input Area */}
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.textInput}
-          value={inputText}
-          onChangeText={setInputText}
-          placeholder="Ask me anything about your studies..."
-          placeholderTextColor="#999"
-          multiline
-          maxLength={1000}
-        />
-        <TouchableOpacity style={styles.attachButton} onPress={handleFileImport}>
-          <Ionicons name="attach" size={24} color="#6B46C1" />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.sendButton, inputText.trim() === '' && styles.sendButtonDisabled]}
-          onPress={handleSendMessage}
-          disabled={inputText.trim() === ''}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.actionsContainer}
         >
-          <Ionicons name="send" size={20} color="#fff" />
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={handleSummarize}
+          >
+            <Ionicons name="document-text" size={16} color="#6B46C1" />
+            <Text style={styles.actionButtonText}>Summarize</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionButton} onPress={handleExplain}>
+            <Ionicons name="bulb" size={16} color="#6B46C1" />
+            <Text style={styles.actionButtonText}>Explain</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={handleGenerateQuiz}
+          >
+            <Ionicons name="help-circle" size={16} color="#6B46C1" />
+            <Text style={styles.actionButtonText}>Generate Quiz</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.actionButton} onPress={handleOCR}>
+            <Ionicons name="help-circle" size={16} color="#6B46C1" />
+            <Text style={styles.actionButtonText}>Extract Text</Text>
+          </TouchableOpacity>
+        </ScrollView>
       </View>
 
-      {/* Chat History Modal */}
+        {/* Input Area */}
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.textInput}
+            value={inputText}
+            onChangeText={setInputText}
+            placeholder="Ask me anything about your studies..."
+            placeholderTextColor="#999"
+            multiline
+            maxLength={1000}
+          />
+          <TouchableOpacity
+            style={styles.attachButton}
+            onPress={handleFileImport}
+          >
+            <Ionicons name="attach" size={24} color="#6B46C1" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.sendButton,
+              inputText.trim() === "" && styles.sendButtonDisabled,
+            ]}
+            onPress={handleSendMessage}
+            disabled={inputText.trim() === ""}
+          >
+            <Ionicons name="send" size={20} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>      {/* Chat History Modal */}
       <Modal
         visible={showChatHistory}
         animationType="slide"
@@ -518,16 +563,22 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
         <SafeAreaView style={styles.chatHistoryContainer}>
           {/* Chat History Header */}
           <LinearGradient
-            colors={['#A855F7', '#8B5CF6', '#7C3AED']}
+            colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.chatHistoryHeader}
           >
-            <TouchableOpacity style={styles.closeButton} onPress={handleCloseChatHistory}>
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={handleCloseChatHistory}
+            >
               <Ionicons name="close" size={24} color="#FFFFFF" />
             </TouchableOpacity>
             <Text style={styles.chatHistoryTitle}>Chat History</Text>
-            <TouchableOpacity style={styles.newChatButton} onPress={handleNewChat}>
+            <TouchableOpacity
+              style={styles.newChatButton}
+              onPress={handleNewChat}
+            >
               <Ionicons name="add" size={24} color="#FFFFFF" />
             </TouchableOpacity>
           </LinearGradient>
@@ -546,11 +597,18 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
                 >
                   <View style={styles.chatSessionContent}>
                     <View style={styles.chatSessionIcon}>
-                      <Ionicons name="chatbubble-ellipses" size={24} color="#6B46C1" />
+                      <Ionicons
+                        name="chatbubble-ellipses"
+                        size={24}
+                        color="#6B46C1"
+                      />
                     </View>
                     <View style={styles.chatSessionInfo}>
                       <Text style={styles.chatSessionTitle}>{item.title}</Text>
-                      <Text style={styles.chatSessionLastMessage} numberOfLines={2}>
+                      <Text
+                        style={styles.chatSessionLastMessage}
+                        numberOfLines={2}
+                      >
                         {item.lastMessage}
                       </Text>
                       <View style={styles.chatSessionMeta}>
@@ -566,15 +624,25 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
                       style={styles.deleteSessionButton}
                       onPress={() => handleDeleteChatSession(item.id)}
                     >
-                      <Ionicons name="trash-outline" size={20} color="#EF4444" />
+                      <Ionicons
+                        name="trash-outline"
+                        size={20}
+                        color="#EF4444"
+                      />
                     </TouchableOpacity>
                   </View>
                 </TouchableOpacity>
               )}
               ListEmptyComponent={
                 <View style={styles.emptyChatHistory}>
-                  <Ionicons name="chatbubbles-outline" size={48} color="#D1D5DB" />
-                  <Text style={styles.emptyChatHistoryText}>No chat history yet</Text>
+                  <Ionicons
+                    name="chatbubbles-outline"
+                    size={48}
+                    color="#D1D5DB"
+                  />
+                  <Text style={styles.emptyChatHistoryText}>
+                    No chat history yet
+                  </Text>
                   <Text style={styles.emptyChatHistorySubtext}>
                     Start a conversation to see your chat history here
                   </Text>
@@ -591,17 +659,20 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: "#f8f9fa",
+  },
+  keyboardAvoidingView: {
+    flex: 1,
   },
   header: {
-    position: 'absolute',
+    position: "absolute",
     top: 0,
     left: 0,
     right: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     padding: 16,
-    paddingTop: Platform.OS === 'ios' ? 50 : 35,
+    paddingTop: Platform.OS === "ios" ? 50 : 35,
     borderBottomLeftRadius: 25,
     borderBottomRightRadius: 25,
     shadowColor: "#1E293B",
@@ -615,34 +686,34 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   headerInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     flex: 1,
   },
   avatar: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    justifyContent: "center",
+    alignItems: "center",
     marginRight: 12,
     borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderColor: "rgba(255, 255, 255, 0.3)",
   },
   avatarText: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
   botName: {
     fontSize: 18,
-    fontFamily: 'Lexend',
-    color: '#FFFFFF',
+    fontFamily: "Lexend",
+    color: "#FFFFFF",
   },
   botDescription: {
     fontSize: 13,
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: "rgba(255, 255, 255, 0.8)",
     marginTop: 2,
   },
   menuButton: {
@@ -658,8 +729,8 @@ const styles = StyleSheet.create({
     marginVertical: 8,
     marginHorizontal: 20,
     borderRadius: 20,
-    maxWidth: '85%',
-    shadowColor: '#000',
+    maxWidth: "85%",
+    shadowColor: "#000",
     shadowOffset: {
       width: 0,
       height: 1,
@@ -669,15 +740,15 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   userMessage: {
-    backgroundColor: '#6B46C1',
-    alignSelf: 'flex-end',
+    backgroundColor: "#6B46C1",
+    alignSelf: "flex-end",
     borderBottomRightRadius: 8,
   },
   aiMessage: {
-    backgroundColor: 'white',
-    alignSelf: 'flex-start',
+    backgroundColor: "white",
+    alignSelf: "flex-start",
     borderWidth: 1,
-    borderColor: '#f0f0f0',
+    borderColor: "#f0f0f0",
     borderBottomLeftRadius: 8,
   },
   messageText: {
@@ -685,21 +756,21 @@ const styles = StyleSheet.create({
     lineHeight: 24,
   },
   userMessageText: {
-    color: '#fff',
+    color: "#fff",
   },
   aiMessageText: {
-    color: '#333',
+    color: "#333",
   },
   suggestedPromptsContainer: {
     marginTop: 16,
   },
   promptCard: {
-    backgroundColor: 'white',
+    backgroundColor: "white",
     padding: 20,
     marginBottom: 16,
     borderRadius: 16,
-    width: '48%',
-    shadowColor: '#000',
+    width: "48%",
+    shadowColor: "#000",
     shadowOffset: {
       width: 0,
       height: 2,
@@ -708,54 +779,54 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
     borderWidth: 1,
-    borderColor: '#f0f0f0',
+    borderColor: "#f0f0f0",
   },
   promptText: {
     fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
+    color: "#666",
+    textAlign: "center",
   },
   loadingContainer: {
-    alignItems: 'center',
+    alignItems: "center",
     padding: 16,
   },
   loadingText: {
-    color: '#666',
-    fontStyle: 'italic',
+    color: "#666",
+    fontStyle: "italic",
   },
   actionsContainer: {
-    flexDirection: 'row',
+    flexDirection: "row",
     paddingHorizontal: 16,
     paddingVertical: 8,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderTopWidth: 1,
-    borderTopColor: '#e9ecef',
+    borderTopColor: "#e9ecef",
     gap: 8,
   },
   actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: "#f8f9fa",
     borderWidth: 1,
-    borderColor: '#6A009C',
+    borderColor: "#6A009C",
   },
   actionButtonText: {
-    color: '#6A009C',
+    color: "#6A009C",
     fontSize: 12,
     marginLeft: 4,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   inputContainer: {
-    flexDirection: 'row',
+    flexDirection: "row",
     padding: 16,
-    backgroundColor: '#fff',
-    alignItems: 'flex-end',
+    backgroundColor: "#fff",
+    alignItems: "flex-end",
     borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-    shadowColor: '#000',
+    borderTopColor: "#f0f0f0",
+    shadowColor: "#000",
     shadowOffset: {
       width: 0,
       height: -2,
@@ -767,32 +838,32 @@ const styles = StyleSheet.create({
   textInput: {
     flex: 1,
     borderWidth: 2,
-    borderColor: '#f0f0f0',
+    borderColor: "#f0f0f0",
     borderRadius: 25,
     paddingHorizontal: 20,
     paddingVertical: 12,
     maxHeight: 120,
     fontSize: 16,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: "#f8f9fa",
     minHeight: 48,
   },
   attachButton: {
     marginLeft: 12,
     padding: 12,
     borderRadius: 25,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: "#f8f9fa",
     borderWidth: 1,
-    borderColor: '#f0f0f0',
+    borderColor: "#f0f0f0",
   },
   sendButton: {
-    backgroundColor: '#6B46C1',
+    backgroundColor: "#6B46C1",
     borderRadius: 25,
     padding: 12,
     marginLeft: 8,
     minWidth: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#6B46C1',
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#6B46C1",
     shadowOffset: {
       width: 0,
       height: 2,
@@ -802,165 +873,165 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   sendButtonDisabled: {
-    backgroundColor: '#ccc',
+    backgroundColor: "#ccc",
   },
-  
+
   // Welcome section styles
   welcomeContainer: {
     paddingHorizontal: 20,
     paddingVertical: 30,
   },
   welcomeHeader: {
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: 30,
   },
   welcomeAvatar: {
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: '#6B46C1',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "#6B46C1",
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: 16,
   },
   welcomeAvatarText: {
     fontSize: 24,
-    color: 'white',
+    color: "white",
   },
   welcomeTitle: {
     fontSize: 28,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
+    fontWeight: "bold",
+    color: "#1a1a1a",
     marginBottom: 8,
-    textAlign: 'center',
+    textAlign: "center",
   },
   welcomeSubtitle: {
     fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
+    color: "#666",
+    textAlign: "center",
   },
   featuresContainer: {
     marginTop: 20,
   },
   featuresTitle: {
     fontSize: 20,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: "600",
+    color: "#333",
     marginBottom: 20,
-    textAlign: 'center',
+    textAlign: "center",
   },
   suggestedPromptsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
   },
   promptIcon: {
     fontSize: 24,
     marginBottom: 8,
-    textAlign: 'center',
+    textAlign: "center",
   },
   promptTitle: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: "600",
+    color: "#333",
     marginBottom: 4,
-    textAlign: 'center',
+    textAlign: "center",
   },
   promptDescription: {
     fontSize: 12,
-    color: '#666',
-    textAlign: 'center',
+    color: "#666",
+    textAlign: "center",
     lineHeight: 16,
   },
-  
+
   // Enhanced message styles
   aiMessageHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginBottom: 8,
   },
   aiAvatar: {
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#6B46C1',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "#6B46C1",
+    alignItems: "center",
+    justifyContent: "center",
     marginRight: 8,
   },
   aiAvatarText: {
     fontSize: 12,
-    fontWeight: 'bold',
-    color: 'white',
+    fontWeight: "bold",
+    color: "white",
   },
   messageTime: {
     fontSize: 12,
-    color: '#999',
+    color: "#999",
     marginTop: 4,
-    alignSelf: 'flex-end',
+    alignSelf: "flex-end",
   },
-  
+
   // Legacy prompt styles for backward compatibility
   legacyPromptsContainer: {
     paddingHorizontal: 20,
     paddingVertical: 10,
   },
   legacyPromptCard: {
-    backgroundColor: '#f8f9fa',
+    backgroundColor: "#f8f9fa",
     padding: 16,
     marginVertical: 8,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#e9ecef',
+    borderColor: "#e9ecef",
   },
   legacyPromptText: {
     fontSize: 16,
-    color: '#495057',
-    textAlign: 'center',
+    color: "#495057",
+    textAlign: "center",
   },
-  
+
   // Typing indicator styles
   typingIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingVertical: 8,
   },
   typingDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#6B46C1',
+    backgroundColor: "#6B46C1",
     marginHorizontal: 2,
     opacity: 0.4,
   },
-  
+
   // File preview styles
   filePreview: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f0f0f0',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f0f0f0",
     padding: 12,
     margin: 16,
     borderRadius: 12,
-    justifyContent: 'space-between',
+    justifyContent: "space-between",
   },
   filePreviewText: {
     fontSize: 14,
-    color: '#333',
+    color: "#333",
     flex: 1,
   },
-  
+
   // Chat History Modal Styles
   chatHistoryContainer: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: "#f8f9fa",
   },
   chatHistoryHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     padding: 16,
-    paddingTop: Platform.OS === 'ios' ? 50 : 35,
+    paddingTop: Platform.OS === "ios" ? 50 : 35,
     paddingBottom: 20,
   },
   closeButton: {
@@ -968,16 +1039,16 @@ const styles = StyleSheet.create({
   },
   chatHistoryTitle: {
     fontSize: 20,
-    fontFamily: 'Lexend',
-    color: '#FFFFFF',
-    fontWeight: 'bold',
+    fontFamily: "Lexend",
+    color: "#FFFFFF",
+    fontWeight: "bold",
   },
   newChatButton: {
     padding: 4,
   },
   chatHistoryContent: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 25,
     borderTopRightRadius: 25,
     marginTop: -10,
@@ -988,29 +1059,29 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   chatSessionCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderRadius: 16,
     marginBottom: 12,
-    shadowColor: '#1E293B',
+    shadowColor: "#1E293B",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
     shadowRadius: 12,
     elevation: 4,
     borderWidth: 1,
-    borderColor: 'rgba(226, 232, 240, 0.6)',
+    borderColor: "rgba(226, 232, 240, 0.6)",
   },
   chatSessionContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     padding: 16,
   },
   chatSessionIcon: {
     width: 48,
     height: 48,
     borderRadius: 12,
-    backgroundColor: '#F3F4F6',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "#F3F4F6",
+    justifyContent: "center",
+    alignItems: "center",
     marginRight: 16,
   },
   chatSessionInfo: {
@@ -1018,32 +1089,32 @@ const styles = StyleSheet.create({
   },
   chatSessionTitle: {
     fontSize: 16,
-    fontFamily: 'Inter-Bold',
-    color: '#1E293B',
+    fontFamily: "Inter-Bold",
+    color: "#1E293B",
     marginBottom: 4,
   },
   chatSessionLastMessage: {
     fontSize: 14,
-    color: '#64748B',
-    fontFamily: 'Inter-Regular',
+    color: "#64748B",
+    fontFamily: "Inter-Regular",
     marginBottom: 8,
     lineHeight: 18,
   },
   chatSessionMeta: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   chatSessionTime: {
     fontSize: 12,
-    color: '#94A3B8',
-    fontFamily: 'Inter-Medium',
+    color: "#94A3B8",
+    fontFamily: "Inter-Medium",
   },
   chatSessionCount: {
     fontSize: 12,
-    color: '#6B46C1',
-    fontFamily: 'Inter-Medium',
-    backgroundColor: '#F3F4F6',
+    color: "#6B46C1",
+    fontFamily: "Inter-Medium",
+    backgroundColor: "#F3F4F6",
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 8,
@@ -1054,22 +1125,22 @@ const styles = StyleSheet.create({
   },
   emptyChatHistory: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     paddingVertical: 60,
   },
   emptyChatHistoryText: {
     fontSize: 18,
-    fontFamily: 'Inter-SemiBold',
-    color: '#64748B',
+    fontFamily: "Inter-SemiBold",
+    color: "#64748B",
     marginTop: 16,
     marginBottom: 8,
   },
   emptyChatHistorySubtext: {
     fontSize: 14,
-    color: '#94A3B8',
-    fontFamily: 'Inter-Regular',
-    textAlign: 'center',
+    color: "#94A3B8",
+    fontFamily: "Inter-Regular",
+    textAlign: "center",
     lineHeight: 20,
     paddingHorizontal: 40,
   },

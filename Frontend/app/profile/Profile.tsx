@@ -14,6 +14,7 @@ import {
 import { MaterialIcons } from "@expo/vector-icons";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { LinearGradient } from "expo-linear-gradient";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import Navbar from "../NavBar";
 import AuthService from "../onboarding/service/AuthService";
@@ -181,36 +182,62 @@ const Profile: React.FC = () => {
       color: "#2196F3",
       description: "Notes created this month",
     },
-    {
-      title: "Study Streak",
-      value: progress?.studyStreak || 0,
-      icon: "local-fire-department",
-      color: "#FF5722",
-      description: "Days in a row",
-    },
-    {
-      title: "Learning Hours",
-      value: progress?.learningHours || 0,
-      icon: "access-time",
-      color: "#9C27B0",
-      description: "Hours spent learning this month",
-    },
   ];
+
+  const handleEditProfile = () => {
+    navigation.navigate('EditProfile');
+  };
+
+  const handleChangeProfilePicture = () => {
+    Alert.alert('Change Profile Picture', 'This feature will be implemented soon!');
+  };
+
+  const handleClearCache = () => {
+    Alert.alert(
+      'Clear Cache',
+      'This will clear app cache and temporary files. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Clear', style: 'destructive', onPress: () => {
+          Alert.alert('Success', 'Cache cleared successfully!');
+        }}
+      ]
+    );
+  };
+
+  const handleExportData = () => {
+    Alert.alert('Export Data', 'Your data export will be available soon!');
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete Account',
+      'This action cannot be undone. All your data will be permanently deleted.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => {
+          Alert.alert('Account Deletion', 'This feature will be implemented with proper authentication.');
+        }}
+      ]
+    );
+  };
 
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
+      <LinearGradient
+        colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.header}
+      >
         <View style={styles.headerTop}>
           <View style={styles.titleSection}>
             <Text style={styles.settingsTitle}>Settings</Text>
-            <Text style={styles.settingsDescription}>
-              Manage your account settings
-            </Text>
+
           </View>
           <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
             <MaterialIcons name="logout" size={24} color="#FF5722" />
-            <Text style={styles.logoutText}>Logout</Text>
           </TouchableOpacity>
         </View>
 
@@ -244,14 +271,8 @@ const Profile: React.FC = () => {
             </Text>
           </View>
 
-          <TouchableOpacity
-            style={styles.editButton}
-            onPress={handleManageProfile}
-          >
-            <MaterialIcons name="edit" size={24} color="#6A009C" />
-          </TouchableOpacity>
         </View>
-      </View>
+      </LinearGradient>
 
       {/* Content */}
       <ScrollView
@@ -298,6 +319,142 @@ const Profile: React.FC = () => {
             </View>
           ))}
         </View>
+
+        {/* Profile Management */}
+        <Text style={styles.sectionTitle}>Profile Management</Text>
+        
+        <View style={styles.settingsContainer}>
+          <TouchableOpacity 
+            style={styles.settingItem}
+            onPress={handleEditProfile}
+          >
+            <View style={styles.settingLeft}>
+              <MaterialIcons name="edit" size={24} color="#6A009C" />
+              <Text style={styles.settingText}>Edit Profile</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#6c757d" />
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.settingItem}
+            onPress={handleChangeProfilePicture}
+          >
+            <View style={styles.settingLeft}>
+              <MaterialIcons name="photo-camera" size={24} color="#6A009C" />
+              <Text style={styles.settingText}>Change Profile Picture</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#6c757d" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Account Settings */}
+        <Text style={styles.sectionTitle}>Account Settings</Text>
+        
+        <View style={styles.settingsContainer}>
+          <TouchableOpacity style={styles.settingItem}>
+            <View style={styles.settingLeft}>
+              <MaterialIcons name="notifications" size={24} color="#6A009C" />
+              <Text style={styles.settingText}>Notifications</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#6c757d" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.settingItem}>
+            <View style={styles.settingLeft}>
+              <MaterialIcons name="security" size={24} color="#6A009C" />
+              <Text style={styles.settingText}>Privacy & Security</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#6c757d" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.settingItem}>
+            <View style={styles.settingLeft}>
+              <MaterialIcons name="lock" size={24} color="#6A009C" />
+              <Text style={styles.settingText}>Change Password</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#6c757d" />
+          </TouchableOpacity>
+        </View>
+
+        {/* App Settings */}
+        <Text style={styles.sectionTitle}>App Settings</Text>
+        
+        <View style={styles.settingsContainer}>
+          <TouchableOpacity style={styles.settingItem}>
+            <View style={styles.settingLeft}>
+              <MaterialIcons name="language" size={24} color="#6A009C" />
+              <Text style={styles.settingText}>Language</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#6c757d" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.settingItem}>
+            <View style={styles.settingLeft}>
+              <MaterialIcons name="dark-mode" size={24} color="#6A009C" />
+              <Text style={styles.settingText}>Theme</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#6c757d" />
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.settingItem}
+            onPress={handleClearCache}
+          >
+            <View style={styles.settingLeft}>
+              <MaterialIcons name="clear-all" size={24} color="#6A009C" />
+              <Text style={styles.settingText}>Clear Cache</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#6c757d" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Data & Support */}
+        <Text style={styles.sectionTitle}>Data & Support</Text>
+        
+        <View style={styles.settingsContainer}>
+          <TouchableOpacity 
+            style={styles.settingItem}
+            onPress={handleExportData}
+          >
+            <View style={styles.settingLeft}>
+              <MaterialIcons name="download" size={24} color="#6A009C" />
+              <Text style={styles.settingText}>Export Data</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#6c757d" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.settingItem}>
+            <View style={styles.settingLeft}>
+              <MaterialIcons name="help" size={24} color="#6A009C" />
+              <Text style={styles.settingText}>Help & Support</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#6c757d" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.settingItem}>
+            <View style={styles.settingLeft}>
+              <MaterialIcons name="info" size={24} color="#6A009C" />
+              <Text style={styles.settingText}>About</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#6c757d" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Danger Zone */}
+        <Text style={styles.sectionTitle}>Danger Zone</Text>
+        
+        <View style={styles.settingsContainer}>
+          <TouchableOpacity 
+            style={[styles.settingItem, styles.dangerItem]}
+            onPress={handleDeleteAccount}
+          >
+            <View style={styles.settingLeft}>
+              <MaterialIcons name="delete-forever" size={24} color="#FF5722" />
+              <Text style={[styles.settingText, styles.dangerText]}>Delete Account</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#FF5722" />
+          </TouchableOpacity>
+        </View>
       </ScrollView>
 
       <Navbar activeRoute="Profile" />
@@ -314,7 +471,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: Platform.OS === "ios" ? 50 : 35,
     paddingBottom: 20,
-    backgroundColor: "#F5E1FD",
     borderBottomLeftRadius: 25,
     borderBottomRightRadius: 25,
     shadowColor: "#1E293B",
@@ -334,19 +490,14 @@ const styles = StyleSheet.create({
   },
   settingsTitle: {
     fontSize: 32,
-    color: "#6A009C",
-    fontFamily: "Inter-Bold",
+    color: "#FFFFFF",
+    fontFamily: "Lexend",
   },
-  settingsDescription: {
-    fontSize: 14,
-    color: "#666",
-    fontFamily: "Inter-Medium",
-    marginTop: 4,
-  },
+
   logoutButton: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
+    
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
@@ -356,12 +507,7 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  logoutText: {
-    marginLeft: 8,
-    fontSize: 14,
-    color: "#FF5722",
-    fontFamily: "Inter-Medium",
-  },
+
   profileSection: {
     flexDirection: "row",
     alignItems: "center",
@@ -396,39 +542,28 @@ const styles = StyleSheet.create({
   },
   userName: {
     fontSize: 24,
-    color: "#1E293B",
+    color: "#FFFFFF",
     fontFamily: "Inter-Bold",
     marginBottom: 4,
   },
   userEmail: {
     fontSize: 16,
-    color: "#6c757d",
+    color: "rgba(255, 255, 255, 0.8)",
     fontFamily: "Inter-Medium",
     marginBottom: 2,
   },
   joinDate: {
     fontSize: 14,
-    color: "#adb5bd",
+    color: "rgba(255, 255, 255, 0.7)",
     fontFamily: "Inter-Regular",
   },
-  editButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "#fff",
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 2,
-  },
+
   content: {
     flex: 1,
     paddingHorizontal: 24,
     paddingTop: 20,
-    paddingBottom: 100,
+    
+    marginBottom: 100, // Adjusted for Navbar height
   },
   sectionTitle: {
     fontSize: 20,
@@ -541,14 +676,51 @@ const styles = StyleSheet.create({
   },
   avatarText: {
     fontSize: 36,
-    color: "#fff",
+    color: "#6A009C",
     fontFamily: "Inter-Bold",
   },
   userUsername: {
     fontSize: 16,
-    color: "#6c757d",
+    color: "rgba(255, 255, 255, 0.8)",
     fontFamily: "Inter-Medium",
     marginBottom: 2,
+  },
+  settingsContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 24,
+    shadowColor: '#1E293B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  settingItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f8f9fa',
+  },
+  settingLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  settingText: {
+    marginLeft: 16,
+    fontSize: 16,
+    color: '#1E293B',
+    fontFamily: 'Inter-Medium',
+  },
+  dangerItem: {
+    borderWidth: 1,
+    borderColor: '#ffebee',
+  },
+  dangerText: {
+    color: '#FF5722',
   },
 });
 
