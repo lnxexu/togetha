@@ -1,26 +1,51 @@
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
-from users.models import UserSession
 from .serializers import UserSerializer
 from rest_framework import status
 from rest_framework.authtoken.models import Token
 from django.contrib.auth.models import User 
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import render
 from rest_framework.decorators import permission_classes, authentication_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.authentication import TokenAuthentication,SessionAuthentication
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from django.views.decorators.csrf import csrf_exempt
+from django.contrib.auth import authenticate, login as django_login, logout
 
 
 @api_view(['POST'])
-def login(request):
-    user = get_object_or_404(User, username=request.data['username'])
-    if not user.check_password(request.data['password']):
-        return Response({"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
+@permission_classes([AllowAny])
+def login_api(request):
+    """API endpoint for user login"""
+    username = request.data.get('username')
+    password = request.data.get('password')
+    
+    if not username or not password:
+        return Response({'error': 'Please provide both username and password'}, 
+                        status=status.HTTP_400_BAD_REQUEST)
+    
+    user = authenticate(username=username, password=password)
+    
+    if not user:
+        return Response({'error': 'Invalid credentials'}, 
+                        status=status.HTTP_401_UNAUTHORIZED)
+
+    # Use Django's login function to create a session
+    django_login(request, user)
+
+    # Create or get token for API authentication
     token, created = Token.objects.get_or_create(user=user)
-    serializer = UserSerializer(instance = user)
-    return Response({'token': token.key, "user": serializer.data}, status=status.HTTP_200_OK)
+    
+    return Response({
+        'token': token.key,
+        'user_id': user.id,
+        'username': user.username,
+        'email': user.email,
+        'message': 'Login successful'
+    }, status=status.HTTP_200_OK)
 
 @api_view(['POST'])
 def signup(request):
@@ -106,23 +131,19 @@ def get_user_info(request):
 
 # logout user
 @api_view(['POST'])
-@authentication_classes([TokenAuthentication])
 @permission_classes([IsAuthenticated])
-def logout_view(request):
-    session_id = request.data.get('session_id')
-    if session_id:
-        # End specific session
-        UserSession.objects.filter(
-            user=request.user, 
-            session_id=session_id
-        ).update(is_active=False)
-    else:
-        # End all sessions for this user
-        UserSession.objects.filter(user=request.user).update(is_active=False)
+def user_logout(request):
+    # Delete the token to logout
+    try:
+        request.user.auth_token.delete()
+    except Exception:
+        pass
     
-    # Delete token
-    request.user.auth_token.delete()
-    return Response({'success': 'Successfully logged out'})
+    # Logout from session
+    logout(request)
+    
+    return Response({'message': 'Successfully logged out'}, 
+                    status=status.HTTP_200_OK)
 
 def login_page(request):
     return render(request, 'login.html')
@@ -167,3 +188,19 @@ def forgot_password(request):
     else:
         form = PasswordResetForm()
     return render(request, 'forgotPassword.html', {'form': form})
+
+@api_view(['GET'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def validate_token(request):
+    """
+    Validate if the token is active and return user info
+    """
+    return Response({
+        'valid': True,
+        'user': {
+            'id': request.user.id,
+            'username': request.user.username,
+            'email': request.user.email
+        }
+    })

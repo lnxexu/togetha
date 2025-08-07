@@ -21,6 +21,7 @@ import AuthService from "../onboarding/service/AuthService";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { userService, UserProfile, UserProgress } from "./services/userService";
 import { API_URL } from "../../constants/ApiConfig";
+import * as ImagePicker from "expo-image-picker";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -35,83 +36,53 @@ const Profile: React.FC = () => {
   // Load user data when screen is focused
   useFocusEffect(
     useCallback(() => {
+      setUserData(null);
       loadUserData();
+      return () => {};
     }, [])
   );
 
   const loadUserData = async () => {
-    try {
-      setLoading(true);
-
-      // Get username from AsyncStorage first for immediate display
-      const storedUsername = await AsyncStorage.getItem("username");
-      if (storedUsername) {
-        setUsername(storedUsername);
+  try {
+    setLoading(true);
+    
+    // Clear cache before fetching new data
+    await userService.clearProfileCache();
+    
+    // Get fresh data from the server
+    const userInfo = await userService.getUserInfo(true);
+    const userProfile = await userService.getUserProfile(true);
+    
+    // Combine profile data
+    const profile = { ...userInfo, ...userProfile };
+    
+    if (Object.keys(profile).length > 0) {
+      // Format dates if needed
+      if (profile.date_joined) {
+        profile.date_joined = new Date(profile.date_joined).toLocaleDateString();
       }
-
-      // Try fetching user data with proper error handling
-      let userInfo: UserProfile = {};
-      let userProfile: UserProfile = {};
-
-      try {
-        userInfo = await userService.getUserInfo();
-        //  Format date_joined to a more readable format e.g. "January 1, 2023"
-        if (userInfo.date_joined) {
-          userInfo.date_joined = new Date(userInfo.date_joined).toLocaleDateString();
-        }
-        console.log("User info data:", userInfo);
-      } catch (infoError) {
-        console.error("Error loading user info:", infoError);
-        // Continue execution even if this fails
-      }
-
-      try {
-        userProfile = await userService.getUserProfile();
-        if (userProfile.date_joined) {
-          // Format date_joined to a more readable format
-          
-
-        }
-      } catch (profileError) {
-        console.error("Error loading user profile:", profileError);
-        // Continue execution even if this fails
-      }
-
-      const profile = { ...userInfo, ...userProfile };
-
-      if (Object.keys(profile).length > 0) {
-        setUserData(profile);
-
-        // Format the date_joined to a more readable format
-        if (profile.date_joined) {
-          profile.date_joined = new Date(
-            profile.date_joined
-          ).toLocaleDateString();
-        }
-
-        // Update stored username if different
-        if (profile.username && profile.username !== storedUsername) {
-          await AsyncStorage.setItem("username", profile.username);
-          setUsername(profile.username);
-        }
-      }
-
-      // Fetch progress data with fallback
-      const progressData = await userService.getUserProgress();
-      setProgress(progressData);
-      console.log("User progress data:", progressData);
-    } catch (error) {
-      console.error("Error loading user data:", error);
-      Alert.alert(
-        "Error",
-        "Some profile data could not be loaded. Please try again later."
-      );
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+      
+      // Update state
+      setUserData(profile);
+      setUsername(profile.username || "");
+      
+      // Update AsyncStorage with new values
+      await AsyncStorage.setItem("username", profile.username || "");
     }
-  };
+    
+    // Fetch progress data
+    const progressData = await userService.getUserProgress();
+    setProgress(progressData);
+  } catch (error) {
+    console.error("Error loading user data:", error);
+    Alert.alert("Error", "Failed to load profile data. Please try again.");
+  } finally {
+    setLoading(false);
+    setRefreshing(false);
+  }
+};
 
+  
   const onRefresh = () => {
     setRefreshing(true);
     loadUserData();
@@ -185,39 +156,104 @@ const Profile: React.FC = () => {
   ];
 
   const handleEditProfile = () => {
-    navigation.navigate('EditProfile');
+    navigation.navigate("EditProfile");
   };
 
-  const handleChangeProfilePicture = () => {
-    Alert.alert('Change Profile Picture', 'This feature will be implemented soon!');
+  const handleChangeProfilePicture = async () => {
+    try {
+      // Request permission to access the photo library
+      const { status } =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (status !== "granted") {
+        Alert.alert(
+          "Permission Required",
+          "Please allow access to your photo library to change your profile picture."
+        );
+        return;
+      }
+
+      // Launch the image picker
+      const result = await ImagePicker.launchImageLibraryAsync({
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const selectedImage = result.assets[0];
+
+        // Create form data
+        const formData = new FormData();
+        formData.append("profile_picture", {
+          uri: selectedImage.uri,
+          name: selectedImage.fileName || "profile-picture.jpg",
+          type: "image/jpeg",
+        } as any);
+
+        // Upload the image
+        const updatedProfile = await userService.updateProfilePicture(formData);
+
+        // Update local state
+        setUserData({
+          ...userData,
+          profile_picture: updatedProfile.profile_picture,
+        });
+
+        // Store in AsyncStorage for persistence
+        await AsyncStorage.setItem(
+          "userProfilePicture",
+          updatedProfile.profile_picture ?? ""
+        );
+
+        Alert.alert("Success", "Profile picture updated successfully!");
+      }
+    } catch (error) {
+      console.error("Error changing profile picture:", error);
+      Alert.alert(
+        "Error",
+        "Failed to update profile picture. Please try again."
+      );
+    }
   };
 
   const handleClearCache = () => {
     Alert.alert(
-      'Clear Cache',
-      'This will clear app cache and temporary files. Continue?',
+      "Clear Cache",
+      "This will clear app cache and temporary files. Continue?",
       [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Clear', style: 'destructive', onPress: () => {
-          Alert.alert('Success', 'Cache cleared successfully!');
-        }}
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear",
+          style: "destructive",
+          onPress: () => {
+            Alert.alert("Success", "Cache cleared successfully!");
+          },
+        },
       ]
     );
   };
 
   const handleExportData = () => {
-    Alert.alert('Export Data', 'Your data export will be available soon!');
+    Alert.alert("Export Data", "Your data export will be available soon!");
   };
 
   const handleDeleteAccount = () => {
     Alert.alert(
-      'Delete Account',
-      'This action cannot be undone. All your data will be permanently deleted.',
+      "Delete Account",
+      "This action cannot be undone. All your data will be permanently deleted.",
       [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => {
-          Alert.alert('Account Deletion', 'This feature will be implemented with proper authentication.');
-        }}
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            Alert.alert(
+              "Account Deletion",
+              "This feature will be implemented with proper authentication."
+            );
+          },
+        },
       ]
     );
   };
@@ -234,7 +270,6 @@ const Profile: React.FC = () => {
         <View style={styles.headerTop}>
           <View style={styles.titleSection}>
             <Text style={styles.settingsTitle}>Settings</Text>
-
           </View>
           <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
             <MaterialIcons name="logout" size={24} color="#FF5722" />
@@ -243,14 +278,15 @@ const Profile: React.FC = () => {
 
         <View style={styles.profileSection}>
           <View style={styles.profilePicContainer}>
-            {userData?.profilePicture ? (
+            {userData?.profile_picture ? (
               <Image
                 source={{
-                  uri: userData.profilePicture.startsWith("http")
-                    ? userData.profilePicture
-                    : `${API_URL}${userData.profilePicture}`,
+                  uri: userData.profile_picture.startsWith("http")
+                    ? userData.profile_picture
+                    : `${API_URL}${userData.profile_picture}`,
                 }}
                 style={styles.profilePic}
+                key={userData.profile_picture}
               />
             ) : (
               <View style={styles.defaultProfilePic}>
@@ -263,14 +299,13 @@ const Profile: React.FC = () => {
 
           <View style={styles.userInfo}>
             <Text style={styles.userName}>
-              {userData?.name || username || "User"}
+              {userData?.full_name || username || "User"}
             </Text>
             <Text style={styles.userUsername}>@{username || "username"}</Text>
             <Text style={styles.joinDate}>
               Member since {userData?.date_joined || "N/A"}
             </Text>
           </View>
-
         </View>
       </LinearGradient>
 
@@ -322,9 +357,9 @@ const Profile: React.FC = () => {
 
         {/* Profile Management */}
         <Text style={styles.sectionTitle}>Profile Management</Text>
-        
+
         <View style={styles.settingsContainer}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.settingItem}
             onPress={handleEditProfile}
           >
@@ -335,7 +370,7 @@ const Profile: React.FC = () => {
             <MaterialIcons name="chevron-right" size={24} color="#6c757d" />
           </TouchableOpacity>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.settingItem}
             onPress={handleChangeProfilePicture}
           >
@@ -349,7 +384,7 @@ const Profile: React.FC = () => {
 
         {/* Account Settings */}
         <Text style={styles.sectionTitle}>Account Settings</Text>
-        
+
         <View style={styles.settingsContainer}>
           <TouchableOpacity style={styles.settingItem}>
             <View style={styles.settingLeft}>
@@ -378,7 +413,7 @@ const Profile: React.FC = () => {
 
         {/* App Settings */}
         <Text style={styles.sectionTitle}>App Settings</Text>
-        
+
         <View style={styles.settingsContainer}>
           <TouchableOpacity style={styles.settingItem}>
             <View style={styles.settingLeft}>
@@ -396,7 +431,7 @@ const Profile: React.FC = () => {
             <MaterialIcons name="chevron-right" size={24} color="#6c757d" />
           </TouchableOpacity>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.settingItem}
             onPress={handleClearCache}
           >
@@ -410,9 +445,9 @@ const Profile: React.FC = () => {
 
         {/* Data & Support */}
         <Text style={styles.sectionTitle}>Data & Support</Text>
-        
+
         <View style={styles.settingsContainer}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.settingItem}
             onPress={handleExportData}
           >
@@ -442,15 +477,17 @@ const Profile: React.FC = () => {
 
         {/* Danger Zone */}
         <Text style={styles.sectionTitle}>Danger Zone</Text>
-        
+
         <View style={styles.settingsContainer}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.settingItem, styles.dangerItem]}
             onPress={handleDeleteAccount}
           >
             <View style={styles.settingLeft}>
               <MaterialIcons name="delete-forever" size={24} color="#FF5722" />
-              <Text style={[styles.settingText, styles.dangerText]}>Delete Account</Text>
+              <Text style={[styles.settingText, styles.dangerText]}>
+                Delete Account
+              </Text>
             </View>
             <MaterialIcons name="chevron-right" size={24} color="#FF5722" />
           </TouchableOpacity>
@@ -497,7 +534,7 @@ const styles = StyleSheet.create({
   logoutButton: {
     flexDirection: "row",
     alignItems: "center",
-    
+
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
@@ -562,7 +599,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 24,
     paddingTop: 20,
-    
+
     marginBottom: 100, // Adjusted for Navbar height
   },
   sectionTitle: {
@@ -686,41 +723,41 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   settingsContainer: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderRadius: 16,
-    overflow: 'hidden',
+    overflow: "hidden",
     marginBottom: 24,
-    shadowColor: '#1E293B',
+    shadowColor: "#1E293B",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 2,
   },
   settingItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#f8f9fa',
+    borderBottomColor: "#f8f9fa",
   },
   settingLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
   settingText: {
     marginLeft: 16,
     fontSize: 16,
-    color: '#1E293B',
-    fontFamily: 'Inter-Medium',
+    color: "#1E293B",
+    fontFamily: "Inter-Medium",
   },
   dangerItem: {
     borderWidth: 1,
-    borderColor: '#ffebee',
+    borderColor: "#ffebee",
   },
   dangerText: {
-    color: '#FF5722',
+    color: "#FF5722",
   },
 });
 

@@ -12,7 +12,7 @@ import Home from '../home';
 import NotesScreen from '../note-taking/notes';
 import ToDo from '../task-management/ToDo';
 import AllItemsView from '../AllItemsView';
-import Notifications from '../notifications';
+import Notifications from '../notifications/notifications';
 
 //note-taking components
 import ImportPDFPage from '../note-taking/ImportPDFPage';

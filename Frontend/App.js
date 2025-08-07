@@ -4,10 +4,7 @@ import React, { useEffect } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AppNavigator from './app/navigation/AppNavigator';
-// Remove the import here - we'll move this to AppNavigator
-// import useSessionMonitor from './hooks/Session-Monitoring';
 
-// Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
 
 export default function App() {
@@ -36,7 +33,7 @@ export default function App() {
   }
 
   return (
-    <SafeAreaProvider>
+      <SafeAreaProvider>
       <AppNavigator />
     </SafeAreaProvider>
   );

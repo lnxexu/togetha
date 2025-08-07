@@ -1,23 +1,22 @@
-from rest_framework.decorators import api_view, authentication_classes, permission_classes
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.authentication import TokenAuthentication, SessionAuthentication
 from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Q
 from datetime import datetime, timedelta
 from .models import Task
 from .serializers import TaskSerializer
+from server.decorators import api_auth_required
 
-@api_view(['GET', 'POST'])
-@authentication_classes([TokenAuthentication, SessionAuthentication])
-@permission_classes([IsAuthenticated])
+@api_auth_required(['GET', 'POST'])
 def task_list(request):
+    user = request.user
+        
     if request.method == 'GET':
+        # Get filter parameters
         filter_type = request.query_params.get('filter', 'all')
         category_id = request.query_params.get('category')
         search_query = request.query_params.get('search', '')
         
-        tasks = Task.objects.filter(user=request.user)
+        tasks = Task.objects.filter(user=user)
         
         # Apply filters
         if filter_type == 'active':
@@ -26,7 +25,7 @@ def task_list(request):
             tasks = tasks.filter(completed=True)
         elif filter_type == 'today':
             today = datetime.now().date()
-            tasks = tasks.filter(due_datetime=today)
+            tasks = tasks.filter(due_datetime__date=today)
         elif filter_type == 'upcoming':
             today = datetime.now().date()
             next_week = today + timedelta(days=7)
@@ -35,11 +34,10 @@ def task_list(request):
             today = datetime.now().date()
             tasks = tasks.filter(due_date__lt=today, completed=False)
         
-        # Filter by category if provided
+        # Apply other filters
         if category_id:
             tasks = tasks.filter(category_id=category_id)
         
-        # Apply search query if provided
         if search_query:
             tasks = tasks.filter(
                 Q(text__icontains=search_query) | 
@@ -52,18 +50,18 @@ def task_list(request):
     elif request.method == 'POST':
         serializer = TaskSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
-            serializer.save(user=request.user)
+            serializer.save(user=user)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-@api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
-@authentication_classes([TokenAuthentication, SessionAuthentication])
-@permission_classes([IsAuthenticated])
+@api_auth_required(['GET', 'PUT', 'PATCH', 'DELETE'])
 def task_detail(request, pk):
+    user = request.user
+    
     try:
-        task = Task.objects.get(pk=pk, user=request.user)
+        task = Task.objects.get(pk=pk, user=user)
     except Task.DoesNotExist:
-        return Response(status=status.HTTP_404_NOT_FOUND)
+        return Response({"error": "Task not found"}, status=status.HTTP_404_NOT_FOUND)
     
     if request.method == 'GET':
         serializer = TaskSerializer(task)
@@ -80,44 +78,31 @@ def task_detail(request, pk):
         task.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-@api_view(['GET'])
-@authentication_classes([TokenAuthentication, SessionAuthentication])
-@permission_classes([IsAuthenticated])
+@api_auth_required(['GET'])
 def task_statistics(request):
-    user_tasks = Task.objects.filter(user=request.user)
+    user = request.user
+    user_tasks = Task.objects.filter(user=user)
     
-    # Get counts for various task states
-    total_tasks = user_tasks.count()
-    completed_tasks = user_tasks.filter(completed=True).count()
-    active_tasks = user_tasks.filter(completed=False).count()
-    
-    # Get overdue tasks
+    # Get current date for calculations
     today = datetime.now().date()
-    overdue_tasks = user_tasks.filter(due_date__lt=today, completed=False).count()
     
-    # Get due today
-    due_today = user_tasks.filter(due_datetime=today, completed=False).count()
-    
-    # Get tasks by priority
-    high_priority = user_tasks.filter(priority='high', completed=False).count()
-    medium_priority = user_tasks.filter(priority='medium', completed=False).count()
-    low_priority = user_tasks.filter(priority='low', completed=False).count()
-    
-    # Recent activity - tasks updated in the last 7 days
-    seven_days_ago = datetime.now() - timedelta(days=7)
-    recent_activity = user_tasks.filter(updated_at__gte=seven_days_ago).count()
-    
+    # Calculate statistics
     stats = {
-        'total_tasks': total_tasks,
-        'completed_tasks': completed_tasks,
-        'active_tasks': active_tasks,
-        'completion_rate': (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0,
-        'overdue_tasks': overdue_tasks,
-        'due_today': due_today,
-        'high_priority': high_priority,
-        'medium_priority': medium_priority,
-        'low_priority': low_priority,
-        'recent_activity': recent_activity
+        'total_tasks': user_tasks.count(),
+        'completed_tasks': user_tasks.filter(completed=True).count(),
+        'active_tasks': user_tasks.filter(completed=False).count(),
+        'overdue_tasks': user_tasks.filter(due_date__lt=today, completed=False).count(),
+        'due_today': user_tasks.filter(due_datetime__date=today, completed=False).count(),
+        'high_priority': user_tasks.filter(priority='high', completed=False).count(),
+        'medium_priority': user_tasks.filter(priority='medium', completed=False).count(),
+        'low_priority': user_tasks.filter(priority='low', completed=False).count(),
+        'recent_activity': user_tasks.filter(updated_at__gte=today-timedelta(days=7)).count()
     }
     
-    return Response(stats)
+    # Calculate completion rate
+    if stats['total_tasks'] > 0:
+        stats['completion_rate'] = (stats['completed_tasks'] / stats['total_tasks']) * 100
+    else:
+        stats['completion_rate'] = 0
+    
+    return Response(stats, status=status.HTTP_200_OK)

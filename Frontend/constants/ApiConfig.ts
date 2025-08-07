@@ -17,6 +17,8 @@ function getApiBaseUrl() {
     }
     // For real devices, use your machine's local IP address or production URL
 
+    // return 'http://192.168.36.165:8000'; // IP for Kobe's DITO  
+
     // return 'http://192.168.81.162:8000'; // IP for ITRC
     
     // return 'http://172.16.5.215:8000'; // IP for Student3
@@ -35,6 +37,7 @@ export const API_ENDPOINTS = {
     TASKS: '/task_manager/tasks/',
     TASK_CATEGORIES: '/task_manager/categories/',
     TASK_STATISTICS: '/task_manager/statistics/',
+    TASK_DETAIL: (taskId: string) => `/task_manager/tasks/${taskId}/`,
     
     // Auth endpoints
     LOGIN: '/login/',
@@ -43,11 +46,10 @@ export const API_ENDPOINTS = {
     LOGOUT: '/logout_user/',
 
     // User profile endpoints
-    USER_PROFILE: '/users/profile/',
-    USER_PROGRESS: '/users/user_progress/',
-    GET_USER_INFO: '/users/get_user_info/',
-    UPLOAD_PROFILE_PICTURE: '/users/upload_profile_picture/',
-    UPDATE_PROFILE_PICTURE: '/users/update_profile_picture/',
+    GET_USER_INFO: "/get_user_info/",
+    USER_PROFILE: "/users/profile/",
+    USER_PROGRESS: "/users/progress/",
+    CSRF_TOKEN: "/users/csrf-token/",
 
     // Notes endpoints
     NOTES: '/note_taking/notes/',
@@ -55,9 +57,19 @@ export const API_ENDPOINTS = {
     NOTE_FOLDERS: '/note_taking/folders/',
     
     // Chatbot endpoints
-    CHATBOT_OCR: '/chatbot/api/ocr/',
+    CHATBOT_OCR: '/chatbot/extract-text/',
     CHATBOT_CONVERSATIONS: '/chatbot/conversations/',
     CHATBOT_MESSAGES: '/chatbot/api/messages/',
+
+    // Notification endpoints
+    NOTIFICATIONS: '/notifications/',
+    NOTIFICATIONS_MARK_READ: '/notifications/mark_read/',
+    NOTIFICATIONS_SETTINGS: '/notifications/settings/',
+    NOTIFICATIONS_REGISTER_DEVICE: '/notifications/register_device/',
+};
+
+export const WS_ENDPOINTS = {
+    NOTIFICATIONS: '/ws/notifications/', // WebSocket endpoint for real-time notifications
 };
 
 export function getUserTimezone(): string {

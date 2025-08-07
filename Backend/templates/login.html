@@ -115,6 +115,28 @@
     </div>
 
     <script>
+        function setupTokenInterceptor(token) {
+        // Store token for page refreshes
+        localStorage.setItem('token', token);
+        
+        // Create a way for future fetch requests to include the token automatically
+        window.originalFetch = window.fetch;
+        window.fetch = function(url, options = {}) {
+            // Set up headers if they don't exist
+            if (!options.headers) {
+                options.headers = {};
+            }
+            
+            // Add the auth token header
+            options.headers['Authorization'] = `Token ${token}`;
+            
+            // Call the original fetch with our modified options
+            return window.originalFetch(url, options);
+        };
+        
+        console.log('Token interceptor set up successfully');
+    }
+        
     function togglePasswordVisibility(fieldId) {
         const passwordField = document.getElementById(fieldId);
         const icon = event.currentTarget.querySelector('i');
@@ -137,7 +159,6 @@
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
             
-            // Fix: Remove the space before 'login/'
             fetch('/login/', {
                 method: 'POST',
                 headers: {
@@ -150,7 +171,6 @@
                 })
             })
             .then(response => {
-                // Add response type checking
                 const contentType = response.headers.get("content-type");
                 if (contentType && contentType.includes("application/json")) {
                     return response.json();
@@ -159,13 +179,24 @@
                 }
             })
             .then(data => {
-                // Rest of your code
                 if (data.token) {
-                    localStorage.setItem('token', data.token);
+                    // Set up the token interceptor for all future requests
+                    setupTokenInterceptor(data.token);
+                    
+                    // Redirect to home page
                     window.location.href = '/';
                 } else {
                     // Show error message
-                    // ...
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'error-message';
+                    errorDiv.textContent = data.error || 'Login failed. Please try again.';
+                    
+                    const existingError = document.querySelector('.error-message');
+                    if (existingError) {
+                        existingError.remove();
+                    }
+                    
+                    form.prepend(errorDiv);
                 }
             })
             .catch(error => {

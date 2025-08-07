@@ -105,15 +105,6 @@ const TaskDetails: React.FC = () => {
     if (!task) return;
 
     try {
-      // In a real app, you would update via taskService
-      // await taskService.updateTask(taskId, {
-      //     title: editedTitle,
-      //     description: editedDescription,
-      //     priority: editedPriority,
-      //     subject: editedSubject
-      // });
-
-      // Update local state for demonstration
       setTask({
         ...task,
         title: editedTitle,

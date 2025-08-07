@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_URL } from '@/constants/ApiConfig';
+import { API_URL, API_ENDPOINTS } from '@/constants/ApiConfig';
 
 class ChatbotServices {
   // Check and refresh token if needed
@@ -29,7 +29,7 @@ class ChatbotServices {
       } as any);
 
       // Send the request
-      const response = await fetch(`${API_URL}/chatbot/api/ocr/`, {
+      const response = await fetch(`${API_URL}${API_ENDPOINTS.CHATBOT_OCR}`, {
         method: 'POST',
         headers: {
           'Authorization': `Token ${token}`,

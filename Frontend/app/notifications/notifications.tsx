@@ -16,9 +16,9 @@ import {
   RefreshControl,
 } from "react-native";
 import { LinearGradient } from 'expo-linear-gradient';
-import { RootStackParamList } from "./navigation/AppNavigator";
+import { RootStackParamList } from "../navigation/AppNavigator";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { API_URL, API_ENDPOINTS } from "../constants/ApiConfig";
+import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
 
 const { width } = Dimensions.get("window");
 

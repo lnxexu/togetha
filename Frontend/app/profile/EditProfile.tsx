@@ -16,6 +16,7 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import { userService, UserProfile } from "./services/userService";
 import * as ImagePicker from "expo-image-picker";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -27,15 +28,18 @@ const EditProfile: React.FC = () => {
 
   // Load user data when screen is focused
   useFocusEffect(
-    useCallback(() => {
+   useCallback(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
       loadUserData();
-    }, [])
+    });
+    return unsubscribe;
+  }, [navigation])
   );
 
   const loadUserData = async () => {
     try {
-      const userInfo = await userService.getUserInfo();
-      const userProfiles = await userService.getUserProfile();
+      const userInfo = await userService.getUserInfo(true);
+      const userProfiles = await userService.getUserProfile(true);
       const profile = { ...userInfo, ...userProfiles };
       setUserData(profile);
       setOriginalData(profile);
@@ -45,20 +49,47 @@ const EditProfile: React.FC = () => {
   };
 
   const handleSave = async () => {
-    if (!userData) return;
+  if (!userData) return;
 
-    try {
-      // The service now returns the updated profile directly
-      const updatedProfile = await userService.updateUserProfile(userData);
-      setIsEditing(false);
-      setUserData(updatedProfile);
-      setOriginalData(updatedProfile);
-      Alert.alert("Success", "Profile updated successfully!");
-    } catch (error) {
-      console.error("Error saving profile:", error);
-      Alert.alert("Error", "Failed to update profile. Please try again.");
+  try {
+    const updatedProfile = await userService.updateUserProfile(userData);
+    setIsEditing(false);
+    setUserData(updatedProfile);
+    setOriginalData(updatedProfile);
+
+    // Store updated fields in AsyncStorage for other screens
+    if (updatedProfile.full_name) {
+      await AsyncStorage.setItem("userName", updatedProfile.full_name);
     }
-  };
+
+    if (updatedProfile.username) {
+      await AsyncStorage.setItem("username", updatedProfile.username);
+    }
+
+    if (updatedProfile.profile_picture) {
+      await AsyncStorage.setItem(
+        "userProfilePicture",
+        updatedProfile.profile_picture
+      );
+    }
+
+    // Force a refresh of the profile data in cache
+    await userService.clearProfileCache();
+
+    Alert.alert("Success", "Profile updated successfully!", [
+      { 
+        text: "OK", 
+        onPress: () => {
+          // Return to profile screen after successful update
+          navigation.navigate("Profile");
+        }
+      }
+    ]);
+  } catch (error) {
+    console.error("Error saving profile:", error);
+    Alert.alert("Error", "Failed to update profile. Please try again.");
+  }
+};
 
   const handleCancel = () => {
     setIsEditing(false);
@@ -99,36 +130,42 @@ const EditProfile: React.FC = () => {
         // Add the image to the form data
         formData.append("profile_picture", {
           uri: selectedImage.uri,
-          name: "profile-picture.jpg",
+          name: selectedImage.fileName || "profile-picture.jpg",
           type: "image/jpeg",
         } as any);
 
         // Show loading indicator or disable buttons
         setIsEditing(false);
 
-        // Upload the image with explicit token passing
-        const token = await userService.getAuthToken();
-        if (!token) {
-          Alert.alert(
-            "Authentication Error",
-            "You need to be logged in to update your profile picture."
+        try {
+          // Upload the image
+          const updatedProfile = await userService.updateProfilePicture(
+            formData
           );
-          return;
+
+          // Update the local state
+          setUserData({
+            ...userData,
+            profile_picture: updatedProfile.profile_picture,
+          });
+          setOriginalData({
+            ...originalData,
+            profile_picture: updatedProfile.profile_picture,
+          });
+
+          await AsyncStorage.setItem(
+            "userProfilePicture",
+            updatedProfile.profile_picture ?? ""
+          );
+
+          Alert.alert("Success", "Profile picture updated successfully!");
+        } catch (error) {
+          console.error("Error:", error);
+          Alert.alert(
+            "Error",
+            "Failed to update profile picture. Please try again."
+          );
         }
-
-        const updatedProfile = await userService.updateProfilePicture(formData);
-
-        // Update the local state with the new profile data
-        setUserData({
-          ...userData,
-          profilePicture: updatedProfile.profilePicture,
-        });
-        setOriginalData({
-          ...originalData,
-          profilePicture: updatedProfile.profilePicture,
-        });
-
-        Alert.alert("Success", "Profile picture updated successfully!");
       }
     } catch (error) {
       console.error("Error changing profile picture:", error);
@@ -185,9 +222,9 @@ const EditProfile: React.FC = () => {
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.profilePictureSection}>
           <View style={styles.profilePicContainer}>
-            {userData.profilePicture ? (
+            {userData.profile_picture ? (
               <Image
-                source={{ uri: userData.profilePicture }}
+                source={{ uri: userData.profile_picture }}
                 style={styles.profilePic}
               />
             ) : (
@@ -225,8 +262,8 @@ const EditProfile: React.FC = () => {
             <Text style={styles.fieldLabel}>Full Name</Text>
             <TextInput
               style={[styles.textInput, !isEditing && styles.disabledInput]}
-              value={userData.name}
-              onChangeText={(text) => updateUserField("name", text)}
+              value={userData.full_name}
+              onChangeText={(text) => updateUserField("full_name", text)}
               editable={isEditing}
               placeholder="Enter your full name"
             />

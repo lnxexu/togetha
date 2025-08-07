@@ -27,8 +27,7 @@ import { RootStackParamList } from "../navigation/AppNavigator";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { RefreshControl } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-// Fix 1: Remove unused API_ENDPOINTS import
-import { API_URL } from "@/constants/ApiConfig";
+import { API_ENDPOINTS, API_URL } from "@/constants/ApiConfig";
 
 const { width } = Dimensions.get("window");
 
@@ -49,9 +48,9 @@ interface Note {
   content: string;
   formatted_content?: string;
   folder?: string; // This matches the backend response structure
-  folderId?: string; // You can keep this for compatibility with existing code
-  createdAt: Date;
-  updatedAt: Date;
+  folder_id?: string; // You can keep this for compatibility with existing code
+  created_at: Date;
+  updated_at: Date;
   type: "text" | "image";
   tags?: Array<string | TagObject>;
   linkedTaskId?: string;
@@ -72,6 +71,7 @@ interface Folder {
   name: string;
   icon: keyof typeof MaterialIcons.glyphMap;
   color: string;
+  note_count?: number; // Add this field from the backend
 }
 
 const DUMMY_FOLDERS: Folder[] = [];
@@ -149,14 +149,6 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
   const [showSortNotesModal, setShowSortNotesModal] = useState(false);
   const [isSelectMode, setIsSelectMode] = useState(false);
   const { width: windowWidth } = useWindowDimensions();
-
-  // Fix 3: Either use folderCounts or use _ to indicate unused variable
-  const [_, setFolderCounts] = useState<Record<string, number>>({});
-
-  const [showFolderDropdown, setShowFolderDropdown] = useState(false);
-  const [selectedFilterFolder, setSelectedFilterFolder] = useState<
-    string | null
-  >(null);
 
   // Fix 3: Either use folderCounts or use _ to indicate unused variable
   const [_, setFolderCounts] = useState<Record<string, number>>({});
@@ -285,8 +277,8 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
 
     // Count notes for each folder
     notes.forEach((note) => {
-      if (note.folderId && counts[note.folderId] !== undefined) {
-        counts[note.folderId]++;
+      if (note.folder_id && counts[note.folder_id] !== undefined) {
+        counts[note.folder_id]++;
       }
     });
 
@@ -297,58 +289,40 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
     calculateFolderCounts();
   }, [notes, folders, calculateFolderCounts]);
 
-  // Set up auto-refresh for real-time editing with improved performance
   useEffect(() => {
-    // Initial fetch
     fetchNotes();
     fetchFolders();
-
-    // Set up an interval to refresh notes less frequently (30 seconds instead of 10)
-    // This reduces network load while still keeping data reasonably fresh
     const refreshInterval = setInterval(() => {
-      // Only fetch if the app is in the foreground using AppState
       if (AppState.currentState === "active") {
-        fetchNotes(false); // Pass false to indicate this is a background refresh
+        fetchNotes(false);
       }
     }, 30000);
 
     return () => {
-      clearInterval(refreshInterval); // Clean up interval on unmount
+      clearInterval(refreshInterval);
     };
   }, []);
 
-  // Handle tab changes - fetch all notes when switching to "All Notes" tab
   useEffect(() => {
-    // Always fetch all notes since we only have one view now
     fetchNotes(false);
-  }, [selectedFilterFolder]); // Refetch when filter folder changes
-    // Always fetch all notes since we only have one view now
-    fetchNotes(false);
-  }, [selectedFilterFolder]); // Refetch when filter folder changes
+  }, [selectedFilterFolder]);
 
-  // Add useFocusEffect to refresh notes when screen comes into focus (returning from editor)
   useFocusEffect(
     useCallback(() => {
-      // Show a toast when returning from editor
       if (Platform.OS === "android") {
         ToastAndroid.show("Notes refreshed", ToastAndroid.SHORT);
       }
-
-      // Force refresh notes when returning from editor (use true to show loading spinner)
       fetchNotes(true);
       fetchFolders();
 
-      return () => {
-        // Clean up if needed when screen goes out of focus
-      };
+      return () => {};
     }, [])
   );
 
   const fetchFolders = async () => {
-    // Implement fetch throttling - don't fetch if it's been less than 10 seconds
     const now = Date.now();
     if (now - lastFolderFetch < 10000 && folders.length > 0) {
-      return; // Skip this fetch if we already have folders and it's too soon
+      return;
     }
 
     setLastFolderFetch(now);
@@ -360,7 +334,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
         return;
       }
 
-      const response = await fetch(`${API_URL}/note_taking/folders/`, {
+      const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTE_FOLDERS}`, {
         method: "GET",
         headers: {
           Authorization: `Token ${token}`,
@@ -380,7 +354,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
       const fetchedFolders: Folder[] = data.map((folder: any) => ({
         id: folder.id.toString(),
         name: folder.name,
-        icon: folder.icon as keyof typeof MaterialIcons.glyphMap,
+        icon: 'folder', // Default icon, you can customize this
         color: folder.color,
       }));
 
@@ -409,85 +383,66 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
     // For iOS, you could implement a custom toast component
   };
 
-  // Last fetch timestamp to implement throttling
   const fetchNotes = async (showLoading = true) => {
-    // Implement fetch throttling - don't fetch if it's been less than 5 seconds since the last fetch
-    // unless it's an explicit user-requested refresh (showLoading = true)
-    const now = Date.now();
-    if (!showLoading && now - lastNoteFetch < 5000) {
-      return; // Skip this fetch
-    }
-
-    if (showLoading) {
-      setIsLoading(true);
-    }
-    setError(null);
-    setLastNoteFetch(now);
-
     try {
+      if (showLoading) {
+        setIsLoading(true);
+      }
+
+      // Get the token from storage
       const token = await AsyncStorage.getItem("authToken");
+
       if (!token) {
-        // Navigate to login if no token
+        console.error("Authentication token not found");
         navigation.navigate("Login");
         return;
       }
 
-      // Add pagination parameters to reduce data load
-      let endpoint = `${API_URL}/note_taking/notes/?limit=50`;
+      let endpoint = `${API_URL}/note_taking/notes/`;
 
       // Add filter for selected folder if one is chosen
-      if (selectedFilterFolder) {
-        endpoint += `&folder=${selectedFilterFolder}`;
-      // Add filter for selected folder if one is chosen
-      if (selectedFilterFolder) {
-        endpoint += `&folder=${selectedFilterFolder}`;
+      if (selectedFilterFolder && selectedFilterFolder !== "unorganized") {
+        endpoint += `?folder=${selectedFilterFolder}`;
+      } else if (selectedFilterFolder === "unorganized") {
+        endpoint += `?unorganized=true`;
       }
+
+      console.log("Making API request to:", endpoint);
 
       const response = await fetch(endpoint, {
         method: "GET",
         headers: {
-          Authorization: `Token ${token}`,
+          Authorization: `Token ${token}`, // Note the space after 'Token'
           "Content-Type": "application/json",
         },
-        // Improve caching with cache control headers
-        cache: "default",
       });
 
       if (!response.ok) {
-        throw new Error("Failed to fetch notes");
+        console.error("Failed response:", response.status, response.statusText);
+
+        // If unauthorized, redirect to login
+        if (response.status === 401) {
+          await AsyncStorage.removeItem("authToken"); // Clear invalid token
+          navigation.navigate("Login");
+          return;
+        }
+
+        throw new Error(`Failed to fetch notes: ${response.status}`);
       }
 
       const data = await response.json();
-
-      // Transform the data to match your Note interface with optimized processing
-      const fetchedNotes: Note[] = data.map((note: any) => ({
-        id: note.id.toString(),
-        title: note.title || "",
-        content: note.content || "",
-        formatted_content: note.formatted_content || "",
-        folderId: note.folder || null, // Map the folder field from backend
-        createdAt: new Date(note.created_at),
-        updatedAt: new Date(note.updated_at),
-        type: note.type || "text",
-        is_archived: note.is_archived || false,
-        tags: note.tags || [],
+      const normalizedNotes = data.map((note: any) => ({
+        ...note,
+        folder_id:
+          typeof note.folder === "object"
+            ? note.folder?.id?.toString()
+            : note.folder?.toString() || note.folder_id || null,
       }));
 
-      // Check if notes have changed before updating state - only compare relevant fields
-      const currentNotesJson = JSON.stringify(
-        notes.map((n) => ({ id: n.id, updatedAt: n.updatedAt }))
-      );
-      const fetchedNotesJson = JSON.stringify(
-        fetchedNotes.map((n) => ({ id: n.id, updatedAt: n.updatedAt }))
-      );
-      const hasChanges = currentNotesJson !== fetchedNotesJson;
-
-      if (hasChanges) {
-        setNotes(fetchedNotes);
-      }
+      setNotes(normalizedNotes);
     } catch (error) {
       console.error("Error fetching notes:", error);
-      setError("Failed to load notes. Please try again.");
+      Alert.alert("Error", "Failed to load notes. Please try again.");
     } finally {
       if (showLoading) {
         setIsLoading(false);
@@ -495,12 +450,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
     }
   };
 
-  const handleAddToFolder = (noteId: string) => {
-    setSelectedNotes([noteId]);
-    setShowSortNotesModal(true);
-    setActiveNoteOptions(null);
-  };
-
+  // Similarly update handleRemoveFromFolder function
   const handleRemoveFromFolder = async (noteId: string) => {
     try {
       setIsLoading(true);
@@ -512,9 +462,8 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
         return;
       }
 
-      // Send a request to remove the note from its folder
       const response = await fetch(
-        `${API_URL}/note_taking/notes/${noteId}/remove-from-folder/`,
+        `${API_URL}/note_taking/notes/${noteId}/remove-from-folder/`, // Make sure this matches your backend URL pattern
         {
           method: "POST",
           headers: {
@@ -525,13 +474,18 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
       );
 
       if (!response.ok) {
+        if (response.status === 401) {
+          await AsyncStorage.removeItem("authToken"); // Clear invalid token
+          navigation.navigate("Login");
+          return;
+        }
         throw new Error("Failed to remove note from folder");
       }
 
       // Update local state to reflect changes
       const updatedNotes = notes.map((note) =>
         note.id === noteId
-          ? { ...note, folderId: undefined, folder: undefined }
+          ? { ...note, folder_id: undefined, folder: undefined }
           : note
       );
 
@@ -549,6 +503,12 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleAddToFolder = (noteId: string) => {
+    setSelectedNotes([noteId]);
+    setShowSortNotesModal(true);
+    setActiveNoteOptions(null);
   };
 
   const handleDeleteNote = (noteId: string) => {
@@ -618,8 +578,8 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
       content: note.content,
       formatted_content: note.formatted_content || note.content, // Use formatted content if available, otherwise plain content
       tags: processedTags || [],
-      createdAt: note.createdAt?.toISOString(),
-      updatedAt: note.updatedAt?.toISOString(),
+      created_at: note.created_at?.toISOString(),
+      updated_at: note.updated_at?.toISOString(),
     };
 
     navigation.navigate("NoteEditor", {
@@ -635,7 +595,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
     const initialNoteData = {
       title: "",
       content: "",
-      folderId: null,
+      folder_id: null,
     };
 
     // Navigate directly to the editor
@@ -677,7 +637,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
 
       // Update local state to reflect changes
       const updatedNotes = notes.map((note) =>
-        noteIDs.includes(note.id) ? { ...note, folderId: folderID } : note
+        noteIDs.includes(note.id) ? { ...note, folder_id: folderID } : note
       );
 
       setNotes(updatedNotes);
@@ -787,7 +747,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
   };
 
   // Add this helper function
-  const updateFolderName = async (folderId: string, newName: string) => {
+  const updateFolderName = async (folder_id: string, newName: string) => {
     try {
       const token = await AsyncStorage.getItem("authToken");
       if (!token) {
@@ -796,7 +756,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
       }
 
       const response = await fetch(
-        `${API_URL}/note_taking/folders/${folderId}/`,
+        `${API_URL}/note_taking/folders/${folder_id}/`,
         {
           method: "PATCH",
           headers: {
@@ -814,7 +774,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
       // Update folder in state
       setFolders(
         folders.map((folder) =>
-          folder.id === folderId ? { ...folder, name: newName } : folder
+          folder.id === folder_id ? { ...folder, name: newName } : folder
         )
       );
 
@@ -932,10 +892,10 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
   // Pre-memoized data for notes view to avoid conditional hook rendering
   const notesViewData = useMemo(() => {
     if (selectedFilterFolder === "unorganized") {
-      return filteredNotes.filter((note) => !note.folderId);
+      return filteredNotes.filter((note) => !note.folder_id);
     } else if (selectedFilterFolder) {
       return filteredNotes.filter(
-        (note) => note.folderId === selectedFilterFolder
+        (note) => note.folder_id === selectedFilterFolder
       );
     }
     return filteredNotes;
@@ -1048,17 +1008,19 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
 
                 <View style={styles.noteDateContainer}>
                   <Text style={styles.noteDate}>
-                    {item.updatedAt.toLocaleDateString("en-US", {
-                      year: "numeric",
-                      month: "short",
-                      day: "numeric",
-                    })}
+                    {item.updated_at
+                      ? new Date(item.updated_at).toLocaleDateString("en-US", {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                        })
+                      : "Unknown date"}
                   </Text>
-                  {!selectedFilterFolder && item.folderId && (
+                  {!selectedFilterFolder && item.folder_id && (
                     <View style={[styles.folderBadge, { marginRight: 8 }]}>
                       <MaterialIcons name="folder" size={10} color="#6A009C" />
                       <Text style={styles.folderBadgeText}>
-                        {folders.find((f) => f.id === item.folderId)?.name ||
+                        {folders.find((f) => f.id === item.folder_id)?.name ||
                           "Folder"}
                       </Text>
                     </View>
@@ -1109,12 +1071,12 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
                   <View style={styles.noteOptionItem}>
                     <MaterialIcons name="folder" size={18} color="#6A009C" />
                     <Text style={styles.noteOptionText}>
-                      {item.folderId ? "Move to Folder" : "Add to Folder"}
+                      {item.folder_id ? "Move to Folder" : "Add to Folder"}
                     </Text>
                   </View>
                 </TouchableWithoutFeedback>
 
-                {item.folderId && (
+                {item.folder_id && (
                   <TouchableWithoutFeedback
                     onPress={(e) => {
                       e.stopPropagation();
@@ -1624,7 +1586,6 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
         <View style={styles.headerTopRow}>
           <View style={styles.headerTitleSection}>
             <Text style={styles.headerTitle}>All Notes</Text>
-            <Text style={styles.headerTitle}>All Notes</Text>
           </View>
           <View style={styles.headerActions}>
             <TouchableOpacity
@@ -1756,9 +1717,10 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
                     </View>
                     <Text style={styles.folderName}>{folder.name}</Text>
                     <Text style={styles.folderCount}>
-                      {notes.filter(
-                        (note) => note.folderId === folder.id
-                      ).length} 
+                      {
+                        notes.filter((note) => note.folder_id === folder.id)
+                          .length
+                      }
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -1791,8 +1753,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
                   </View>
                   <Text style={styles.folderName}>Unorganized</Text>
                   <Text style={styles.folderCount}>
-                    {notes.filter((note) => !note.folderId).length}
-
+                    {notes.filter((note) => !note.folder_id).length}
                   </Text>
                 </TouchableOpacity>
               </ScrollView>
@@ -1807,20 +1768,10 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
           <View style={styles.optionsDropdown}>
             <TouchableOpacity
               style={styles.dropdownOption}
-              style={styles.dropdownOption}
               onPress={() => {
                 setShowCreateFolderModal(true);
                 setShowOptionsDropdown(false);
-                setShowCreateFolderModal(true);
-                setShowOptionsDropdown(false);
               }}
-            >
-              <MaterialIcons
-                name="create-new-folder"
-                size={20}
-                color="#6A009C"
-              />
-              <Text style={styles.dropdownOptionText}>Create Folder</Text>
             >
               <MaterialIcons
                 name="create-new-folder"
@@ -1845,20 +1796,6 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
               <Text style={styles.dropdownOptionText}>
                 {viewMode === "list" ? "Grid View" : "List View"}
               </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.dropdownOption}
-              onPress={() => {
-                navigation.navigate("PDFs"); // Navigate to the ImportPDFPage
-                setShowOptionsDropdown(false); // Close the dropdown
-              }}
-            >
-              <MaterialIcons name="picture-as-pdf" size={20} color="#6A009C" />
-              <Text style={styles.dropdownOptionText}>Import PDF</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -1906,15 +1843,14 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
       />
 
       {/* Floating Action Button */}
-      <View style={styles.fabContainer}>
-        <TouchableOpacity
-          style={[styles.fabButton, styles.textFab]}
-          onPress={handleCreateNote}
-          activeOpacity={0.8}
-        >
-          <MaterialIcons name="note-add" size={28} color="#ffffffff" />
-        </TouchableOpacity>
-      </View>
+      <TouchableOpacity
+        style={[styles.fabButton, styles.textFab]}
+        onPress={handleCreateNote}
+        activeOpacity={0.8}
+      >
+        <MaterialIcons name="note-add" size={28} color="#ffffffff" />
+      </TouchableOpacity>
+
       <Navbar activeRoute="Notes" />
       {renderCreateFolderModal()}
       {renderSortNotesModal()}
@@ -1929,23 +1865,11 @@ const styles = StyleSheet.create({
     backgroundColor: "#F8FAFC",
   },
   header: {
-  },
-  header: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
     paddingHorizontal: 24,
-    paddingTop: Platform.OS === "ios" ? 50 : 35,
-    paddingBottom: 24,
-    // backgroundColor: "#F5E1FD", // REMOVE or COMMENT THIS LINE
-    borderBottomLeftRadius: 25,
-    borderBottomRightRadius: 25,
-    shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
     paddingTop: Platform.OS === "ios" ? 50 : 35,
     paddingBottom: 24,
     // backgroundColor: "#F5E1FD", // REMOVE or COMMENT THIS LINE
@@ -1982,12 +1906,8 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 12,
-    width: 44,
-    height: 44,
-    borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
-    elevation: 2,
     elevation: 2,
   },
   activeSearchButton: {
@@ -2100,16 +2020,15 @@ const styles = StyleSheet.create({
   },
   notesList: {
     paddingHorizontal: 24,
-    top:0,
+    marginTop: 30,
+    paddingTop: 200, // Space for the expanded header with folder section
     paddingBottom: 120, // Space for the navbar
   },
   noteItem: {
     marginVertical: 6,
-    marginVertical: 6,
   },
   gridNoteItem: {
     flex: 1,
-    marginHorizontal: 4,
     marginHorizontal: 4,
     maxWidth: (width - 72) / 2, // Account for padding and gap
   },
@@ -2122,17 +2041,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 12,
     elevation: 3,
-    borderRadius: 20,
-    padding: 20,
-    shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    elevation: 3,
   },
   gridNoteContent: {
-    padding: 16,
-    borderRadius: 16,
     padding: 16,
     borderRadius: 16,
   },
@@ -2149,19 +2059,11 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 12,
-    width: 40,
-    height: 40,
-    borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
-    marginRight: 12,
   },
   gridNoteTypeIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    marginRight: 8,
     width: 32,
     height: 32,
     borderRadius: 10,
@@ -2317,13 +2219,10 @@ const styles = StyleSheet.create({
     position: "absolute",
     bottom: 100, // Above the navbar
     right: 24,
-    bottom: 100,
-    alignItems: "center",
-  },
-  fabButton: {
     width: 56,
     height: 56,
     borderRadius: 28,
+    backgroundColor: "#9C27B0",
     justifyContent: "center",
     alignItems: "center",
     shadowColor: "#000000",
@@ -2331,11 +2230,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.24,
     shadowRadius: 16,
     elevation: 8,
-    marginBottom: 16,
   },
 
   textFab: {
-    backgroundColor: "#9C27B0",
     backgroundColor: "#9C27B0",
   },
   // Modal Styles
@@ -2516,15 +2413,8 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingVertical: 16,
     paddingHorizontal: 24,
-    borderRadius: 16,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
     alignItems: "center",
     shadowColor: "#6A009C",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,

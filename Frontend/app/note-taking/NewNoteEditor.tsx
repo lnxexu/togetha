@@ -18,7 +18,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
 import { LinearGradient } from "expo-linear-gradient";
 
 
@@ -178,8 +178,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
       const token = await AsyncStorage.getItem("authToken");
       if (!token) return;
 
-      const API_URL = "http://10.0.2.2:8000";
-      const response = await fetch(`${API_URL}/note_taking/folders/`, {
+      const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTE_FOLDERS}`, {
         method: "GET",
         headers: {
           Authorization: `Token ${token}`,
@@ -315,8 +314,6 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
       const token = await AsyncStorage.getItem("authToken");
       if (!token) return;
 
-      const API_URL = "http://10.0.2.2:8000"; // For Android emulator
-
       console.log("Saving note to server:", {
         id: noteData.id,
         title: noteData.title,
@@ -340,10 +337,8 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
         !route.params?.noteId || noteData.id.startsWith("note_");
 
       const url = isNewNote
-        ? `${API_URL}/note_taking/notes/`
-        : `${API_URL}/note_taking/notes/${
-            route.params?.noteId || noteData.id
-          }/`;
+        ? `${API_URL}${API_ENDPOINTS.NOTES}`
+        : `${API_URL}${API_ENDPOINTS.NOTES}/${noteData.id}/`;
 
       const method = isNewNote ? "POST" : "PUT";
 
