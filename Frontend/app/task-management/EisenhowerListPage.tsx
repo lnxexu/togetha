@@ -121,16 +121,23 @@ const EisenhowerListPage: React.FC = () => {
   const renderTaskItem = ({ item: task }: { item: Task }) => {
     let timeString = "--:--";
     let dateString = "";
+    let ampm = "";
     if (task.due_datetime) {
       const due =
         typeof task.due_datetime === "string"
           ? new Date(task.due_datetime)
           : task.due_datetime;
       if (!isNaN(due.getTime())) {
-        timeString = due.toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        });
+        timeString = due
+          .toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: true,
+          })
+          .replace(/\s[AP]M$/, "");
+        ampm =
+          due.toLocaleTimeString([], { hour12: true }).match(/([AP]M)$/)?.[1] ||
+          "";
         dateString = due.toLocaleDateString();
       }
     }
@@ -144,7 +151,10 @@ const EisenhowerListPage: React.FC = () => {
       <View style={styles.taskRowOuter}>
         {/* Time OUTSIDE the card */}
         <View style={styles.contentLeft}>
-          <Text style={styles.timeText}>{timeString}</Text>
+          <View style={{ alignItems: "flex-end" }}>
+            <Text style={styles.timeText}>{timeString}</Text>
+            <Text style={styles.ampmText}>{ampm}</Text>
+          </View>
         </View>
 
         {/* These are now absolutely positioned */}
@@ -283,22 +293,18 @@ const EisenhowerListPage: React.FC = () => {
             </View>
             <View style={styles.searchContainer}>
               {!isSearchExpanded ? (
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.searchIconButton}
                   onPress={handleSearchToggle}
                 >
-                  <Ionicons 
-                    name="search" 
-                    size={20} 
-                    color="#6A009C" 
-                  />
+                  <Ionicons name="search" size={20} color="#6A009C" />
                 </TouchableOpacity>
               ) : (
                 <View style={styles.searchInputContainer}>
-                  <Ionicons 
-                    name="search" 
-                    size={16} 
-                    color="#94a3b8" 
+                  <Ionicons
+                    name="search"
+                    size={16}
+                    color="#94a3b8"
                     style={styles.searchIcon}
                   />
                   <TextInput
@@ -309,7 +315,7 @@ const EisenhowerListPage: React.FC = () => {
                     onChangeText={setSearchQuery}
                     autoFocus={true}
                   />
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     onPress={handleSearchToggle}
                     style={styles.clearButton}
                   >
@@ -439,7 +445,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   columnHeaderDividerSpace: {
-    width: 36, 
+    width: 36,
   },
   columnHeaderRight: {
     flex: 1,
@@ -454,7 +460,7 @@ const styles = StyleSheet.create({
     flex: 1,
     marginLeft: 10,
     marginRight: 10,
-    maxWidth: '100%',
+    maxWidth: "100%",
     justifyContent: "flex-end",
     alignItems: "flex-end",
   },
@@ -554,9 +560,17 @@ const styles = StyleSheet.create({
     paddingTop: 21, // Circle height (14) + gap (7)
   },
   timeText: {
-    fontSize: 18,
+    fontSize: 20,
     color: "#64748B",
-    fontFamily: "Inter-Medium",
+    fontFamily: "Inter-Regular",
+    marginRight: 15,
+  },
+  ampmText: {
+    fontSize: 15,
+    color: "#94a3b8",
+    fontFamily: "Inter-Regular",
+    marginTop: 2,
+    marginRight: 15,
   },
   circleAboveDivider: {
     position: "absolute",
@@ -597,7 +611,7 @@ const styles = StyleSheet.create({
   taskTitle: {
     fontSize: 16,
     color: "#2c3e50",
-    fontFamily: "Inter-SemiBold",
+    fontFamily: "Inter-Medium",
     lineHeight: 20,
     marginBottom: 4,
   },

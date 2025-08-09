@@ -11,7 +11,7 @@ import {
   RefreshControl,
   ActivityIndicator,
 } from "react-native";
-import { MaterialIcons } from "@expo/vector-icons";
+import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { LinearGradient } from "expo-linear-gradient";
@@ -149,10 +149,6 @@ const Profile: React.FC = () => {
       console.error("Logout error:", error);
       alert("Failed to logout. Please try again.");
     }
-  };
-
-  const handleManageProfile = () => {
-    navigation.navigate("ManageProfile");
   };
 
   if (loading && !userData) {
@@ -376,37 +372,6 @@ const Profile: React.FC = () => {
           </TouchableOpacity>
         </View>
 
-        {/* App Settings */}
-        <Text style={styles.sectionTitle}>App Settings</Text>
-        
-        <View style={styles.settingsContainer}>
-          <TouchableOpacity style={styles.settingItem}>
-            <View style={styles.settingLeft}>
-              <MaterialIcons name="language" size={24} color="#6A009C" />
-              <Text style={styles.settingText}>Language</Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={24} color="#6c757d" />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.settingItem}>
-            <View style={styles.settingLeft}>
-              <MaterialIcons name="dark-mode" size={24} color="#6A009C" />
-              <Text style={styles.settingText}>Theme</Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={24} color="#6c757d" />
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.settingItem}
-            onPress={handleClearCache}
-          >
-            <View style={styles.settingLeft}>
-              <MaterialIcons name="clear-all" size={24} color="#6A009C" />
-              <Text style={styles.settingText}>Clear Cache</Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={24} color="#6c757d" />
-          </TouchableOpacity>
-        </View>
 
         {/* Data & Support */}
         <Text style={styles.sectionTitle}>Data & Support</Text>

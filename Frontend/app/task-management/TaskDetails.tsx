@@ -22,6 +22,7 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import { Task, Priority } from "./types/Task";
 import  taskService from "./services/taskService";
+import { showSuccessToast, showErrorToast } from "../utils/ToastUtils";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -87,12 +88,12 @@ const TaskDetails: React.FC = () => {
           fetchedTask.due_datetime ? new Date(fetchedTask.due_datetime) : new Date()
         );
       } else {
-        Alert.alert("Error", "Task not found");
+        showErrorToast("Task not found");
         navigation.goBack();
       }
     } catch (error) {
       console.error("Error loading task:", error);
-      Alert.alert("Error", "Failed to load task");
+      showErrorToast("Failed to load task");
     } finally {
       setIsLoading(false);
     }
@@ -126,9 +127,9 @@ const TaskDetails: React.FC = () => {
       });
 
       setIsEditing(false);
-      Alert.alert("Success", "Task updated successfully");
+      showSuccessToast("Task updated successfully!");
     } catch (error) {
-      Alert.alert("Error", "Failed to update task");
+      showErrorToast("Failed to update task");
     }
   };
 
@@ -160,12 +161,11 @@ const TaskDetails: React.FC = () => {
         updatedAt: new Date(),
       });
 
-      Alert.alert(
-        "Success",
+      showSuccessToast(
         task.completed ? "Task marked as pending" : "Task marked as completed"
       );
     } catch (error) {
-      Alert.alert("Error", "Failed to update task");
+      showErrorToast("Failed to update task");
     }
   };
 

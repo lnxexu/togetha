@@ -18,6 +18,7 @@ import { RootStackParamList } from "../navigation/AppNavigator";
 import { Priority, TaskFormData } from "./types/Task";
 import taskService from "./services/taskService";
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { showSuccessToast, showErrorToast } from "../utils/ToastUtils";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type RouteProp = { params?: { quadrant?: Priority; user?: string } };
@@ -87,7 +88,7 @@ const AddTask: React.FC = () => {
 
   const validateForm = (): boolean => {
     if (!formData.title.trim()) {
-      Alert.alert("Error", "Please enter a task title");
+      showErrorToast("Please enter a task title");
       return false;
     }
     return true;
@@ -143,11 +144,11 @@ const AddTask: React.FC = () => {
 
     await taskService.createTask(payload);
 
-    Alert.alert("Success", "Task created successfully");
+    showSuccessToast("Task created successfully!");
     navigation.goBack();
   } catch (error) {
     console.error("Error creating task:", error);
-    Alert.alert("Error", "Failed to create task. Please try again.");
+    showErrorToast("Failed to create task. Please try again.");
   } finally {
     setIsLoading(false);
   }
@@ -159,7 +160,7 @@ const AddTask: React.FC = () => {
       {
         text: "Reset",
         style: "destructive",
-        onPress: () =>
+        onPress: () => {
           setFormData({
             title: "",
             description: "",
@@ -167,7 +168,9 @@ const AddTask: React.FC = () => {
             priority: "not-urgent-not-important",
             due_datetime: undefined,
             due_time: undefined,
-          }),
+          });
+          showSuccessToast("Form reset successfully");
+        },
       },
     ]);
   };

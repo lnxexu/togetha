@@ -18,6 +18,7 @@ import LoginIllustration from "../../assets/illustrations/undraw_access-account_
 import type { RootStackParamList } from "../navigation/AppNavigator";
 import AuthService from "./service/AuthService";
 import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
+import { showSuccessToast, showErrorToast, showWarningToast } from "../utils/ToastUtils";
 
 export default function SignIn() {
   const navigation =
@@ -26,7 +27,6 @@ export default function SignIn() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState("");
 
   // Update the handleLogin function
 
@@ -34,14 +34,13 @@ export default function SignIn() {
     console.log("Login attempt started with username:", username);
 
     if (!username.trim() || !password.trim()) {
-      setError("Please enter both username and password");
+      showErrorToast("Please enter both username and password");
       console.log("Login validation failed: empty username or password");
       return;
     }
 
     try {
       setIsLoading(true);
-      setError("");
 
       // Before login attempt, explicitly logout any previous session to ensure clean state
       const authService = AuthService.getInstance();
@@ -56,6 +55,8 @@ export default function SignIn() {
         const response = await authService.login(username, password);
         clearTimeout(timeoutId);
 
+        showSuccessToast("Login successful! Welcome back.");
+        
         // Force reload app state by resetting to Home screen
         navigation.reset({
           index: 0,
@@ -109,12 +110,17 @@ export default function SignIn() {
                           data.session_id
                         );
                       }
+                      showSuccessToast("Successfully logged in!");
+                      navigation.reset({
+                        index: 0,
+                        routes: [{ name: "Home" }],
+                      });
                     } else {
-                      setError("Failed to force login. Please try again.");
+                      showErrorToast("Failed to force login. Please try again.");
                     }
                   } catch (error) {
                     console.error("Force login error:", error);
-                    setError("Network error. Please try again.");
+                    showErrorToast("Network error. Please try again.");
                   } finally {
                     setIsLoading(false);
                   }
@@ -124,14 +130,14 @@ export default function SignIn() {
           );
         } else {
           // Handle other login errors
-          setError(
+          showErrorToast(
             loginError.message || "Login failed. Please check your credentials."
           );
         }
       }
     } catch (err: any) {
       console.error("Login process error:", err);
-      setError("An unexpected error occurred. Please try again.");
+      showErrorToast("An unexpected error occurred. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -147,8 +153,6 @@ export default function SignIn() {
           height={220}
           style={styles.loginIllustration}
         />
-
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
         <View style={styles.inputContainer}>
           <MaterialIcons
@@ -335,12 +339,5 @@ const styles = StyleSheet.create({
     color: "#AD00FF",
     fontSize: 15,
     fontFamily: "Inter-Bold",
-  },
-  errorText: {
-    color: "#E74C3C",
-    fontSize: 14,
-    textAlign: "center",
-    marginBottom: 15,
-    fontFamily: "Inter-Regular",
   },
 });

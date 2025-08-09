@@ -14,13 +14,13 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  ToastAndroid,
   TouchableOpacity,
   View,
   useWindowDimensions,
   TouchableWithoutFeedback,
 } from "react-native";
-import { MaterialIcons } from "@expo/vector-icons";
+import { Ionicons, MaterialIcons } from "@expo/vector-icons";
+
 import RenderHtml from "react-native-render-html";
 import Navbar from "../NavBar";
 import { RootStackParamList } from "../navigation/AppNavigator";
@@ -29,6 +29,7 @@ import { RefreshControl } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 // Fix 1: Remove unused API_ENDPOINTS import
 import { API_URL } from "@/constants/ApiConfig";
+import { showToast, showSuccessToast, showErrorToast, showInfoToast, showWarningToast } from '../utils/ToastUtils';
 
 const { width } = Dimensions.get("window");
 
@@ -96,32 +97,6 @@ const FOLDER_COLORS = [
   "#BB8FCE",
 ];
 
-const FOLDER_ICONS: (keyof typeof MaterialIcons.glyphMap)[] = [
-  "folder",
-  "folder-open",
-  "folder-shared",
-  "folder-special",
-  "folder-zip",
-  "delete",
-  "drive-file-move",
-  "create-new-folder",
-  "folder-off",
-  "person",
-  "star",
-  "sync",
-  "file-upload",
-  "file-download",
-  "search",
-  "settings",
-  "add",
-  "remove",
-  "archive",
-  "history",
-  "link",
-  "note",
-  "description",
-];
-
 export default function NotesScreen({ navigation }: NotesScreenProps) {
   const [notes, setNotes] = useState<Note[]>(INITIAL_NOTES);
   const [folders, setFolders] = useState<Folder[]>(DUMMY_FOLDERS);
@@ -130,8 +105,6 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [showCreateFolderModal, setShowCreateFolderModal] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
-  const [selectedFolderIcon, setSelectedFolderIcon] =
-    useState<keyof typeof MaterialIcons.glyphMap>("folder");
   const [selectedFolderColor, setSelectedFolderColor] = useState("#667EEA");
   const [showOptionsDropdown, setShowOptionsDropdown] = useState(false);
   const [showSearchBar, setShowSearchBar] = useState(false);
@@ -165,6 +138,10 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
   const [showFolderSelectionModal, setShowFolderSelectionModal] =
     useState(false);
   const [newNoteFolder, setNewNoteFolder] = useState<string | null>(null);
+  const [showFolderOptionsModal, setShowFolderOptionsModal] = useState(false);
+  const [selectedFolderForOptions, setSelectedFolderForOptions] = useState<string | null>(null);
+  const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
+  const [folderToDelete, setFolderToDelete] = useState<string | null>(null);
 
   // Memoize HTML tag styles to prevent recreation on every render
   const htmlTagStyles = useMemo(
@@ -318,10 +295,8 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
   // Add useFocusEffect to refresh notes when screen comes into focus (returning from editor)
   useFocusEffect(
     useCallback(() => {
-      // Show a toast when returning from editor
-      if (Platform.OS === "android") {
-        ToastAndroid.show("Notes refreshed", ToastAndroid.SHORT);
-      }
+      // Show a subtle info toast when returning from editor
+      showInfoToast("Notes refreshed");
 
       // Force refresh notes when returning from editor (use true to show loading spinner)
       fetchNotes(true);
@@ -386,17 +361,12 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
       }
     } catch (error) {
       console.error("Error fetching folders:", error);
-      // Optionally show an error message
+      showErrorToast("Failed to load folders");
     }
   };
 
-  // Helper function to show toast notifications
-  const showToast = (message: string) => {
-    if (Platform.OS === "android") {
-      ToastAndroid.show(message, ToastAndroid.SHORT);
-    }
-    // For iOS, you could implement a custom toast component
-  };
+  // Helper function to show toast notifications (using proper toast utils)
+  // Removed - now using imported toast utility functions
 
   // Last fetch timestamp to implement throttling
   const fetchNotes = async (showLoading = true) => {
@@ -522,12 +492,13 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
       );
 
       setNotes(updatedNotes);
-      showToast("Note moved to Unorganized Notes");
+      showSuccessToast("Note moved to Unorganized Notes");
 
       // If we're filtering by a specific folder, we might need to refresh
       fetchNotes();
     } catch (error) {
       console.error("Error removing note from folder:", error);
+      showErrorToast("Failed to move note to Unorganized Notes");
       Alert.alert(
         "Error",
         "Failed to move note to Unorganized Notes. Please try again."
@@ -578,9 +549,10 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
               setNotes((prev) => prev.filter((note) => note.id !== noteId));
 
               // Show success toast
-              showToast("Note deleted successfully");
+              showSuccessToast("Note deleted successfully");
             } catch (error) {
               console.error("Error deleting note:", error);
+              showErrorToast("Failed to delete note");
               Alert.alert("Error", "Failed to delete note. Please try again.");
             } finally {
               setIsLoading(false); // Hide loading indicator
@@ -616,7 +588,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
 
   const handleCreateNote = () => {
     // Show toast message
-    showToast("Creating new note...");
+    showInfoToast("Creating new note...");
 
     const initialNoteData = {
       title: "",
@@ -670,9 +642,10 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
       setSelectedNotes([]);
       setIsSelectMode(false);
 
-      showToast("Notes assigned to folder successfully");
+      showSuccessToast("Notes assigned to folder successfully");
     } catch (error) {
       console.error("Error assigning notes to folder:", error);
+      showErrorToast("Failed to assign notes to folder");
       Alert.alert(
         "Error",
         "Failed to assign notes to folder. Please try again."
@@ -685,7 +658,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
   // Function to handle bulk deletion of notes
   const handleBulkDeleteNotes = async () => {
     if (selectedNotes.length === 0) {
-      showToast("No notes selected");
+      showWarningToast("No notes selected");
       return;
     }
 
@@ -739,7 +712,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
                 setIsSelectMode(false);
 
                 // Show success message
-                showToast(
+                showSuccessToast(
                   `${selectedNotes.length} ${
                     selectedNotes.length === 1 ? "note" : "notes"
                   } deleted successfully`
@@ -749,6 +722,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
               }
             } catch (error) {
               console.error("Error deleting notes:", error);
+              showErrorToast("Failed to delete some notes");
               Alert.alert(
                 "Error",
                 "Failed to delete some notes. Please try again."
@@ -804,9 +778,10 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
         )
       );
 
-      showToast("Folder name updated successfully");
+      showSuccessToast("Folder name updated successfully");
     } catch (error) {
       console.error("Error updating folder name:", error);
+      showErrorToast("Failed to update folder name");
       Alert.alert("Error", "Failed to update folder name. Please try again.");
     }
   };
@@ -826,9 +801,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
 
       const folderData = {
         name: newFolderName.trim(),
-        icon: FOLDER_ICONS.includes(selectedFolderIcon)
-          ? selectedFolderIcon
-          : "folder",
+        icon: "folder", // Use default folder icon
         color: selectedFolderColor,
       };
 
@@ -860,15 +833,89 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
       // Save the new folder's ID to use for sorting notes
       setSelectedFolder(createdFolder.id);
 
-      // Close the create folder modal
-      setShowCreateFolderModal(false);
+      // Close the create folder modal and reset state
+      closeCreateFolderModal();
 
       // Show toast notification about successful folder creation
-      showToast(`Folder "${newFolderName}" created successfully`);
+      showSuccessToast(`Folder "${newFolderName}" created successfully`);
     } catch (error) {
       console.error("Error creating folder:", error);
+      showErrorToast("Failed to create folder");
       Alert.alert("Error", "Failed to create folder. Please try again.");
     }
+  };
+
+  // Add new folder delete function
+  const handleDeleteFolder = async (folderId: string) => {
+    try {
+      const token = await AsyncStorage.getItem("authToken");
+      if (!token) {
+        navigation.navigate("Login");
+        return;
+      }
+
+      // First, check if folder has notes
+      const notesInFolder = notes.filter(note => note.folderId === folderId);
+      if (notesInFolder.length > 0) {
+        Alert.alert(
+          "Folder Not Empty",
+          `This folder contains ${notesInFolder.length} note(s). Move or delete all notes before deleting the folder.`,
+          [{ text: "OK", style: "default" }]
+        );
+        return;
+      }
+
+      const response = await fetch(`${API_URL}/note_taking/folders/${folderId}/`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Token ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to delete folder");
+      }
+
+      // Remove folder from state
+      setFolders(folders.filter(folder => folder.id !== folderId));
+      
+      // Reset selected filter if deleted folder was selected
+      if (selectedFilterFolder === folderId) {
+        setSelectedFilterFolder(null);
+      }
+
+      showSuccessToast("Folder deleted successfully");
+      setShowDeleteConfirmModal(false);
+      setFolderToDelete(null);
+    } catch (error) {
+      console.error("Error deleting folder:", error);
+      showErrorToast("Failed to delete folder");
+      Alert.alert("Error", "Failed to delete folder. Please try again.");
+    }
+  };
+
+  // Add function to handle folder long press
+  const handleFolderLongPress = (folderId: string) => {
+    setSelectedFolderForOptions(folderId);
+    setShowFolderOptionsModal(true);
+  };
+
+  // Add function to open edit modal for specific folder
+  const openEditFolderModal = (folderId: string) => {
+    const folder = folders.find(f => f.id === folderId);
+    if (folder) {
+      setEditingFolderId(folderId);
+      setEditingFolderName(folder.name);
+      setShowEditFolderModal(true);
+      setShowFolderOptionsModal(false);
+    }
+  };
+
+  // Add function to confirm folder deletion
+  const confirmDeleteFolder = (folderId: string) => {
+    setFolderToDelete(folderId);
+    setShowDeleteConfirmModal(true);
+    setShowFolderOptionsModal(false);
   };
 
   const toggleSearch = () => {
@@ -876,6 +923,12 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
     if (showSearchBar) {
       setSearchQuery(""); // Clear search when closing
     }
+  };
+
+  const closeCreateFolderModal = () => {
+    setShowCreateFolderModal(false);
+    setNewFolderName("");
+    setSelectedFolderColor("#667EEA");
   };
 
   // Memoize filtered notes to prevent recalculation on every render
@@ -1014,8 +1067,8 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
                   },
                 ]}
               >
-                <MaterialIcons
-                  name={item.type === "image" ? "image" : "text-snippet"}
+                <Ionicons
+                  name={item.type === "image" ? "image" : "document-text"}
                   size={viewMode === "grid" ? 16 : 22}
                   color={item.type === "image" ? "#D97706" : "#3B82F6"}
                 />
@@ -1225,6 +1278,95 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
     ]
   );
 
+  // Folder Options Modal
+  const renderFolderOptionsModal = () => (
+    <Modal
+      visible={showFolderOptionsModal}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={() => setShowFolderOptionsModal(false)}
+    >
+      <TouchableOpacity
+        style={styles.modalOverlay}
+        activeOpacity={1}
+        onPress={() => setShowFolderOptionsModal(false)}
+      >
+        <View style={styles.folderOptionsModalContent}>
+          <Text style={styles.folderOptionsTitle}>
+            {folders.find(f => f.id === selectedFolderForOptions)?.name}
+          </Text>
+          
+          <TouchableOpacity
+            style={styles.folderOptionItem}
+            onPress={() => selectedFolderForOptions && openEditFolderModal(selectedFolderForOptions)}
+          >
+            <MaterialIcons name="edit" size={20} color="#6A009C" />
+            <Text style={styles.folderOptionText}>Edit Folder</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={styles.folderOptionItem}
+            onPress={() => selectedFolderForOptions && confirmDeleteFolder(selectedFolderForOptions)}
+          >
+            <MaterialIcons name="delete" size={20} color="#EF4444" />
+            <Text style={[styles.folderOptionText, { color: "#EF4444" }]}>Delete Folder</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={[styles.folderOptionItem, styles.cancelOption]}
+            onPress={() => setShowFolderOptionsModal(false)}
+          >
+            <MaterialIcons name="close" size={20} color="#6B7280" />
+            <Text style={[styles.folderOptionText, { color: "#6B7280" }]}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    </Modal>
+  );
+
+  // Delete Confirmation Modal
+  const renderDeleteConfirmModal = () => (
+    <Modal
+      visible={showDeleteConfirmModal}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={() => setShowDeleteConfirmModal(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.deleteConfirmModalContent}>
+          <View style={styles.deleteConfirmIcon}>
+            <MaterialIcons name="warning" size={48} color="#EF4444" />
+          </View>
+          
+          <Text style={styles.deleteConfirmTitle}>Delete Folder?</Text>
+          <Text style={styles.deleteConfirmMessage}>
+            Are you sure you want to delete "{folders.find(f => f.id === folderToDelete)?.name}"? 
+            This action cannot be undone.
+          </Text>
+          
+          <View style={styles.deleteConfirmButtons}>
+            <TouchableOpacity
+              style={styles.deleteConfirmCancelButton}
+              onPress={() => {
+                setShowDeleteConfirmModal(false);
+                setFolderToDelete(null);
+              }}
+            >
+              <Text style={styles.deleteConfirmCancelText}>Cancel</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={styles.deleteConfirmDeleteButton}
+              onPress={() => folderToDelete && handleDeleteFolder(folderToDelete)}
+            >
+              <Text style={styles.deleteConfirmDeleteText}>Delete</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
   // Modal for selecting which folder to add notes to
   const renderSortNotesModal = () => (
     <Modal
@@ -1296,7 +1438,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
                 <View
                   style={[styles.folderIcon, { backgroundColor: folder.color }]}
                 >
-                  <MaterialIcons name={folder.icon} size={20} color="#FFFFFF" />
+                  <MaterialIcons name="folder" size={20} color="#FFFFFF" />
                 </View>
                 <Text style={styles.folderName}>{folder.name}</Text>
                 {selectedFolder === folder.id && (
@@ -1347,7 +1489,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
       visible={showCreateFolderModal}
       transparent={true}
       animationType="slide"
-      onRequestClose={() => setShowCreateFolderModal(false)}
+      onRequestClose={closeCreateFolderModal}
     >
       <KeyboardAvoidingView
         style={styles.modalContainer}
@@ -1358,14 +1500,14 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
         <TouchableOpacity
           style={styles.modalOverlay}
           activeOpacity={1}
-          onPress={() => setShowCreateFolderModal(false)}
+          onPress={closeCreateFolderModal}
         >
           <View style={{ flex: 1 }} />
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Create New Folder</Text>
               <TouchableOpacity
-                onPress={() => setShowCreateFolderModal(false)}
+                onPress={closeCreateFolderModal}
                 style={styles.modalCloseButton}
               >
                 <MaterialIcons name="close" size={24} color="#9CA3AF" />
@@ -1390,38 +1532,6 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
                   returnKeyType="done"
                   onSubmitEditing={handleCreateFolder}
                 />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Choose Icon</Text>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  style={styles.iconSelector}
-                  keyboardShouldPersistTaps="always"
-                >
-                  {FOLDER_ICONS.map((iconName) => (
-                    <TouchableOpacity
-                      key={iconName}
-                      style={[
-                        styles.iconOption,
-                        selectedFolderIcon === iconName &&
-                          styles.selectedIconOption,
-                      ]}
-                      onPress={() => setSelectedFolderIcon(iconName)}
-                    >
-                      <MaterialIcons
-                        name={iconName}
-                        size={24}
-                        color={
-                          selectedFolderIcon === iconName
-                            ? "#FFFFFF"
-                            : "#6A009C"
-                        }
-                      />
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
               </View>
 
               <View style={styles.inputGroup}>
@@ -1455,7 +1565,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
             <View style={styles.modalFooter}>
               <TouchableOpacity
                 style={styles.cancelButton}
-                onPress={() => setShowCreateFolderModal(false)}
+                onPress={closeCreateFolderModal}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
@@ -1565,9 +1675,9 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
                   if (selectedNotes.length > 0 && folders.length > 0) {
                     setShowSortNotesModal(true);
                   } else if (folders.length === 0) {
-                    showToast("Create a folder first");
+                    showWarningToast("Create a folder first");
                   } else {
-                    showToast("Select notes first");
+                    showWarningToast("Select notes first");
                   }
                 }
               }}
@@ -1695,7 +1805,13 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
                 shadowRadius={50}
                 shadowColor="#000000"
               />
-              <Text style={styles.folderToggleText}>Folders</Text>
+              <Text style={styles.folderToggleText}>
+                {selectedFilterFolder === "unorganized" 
+                  ? "Unorganized Notes" 
+                  : selectedFilterFolder 
+                    ? folders.find(f => f.id === selectedFilterFolder)?.name || "Folders"
+                    : "Folders"}
+              </Text>
             </View>
             <MaterialIcons
               name={showFolderDropdown ? "expand-less" : "expand-more"}
@@ -1726,61 +1842,92 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
                       );
                       setShowFolderDropdown(false);
                     }}
+                    onLongPress={() => handleFolderLongPress(folder.id)}
+                    delayLongPress={500}
                   >
-                    <View
-                      style={[
-                        styles.folderIcon,
-                        { backgroundColor: folder.color },
-                      ]}
-                    >
-                      <MaterialIcons
-                        name={folder.icon}
-                        size={24}
-                        color="#FFFFFF"
-                      />
+                    <View style={styles.folderCardHeader}>
+                      <View
+                        style={[
+                          styles.folderIcon,
+                          { backgroundColor: folder.color },
+                        ]}
+                      >
+                        <MaterialIcons
+                          name="folder"
+                          size={20}
+                          color="#FFFFFF"
+                        />
+                      </View>
+                      <TouchableOpacity
+                        style={styles.folderOptionsButton}
+                        onPress={() => handleFolderLongPress(folder.id)}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      >
+                        <MaterialIcons
+                          name="more-vert"
+                          size={16}
+                          color="#9CA3AF"
+                        />
+                      </TouchableOpacity>
                     </View>
-                    <Text style={styles.folderName}>{folder.name}</Text>
+                    <Text style={[
+                      styles.folderName,
+                      selectedFilterFolder === folder.id && styles.activeFolderName,
+                    ]} numberOfLines={2}>{folder.name}</Text>
                     <Text style={styles.folderCount}>
-                      {
-                        notes.filter((note) => note.folderId === folder.id)
-                          .length
-                      }
+                      {notes.filter((note) => note.folderId === folder.id).length} notes
                     </Text>
                   </TouchableOpacity>
                 ))}
-
-                {/* Unorganized folder */}
+                
+                {/* Add New Folder Button in horizontal scroll */}
                 <TouchableOpacity
-                  style={[
-                    styles.folderCard,
-                    selectedFilterFolder === "unorganized" &&
-                      styles.selectedFolderCard,
-                  ]}
-                  activeOpacity={0.8}
+                  style={styles.addFolderCard}
                   onPress={() => {
-                    setSelectedFilterFolder(
-                      selectedFilterFolder === "unorganized"
-                        ? null
-                        : "unorganized"
-                    );
+                    setShowCreateFolderModal(true);
                     setShowFolderDropdown(false);
                   }}
+                  activeOpacity={0.8}
                 >
-                  <View
-                    style={[styles.folderIcon, { backgroundColor: "#64748B" }]}
-                  >
-                    <MaterialIcons
-                      name="folder-open"
-                      size={24}
-                      color="#FFFFFF"
-                    />
+                  <View style={styles.addFolderIcon}>
+                    <MaterialIcons name="add" size={24} color="#6A009C" />
                   </View>
-                  <Text style={styles.folderName}>Unorganized</Text>
-                  <Text style={styles.folderCount}>
-                    {notes.filter((note) => !note.folderId).length}
-                  </Text>
+                  <Text style={styles.addFolderText}>New Folder</Text>
                 </TouchableOpacity>
               </ScrollView>
+
+              {/* Unorganized folder outside scroll */}
+              <TouchableOpacity
+                style={[
+                  styles.unorganizedFolderCard,
+                  selectedFilterFolder === "unorganized" &&
+                    styles.selectedUnorganizedFolderCard,
+                ]}
+                activeOpacity={0.8}
+                onPress={() => {
+                  setSelectedFilterFolder(
+                    selectedFilterFolder === "unorganized"
+                      ? null
+                      : "unorganized"
+                  );
+                  setShowFolderDropdown(false);
+                }}
+              >
+                <View style={styles.unorganizedFolderIcon}>
+                  <MaterialIcons
+                    name="folder-open"
+                    size={20}
+                    color="#64748B"
+                  />
+                </View>
+                <Text style={[
+                  styles.unorganizedFolderName,
+                  selectedFilterFolder === "unorganized" && styles.activeUnorganizedFolderName
+                ]}>Unorganized Notes</Text>
+                <Text style={styles.unorganizedFolderCount}>
+                  {notes.filter((note) => !note.folderId).length} notes
+                </Text>
+              </TouchableOpacity>
             </View>
           )}
         </View>
@@ -1867,18 +2014,20 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
       />
 
       {/* Floating Action Button */}
-        <TouchableOpacity
-          style={[styles.fabButton, styles.textFab]}
-          onPress={handleCreateNote}
-          activeOpacity={0.8}
-        >
-          <MaterialIcons name="note-add" size={28} color="#ffffffff" />
-        </TouchableOpacity>
+      <TouchableOpacity
+        style={[styles.fabButton, styles.textFab]}
+        onPress={handleCreateNote}
+        activeOpacity={0.8}
+      >
+        <MaterialIcons name="note-add" size={28} color="#ffffffff" />
+      </TouchableOpacity>
 
       <Navbar activeRoute="Notes" />
       {renderCreateFolderModal()}
       {renderSortNotesModal()}
       {renderEditFolderModal()}
+      {renderFolderOptionsModal()}
+      {renderDeleteConfirmModal()}
     </TouchableOpacity>
   );
 }
@@ -1995,48 +2144,66 @@ const styles = StyleSheet.create({
   },
   folderDropdownContainer: {
     marginTop: 16,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
   },
   foldersScrollContent: {
     paddingHorizontal: 4,
+    paddingVertical: 8,
   },
   folderCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
     padding: 16,
     marginRight: 12,
-    width: 100,
-    alignItems: "center",
+    minWidth: 120,
+    maxWidth: 140,
+    alignItems: "flex-start",
     shadowColor: "#1E293B",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: "rgba(226, 232, 240, 0.5)",
   },
   selectedFolderCard: {
     backgroundColor: "#6A009C",
     shadowColor: "#6A009C",
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 6,
-    transform: [{ scale: 1.05 }],
+    shadowRadius: 16,
+    elevation: 8,
+    borderColor: "#6A009C",
+    transform: [{ scale: 1.02 }],
   },
   folderIcon: {
-    width: 48,
-    height: 48,
+    width: 40,
+    height: 40,
     borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 8,
   },
   folderName: {
-    fontSize: 15,
+    fontSize: 14,
     fontFamily: "Inter-Medium",
-    color: "#333333",
-    textAlign: "center",
+    color: "#1F2937",
+    textAlign: "left",
     marginBottom: 4,
-    marginLeft: 4,
+    lineHeight: 18,
+    width: "100%",
   },
+
+  activeFolderName: {
+    color: "#FFFFFF",
+  },
+
   folderCount: {
     fontSize: 11,
     fontFamily: "Inter-Regular",
@@ -2350,36 +2517,6 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 1,
   },
-  iconSelector: {
-    marginTop: 12,
-    paddingBottom: 8,
-  },
-  iconOption: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
-    backgroundColor: "#F8FAFC",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 12,
-    borderWidth: 2,
-    borderColor: "#E2E8F0",
-    shadowColor: "#64748B",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  selectedIconOption: {
-    backgroundColor: "#6A009C",
-    borderColor: "#6A009C",
-    shadowColor: "#6A009C",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 4,
-    transform: [{ scale: 1.05 }],
-  },
   colorSelector: {
     marginTop: 12,
     paddingBottom: 8,
@@ -2675,5 +2812,229 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
+  },
+  
+  // New folder card header and options button styles
+  folderCardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    width: "100%",
+    marginBottom: 8,
+  },
+  
+  folderOptionsButton: {
+    padding: 4,
+    borderRadius: 8,
+    backgroundColor: "rgba(156, 163, 175, 0.1)",
+  },
+  
+  // Add folder card styles
+  addFolderCard: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 16,
+    padding: 16,
+    marginRight: 12,
+    minWidth: 120,
+    maxWidth: 140,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+    borderWidth: 2,
+    borderColor: "#E5E7EB",
+    borderStyle: "dashed",
+  },
+  
+  addFolderIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F3E8FF",
+    marginBottom: 8,
+  },
+  
+  addFolderText: {
+    fontSize: 14,
+    fontFamily: "Inter-Medium",
+    color: "#6A009C",
+    textAlign: "center",
+  },
+  
+  // Unorganized folder styles
+  unorganizedFolderCard: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  
+  selectedUnorganizedFolderCard: {
+    backgroundColor: "#6A009C",
+    borderColor: "#6A009C",
+    shadowColor: "#6A009C",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  
+  unorganizedFolderIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#E5E7EB",
+    marginRight: 12,
+  },
+  
+  unorganizedFolderName: {
+    fontSize: 14,
+    fontFamily: "Inter-Medium",
+    color: "#374151",
+    flex: 1,
+  },
+  
+  activeUnorganizedFolderName: {
+    color: "#FFFFFF",
+  },
+  
+  unorganizedFolderCount: {
+    fontSize: 12,
+    fontFamily: "Inter-Regular",
+    color: "#6B7280",
+  },
+  
+  // Folder options modal styles
+  folderOptionsModalContent: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 20,
+    margin: 20,
+    marginTop: "auto",
+    marginBottom: "auto",
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  
+  folderOptionsTitle: {
+    fontSize: 18,
+    fontFamily: "Inter-Bold",
+    color: "#1F2937",
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  
+  folderOptionItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  
+  folderOptionText: {
+    fontSize: 16,
+    fontFamily: "Inter-Medium",
+    color: "#374151",
+    marginLeft: 12,
+  },
+  
+  cancelOption: {
+    backgroundColor: "#F3F4F6",
+    marginTop: 8,
+  },
+  
+  // Delete confirmation modal styles
+  deleteConfirmModalContent: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 24,
+    margin: 20,
+    alignItems: "center",
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  
+  deleteConfirmIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: "#FEF2F2",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  
+  deleteConfirmTitle: {
+    fontSize: 20,
+    fontFamily: "Inter-Bold",
+    color: "#1F2937",
+    marginBottom: 12,
+  },
+  
+  deleteConfirmMessage: {
+    fontSize: 16,
+    fontFamily: "Inter-Regular",
+    color: "#6B7280",
+    textAlign: "center",
+    lineHeight: 24,
+    marginBottom: 24,
+  },
+  
+  deleteConfirmButtons: {
+    flexDirection: "row",
+    gap: 12,
+    width: "100%",
+  },
+  
+  deleteConfirmCancelButton: {
+    flex: 1,
+    backgroundColor: "#F3F4F6",
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  
+  deleteConfirmDeleteButton: {
+    flex: 1,
+    backgroundColor: "#EF4444",
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  
+  deleteConfirmCancelText: {
+    fontSize: 16,
+    fontFamily: "Inter-Medium",
+    color: "#374151",
+  },
+  
+  deleteConfirmDeleteText: {
+    fontSize: 16,
+    fontFamily: "Inter-Medium",
+    color: "#FFFFFF",
   },
 });
