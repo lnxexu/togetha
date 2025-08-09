@@ -20,14 +20,10 @@ import { LinearGradient } from "expo-linear-gradient";
 import Navbar from "./NavBar";
 import { RootStackParamList } from "./navigation/AppNavigator";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-<<<<<<< HEAD
-import { API_BASE_URL, API_ENDPOINTS } from "../constants/ApiConfig";
-=======
 import { API_URL, API_ENDPOINTS } from "../constants/ApiConfig";
 import AuthService from "./onboarding/service/AuthService";
 // taskService for managing tasks
 import taskService from "./task-management/services/taskService";
->>>>>>> kobe
 
 const { width } = Dimensions.get("window");
 
@@ -99,10 +95,7 @@ export default function Home() {
     completed: 0,
     total: 0,
   });
-<<<<<<< HEAD
-=======
   const [showTaskOptions, setShowTaskOptions] = useState<string | null>(null);
->>>>>>> kobe
   const [notesCount, setNotesCount] = useState(0);
   const [notesFolders, setNotesFolders] = useState<any[]>([]);
 
@@ -132,8 +125,6 @@ export default function Home() {
     }
   };
 
-<<<<<<< HEAD
-=======
   useEffect(() => {
     // Close task options menu when user touches outside
     const handleOutsideClick = () => {
@@ -220,7 +211,6 @@ export default function Home() {
     return unsubscribe;
   }, [navigation]);
 
->>>>>>> kobe
   // Fetch user info with optimized error handling
   useEffect(() => {
     const fetchUserInfo = async (forceRefresh = false) => {
@@ -250,11 +240,7 @@ export default function Home() {
               "Cache-Control": "no-cache",
             },
           }),
-<<<<<<< HEAD
-          fetch(`${API_BASE_URL}${API_ENDPOINTS.GET_USERNAME}`, {
-=======
           fetch(`${API_URL}${API_ENDPOINTS.USER_PROFILE}`, {
->>>>>>> kobe
             method: "GET",
             headers: {
               Authorization: `Token ${token}`,
@@ -337,11 +323,7 @@ export default function Home() {
           return;
         }
 
-<<<<<<< HEAD
-        const response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.NOTES}`, {
-=======
         const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTES}`, {
->>>>>>> kobe
           headers: {
             Authorization: `Token ${token}`,
             "Cache-Control": "no-cache",
@@ -429,19 +411,11 @@ export default function Home() {
         }
 
         const controller = new AbortController();
-<<<<<<< HEAD
-        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-
-        try {
-          const response = await fetch(
-            `${API_BASE_URL}${API_ENDPOINTS.TASKS}?filter=active`,
-=======
         const timeoutId = setTimeout(() => controller.abort(), 10000);
 
         try {
           const response = await fetch(
             `${API_URL}${API_ENDPOINTS.TASKS}?filter=active`,
->>>>>>> kobe
             {
               headers: {
                 Authorization: `Token ${token}`,
@@ -463,18 +437,6 @@ export default function Home() {
           const transformedTasks = tasks
             .filter((task: any) => !task.completed)
             .sort((a: any, b: any) => {
-<<<<<<< HEAD
-              // Sort by priority: high > medium > low
-              const priorityOrder = {
-                urgent_important: 3,
-                not_urgent_important: 2,
-                urgent_not_important: 1,
-                not_urgent_not_important: 0,
-              };
-              return (
-                priorityOrder[b.priority as keyof typeof priorityOrder] -
-                priorityOrder[a.priority as keyof typeof priorityOrder]
-=======
               // Sort by priority: urgent-important > not-urgent-important > urgent-not-important > not-urgent-not-important
               const priorityOrder = {
                 "urgent-important": 4,
@@ -508,22 +470,11 @@ export default function Home() {
               return (
                 new Date(b.created_at).getTime() -
                 new Date(a.created_at).getTime()
->>>>>>> kobe
               );
             })
             .slice(0, 5) // Get top 5 priority tasks
             .map((task: any) => ({
               id: task.id,
-<<<<<<< HEAD
-              title: task.text,
-              category: task.category ? task.category.name : "General",
-              time: task.due_date
-                ? new Date(task.due_date).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })
-                : "No due date",
-=======
               title: task.title,
               description: task.description,
               category: task.category || "General",
@@ -533,7 +484,6 @@ export default function Home() {
                     minute: "2-digit",
                   })
                 : "No due time",
->>>>>>> kobe
               priority: mapPriority(task.priority),
               status: task.completed ? "Completed" : "Pending",
               due_datetime: task.due_datetime,
@@ -546,13 +496,8 @@ export default function Home() {
           // Update today's tasks count
           const today = new Date();
           const todayTasks = tasks.filter((task: any) => {
-<<<<<<< HEAD
-            if (!task.due_date) return false;
-            const taskDate = new Date(task.due_date);
-=======
             if (!task.due_datetime) return false;
             const taskDate = new Date(task.due_datetime);
->>>>>>> kobe
             return taskDate.toDateString() === today.toDateString();
           });
           const completedTodayTasks = todayTasks.filter(
@@ -617,11 +562,7 @@ export default function Home() {
         try {
           // Fetch notes to organize by folders
           const response = await fetch(
-<<<<<<< HEAD
-            `${API_BASE_URL}${API_ENDPOINTS.NOTES}`,
-=======
             `${API_URL}${API_ENDPOINTS.NOTE_FOLDERS}`,
->>>>>>> kobe
             {
               headers: {
                 Authorization: `Token ${token}`,
@@ -922,241 +863,6 @@ export default function Home() {
                       <Text style={styles.cardSubtitle}>Create a new note</Text>
                     </View>
                   </TouchableOpacity>
-<<<<<<< HEAD
-
-                  <TouchableOpacity
-                    onPress={() => navigation.navigate("RINA")}
-                    activeOpacity={0.7}
-                  >
-                    <View style={[styles.quickCard, styles.rinaCard]}>
-                      <Ionicons
-                        name="chatbubble-ellipses"
-                        size={32}
-                        color="#8B5CF6"
-                      />
-                      <Text style={styles.cardActionText}>Ask RINA</Text>
-                      <Text style={styles.cardSubtitle}>
-                        Get help from RINA
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
-
-            {/* Priority Tasks */}
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Today's Focus</Text>
-                <TouchableOpacity
-                  onPress={() =>
-                    navigation.navigate("AllItemsView", { viewType: "tasks" })
-                  }
-                >
-                  <Text style={styles.seeAllText}>See All</Text>
-                </TouchableOpacity>
-              </View>
-              {loadingTasks ? (
-                <View style={styles.loaderContainer}>
-                  <ActivityIndicator size="large" color="#6A009C" />
-                </View>
-              ) : tasksError ? (
-                <View style={styles.errorContainer}>
-                  <Text style={styles.errorText}>{tasksError}</Text>
-                  <TouchableOpacity
-                    style={styles.retryButton}
-                    onPress={() =>
-                      navigation.navigate("AddTask", {
-                        quadrant: "urgent-important",
-                      })
-                    }
-                  >
-                    <Text style={styles.retryText}>View All Tasks</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : priorityTasks.length === 0 ? (
-                <View style={styles.emptyContainer}>
-                  <MaterialIcons name="task-alt" size={48} color="#CBD5E0" />
-                  <Text style={styles.emptyText}>No priority tasks yet</Text>
-                  <TouchableOpacity
-                    style={styles.addButton}
-                    onPress={() =>
-                      navigation.navigate("AddTask", {
-                        quadrant: "urgent-important",
-                      })
-                    }
-                  >
-                    <Text style={styles.addButtonText}>Add a Task</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.horizontalScrollContainer}
-                >
-                  {priorityTasks.map((task, index) => (
-                    <TouchableOpacity
-                      key={task.id}
-                      style={[
-                        styles.taskCardHorizontal,
-                        index === 0 && styles.firstCard,
-                      ]}
-                      activeOpacity={0.8}
-                      onPress={() =>
-                        navigation.navigate("AddTask", {
-                          quadrant: task.priority.toLowerCase(),
-                        })
-                      }
-                    >
-                      <View style={styles.borderLeft} />
-                      <View style={styles.taskHeader}>
-                        <View style={styles.taskInfo}>
-                          <Text style={styles.taskTitle} numberOfLines={2}>
-                            {task.title}
-                          </Text>
-                          <Text style={styles.taskCategory}>
-                            {task.category}
-                          </Text>
-                        </View>
-                        <View
-                          style={[
-                            styles.priorityBadge,
-                            {
-                              backgroundColor: getPriorityColor(task.priority),
-                            },
-                          ]}
-                        >
-                          <Text style={styles.priorityText}>
-                            {task.priority}
-                          </Text>
-                        </View>
-                      </View>
-
-                      <View style={styles.taskBody}>
-                        <Text style={styles.taskTime}>{task.time}</Text>
-                      </View>
-                      {/* Divider between time and footer */}
-                      <View style={styles.taskDivider} />
-                      <View style={styles.taskFooter}>
-                        <View style={styles.statusContainer}>
-                          <View
-                            style={[
-                              styles.statusDot,
-                              {
-                                backgroundColor:
-                                  task.status === "Completed"
-                                    ? "#10B981"
-                                    : task.status === "In Progress"
-                                    ? "#F59E0B"
-                                    : "#EF4444",
-                              },
-                            ]}
-                          />
-                          <Text
-                            style={[
-                              styles.taskStatus,
-                              {
-                                color:
-                                  task.status === "Completed"
-                                    ? "#10B981"
-                                    : task.status === "In Progress"
-                                    ? "#F59E0B"
-                                    : "#EF4444",
-                              },
-                            ]}
-                          >
-                            {task.status}
-                          </Text>
-                        </View>
-                        <TouchableOpacity style={styles.taskAction}>
-                          <MaterialIcons
-                            name="more-vert"
-                            size={18}
-                            color="#9CA3AF"
-                          />
-                        </TouchableOpacity>
-                      </View>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              )}
-            </View>
-
-            {/* Notes Folders */}
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Notes Folders</Text>
-                <TouchableOpacity onPress={() => navigation.navigate("Notes")}>
-                  <Text style={styles.seeAllText}>See All</Text>
-                </TouchableOpacity>
-              </View>
-              {loadingFolders ? (
-                <View style={styles.loaderContainer}>
-                  <ActivityIndicator size="large" color="#6A009C" />
-                </View>
-              ) : foldersError ? (
-                <View style={styles.errorContainer}>
-                  <Text style={styles.errorText}>{foldersError}</Text>
-                </View>
-              ) : notesFolders.length === 0 ? (
-                <View style={styles.emptyContainer}>
-                  <MaterialIcons name="folder" size={48} color="#CBD5E0" />
-                  <Text style={styles.emptyText}>No folders yet</Text>
-                  <TouchableOpacity
-                    style={styles.addButton}
-                    onPress={() => navigation.navigate("Notes")}
-                  >
-                    <Text style={styles.addButtonText}>Create Note</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <View style={styles.foldersContainer}>
-                  {notesFolders.map((folder, index) => (
-                    <TouchableOpacity
-                      key={folder.id}
-                      style={[
-                        styles.folderCard,
-                        { backgroundColor: `${folder.color}15` },
-                      ]}
-                      activeOpacity={0.8}
-                      onPress={() => navigation.navigate("Notes")}
-                    >
-                      <View style={styles.folderContent}>
-                        <View
-                          style={[
-                            styles.folderIcon,
-                            { backgroundColor: `${folder.color}30` },
-                          ]}
-                        >
-                          <MaterialIcons
-                            name="folder"
-                            size={24}
-                            color={folder.color}
-                          />
-                        </View>
-                        <View style={styles.folderInfo}>
-                          <Text style={styles.folderTitle} numberOfLines={1}>
-                            {folder.name}
-                          </Text>
-                          <Text style={styles.folderCount}>
-                            {folder.count}{" "}
-                            {folder.count === 1 ? "note" : "notes"}
-                          </Text>
-                        </View>
-                      </View>
-                      <MaterialIcons
-                        name="chevron-right"
-                        size={20}
-                        color={folder.color}
-                      />
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-            </View>
-
-=======
 
                   <TouchableOpacity
                     onPress={() => navigation.navigate("RINA")}
@@ -1469,7 +1175,6 @@ export default function Home() {
               )}
             </View>
 
->>>>>>> kobe
             {/* Bottom spacing for navbar */}
             <View style={{ height: 100 }} />
           </ScrollView>
@@ -2061,10 +1766,7 @@ const styles = StyleSheet.create({
     zIndex: 1000,
   },
 });
-<<<<<<< HEAD
-=======
 function fetchTasks() {
   throw new Error("Function not implemented.");
 }
 
->>>>>>> kobe
