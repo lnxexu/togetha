@@ -8,14 +8,13 @@ import EisenhowerMatrix from "./components/EisenhowerMatrix";
 import TaskListView from "./components/TaskListView";
 import { Task } from "./types/Task";
 import { LinearGradient } from "expo-linear-gradient";
-import { taskService } from "./services/taskService";
+import  taskService  from "./services/taskService";
 import { ActivityIndicator } from "react-native";
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  ScrollView,
   Alert,
   Platform,
   Dimensions,

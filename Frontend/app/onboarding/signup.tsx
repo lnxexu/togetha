@@ -13,11 +13,11 @@ import {
   Animated
 } from "react-native";
 import type { RootStackParamList } from '../navigation/AppNavigator';
-import Toast from 'react-native-toast-message';
 import { KeyboardAvoidingView, Platform, ScrollView, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_BASE_URL, API_ENDPOINTS } from '../../constants/ApiConfig';
+import { API_URL, API_ENDPOINTS } from '../../constants/ApiConfig';
+import { showToast, showSuccessToast, showErrorToast } from '../utils/ToastUtils';
 
 // Add type declaration for global.isRunningInExpoClient
 declare global {
@@ -77,34 +77,24 @@ export default function SignUp() {
     }
   };
 
-  const showToast = (message: string, type: 'success' | 'error' | 'info') => {
-    Toast.show({
-      type: type,
-      text1: type === 'success' ? 'Success' : type === 'error' ? 'Error' : 'Info',
-      text2: message,
-      position: 'top',
-      visibilityTime: 4000,
-    });
-  };
-
   const validateForm = () => {
     if (!formData.username.trim()) {
-      showToast('Please enter your username', 'error');
+      showErrorToast('Please enter your username');
       return false;
     }
 
     if (!formData.email.trim()) {
-      showToast('Please enter your email', 'error');
+      showErrorToast('Please enter your email');
       return false;
     }
 
     if (!formData.password1) {
-      showToast('Please enter a password', 'error');
+      showErrorToast('Please enter a password');
       return false;
     }
 
     if (formData.password1 !== formData.password2) {
-      showToast('Passwords do not match', 'error');
+      showErrorToast('Passwords do not match');
       return false;
     }
 
@@ -125,7 +115,7 @@ export default function SignUp() {
       // First check if device is connected to internet
       const isConnected = await checkNetworkConnectivity();
       if (!isConnected) {
-        showToast('No internet connection. Please check your network settings.', 'error');
+        showErrorToast('No internet connection. Please check your network settings.');
         setLoading(false);
         return;
       }
@@ -137,7 +127,7 @@ export default function SignUp() {
       };
 
       console.log('Sending data:', signupData);
-      console.log('API URL:', `${API_BASE_URL}${API_ENDPOINTS.SIGNUP}`);
+      console.log('API URL:', `${API_URL}${API_ENDPOINTS.SIGNUP}`);
       console.log('Platform:', Platform.OS);
       console.log('Running in Expo?', global.isRunningInExpoClient ? 'Yes' : 'No');
 
@@ -145,7 +135,7 @@ export default function SignUp() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
-      const response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.SIGNUP}`, {
+      const response = await fetch(`${API_URL}${API_ENDPOINTS.SIGNUP}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -162,7 +152,7 @@ export default function SignUp() {
       console.log('Response data:', data);
 
       if (response.ok) {
-        showToast('Account created successfully!', 'success');
+        showSuccessToast('Account created successfully!');
         // Save user data or token if provided
         if (data.token) {
           await AsyncStorage.setItem('userToken', data.token);
@@ -174,18 +164,18 @@ export default function SignUp() {
       } else {
         // Handle server error responses
         const errorMessage = data.message || data.error || 'Signup failed. Please try again.';
-        showToast(errorMessage, 'error');
+        showErrorToast(errorMessage);
       }
     } catch (error) {
       console.error('Signup error:', error);
 
       // Enhanced error reporting
       if (error instanceof DOMException && error.name === 'AbortError') {
-        showToast('Request timed out. Server may be down or unreachable.', 'error');
+        showErrorToast('Request timed out. Server may be down or unreachable.');
       } else if (error instanceof TypeError && error.message === 'Network request failed') {
-        showToast(`Cannot connect to server. Please check that your backend is running at ${API_BASE_URL}`, 'error');
+        showErrorToast(`Cannot connect to server. Please check that your backend is running at ${API_URL}`);
       } else {
-        showToast(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+        showErrorToast(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     } finally {
       setLoading(false);
@@ -337,8 +327,6 @@ export default function SignUp() {
             </View>
           </View>
         </Modal>
-
-        <Toast />
       </ScrollView>
     </KeyboardAvoidingView>
   );

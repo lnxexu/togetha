@@ -21,7 +21,8 @@ import {
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import { Task, Priority } from "./types/Task";
-import { taskService } from "./services/taskService";
+import  taskService from "./services/taskService";
+import { showSuccessToast, showErrorToast } from "../utils/ToastUtils";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -79,20 +80,20 @@ const TaskDetails: React.FC = () => {
         setEditedDescription(fetchedTask.description || "");
         setEditedPriority(fetchedTask.priority);
         setEditedCategory(fetchedTask.category || "");
-        setEditedTime(fetchedTask.dueTime || "");
+        setEditedTime(fetchedTask.due_time || "");
         setEditedDate(
-          fetchedTask.dueDate ? new Date(fetchedTask.dueDate) : undefined
+          fetchedTask.due_datetime ? new Date(fetchedTask.due_datetime) : undefined
         );
         setCalendarDate(
-          fetchedTask.dueDate ? new Date(fetchedTask.dueDate) : new Date()
+          fetchedTask.due_datetime ? new Date(fetchedTask.due_datetime) : new Date()
         );
       } else {
-        Alert.alert("Error", "Task not found");
+        showErrorToast("Task not found");
         navigation.goBack();
       }
     } catch (error) {
       console.error("Error loading task:", error);
-      Alert.alert("Error", "Failed to load task");
+      showErrorToast("Failed to load task");
     } finally {
       setIsLoading(false);
     }
@@ -120,15 +121,15 @@ const TaskDetails: React.FC = () => {
         description: editedDescription,
         priority: editedPriority,
         category: editedCategory,
-        dueTime: editedTime,
-        dueDate: editedDate,
+        due_time: editedTime,
+        due_date: editedDate ? editedDate.toISOString() : undefined,
         updatedAt: new Date(),
       });
 
       setIsEditing(false);
-      Alert.alert("Success", "Task updated successfully");
+      showSuccessToast("Task updated successfully!");
     } catch (error) {
-      Alert.alert("Error", "Failed to update task");
+      showErrorToast("Failed to update task");
     }
   };
 
@@ -138,9 +139,9 @@ const TaskDetails: React.FC = () => {
       setEditedDescription(task.description || "");
       setEditedPriority(task.priority);
       setEditedCategory(task.category || "");
-      setEditedTime(task.dueTime || "");
-      setEditedDate(task.dueDate ? new Date(task.dueDate) : undefined);
-      setCalendarDate(task.dueDate ? new Date(task.dueDate) : new Date());
+      setEditedTime(task.due_time || "");
+      setEditedDate(task.due_datetime ? new Date(task.due_datetime) : undefined);
+      setCalendarDate(task.due_datetime ? new Date(task.due_datetime) : new Date());
     }
     setIsEditing(false);
   };
@@ -160,12 +161,11 @@ const TaskDetails: React.FC = () => {
         updatedAt: new Date(),
       });
 
-      Alert.alert(
-        "Success",
+      showSuccessToast(
         task.completed ? "Task marked as pending" : "Task marked as completed"
       );
     } catch (error) {
-      Alert.alert("Error", "Failed to update task");
+      showErrorToast("Failed to update task");
     }
   };
 
@@ -527,8 +527,8 @@ const TaskDetails: React.FC = () => {
           ) : (
             <View style={styles.infoCard}>
               <Text style={styles.cardValue}>
-                {task.dueDate
-                  ? formatDate(new Date(task.dueDate))
+                {task.due_datetime
+                  ? formatDate(new Date(task.due_datetime))
                   : "No date set"}
               </Text>
             </View>
@@ -585,7 +585,7 @@ const TaskDetails: React.FC = () => {
           ) : (
             <View style={styles.infoCard}>
               <Text style={styles.cardValue}>
-                {task.dueTime || "No time set"}
+                {task.due_time || "No time set"}
               </Text>
             </View>
           )}

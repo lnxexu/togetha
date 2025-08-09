@@ -16,10 +16,9 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import LoginIllustration from "../../assets/illustrations/undraw_access-account_aydp (1).svg";
 import type { RootStackParamList } from "../navigation/AppNavigator";
-import { API_BASE_URL, API_ENDPOINTS } from "../../constants/ApiConfig";
-
-
-
+import AuthService from "./service/AuthService";
+import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
+import { showSuccessToast, showErrorToast, showWarningToast } from "../utils/ToastUtils";
 
 export default function SignIn() {
   const navigation =
@@ -28,84 +27,117 @@ export default function SignIn() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState("");
+
+  // Update the handleLogin function
 
   const handleLogin = async () => {
     console.log("Login attempt started with username:", username);
-    
+
     if (!username.trim() || !password.trim()) {
-      setError("Please enter both username and password");
+      showErrorToast("Please enter both username and password");
       console.log("Login validation failed: empty username or password");
       return;
     }
 
     try {
       setIsLoading(true);
-      setError("");
-      
-      console.log(`Making API request to ${API_BASE_URL}${API_ENDPOINTS.LOGIN}`);
-      console.log("Request payload:", { username, password: "***" });
-      
+
+      // Before login attempt, explicitly logout any previous session to ensure clean state
+      const authService = AuthService.getInstance();
+      await authService.logout();
+
       // Add timeout to the request (10 seconds)
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
-      
-      const response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.LOGIN}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          username,
-          password,
-        }),
-        signal: controller.signal,
-      });
 
-      clearTimeout(timeoutId);
+      try {
+        // Perform login
+        const response = await authService.login(username, password);
+        clearTimeout(timeoutId);
 
-      console.log("Response status:", response.status);
-      console.log("Response headers:", JSON.stringify(response.headers, null, 2));
-      
-      const data = await response.json();
-      console.log("Response data:", JSON.stringify(data, null, 2));
+        showSuccessToast("Login successful! Welcome back.");
+        
+        // Force reload app state by resetting to Home screen
+        navigation.reset({
+          index: 0,
+          routes: [{ name: "Home" }],
+        });
+      } catch (loginError: any) {
+        clearTimeout(timeoutId);
 
-      if (!response.ok) {
-        console.log("Login failed with server error:", data.error);
-        throw new Error(data.error || "Login failed");
-      }
+        // Check if this is a session conflict error
+        if (
+          loginError.message &&
+          loginError.message.includes("already in use")
+        ) {
+          // Show session conflict dialog
+          Alert.alert(
+            "Account Already In Use",
+            "Your account is already logged in on another device. Would you like to log out of all other devices and login here?",
+            [
+              {
+                text: "Cancel",
+                style: "cancel",
+              },
+              {
+                text: "Yes, Log Out Other Sessions",
+                onPress: async () => {
+                  try {
+                    // Force login by adding force parameter
+                    setIsLoading(true);
+                    // API call to force logout other sessions
+                    const forceResponse = await fetch(`${API_URL}${API_ENDPOINTS.LOGIN}`, {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                      },
+                      body: JSON.stringify({
+                        username,
+                        password,  
+                        force: true, // Indicate we want to force login
+                      }),
+                    });
 
-      // Store the auth token
-      console.log("Login successful, storing auth token and user data");
-      await AsyncStorage.setItem("authToken", data.token);
-      await AsyncStorage.setItem("userData", JSON.stringify(data.user));
-      
-      // Navigate to home screen
-      console.log("Navigating to Home screen");
-      navigation.reset({
-        index: 0,
-        routes: [{ name: "Home" }],
-      });
-    } catch (err) {
-      console.error("Login error:", err);
-      console.log("Error type:", typeof err);
-      console.log("Error details:", JSON.stringify(err, null, 2));
-      
-      let errorMessage = "Login failed. Please try again.";
-      
-      if (err instanceof Error) {
-        if (err.name === 'AbortError') {
-          errorMessage = "Request timed out. Please check your internet connection.";
-        } else if (err.message.includes('Network request failed')) {
-          errorMessage = "Cannot connect to server. Please check if the server is running.";
-        } else if (err.message.includes('timeout')) {
-          errorMessage = "Connection timeout. Please try again.";
+                    if (forceResponse.ok) {
+                      const data = await forceResponse.json();
+                      if (data.token) {
+                        // Store authentication data
+                        await AsyncStorage.setItem("token", data.token);
+                        await AsyncStorage.setItem("authToken", data.token);
+                        await AsyncStorage.setItem("username", username);
+                        await AsyncStorage.setItem(
+                          "session_id",
+                          data.session_id
+                        );
+                      }
+                      showSuccessToast("Successfully logged in!");
+                      navigation.reset({
+                        index: 0,
+                        routes: [{ name: "Home" }],
+                      });
+                    } else {
+                      showErrorToast("Failed to force login. Please try again.");
+                    }
+                  } catch (error) {
+                    console.error("Force login error:", error);
+                    showErrorToast("Network error. Please try again.");
+                  } finally {
+                    setIsLoading(false);
+                  }
+                },
+              },
+            ]
+          );
         } else {
-          errorMessage = err.message;
+          // Handle other login errors
+          showErrorToast(
+            loginError.message || "Login failed. Please check your credentials."
+          );
         }
       }
-      
-      setError(errorMessage);
+    } catch (err: any) {
+      console.error("Login process error:", err);
+      showErrorToast("An unexpected error occurred. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -121,8 +153,6 @@ export default function SignIn() {
           height={220}
           style={styles.loginIllustration}
         />
-
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
         <View style={styles.inputContainer}>
           <MaterialIcons
@@ -309,12 +339,5 @@ const styles = StyleSheet.create({
     color: "#AD00FF",
     fontSize: 15,
     fontFamily: "Inter-Bold",
-  },
-  errorText: {
-    color: "#E74C3C",
-    fontSize: 14,
-    textAlign: "center",
-    marginBottom: 15,
-    fontFamily: "Inter-Regular",
   },
 });

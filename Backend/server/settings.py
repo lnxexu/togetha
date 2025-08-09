@@ -32,6 +32,15 @@ ALLOWED_HOSTS = [
     '127.0.0.1',    
 ]
 
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'  # For development (prints email to console)
+DEFAULT_FROM_EMAIL = 'noreply@togetha.com'
+# For production, use SMTP settings:
+# EMAIL_HOST = 'smtp.gmail.com'
+# EMAIL_PORT = 587
+# EMAIL_HOST_USER = 'your_email@gmail.com'
+# EMAIL_HOST_PASSWORD = 'your_password'
+# EMAIL_USE_TLS = True
+
 # Application definition
 
 INSTALLED_APPS = [
@@ -47,7 +56,8 @@ INSTALLED_APPS = [
     'corsheaders',
     'notes',
     'chatbot',
-    'task_manager'
+    'task_manager',
+    'users',
 ]
 
 MIDDLEWARE = [

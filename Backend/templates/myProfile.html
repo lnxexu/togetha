@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>My Profile</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 2em;
+      }
+      .profile-container {
+        max-width: 400px;
+        margin: auto;
+      }
+      .profile-picture {
+        width: 100px;
+        height: 100px;
+        border-radius: 50%;
+        object-fit: cover;
+      }
+      label {
+        display: block;
+        margin-top: 1em;
+      }
+      input,
+      textarea,
+      select {
+        width: 100%;
+        padding: 0.5em;
+      }
+      button {
+        margin-top: 1em;
+        padding: 0.5em 2em;
+      }
+      #msg {
+        margin-top: 1em;
+        font-weight: bold;
+      }
+      #progressContainer {
+        margin-top: 2em;
+        padding: 1em;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+      }
+      #progressDetails {
+        margin-top: 1em;
+      }
+      #progressDetails p {
+        margin: 0.5em 0;
+      }
+
+    </style>
+  </head>
+  <body>
+    <div class="profile-container">
+      <h2>My Profile</h2>
+      <form id="profileForm" enctype="multipart/form-data">
+        <img
+          id="profilePic"
+          class="profile-picture"
+          src=""
+          alt="Profile Picture"
+        />
+        <label>
+          Change Picture:
+          <input
+            type="file"
+            name="profile_picture"
+            id="profile_picture"
+            accept="image/*"
+          />
+        </label>
+        <label>
+          Username:
+          <input type="text" name="username" id="username" />
+        </label>
+        <label>
+          Email:
+          <input type="email" name="email" id="email" />
+        </label>
+        <label>
+          Full Name:
+          <input type="text" name="full_name" id="full_name" />
+        </label>
+        <label>
+          Phone Number:
+          <input type="text" name="phone_number" id="phone_number" />
+        </label>
+        <label>
+          Address:
+          <input type="text" name="address" id="address" />
+        </label>
+        <label>
+          Gender:
+          <select name="gender" id="gender">
+            <option value="">Select...</option>
+            <option value="M">Male</option>
+            <option value="F">Female</option>
+            <option value="O">Other</option>
+          </select>
+        </label>
+        <label>
+          Birthdate:
+          <input type="date" name="birthdate" id="birthdate" />
+        </label>
+        <label>
+          Bio:
+          <textarea name="bio" id="bio" rows="3"></textarea>
+        </label>
+        <button type="submit">Save Changes</button>
+        <div id="msg" style="color: green; margin-top: 1em"></div>
+      </form>
+
+      <!-- user progress -->
+      <h3>Your Progress</h3>
+            <div id="progressContainer">
+        <div id="progressDetails">
+          <p>Tasks Completed: <span id="tasksCompleted"></span></p>
+          <p>Notes Created: <span id="notesCreated"></span></p>
+          <p>Study Streak: <span id="studyStreak"></span></p>
+          <p>Learning Hours: <span id="learningHours"></span></p>
+        </div>
+        <div id="progressMessage"></div>
+      </div>
+    </div>
+        <script>
+      document.addEventListener('DOMContentLoaded', function() {
+          const token = localStorage.getItem('token');
+          const profileForm = document.getElementById('profileForm');
+          const msg = document.getElementById('msg');
+          // Load profile data
+          fetch('/user/profile/', {
+              method: 'GET',
+              headers: {
+                  'Authorization': token ? 'Token ' + token : '',
+              }
+          })
+          .then(res => res.json())
+          .then(data => {
+              document.getElementById('username').value = data.username || '';
+              document.getElementById('email').value = data.email || '';
+              if (data.profile) {
+                  document.getElementById('full_name').value = data.profile.full_name || '';
+                  document.getElementById('phone_number').value = data.profile.phone_number || '';
+                  document.getElementById('address').value = data.profile.address || '';
+                  document.getElementById('bio').value = data.profile.bio || '';
+                  document.getElementById('gender').value = data.profile.gender || '';
+                  document.getElementById('birthdate').value = data.profile.birthdate || '';
+                  if (data.profile.profile_picture) {
+                      document.getElementById('profilePic').src = data.profile.profile_picture;
+                  } else {
+                      document.getElementById('profilePic').src = 'https://via.placeholder.com/100';
+                  }
+              }
+          });
+
+          // Handle form submit
+          profileForm.addEventListener('submit', function(e) {
+              e.preventDefault();
+              msg.textContent = '';
+              const formData = new FormData();
+              formData.append('username', document.getElementById('username').value);
+              formData.append('email', document.getElementById('email').value);
+              formData.append('profile.full_name', document.getElementById('full_name').value);
+              formData.append('profile.phone_number', document.getElementById('phone_number').value);
+              formData.append('profile.address', document.getElementById('address').value);
+              formData.append('profile.bio', document.getElementById('bio').value);
+              formData.append('profile.gender', document.getElementById('gender').value);
+              formData.append('profile.birthdate', document.getElementById('birthdate').value);
+              const fileInput = document.getElementById('profile_picture');
+              if (fileInput.files.length > 0) {
+                  formData.append('profile.profile_picture', fileInput.files[0]);
+              }
+              fetch('/user/profile/', {
+                  method: 'PUT',
+                  headers: {
+                      'Authorization': token ? 'Token ' + token : '',
+                  },
+                  body: formData
+              })
+              .then(res => res.json().then(data => ({status: res.status, data})))
+              .then(res => {
+                  if (res.status === 200) {
+                      msg.style.color = 'green';
+                      msg.textContent = 'Profile updated successfully!';
+                      if (res.data.profile && res.data.profile.profile_picture) {
+                          document.getElementById('profilePic').src = res.data.profile.profile_picture;
+                      }
+                  } else {
+                      msg.style.color = 'red';
+                      msg.textContent = 'Error: ' + JSON.stringify(res.data);
+                  }
+              });
+          });
+          
+          // Load user progress - moved inside the first DOMContentLoaded event
+          loadUserProgress(token);
+        });
+
+      // Function to load user progress
+      function loadUserProgress(token) {
+          fetch('/user_progress/', {
+              method: 'GET',
+              headers: {
+                  'Authorization': token ? 'Token ' + token : '',
+              }
+          })
+          .then(res => res.json())
+          .then(data => {
+              const progressContainer = document.getElementById('progressContainer');
+              const progressDetails = document.getElementById('progressDetails');
+              const tasksCompleted = document.getElementById('tasksCompleted');
+              const notesCreated = document.getElementById('notesCreated');
+              const studyStreak = document.getElementById('studyStreak');
+              const learningHours = document.getElementById('learningHours');
+              const progressMessage = document.getElementById('progressMessage');
+
+              if (data.tasks_completed !== undefined || data.notes_created !== undefined || 
+                  data.study_streak !== undefined || data.learning_hours !== undefined) {
+                  tasksCompleted.textContent = data.tasks_completed || 0;
+                  notesCreated.textContent = data.notes_created || 0;
+                  studyStreak.textContent = data.study_streak || 0;
+                  learningHours.textContent = data.learning_hours || 0;
+                  progressDetails.style.display = 'block';
+                  progressMessage.style.display = 'none';
+              } else {
+                  progressMessage.textContent = 'No progress data available.';
+                  progressMessage.style.display = 'block';
+                  progressDetails.style.display = 'none';
+                  console.log('Progress data received:', data);  // Added to debug
+              }
+          })
+          .catch(error => {
+              console.error('Error loading progress data:', error);
+              // console log the error for debugging
+              
+              document.getElementById('progressMessage').textContent = 'Error loading progress data.';
+              document.getElementById('progressMessage').style.display = 'block';
+              document.getElementById('progressDetails').style.display = 'none';
+          });
+      }
+    </script>
+  </body>
+</html>

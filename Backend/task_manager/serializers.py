@@ -1,21 +1,14 @@
 from rest_framework import serializers
-from .models import Task, Subtask
-
-class SubtaskSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Subtask
-        fields = ['id', 'text', 'completed', 'created_at']
-        read_only_fields = ['id', 'created_at']
+from .models import Task
 
 class TaskSerializer(serializers.ModelSerializer):
-    subtasks = SubtaskSerializer(many=True, read_only=True)
     
     class Meta:
         model = Task
         fields = [
-            'id', 'title', 'description', 'due_date', 'priority', 
-            'subject', 'user', 'completed', 'completed_at', 
-            'created_at', 'updated_at', 'subtasks'
+            'id', 'title', 'description', 'due_datetime', 'priority', 
+            'category', 'user', 'completed', 'completed_at', 
+            'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'user', 'created_at', 'updated_at']
     
@@ -24,4 +17,3 @@ class TaskSerializer(serializers.ModelSerializer):
         if request and hasattr(request, 'user'):
             validated_data['user'] = request.user
         return super().create(validated_data)
-

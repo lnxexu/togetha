@@ -100,7 +100,11 @@ export default function Navbar({ activeRoute = "Home" }: NavbarProps) {
           onPress={() => navigation.navigate("Profile")}
         >
           <Ionicons
+<<<<<<< HEAD
             name="person"
+=======
+            name="person-circle"
+>>>>>>> kobe
             size={24}
             color={activeRoute === "Profile" ? "#AD00FF" : "#7F8C8D"}
           />
@@ -110,7 +114,7 @@ export default function Navbar({ activeRoute = "Home" }: NavbarProps) {
               activeRoute === "Profile" && styles.activeNavText,
             ]}
           >
-            Profile
+            Settings
           </Text>
         </TouchableOpacity>
       </View>

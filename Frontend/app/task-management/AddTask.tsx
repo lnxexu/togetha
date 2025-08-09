@@ -8,7 +8,6 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
-  SafeAreaView,
   Alert,
   Platform,
 } from "react-native";
@@ -17,10 +16,12 @@ import { useNavigation, useRoute } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import { Priority, TaskFormData } from "./types/Task";
-import { taskService } from "./services/taskService";
+import taskService from "./services/taskService";
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { showSuccessToast, showErrorToast } from "../utils/ToastUtils";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
-type RouteProp = { params?: { quadrant?: Priority } };
+type RouteProp = { params?: { quadrant?: Priority; user?: string } };
 
 const priorities: {
   label: string;
@@ -58,14 +59,19 @@ const AddTask: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute() as RouteProp;
 
-  const [formData, setFormData] = useState<TaskFormData>({
-    title: "",
-    description: "",
-    category: "",
-    priority: route.params?.quadrant || "not-urgent-not-important",
-    dueDate: undefined,
-    dueTime: undefined,
-  });
+ const [formData, setFormData] = useState<TaskFormData>({
+  title: "",
+  description: "",
+  category: "",
+  priority: route.params?.quadrant || "not-urgent-not-important",
+  due_datetime: undefined,
+  due_time: undefined,
+  completed: false,
+  completed_at: new Date(),
+  created_at: new Date(),
+  updated_at: new Date(),
+  user: route.params?.user || "default_user", // Default user if not provided
+});
 
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
@@ -80,48 +86,73 @@ const AddTask: React.FC = () => {
     }));
   };
 
-  const handleDateChange = (event: any, selectedDate?: Date) => {
-    setShowDatePicker(false);
-    if (selectedDate) {
-      handleInputChange("dueDate", selectedDate);
-    }
-  };
-
-  const handleTimeChange = (event: any, selectedTime?: Date) => {
-    setShowTimePicker(false);
-    if (selectedTime) {
-      const timeString = selectedTime.toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-      handleInputChange("dueTime", timeString);
-    }
-  };
-
   const validateForm = (): boolean => {
     if (!formData.title.trim()) {
-      Alert.alert("Error", "Please enter a task title");
+      showErrorToast("Please enter a task title");
       return false;
     }
     return true;
   };
 
+  // In the handleSave method:
   const handleSave = async () => {
-    if (!validateForm()) return;
+  if (!validateForm()) return;
 
-    setIsLoading(true);
-    try {
-      await taskService.createTask(formData);
-      Alert.alert("Success", "Task created successfully!", [
-        { text: "OK", onPress: () => navigation.goBack() },
-      ]);
-    } catch (error) {
-      console.error("Error creating task:", error);
-      Alert.alert("Error", "Failed to create task");
-    } finally {
-      setIsLoading(false);
+  setIsLoading(true);
+  try {
+    // Create a single Date object from date and time inputs
+    let dueDate: Date | undefined = undefined;
+    
+    if (formData.due_datetime) {
+      dueDate = new Date(formData.due_datetime);
+      
+      // If time is also provided, add it to the date
+      if (formData.due_time) {
+        const [timeStr, period] = formData.due_time.split(' ');
+        let [hours, minutes] = timeStr.split(':').map(Number);
+        
+        // Convert to 24-hour format
+        if (period === 'PM' && hours < 12) hours += 12;
+        if (period === 'AM' && hours === 12) hours = 0;
+        
+        dueDate.setHours(hours, minutes, 0, 0);
+      }
     }
-  };
+
+    // Get username from storage if possible
+    let username = formData.user;
+    try {
+      const storedUsername = await AsyncStorage.getItem('username');
+      if (storedUsername) {
+        username = storedUsername;
+      }
+    } catch (e) {
+      console.warn('Could not retrieve username from storage');
+    }
+
+    const payload: TaskFormData = {
+      title: formData.title,
+      description: formData.description || '',
+      priority: formData.priority,
+      category: formData.category,
+      due_datetime: dueDate,
+      completed: formData.completed || false,
+      user: username,
+    };
+
+    console.log("Saving task data:", payload);
+
+    await taskService.createTask(payload);
+
+    showSuccessToast("Task created successfully!");
+    navigation.goBack();
+  } catch (error) {
+    console.error("Error creating task:", error);
+    showErrorToast("Failed to create task. Please try again.");
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   const handleReset = () => {
     Alert.alert("Reset Form", "Are you sure you want to reset all fields?", [
@@ -129,15 +160,17 @@ const AddTask: React.FC = () => {
       {
         text: "Reset",
         style: "destructive",
-        onPress: () =>
+        onPress: () => {
           setFormData({
             title: "",
             description: "",
             category: "",
             priority: "not-urgent-not-important",
-            dueDate: undefined,
-            dueTime: undefined,
-          }),
+            due_datetime: undefined,
+            due_time: undefined,
+          });
+          showSuccessToast("Form reset successfully");
+        },
       },
     ]);
   };
@@ -214,8 +247,8 @@ const AddTask: React.FC = () => {
                     }}
                   >
                     <Text style={styles.dateTimeText}>
-                      {formData.dueDate
-                        ? formData.dueDate.toLocaleDateString()
+                      {formData.due_datetime
+                        ? formData.due_datetime.toLocaleDateString()
                         : "Select Date"}
                     </Text>
                     <MaterialIcons
@@ -231,33 +264,33 @@ const AddTask: React.FC = () => {
                       setShowDatePicker(false);
                       setShowTimePicker(!showTimePicker);
                     }}
-                    disabled={!formData.dueDate}
+                    disabled={!formData.due_datetime}
                   >
                     <Text
                       style={[
                         styles.dateTimeText,
-                        !formData.dueDate && styles.disabledText,
+                        !formData.due_datetime && styles.disabledText,
                       ]}
                     >
-                      {formData.dueTime
+                      {formData.due_time
                         ? (() => {
                             // Format to HH:MM AM/PM
                             const match =
-                              formData.dueTime.match(/(\d+):(\d+) (AM|PM)/);
+                              formData.due_time.match(/(\d+):(\d+) (AM|PM)/);
                             if (match) {
                               const hour = match[1].padStart(2, "0");
                               const minute = match[2].padStart(2, "0");
                               const period = match[3];
                               return `${hour}:${minute} ${period}`;
                             }
-                            return formData.dueTime;
+                            return formData.due_time;
                           })()
                         : "Select Time"}
                     </Text>
                     <MaterialIcons
                       name="access-time"
                       size={20}
-                      color={formData.dueDate ? "#6c757d" : "#bdc3c7"}
+                      color={formData.due_datetime ? "#6c757d" : "#bdc3c7"}
                     />
                   </TouchableOpacity>
                 </View>
@@ -343,9 +376,9 @@ const AddTask: React.FC = () => {
                               currentDate.toDateString() ===
                               new Date().toDateString();
                             const isSelected =
-                              formData.dueDate &&
+                              formData.due_datetime &&
                               currentDate.toDateString() ===
-                                formData.dueDate.toDateString();
+                                formData.due_datetime.toDateString();
 
                             return (
                               <TouchableOpacity
@@ -357,7 +390,7 @@ const AddTask: React.FC = () => {
                                   isSelected && styles.selectedCalendarDay,
                                 ]}
                                 onPress={() => {
-                                  handleInputChange("dueDate", currentDate);
+                                  handleInputChange("due_datetime", currentDate);
                                   setShowDatePicker(false);
                                 }}
                               >
@@ -381,7 +414,7 @@ const AddTask: React.FC = () => {
                 )}
 
                 {/* Clock Time Picker */}
-                {showTimePicker && formData.dueDate && (
+                {showTimePicker && formData.due_datetime && (
                   <View style={[styles.dropdownOptions, styles.clockDropdown]}>
                     <View style={styles.clockContainer}>
                       <Text style={styles.clockTitle}>Select Time</Text>
@@ -396,7 +429,7 @@ const AddTask: React.FC = () => {
                             {Array.from({ length: 12 }, (_, i) => i + 1).map(
                               (hour) => {
                                 const currentTime =
-                                  formData.dueTime || "12:00 AM";
+                                  formData.due_time || "12:00 AM";
                                 const match =
                                   currentTime.match(/(\d+):(\d+) (AM|PM)/);
                                 let currentHour = match
@@ -420,7 +453,7 @@ const AddTask: React.FC = () => {
                                       const newTime = `${hour
                                         .toString()
                                         .padStart(2, "0")}:${minute} ${period}`;
-                                      handleInputChange("dueTime", newTime);
+                                      handleInputChange("due_time", newTime);
                                     }}
                                   >
                                     <Text
@@ -454,7 +487,7 @@ const AddTask: React.FC = () => {
                                   .toString()
                                   .padStart(2, "0");
                                 const currentTime =
-                                  formData.dueTime || "12:00 AM";
+                                  formData.due_time || "12:00 AM";
                                 const match =
                                   currentTime.match(/(\d+):(\d+) (AM|PM)/);
                                 const currentMinute = match ? match[2] : "00";
@@ -472,7 +505,7 @@ const AddTask: React.FC = () => {
                                       const hour = match ? match[1] : "12";
                                       const period = match ? match[3] : "AM";
                                       const newTime = `${hour}:${minuteStr} ${period}`;
-                                      handleInputChange("dueTime", newTime);
+                                      handleInputChange("due_time", newTime);
                                     }}
                                   >
                                     <Text
@@ -502,7 +535,7 @@ const AddTask: React.FC = () => {
                           >
                             {["AM", "PM"].map((period) => {
                               const currentTime =
-                                formData.dueTime || "12:00 AM";
+                                formData.due_time || "12:00 AM";
                               const match =
                                 currentTime.match(/(\d+):(\d+) (AM|PM)/);
                               const currentPeriod = match ? match[3] : "AM";
@@ -528,7 +561,7 @@ const AddTask: React.FC = () => {
                                     const newTime = `${newHour
                                       .toString()
                                       .padStart(2, "0")}:${minute} ${period}`;
-                                    handleInputChange("dueTime", newTime);
+                                    handleInputChange("due_time", newTime);
                                   }}
                                 >
                                   <Text

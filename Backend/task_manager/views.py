@@ -5,8 +5,8 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Q
 from datetime import datetime, timedelta
-from .models import Task, Subtask
-from .serializers import TaskSerializer, SubtaskSerializer
+from .models import Task
+from .serializers import TaskSerializer
 
 @api_view(['GET', 'POST'])
 @authentication_classes([TokenAuthentication, SessionAuthentication])
@@ -26,7 +26,7 @@ def task_list(request):
             tasks = tasks.filter(completed=True)
         elif filter_type == 'today':
             today = datetime.now().date()
-            tasks = tasks.filter(due_date=today)
+            tasks = tasks.filter(due_datetime=today)
         elif filter_type == 'upcoming':
             today = datetime.now().date()
             next_week = today + timedelta(days=7)
@@ -80,48 +80,6 @@ def task_detail(request, pk):
         task.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-@api_view(['POST', 'PUT', 'DELETE'])
-@authentication_classes([TokenAuthentication, SessionAuthentication])
-@permission_classes([IsAuthenticated])
-def subtask_operations(request, task_id):
-    try:
-        task = Task.objects.get(pk=task_id, user=request.user)
-    except Task.DoesNotExist:
-        return Response(status=status.HTTP_404_NOT_FOUND)
-    
-    if request.method == 'POST':
-        # Create a subtask
-        serializer = SubtaskSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save(task=task)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-    elif request.method == 'PUT':
-        # Update a subtask
-        subtask_id = request.data.get('id')
-        try:
-            subtask = Subtask.objects.get(pk=subtask_id, task=task)
-        except Subtask.DoesNotExist:
-            return Response(status=status.HTTP_404_NOT_FOUND)
-        
-        serializer = SubtaskSerializer(subtask, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-    elif request.method == 'DELETE':
-        # Delete a subtask
-        subtask_id = request.data.get('id')
-        try:
-            subtask = Subtask.objects.get(pk=subtask_id, task=task)
-        except Subtask.DoesNotExist:
-            return Response(status=status.HTTP_404_NOT_FOUND)
-        
-        subtask.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
-
 @api_view(['GET'])
 @authentication_classes([TokenAuthentication, SessionAuthentication])
 @permission_classes([IsAuthenticated])
@@ -138,7 +96,7 @@ def task_statistics(request):
     overdue_tasks = user_tasks.filter(due_date__lt=today, completed=False).count()
     
     # Get due today
-    due_today = user_tasks.filter(due_date=today, completed=False).count()
+    due_today = user_tasks.filter(due_datetime=today, completed=False).count()
     
     # Get tasks by priority
     high_priority = user_tasks.filter(priority='high', completed=False).count()

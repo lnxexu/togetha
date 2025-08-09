@@ -32,6 +32,16 @@ const ManageProfile: React.FC = () => {
     const loadUserData = async () => {
         try {
             const profile = await userService.getUserProfile();
+            // time formatting for date_joined to make it more readable
+            if (profile.date_joined) {
+                const date = new Date(profile.date_joined);
+                profile.date_joined = date.toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                });
+            }
+            // Set the user data state
             setUserData(profile);
         } catch (error) {
             console.error('Error loading user data:', error);
@@ -122,9 +132,9 @@ const ManageProfile: React.FC = () => {
                     </View>
                     
                     <View style={styles.profileSummaryInfo}>
-                        <Text style={styles.profileName}>{userData.name}</Text>
+                        <Text style={styles.profileName}>{userData.username}</Text>
                         <Text style={styles.profileEmail}>{userData.email}</Text>
-                        <Text style={styles.profileJoinDate}>Member since {userData.joinDate}</Text>
+                        <Text style={styles.profileJoinDate}>Member since {userData.date_joined}</Text>
                     </View>
                 </View>
 
