@@ -4,6 +4,7 @@ import React, { useEffect } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AppNavigator from './app/navigation/AppNavigator';
+import { NotificationProvider } from './app/notifications/services/notificationProvider'; 
 
 SplashScreen.preventAutoHideAsync();
 
@@ -34,7 +35,9 @@ export default function App() {
 
   return (
       <SafeAreaProvider>
-      <AppNavigator />
-    </SafeAreaProvider>
+        <NotificationProvider>
+          <AppNavigator />
+        </NotificationProvider>
+      </SafeAreaProvider>
   );
 }

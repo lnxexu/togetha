@@ -1,14 +1,10 @@
-from rest_framework.decorators import api_view, authentication_classes, permission_classes
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.authentication import TokenAuthentication, SessionAuthentication
 from rest_framework.response import Response
 from rest_framework import status
-from .models import Note, Folder, AudioRecording, Tag
-from .serializers import NoteSerializer, FolderSerializer, AudioRecordingSerializer, TagSerializer
-from server.utils import get_authenticated_user
+from .models import Note, Folder, Tag
+from .serializers import NoteSerializer, FolderSerializer, TagSerializer
 from server.decorators import api_auth_required
 from django.db.models import Q
-
+from notifications.views import create_notification
 
 @api_auth_required(['GET', 'POST'])
 def folder_list(request):
@@ -92,6 +88,26 @@ def note_list(request):
             serializer.save(user=user)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+
+def create(self, request, *args, **kwargs):
+    serializer = self.get_serializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    self.perform_create(serializer)
+    
+    # Create notification for note creation
+    note = serializer.instance
+    create_notification(
+        user=request.user,
+        notification_type='note',
+        title='New Note Created',
+        message=f'You created a new note: "{note.title}"',
+        action_id=str(note.id),
+        priority='low'
+    )
+    
+    headers = self.get_success_headers(serializer.data)
+    return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 @api_auth_required(['GET', 'PUT', 'PATCH', 'DELETE'])
 def note_detail(request, pk):

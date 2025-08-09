@@ -67,6 +67,7 @@ INSTALLED_APPS = [
     'notes',
     'chatbot',
     'task_manager',
+    'notifications',
     'users',
 ]
 

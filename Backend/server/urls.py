@@ -32,6 +32,7 @@ urlpatterns = [
     path('task_manager/', include('task_manager.urls')),
     path('chatbot/', include('chatbot.urls')),
     path('users/', include('users.urls')),
+    path('notifications/', include('notifications.urls')),
 
     # Auth API URLs
     path('api-token-auth/', auth_view.obtain_auth_token, name='api-token-auth'),

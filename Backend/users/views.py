@@ -1,10 +1,9 @@
+import uuid
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.parsers import MultiPartParser, FormParser
-from rest_framework.decorators import parser_classes
 from .serializers import UserSerializer, UserProgressSerializer
 from .models import UserSession, UserProgress
-import uuid
 from task_manager.models import Task
 from notes.models import Note
 from chatbot.models import Message
@@ -12,9 +11,9 @@ from server.decorators import api_auth_required
 from rest_framework.authtoken.models import Token
 from django.http import JsonResponse
 from django.middleware.csrf import get_token
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, parser_classes
 from rest_framework.permissions import AllowAny
-
+from notifications.views import create_notification
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
@@ -30,7 +29,7 @@ def get_csrf_token(request):
 def user_profile(request):
     """Handle user profile retrieval and update"""
     user = request.user
-    
+
     if request.method == 'GET':
         serializer = UserSerializer(user)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -40,28 +39,42 @@ def user_profile(request):
             # Log the request data for debugging
             print(f"Request data: {request.data}")
             print(f"Request FILES: {request.FILES}")
-            
-            # Handle profile picture upload separately for clarity
+
             profile_picture = None
             if 'profile_picture' in request.FILES:
                 profile_picture = request.FILES['profile_picture']
-                
-            # Update user data
+
             serializer = UserSerializer(user, data=request.data, partial=True)
             if serializer.is_valid():
-                # Save serializer data
                 user_instance = serializer.save()
-                
+
                 # Handle profile picture if provided
                 if profile_picture:
                     try:
                         user_instance.profile.profile_picture.save(profile_picture.name, profile_picture)
                         user_instance.profile.save()
+                        # Notification for profile picture update
+                        create_notification(
+                            user=user,
+                            notification_type='system',
+                            title='Profile Picture Updated',
+                            message='Your profile picture has been updated successfully.',
+                            priority='low'
+                        )
                     except Exception as e:
                         print(f"Profile picture upload error: {e}")
-                        return Response({"detail": f"Profile picture upload failed: {str(e)}"}, 
+                        return Response({"detail": f"Profile picture upload failed: {str(e)}"},
                                         status=status.HTTP_400_BAD_REQUEST)
-                        
+
+                # Notification for profile update (general info)
+                create_notification(
+                    user=user,
+                    notification_type='system',
+                    title='Profile Updated',
+                    message='Your profile information has been updated successfully.',
+                    priority='low'
+                )
+
                 return Response(UserSerializer(user_instance).data, status=status.HTTP_200_OK)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
@@ -69,6 +82,25 @@ def user_profile(request):
             print(f"ERROR in user_profile: {str(e)}")
             print(traceback.format_exc())
             return Response({"detail": f"Server error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+
+def update(self, request, *args, **kwargs):
+    partial = kwargs.pop('partial', False)
+    instance = self.get_object()
+    serializer = self.get_serializer(instance, data=request.data, partial=partial)
+    serializer.is_valid(raise_exception=True)
+    self.perform_update(serializer)
+
+    # Create notification for profile update
+    create_notification(
+        user=request.user,
+        notification_type='system',
+        title='Profile Updated',
+        message='Your profile information has been updated successfully',
+        priority='low'
+    )
+    
+    return Response(serializer.data)
 
 @api_auth_required(['GET'])
 def user_progress(request):

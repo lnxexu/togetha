@@ -63,13 +63,6 @@ export const API_ENDPOINTS = {
 
     // Notification endpoints
     NOTIFICATIONS: '/notifications/',
-    NOTIFICATIONS_MARK_READ: '/notifications/mark_read/',
-    NOTIFICATIONS_SETTINGS: '/notifications/settings/',
-    NOTIFICATIONS_REGISTER_DEVICE: '/notifications/register_device/',
-};
-
-export const WS_ENDPOINTS = {
-    NOTIFICATIONS: '/ws/notifications/', // WebSocket endpoint for real-time notifications
 };
 
 export function getUserTimezone(): string {

@@ -90,21 +90,55 @@ export default function Notifications() {
   }, []);
 
   const fetchNotifications = async () => {
-    try {
-      setLoading(true);
-      
-      // For now, using sample data
-      // In a real app, you would fetch from API
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API delay
-      setNotifications(sampleNotifications);
-      
-    } catch (error) {
-      console.error("Error fetching notifications:", error);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+  try {
+    setLoading(true);
+    
+    // Get the auth token
+    const token = await AsyncStorage.getItem('authToken');
+    
+    if (!token) {
+      console.error("No auth token found");
+      return;
     }
-  };
+    
+    // Fetch notifications from the API
+    const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTIFICATIONS}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Error fetching notifications: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    // Convert API data to our Notification format
+    const formattedNotifications: Notification[] = data.map((item: any) => ({
+      id: item.id.toString(),
+      type: item.type as 'task' | 'note' | 'reminder' | 'system',
+      title: item.title,
+      message: item.message,
+      timestamp: new Date(item.timestamp),
+      read: item.read,
+      actionId: item.action_id,
+      priority: item.priority as 'high' | 'medium' | 'low',
+    }));
+    
+    setNotifications(formattedNotifications);
+    
+  } catch (error) {
+    console.error("Error fetching notifications:", error);
+    // Fallback to sample data in case of error
+    setNotifications(sampleNotifications);
+  } finally {
+    setLoading(false);
+    setRefreshing(false);
+  }
+};
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -112,6 +146,28 @@ export default function Notifications() {
   };
 
   const markAsRead = async (notificationId: string) => {
+  try {
+    const token = await AsyncStorage.getItem('authToken');
+    
+    if (!token) {
+      console.error("No auth token found");
+      return;
+    }
+    
+    // Call the API to mark notification as read
+    const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTIFICATIONS}${notificationId}/mark_read/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Error marking notification as read: ${response.status}`);
+    }
+    
+    // Update state
     setNotifications(prev => 
       prev.map(notif => 
         notif.id === notificationId 
@@ -119,13 +175,41 @@ export default function Notifications() {
           : notif
       )
     );
-  };
+  } catch (error) {
+    console.error("Error marking notification as read:", error);
+  }
+};
 
   const markAllAsRead = async () => {
+  try {
+    const token = await AsyncStorage.getItem('authToken');
+    
+    if (!token) {
+      console.error("No auth token found");
+      return;
+    }
+    
+    // Call the API to mark all notifications as read
+    const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTIFICATIONS}mark_all_read/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Error marking all notifications as read: ${response.status}`);
+    }
+    
+    // Update state
     setNotifications(prev => 
       prev.map(notif => ({ ...notif, read: true }))
     );
-  };
+  } catch (error) {
+    console.error("Error marking all notifications as read:", error);
+  }
+};
 
 
   const handleNotificationPress = (notification: Notification) => {
