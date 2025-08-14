@@ -17,6 +17,8 @@ import { RootStackParamList } from "../navigation/AppNavigator";
 import { userService, UserProfile } from "./services/userService";
 import * as ImagePicker from "expo-image-picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { API_URL } from "@/constants/ApiConfig";
+import { Picker } from "@react-native-picker/picker";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -28,68 +30,92 @@ const EditProfile: React.FC = () => {
 
   // Load user data when screen is focused
   useFocusEffect(
-   useCallback(() => {
-    const unsubscribe = navigation.addListener('focus', () => {
-      loadUserData();
-    });
-    return unsubscribe;
-  }, [navigation])
+    useCallback(() => {
+      const unsubscribe = navigation.addListener("focus", () => {
+        loadUserData();
+      });
+      return unsubscribe;
+    }, [navigation])
   );
 
   const loadUserData = async () => {
     try {
+      // Clear cache to ensure fresh data
+      await userService.clearProfileCache();
+
+      // Get fresh data from endpoint
       const userInfo = await userService.getUserInfo(true);
-      const userProfiles = await userService.getUserProfile(true);
-      const profile = { ...userInfo, ...userProfiles };
+      console.log("Profile picture path:", userInfo.profile?.profile_picture);
+
+      // Properly combine profile data ensuring all fields are preserved
+      const profile = {
+        ...userInfo,
+      };
+
       setUserData(profile);
       setOriginalData(profile);
     } catch (error) {
       console.error("Error loading user data:", error);
+      Alert.alert("Error", "Failed to load profile data. Please try again.");
     }
   };
 
   const handleSave = async () => {
-  if (!userData) return;
+    if (!userData) return;
 
-  try {
-    const updatedProfile = await userService.updateUserProfile(userData);
-    setIsEditing(false);
-    setUserData(updatedProfile);
-    setOriginalData(updatedProfile);
+    try {
+      const updatedProfile = await userService.updateUserProfile(userData);
+      setIsEditing(false);
+      setUserData(updatedProfile);
+      setOriginalData(updatedProfile);
 
-    // Store updated fields in AsyncStorage for other screens
-    if (updatedProfile.full_name) {
-      await AsyncStorage.setItem("userName", updatedProfile.full_name);
-    }
-
-    if (updatedProfile.username) {
-      await AsyncStorage.setItem("username", updatedProfile.username);
-    }
-
-    if (updatedProfile.profile_picture) {
-      await AsyncStorage.setItem(
-        "userProfilePicture",
-        updatedProfile.profile_picture
-      );
-    }
-
-    // Force a refresh of the profile data in cache
-    await userService.clearProfileCache();
-
-    Alert.alert("Success", "Profile updated successfully!", [
-      { 
-        text: "OK", 
-        onPress: () => {
-          // Return to profile screen after successful update
-          navigation.navigate("Profile");
-        }
+      // Store updated fields in AsyncStorage for other screens
+      if (updatedProfile.profile?.full_name) {
+        await AsyncStorage.setItem(
+          "userName",
+          updatedProfile.profile.full_name
+        );
       }
-    ]);
-  } catch (error) {
-    console.error("Error saving profile:", error);
-    Alert.alert("Error", "Failed to update profile. Please try again.");
-  }
-};
+
+      if (updatedProfile.username) {
+        await AsyncStorage.setItem("username", updatedProfile.username);
+      }
+
+      if (updatedProfile.profile?.profile_picture) {
+        await AsyncStorage.setItem(
+          "userProfilePicture",
+          updatedProfile.profile.profile_picture
+        );
+      }
+
+      // Force a refresh of the profile data in cache
+      await userService.clearProfileCache();
+
+      Alert.alert("Success", "Profile updated successfully!", [
+        {
+          text: "OK",
+          onPress: () => {
+            // Return to profile screen after successful update
+            navigation.navigate("Profile");
+          },
+        },
+      ]);
+    } catch (error) {
+      console.error("Error saving profile:", error);
+      Alert.alert("Error", "Failed to update profile. Please try again.");
+    }
+  };
+
+  const formatBirthdate = (dateString?: string) => {
+    if (!dateString) return "";
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return dateString; 
+    return date.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+  };
 
   const handleCancel = () => {
     setIsEditing(false);
@@ -146,16 +172,22 @@ const EditProfile: React.FC = () => {
           // Update the local state
           setUserData({
             ...userData,
-            profile_picture: updatedProfile.profile_picture,
+            profile: {
+              ...userData?.profile,
+              profile_picture: updatedProfile.profile?.profile_picture,
+            },
           });
           setOriginalData({
             ...originalData,
-            profile_picture: updatedProfile.profile_picture,
+            profile: {
+              ...originalData?.profile,
+              profile_picture: updatedProfile.profile?.profile_picture,
+            },
           });
 
           await AsyncStorage.setItem(
             "userProfilePicture",
-            updatedProfile.profile_picture ?? ""
+            updatedProfile.profile?.profile_picture ?? ""
           );
 
           Alert.alert("Success", "Profile picture updated successfully!");
@@ -222,10 +254,17 @@ const EditProfile: React.FC = () => {
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.profilePictureSection}>
           <View style={styles.profilePicContainer}>
-            {userData.profile_picture ? (
+            {userData.profile?.profile_picture ? (
               <Image
-                source={{ uri: userData.profile_picture }}
+                source={{
+                  uri: userData.profile.profile_picture.startsWith("http")
+                    ? userData.profile.profile_picture
+                    : `${API_URL}${userData.profile.profile_picture}`,
+                }}
                 style={styles.profilePic}
+                onError={(e) =>
+                  console.log("Image loading error:", e.nativeEvent.error)
+                }
               />
             ) : (
               <View style={styles.defaultProfilePic}>
@@ -262,8 +301,18 @@ const EditProfile: React.FC = () => {
             <Text style={styles.fieldLabel}>Full Name</Text>
             <TextInput
               style={[styles.textInput, !isEditing && styles.disabledInput]}
-              value={userData.full_name}
-              onChangeText={(text) => updateUserField("full_name", text)}
+              value={userData.profile?.full_name}
+              onChangeText={(text) => {
+                if (userData) {
+                  setUserData({
+                    ...userData,
+                    profile: {
+                      ...userData.profile,
+                      full_name: text,
+                    },
+                  });
+                }
+              }}
               editable={isEditing}
               placeholder="Enter your full name"
             />
@@ -285,20 +334,105 @@ const EditProfile: React.FC = () => {
             <Text style={styles.fieldLabel}>Phone Number</Text>
             <TextInput
               style={[styles.textInput, !isEditing && styles.disabledInput]}
-              value={userData.phone || ""}
-              onChangeText={(text) => updateUserField("phone", text)}
+              value={userData.profile?.phone_number || ""}
+              onChangeText={(text) => {
+                if (userData) {
+                  setUserData({
+                    ...userData,
+                    profile: {
+                      ...userData.profile,
+                      phone_number: text,
+                    },
+                  });
+                }
+              }}
               editable={isEditing}
-              placeholder="Enter your phone number"
+              placeholder="Enter your phone_number number"
               keyboardType="phone-pad"
             />
+          </View>
+
+          <View style={styles.fieldContainer}>
+            <Text style={styles.fieldLabel}>Gender</Text>
+            {isEditing ? (
+              <View style={[styles.picker, styles.textInput, !isEditing && styles.disabledInput]}>
+                <Picker
+                  selectedValue={userData.profile?.gender || ""}
+                  onValueChange={(itemValue) => {
+                    if (userData) {
+                      setUserData({
+                        ...userData,
+                        profile: {
+                          ...userData.profile,
+                          gender: itemValue,
+                        },
+                      });
+                    }
+                  }}
+                  enabled={isEditing}
+                >
+                  <Picker.Item label="Select gender" value="" />
+                  <Picker.Item label="Male" value="Male" />
+                  <Picker.Item label="Female" value="Female" />
+                  <Picker.Item label="Non-binary" value="Non-binary" />
+                  <Picker.Item
+                    label="Prefer not to say"
+                    value="Prefer not to say"
+                  />
+                  <Picker.Item label="Other" value="Other" />
+                </Picker>
+              </View>
+            ) : (
+              <Text style={styles.textInput}>
+                {userData.profile?.gender || ""}
+              </Text>
+            )}
+          </View>
+
+          <View style={styles.fieldContainer}>
+            <Text style={styles.fieldLabel}>Birthdate</Text>
+            {isEditing ? (
+              <TextInput
+                style={[styles.textInput, !isEditing && styles.disabledInput]}
+                value={userData.profile?.birthdate || ""}
+                onChangeText={(text) => {
+                  if (userData) {
+                    setUserData({
+                      ...userData,
+                      profile: {
+                        ...userData.profile,
+                        birthdate: text,
+                      },
+                    });
+                  }
+                }}
+                editable={isEditing}
+                placeholder="YYYY-MM-DD"
+                keyboardType="numeric"
+              />
+            ) : (
+              <Text style={styles.textInput}>
+                {formatBirthdate(userData.profile?.birthdate)}
+              </Text>
+            )}
           </View>
 
           <View style={styles.fieldContainer}>
             <Text style={styles.fieldLabel}>Location</Text>
             <TextInput
               style={[styles.textInput, !isEditing && styles.disabledInput]}
-              value={userData.location || ""}
-              onChangeText={(text) => updateUserField("location", text)}
+              value={userData.profile?.location || ""}
+              onChangeText={(text) => {
+                if (userData) {
+                  setUserData({
+                    ...userData,
+                    profile: {
+                      ...userData.profile,
+                      location: text,
+                    },
+                  });
+                }
+              }}
               editable={isEditing}
               placeholder="Enter your location"
             />
@@ -308,8 +442,18 @@ const EditProfile: React.FC = () => {
             <Text style={styles.fieldLabel}>Bio</Text>
             <TextInput
               style={[styles.textAreaInput, !isEditing && styles.disabledInput]}
-              value={userData.bio || ""}
-              onChangeText={(text) => updateUserField("bio", text)}
+              value={userData.profile?.bio || ""}
+              onChangeText={(text) => {
+                if (userData) {
+                  setUserData({
+                    ...userData,
+                    profile: {
+                      ...userData.profile,
+                      bio: text,
+                    },
+                  });
+                }
+              }}
               editable={isEditing}
               placeholder="Tell us about yourself"
               multiline
@@ -535,6 +679,11 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: "#6A009C",
     fontFamily: "Inter-Medium",
+  },
+  picker: {
+    height: 'auto',
+    width: "100%",
+    padding: 0
   },
 });
 

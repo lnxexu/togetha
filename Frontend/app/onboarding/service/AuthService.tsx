@@ -105,18 +105,31 @@ class AuthService {
     }
   }
 
-  async login(username: string, password: string, forceLogin: boolean = false): Promise<any> {
+    async login(username: string, password: string, forceLogin: boolean = false): Promise<any> {
     try {
       // First clear any existing user data
       await this.clearUserData();
 
       // Get device info for session tracking
       const deviceInfo = await this.getDeviceInfo();
-
+      
+      // First, get a CSRF token from the backend
+      const csrfResponse = await fetch(`${API_URL}/users/csrf-token/`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json"
+        },
+      });
+      
+      const csrfData = await csrfResponse.json();
+      const csrfToken = csrfData.csrfToken;
+      
+      // Now make the login request with the CSRF token
       const response = await fetch(`${API_URL}${API_ENDPOINTS.LOGIN}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "X-CSRFToken": csrfToken
         },
         body: JSON.stringify({ 
           username, 
@@ -124,6 +137,7 @@ class AuthService {
           device_info: deviceInfo,
           force_login: forceLogin
         }),
+        credentials: "include"  // Important for cookies
       });
 
       // Handle session conflict (HTTP 409)

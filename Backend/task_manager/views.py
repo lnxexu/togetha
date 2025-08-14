@@ -6,6 +6,7 @@ from .models import Task
 from .serializers import TaskSerializer
 from server.decorators import api_auth_required
 from notifications.views import create_notification
+from logs.views import create_log
 
 @api_auth_required(['GET', 'POST'])
 def task_list(request):
@@ -49,35 +50,35 @@ def task_list(request):
         return Response(serializer.data)
     
     elif request.method == 'POST':
-        serializer = TaskSerializer(data=request.data, context={'request': request})
+        data = request.data.copy()
+        if 'category' in data and not data['category']:
+            data['category'] = None
+        serializer = TaskSerializer(data=data, context={'request': request})
         if serializer.is_valid():
             serializer.save(user=user)
             task = serializer.instance
-
-            # Trigger notification for task creation
-            create_notification(
-                user=user,
-                notification_type='task',
-                title='New Task Created',
-                message=f'You created a new task: \"{task.title}\"',
-                action_id=str(task.id),
-                priority='medium'
-            )
-
-            # Trigger notification for deadline if present
-            if hasattr(task, 'deadline') and task.deadline:
-                create_notification(
-                    user=user,
-                    notification_type='reminder',
-                    title='Task Deadline',
-                    message=f'Your task \"{task.title}\" is due soon',
-                    action_id=str(task.id),
-                    priority='high' if getattr(task, 'priority', 'medium') == 'high' else 'medium'
+            log_created = False
+            log_error = None
+            try:
+                create_log(
+                    user=request.user,
+                    level="INFO",
+                    message="Task created successfully",
+                    action="task_created",
+                    entity_type="task",
+                    entity_id=task.id
                 )
-
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+                log_created = True
+            except Exception as e:
+                log_error = str(e)
+                print("Log creation error:", log_error)
+            response_data = serializer.data.copy()
+            response_data['log_created'] = log_created
+            if log_error:
+                response_data['log_error'] = log_error
+            return Response(response_data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+        
 
 @api_auth_required(['GET', 'PUT', 'PATCH', 'DELETE'])
 def task_detail(request, pk):
@@ -95,30 +96,19 @@ def task_detail(request, pk):
         serializer = TaskSerializer(task, data=request.data, partial=request.method=='PATCH', context={'request': request})
         if serializer.is_valid():
             serializer.save()
-            # Trigger notification for update
-            create_notification(
-                user=user,
-                notification_type='task',
-                title='Task Updated',
-                message=f'Your task "{task.title}" was updated.',
-                action_id=str(task.id),
-                priority='medium'
-            )
+
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     elif request.method == 'DELETE':
-        task_title = task.title
-        task_id = task.id
         task.delete()
-        # Trigger notification for delete
-        create_notification(
-            user=user,
-            notification_type='task',
-            title='Task Deleted',
-            message=f'Your task "{task_title}" was deleted.',
-            action_id=str(task_id),
-            priority='low'
+        create_log(
+            user=request.user,
+            level="INFO",  # INFO, WARNING, ERROR, SUCCESS
+            message="Task deleted successfully",
+            action="task_deleted",
+            entity_type="task",
+            entity_id=task.id
         )
         return Response(status=status.HTTP_204_NO_CONTENT)
 

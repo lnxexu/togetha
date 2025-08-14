@@ -17,7 +17,8 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import { Priority, TaskFormData } from "./types/Task";
 import taskService from "./services/taskService";
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { showSuccessToast, showErrorToast } from "../utils/ToastUtils";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type RouteProp = { params?: { quadrant?: Priority; user?: string } };
@@ -58,25 +59,25 @@ const AddTask: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute() as RouteProp;
 
- const [formData, setFormData] = useState<TaskFormData>({
-  title: "",
-  description: "",
-  category: "",
-  priority: route.params?.quadrant || "not-urgent-not-important",
-  due_datetime: undefined,
-  due_time: undefined,
-  completed: false,
-  completed_at: new Date(),
-  created_at: new Date(),
-  updated_at: new Date(),
-  user: route.params?.user || "default_user", // Default user if not provided
-});
+  const [formData, setFormData] = useState<TaskFormData>({
+    title: "",
+    description: "",
+    category: "",
+    priority: route.params?.quadrant || "not-urgent-not-important",
+    due_datetime: undefined,
+    due_time: undefined,
+    completed: false,
+    completed_at: new Date(),
+    created_at: new Date(),
+    updated_at: new Date(),
+    user: route.params?.user || "default_user",
+  });
 
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [showPriorityPicker, setShowPriorityPicker] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [calendarDate, setCalendarDate] = useState(new Date()); // For calendar navigation
+  const [calendarDate, setCalendarDate] = useState(new Date());
 
   const handleInputChange = (field: keyof TaskFormData, value: any) => {
     setFormData((prev) => ({
@@ -95,63 +96,60 @@ const AddTask: React.FC = () => {
 
   // In the handleSave method:
   const handleSave = async () => {
-  if (!validateForm()) return;
+    if (!validateForm()) return;
 
-  setIsLoading(true);
-  try {
-    // Create a single Date object from date and time inputs
-    let dueDate: Date | undefined = undefined;
-    
-    if (formData.due_datetime) {
-      dueDate = new Date(formData.due_datetime);
-      
-      // If time is also provided, add it to the date
-      if (formData.due_time) {
-        const [timeStr, period] = formData.due_time.split(' ');
-        let [hours, minutes] = timeStr.split(':').map(Number);
-        
-        // Convert to 24-hour format
-        if (period === 'PM' && hours < 12) hours += 12;
-        if (period === 'AM' && hours === 12) hours = 0;
-        
-        dueDate.setHours(hours, minutes, 0, 0);
-      }
-    }
-
-    // Get username from storage if possible
-    let username = formData.user;
+    setIsLoading(true);
     try {
-      const storedUsername = await AsyncStorage.getItem('username');
-      if (storedUsername) {
-        username = storedUsername;
+      // Create a single Date object from date and time inputs
+      let dueDate: Date | undefined = undefined;
+
+      if (formData.due_datetime) {
+        dueDate = new Date(formData.due_datetime);
+
+        // If time is also provided, add it to the date
+        if (formData.due_time) {
+          const [timeStr, period] = formData.due_time.split(" ");
+          let [hours, minutes] = timeStr.split(":").map(Number);
+
+          // Convert to 24-hour format
+          if (period === "PM" && hours < 12) hours += 12;
+          if (period === "AM" && hours === 12) hours = 0;
+
+          dueDate.setHours(hours, minutes, 0, 0);
+        }
       }
-    } catch (e) {
-      console.warn('Could not retrieve username from storage');
+
+      // Get username from storage if possible
+      let username = formData.user;
+      try {
+        const storedUsername = await AsyncStorage.getItem("username");
+        if (storedUsername) {
+          username = storedUsername;
+        }
+      } catch (e) {
+        console.warn("Could not retrieve username from storage");
+      }
+
+      const payload: TaskFormData = {
+        title: formData.title,
+        description: formData.description || "",
+        priority: formData.priority,
+        category: formData.category,
+        due_datetime: dueDate,
+        completed: formData.completed || false,
+        user: username,
+      };
+
+      await taskService.createTask(payload);
+
+      showSuccessToast("Task created successfully!");
+      navigation.goBack();
+    } catch (error) {
+      showErrorToast("Failed to create task. Please try again.");
+    } finally {
+      setIsLoading(false);
     }
-
-    const payload: TaskFormData = {
-      title: formData.title,
-      description: formData.description || '',
-      priority: formData.priority,
-      category: formData.category,
-      due_datetime: dueDate,
-      completed: formData.completed || false,
-      user: username,
-    };
-
-    console.log("Saving task data:", payload);
-
-    await taskService.createTask(payload);
-
-    Alert.alert("Success", "Task created successfully");
-    navigation.goBack();
-  } catch (error) {
-    console.error("Error creating task:", error);
-    Alert.alert("Error", "Failed to create task. Please try again.");
-  } finally {
-    setIsLoading(false);
-  }
-};
+  };
 
   const handleReset = () => {
     Alert.alert("Reset Form", "Are you sure you want to reset all fields?", [
@@ -159,7 +157,7 @@ const AddTask: React.FC = () => {
       {
         text: "Reset",
         style: "destructive",
-        onPress: () =>
+        onPress: () => {
           setFormData({
             title: "",
             description: "",
@@ -167,7 +165,9 @@ const AddTask: React.FC = () => {
             priority: "not-urgent-not-important",
             due_datetime: undefined,
             due_time: undefined,
-          }),
+          });
+          showSuccessToast("Form reset successfully");
+        },
       },
     ]);
   };
@@ -387,7 +387,10 @@ const AddTask: React.FC = () => {
                                   isSelected && styles.selectedCalendarDay,
                                 ]}
                                 onPress={() => {
-                                  handleInputChange("due_datetime", currentDate);
+                                  handleInputChange(
+                                    "due_datetime",
+                                    currentDate
+                                  );
                                   setShowDatePicker(false);
                                 }}
                               >
@@ -671,7 +674,7 @@ const AddTask: React.FC = () => {
                   <TextInput
                     style={styles.textInput}
                     placeholder="e.g., Work, Personal..."
-                    value={formData.category}
+                    value={formData.category || ""}
                     onChangeText={(text) => handleInputChange("category", text)}
                     maxLength={50}
                   />
@@ -684,7 +687,7 @@ const AddTask: React.FC = () => {
                 <TextInput
                   style={[styles.textInput, styles.textArea]}
                   placeholder="Add any additional notes or details..."
-                  value={formData.description}
+                  value={formData.description || ""}
                   onChangeText={(text) =>
                     handleInputChange("description", text)
                   }

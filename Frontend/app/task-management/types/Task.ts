@@ -1,9 +1,7 @@
-import { UUID } from "crypto";
-
 
 export type Priority = 
   | "urgent-important"
-  | "not-urgent-important" 
+  | "not-urgent-important"
   | "urgent-not-important"
   | "not-urgent-not-important";
 
@@ -15,22 +13,14 @@ export interface Task {
   description?: string;
   completed: boolean;
   priority: Priority;
-
   category?: string;
   category_name?: string;
   due_date?: string; // ISO format date string from backend
   due_time?: string; // Time string from backend (HH:MM:SS or HH:MM AM/PM)
-  due_datetime?: string; // Full datetime from backend
+  due_datetime?: Date | null; // Full datetime from backend
   created_at: string;
   updated_at: string;
   completed_at?: string;
-  
-  // Frontend computed properties
-
-
-  createdAt: Date;
-  updatedAt: Date;
-  completedAt?: Date;
   overdue: boolean;
   user?: string;
 }
@@ -39,11 +29,11 @@ export interface Task {
 // Form data used when creating or updating tasks
 export interface TaskFormData {
   title: string;
-  description?: string;
+  description?: string | null;
   priority?: Priority;
-  category?: string;
-  due_datetime?: Date;
-  due_time?: string; // Time string (HH:MM:SS or HH:MM AM/PM)
+  category?: string | null;
+  due_datetime?: Date | null;
+  due_time?: string | null; 
   completed?: boolean;
   user?: string;
   completed_at?: Date;

@@ -1,5 +1,10 @@
 import React, { useState, useCallback } from "react";
 import { Ionicons } from "@expo/vector-icons";
+import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { RootStackParamList } from "../navigation/AppNavigator";
+import { Priority, TaskFormData } from "./types/Task";
+import taskService from "./services/taskService";
+import { showSuccessToast, showErrorToast } from "../utils/ToastUtils";
 import {
   View,
   Text,
@@ -18,10 +23,6 @@ import {
   useRoute,
   useFocusEffect,
 } from "@react-navigation/native";
-import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { RootStackParamList } from "../navigation/AppNavigator";
-import { Task, Priority } from "./types/Task";
-import  taskService from "./services/taskService";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -30,7 +31,7 @@ const TaskDetails: React.FC = () => {
   const route = useRoute();
   const { taskId } = route.params as { taskId: string };
 
-  const [task, setTask] = useState<Task | null>(null);
+  const [task, setTask] = useState<TaskFormData | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editedTitle, setEditedTitle] = useState("");
   const [editedDescription, setEditedDescription] = useState("");
@@ -58,9 +59,6 @@ const TaskDetails: React.FC = () => {
     { value: "not-urgent-not-important", label: "Neither", color: "#6c757d" },
   ];
 
-  // No category options needed for free input
-
-  // Load task when screen is focused
   useFocusEffect(
     useCallback(() => {
       loadTask();
@@ -74,25 +72,41 @@ const TaskDetails: React.FC = () => {
       const fetchedTask = await taskService.getTaskById(taskId);
 
       if (fetchedTask) {
-        setTask(fetchedTask);
+        setTask({
+          ...fetchedTask,
+          due_datetime: fetchedTask.due_datetime
+            ? new Date(fetchedTask.due_datetime)
+            : undefined,
+          completed_at: fetchedTask.completed_at
+            ? new Date(fetchedTask.completed_at)
+            : undefined,
+          created_at: fetchedTask.created_at
+            ? new Date(fetchedTask.created_at)
+            : undefined,
+          updated_at: fetchedTask.updated_at
+            ? new Date(fetchedTask.updated_at)
+            : undefined,
+        });
         setEditedTitle(fetchedTask.title);
         setEditedDescription(fetchedTask.description || "");
-        setEditedPriority(fetchedTask.priority);
+        setEditedPriority(fetchedTask.priority ?? "not-urgent-not-important");
         setEditedCategory(fetchedTask.category || "");
-        setEditedTime(fetchedTask.due_time || "");
         setEditedDate(
-          fetchedTask.due_datetime ? new Date(fetchedTask.due_datetime) : undefined
+          fetchedTask.due_datetime
+            ? new Date(fetchedTask.due_datetime)
+            : undefined
         );
         setCalendarDate(
-          fetchedTask.due_datetime ? new Date(fetchedTask.due_datetime) : new Date()
+          fetchedTask.due_datetime
+            ? new Date(fetchedTask.due_datetime)
+            : new Date()
         );
       } else {
-        Alert.alert("Error", "Task not found");
+        showErrorToast("Task not found");
         navigation.goBack();
       }
     } catch (error) {
-      console.error("Error loading task:", error);
-      Alert.alert("Error", "Failed to load task");
+      showErrorToast("Failed to load task");
     } finally {
       setIsLoading(false);
     }
@@ -101,10 +115,48 @@ const TaskDetails: React.FC = () => {
     setIsEditing(true);
   };
 
+  const formatTime = (datetime?: Date) => {
+    if (!datetime) return "No time set";
+
+    // Parse ISO string to Date object
+    const dateObj = new Date(datetime);
+    const utc = dateObj.getTime() + dateObj.getTimezoneOffset() * 60000;
+    // do not convert into PH
+    const localDate = new Date(utc);
+
+    const hours = localDate.getHours();
+    const minutes = localDate.getMinutes();
+
+    const formattedMinutes = minutes.toString().padStart(2, "0");
+
+    const ampm = hours >= 12 ? "PM" : "AM";
+    const hours12 = hours % 12 || 12;
+    return `${hours12}:${formattedMinutes} ${ampm}`;
+  };
+
   const handleSave = async () => {
     if (!task) return;
 
     try {
+      let mergedDueDatetime = editedDate;
+      if (editedDate && editedTime) {
+        mergedDueDatetime = mergeDateAndTime(editedDate, editedTime);
+      }
+
+      const updatedTask: Partial<TaskFormData> = {
+        title: editedTitle,
+        description: editedDescription,
+        priority: editedPriority || null,
+        category: editedCategory || null,
+        due_time: editedTime || null,
+        due_datetime: mergedDueDatetime,
+        updated_at: new Date(),
+      };
+
+      // Call the API to update the task
+      await taskService.updateTask(taskId, updatedTask);
+
+      // Update local state with all required Task properties
       setTask({
         ...task,
         title: editedTitle,
@@ -112,26 +164,47 @@ const TaskDetails: React.FC = () => {
         priority: editedPriority,
         category: editedCategory,
         due_time: editedTime,
-        due_date: editedDate ? editedDate.toISOString() : undefined,
-        updatedAt: new Date(),
+        due_datetime: mergedDueDatetime,
+        updated_at: new Date(),
       });
 
       setIsEditing(false);
-      Alert.alert("Success", "Task updated successfully");
+      showSuccessToast("Task updated successfully!");
     } catch (error) {
-      Alert.alert("Error", "Failed to update task");
+      showErrorToast("Failed to update task");
     }
+  };
+
+  const handleDateChange = (newDate: Date) => {
+    let merged = newDate;
+    if (editedTime) {
+      merged = mergeDateAndTime(newDate, editedTime);
+    }
+    setEditedDate(merged);
+    setShowDatePicker(false);
+  };
+
+  const handleTimeChange = (newTime: string) => {
+    setEditedTime(newTime);
+    if (editedDate) {
+      setEditedDate(mergeDateAndTime(editedDate, newTime));
+    }
+    setShowTimePicker(false);
   };
 
   const handleCancel = () => {
     if (task) {
       setEditedTitle(task.title);
       setEditedDescription(task.description || "");
-      setEditedPriority(task.priority);
+      setEditedPriority(task.priority ?? "not-urgent-not-important");
       setEditedCategory(task.category || "");
       setEditedTime(task.due_time || "");
-      setEditedDate(task.due_datetime ? new Date(task.due_datetime) : undefined);
-      setCalendarDate(task.due_datetime ? new Date(task.due_datetime) : new Date());
+      setEditedDate(
+        task.due_datetime ? new Date(task.due_datetime) : undefined
+      );
+      setCalendarDate(
+        task.due_datetime ? new Date(task.due_datetime) : new Date()
+      );
     }
     setIsEditing(false);
   };
@@ -140,23 +213,32 @@ const TaskDetails: React.FC = () => {
     if (!task) return;
 
     try {
-      // In a real app, you would update via taskService
-      // await taskService.markTaskComplete(taskId);
+      const updatedTask = {
+        completed: !task.completed,
+        updated_at: !task.completed ? new Date() : undefined,
+        completed_at: new Date(),
+      };
 
-      // Update local state for demonstration
+      // Call the API to update the task
+      await taskService.updateTask(taskId, updatedTask);
+
+      // Update local state
       setTask({
         ...task,
-        completed: !task.completed,
-        completedAt: !task.completed ? new Date() : undefined,
-        updatedAt: new Date(),
+        ...updatedTask,
+        updated_at: updatedTask.updated_at
+          ? new Date(updatedTask.updated_at)
+          : undefined,
+        completed_at: updatedTask.completed_at
+          ? new Date(updatedTask.completed_at)
+          : undefined,
       });
 
-      Alert.alert(
-        "Success",
+      showSuccessToast(
         task.completed ? "Task marked as pending" : "Task marked as completed"
       );
     } catch (error) {
-      Alert.alert("Error", "Failed to update task");
+      showErrorToast("Failed to update task");
     }
   };
 
@@ -190,23 +272,69 @@ const TaskDetails: React.FC = () => {
     }
   };
 
+  const mergeDateAndTime = (date: Date, time: string): Date => {
+    if (!date || !time) return date;
+    // time format: "hh:mm AM/PM"
+    const match = time.match(/(\d+):(\d+)\s?(AM|PM)/i);
+    if (!match) return date;
+    let hour = parseInt(match[1], 10);
+    const minute = parseInt(match[2], 10);
+    const period = match[3].toUpperCase();
+
+    if (period === "PM" && hour < 12) hour += 12;
+    if (period === "AM" && hour === 12) hour = 0;
+
+    // Create a new Date using UTC values to avoid timezone inconsistencies
+    const merged = new Date(
+      Date.UTC(
+        date.getUTCFullYear(),
+        date.getUTCMonth(),
+        date.getUTCDate(),
+        hour,
+        minute,
+        0,
+        0
+      )
+    );
+    return merged;
+  };
+
   const formatDate = (date?: Date) => {
     if (!date) return "No date set";
-    const today = new Date();
-    const tomorrow = new Date(today);
-    tomorrow.setDate(today.getDate() + 1);
 
-    if (date.toDateString() === today.toDateString()) {
-      return "Today";
-    } else if (date.toDateString() === tomorrow.toDateString()) {
-      return "Tomorrow";
-    } else {
-      return date.toLocaleDateString("en-US", {
-        weekday: "short",
-        month: "short",
-        day: "numeric",
-      });
-    }
+    // Always use the UTC year, month, and date to avoid timezone shifting
+    const year = date.getUTCFullYear();
+    const month = (date.getUTCMonth() + 1).toString().padStart(2, "0");
+    const day = date.getUTCDate().toString().padStart(2, "0");
+
+    // make it by text
+    const monthNames = [
+      "January",
+      "February",
+      "March",
+      "April",
+      "May",
+      "June",
+      "July",
+      "August",
+      "September",
+      "October",
+      "November",
+      "December",
+    ];
+    const dayNames = [
+      "Sunday",
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday",
+    ];
+
+    return `${dayNames[date.getUTCDay()]}, ${
+      monthNames[Number(month) - 1]
+    } ${day}, ${year}`;
   };
   const TimePicker = ({
     value,
@@ -506,7 +634,7 @@ const TaskDetails: React.FC = () => {
                       </View>
                       <TouchableOpacity
                         style={[styles.saveButton, { marginTop: 16 }]}
-                        onPress={() => setShowDatePicker(false)}
+                        onPress={() => handleDateChange(calendarDate)}
                       >
                         <Text style={styles.saveButtonText}>Done</Text>
                       </TouchableOpacity>
@@ -519,7 +647,7 @@ const TaskDetails: React.FC = () => {
             <View style={styles.infoCard}>
               <Text style={styles.cardValue}>
                 {task.due_datetime
-                  ? formatDate(new Date(task.due_datetime))
+                  ? formatDate(task.due_datetime)
                   : "No date set"}
               </Text>
             </View>
@@ -561,7 +689,10 @@ const TaskDetails: React.FC = () => {
                         </TouchableOpacity>
                       </View>
                       {/* Simple hour/minute/AM-PM picker, similar to AddTask */}
-                      <TimePicker value={editedTime} onChange={setEditedTime} />
+                      <TimePicker
+                        value={editedTime}
+                        onChange={handleTimeChange}
+                      />
                       <TouchableOpacity
                         style={[styles.saveButton, { marginTop: 16 }]}
                         onPress={() => setShowTimePicker(false)}
@@ -576,7 +707,9 @@ const TaskDetails: React.FC = () => {
           ) : (
             <View style={styles.infoCard}>
               <Text style={styles.cardValue}>
-                {task.due_time || "No time set"}
+                {task.due_datetime
+                  ? formatTime(task.due_datetime)
+                  : "No time set"}
               </Text>
             </View>
           )}
@@ -592,12 +725,18 @@ const TaskDetails: React.FC = () => {
                 styles.cardValue,
                 {
                   color: getPriorityColor(
-                    isEditing ? editedPriority : task.priority
+                    isEditing
+                      ? editedPriority
+                      : task.priority ?? "not-urgent-not-important"
                   ),
                 },
               ]}
             >
-              \{getPriorityLabel(isEditing ? editedPriority : task.priority)}
+              {getPriorityLabel(
+                isEditing
+                  ? editedPriority
+                  : task.priority ?? "not-urgent-not-important"
+              )}
             </Text>
             {isEditing && (
               <MaterialIcons

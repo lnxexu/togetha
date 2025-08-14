@@ -13,11 +13,13 @@ import {
   Alert,
   ActivityIndicator,
 } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import LoginIllustration from "../../assets/illustrations/undraw_access-account_aydp (1).svg";
 import type { RootStackParamList } from "../navigation/AppNavigator";
 import AuthService from "./service/AuthService";
-import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
+import {
+  showSuccessToast,
+  showErrorToast,
+} from "../utils/ToastUtils";
 
 export default function SignIn() {
   const navigation =
@@ -28,14 +30,9 @@ export default function SignIn() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // Update the handleLogin function
-
   const handleLogin = async () => {
-    console.log("Login attempt started with username:", username);
-
     if (!username.trim() || !password.trim()) {
-      setError("Please enter both username and password");
-      console.log("Login validation failed: empty username or password");
+      showErrorToast("Please enter both username and password");
       return;
     }
 
@@ -50,11 +47,12 @@ export default function SignIn() {
       // Add timeout to the request (10 seconds)
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
-
       try {
-        // Perform login
+        // Perform login with the updated method that handles CSRF
         const response = await authService.login(username, password);
         clearTimeout(timeoutId);
+
+        showSuccessToast("Login successful! Welcome back.");
 
         // Force reload app state by resetting to Home screen
         navigation.reset({
@@ -84,37 +82,29 @@ export default function SignIn() {
                   try {
                     // Force login by adding force parameter
                     setIsLoading(true);
-                    // API call to force logout other sessions
-                    const forceResponse = await fetch(`${API_URL}${API_ENDPOINTS.LOGIN}`, {
-                      method: "POST",
-                      headers: {
-                        "Content-Type": "application/json",
-                      },
-                      body: JSON.stringify({
-                        username,
-                        password,  
-                        force: true, // Indicate we want to force login
-                      }),
-                    });
 
-                    if (forceResponse.ok) {
-                      const data = await forceResponse.json();
-                      if (data.token) {
-                        // Store authentication data
-                        await AsyncStorage.setItem("token", data.token);
-                        await AsyncStorage.setItem("authToken", data.token);
-                        await AsyncStorage.setItem("username", username);
-                        await AsyncStorage.setItem(
-                          "session_id",
-                          data.session_id
-                        );
-                      }
+                    // API call to force logout other sessions
+                    const forceLoginResponse = await authService.login(
+                      username,
+                      password,
+                      true // Force login
+                    );
+
+                    if (forceLoginResponse) {
+                      // Handle successful force login
+                      showSuccessToast("Successfully logged in!");
+                      navigation.reset({
+                        index: 0,
+                        routes: [{ name: "Home" }],
+                      });
                     } else {
-                      setError("Failed to force login. Please try again.");
+                      showErrorToast(
+                        "Failed to force login. Please try again."
+                      );
                     }
                   } catch (error) {
                     console.error("Force login error:", error);
-                    setError("Network error. Please try again.");
+                    showErrorToast("Network error. Please try again.");
                   } finally {
                     setIsLoading(false);
                   }
@@ -124,14 +114,13 @@ export default function SignIn() {
           );
         } else {
           // Handle other login errors
-          setError(
+          showErrorToast(
             loginError.message || "Login failed. Please check your credentials."
           );
         }
       }
     } catch (err: any) {
-      console.error("Login process error:", err);
-      setError("An unexpected error occurred. Please try again.");
+      showErrorToast("An unexpected error occurred. Please try again.");
     } finally {
       setIsLoading(false);
     }

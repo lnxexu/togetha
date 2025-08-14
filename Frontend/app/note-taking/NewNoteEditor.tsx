@@ -14,12 +14,12 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  ToastAndroid,
   TouchableOpacity,
   View,
 } from "react-native";
 import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
 import { LinearGradient } from "expo-linear-gradient";
+import { showSuccessToast, showErrorToast, showInfoToast, showWarningToast } from "../utils/ToastUtils";
 
 
 const { RichEditor, RichToolbar } = require("react-native-pell-rich-editor");
@@ -161,6 +161,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   );
   const [showFolderModal, setShowFolderModal] = useState(false);
   const [folderName, setFolderName] = useState<string>("Unorganized Notes");
+  const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
 
   // Update the useEffect hook that fetches folders to better handle the initial folder name
   useEffect(() => {
@@ -176,7 +177,10 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   const fetchFolders = async () => {
     try {
       const token = await AsyncStorage.getItem("authToken");
-      if (!token) return;
+      if (!token) {
+        showErrorToast("Authentication required. Please log in again.");
+        return;
+      }
 
       const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTE_FOLDERS}`, {
         method: "GET",
@@ -204,6 +208,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
       }
     } catch (error) {
       console.error("Error fetching folders:", error);
+      showErrorToast("Failed to load folders. Please try again.");
     }
   };
 
@@ -262,9 +267,11 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     if (folder) {
       setSelectedFolderId(folder.id.toString());
       setFolderName(folder.name);
+      showSuccessToast(`Moved to folder "${folder.name}"`);
     } else {
       setSelectedFolderId(null);
       setFolderName("Unorganized Notes");
+      showInfoToast("Moved to Unorganized Notes");
     }
     setShowFolderModal(false);
   };
@@ -292,9 +299,11 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     if (currentColorAction === "text") {
       setTextColor(colorName);
       richTextRef.current?.setForeColor(colorHex);
+      showSuccessToast(`Text color changed to ${colorName}`);
     } else if (currentColorAction === "background") {
       setBgColor(colorName);
       richTextRef.current?.setHiliteColor(colorHex);
+      showSuccessToast(`Background color changed to ${colorName}`);
     }
     setShowColorPicker(false);
   };
@@ -305,6 +314,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
       await storage.setItem(`note-${noteData.id}`, JSON.stringify(noteData));
     } catch (e) {
       console.error("Failed to save note to storage", e);
+      showErrorToast("Failed to save note locally");
       throw e;
     }
   };
@@ -313,16 +323,6 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     try {
       const token = await AsyncStorage.getItem("authToken");
       if (!token) return;
-
-      console.log("Saving note to server:", {
-        id: noteData.id,
-        title: noteData.title,
-        content: noteData.content,
-        formatted_content: noteData.formatted_content,
-        tags: noteData.tags,
-        folderId: noteData.folderId, // Make sure to include the folder ID
-      });
-
       // Prepare the request body
       const requestBody = {
         title: noteData.title,
@@ -338,7 +338,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
 
       const url = isNewNote
         ? `${API_URL}${API_ENDPOINTS.NOTES}`
-        : `${API_URL}${API_ENDPOINTS.NOTES}/${noteData.id}/`;
+        : `${API_URL}${API_ENDPOINTS.NOTES}${route.params?.noteId || noteData.id}/`;
 
       const method = isNewNote ? "POST" : "PUT";
 
@@ -373,26 +373,12 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
       return null; // No need to return for existing notes
     } catch (error) {
       console.error("Error syncing note:", error);
+      showErrorToast("Failed to sync note to cloud");
       throw error;
     }
   };
 
   // Event handlers
-  // Helper function to show toast notifications on both iOS and Android
-  const showToast = (message: string) => {
-    if (Platform.OS === "android") {
-      ToastAndroid.show(message, ToastAndroid.SHORT);
-    } else {
-      // For iOS we'll use a temporary state and custom toast component
-      // This is simplified - we're just showing the sync status in the header
-      // You could implement a more sophisticated iOS toast if needed
-      setSyncStatus("saved");
-      setTimeout(() => {
-        if (syncStatus === "saved") setSyncStatus("saved");
-      }, 2000);
-    }
-  };
-
   const handleAutoSave = async () => {
     setSyncStatus("syncing");
     try {
@@ -420,14 +406,15 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
         }
 
         setSyncStatus("saved");
-        showToast("Note auto-saved successfully");
+        showSuccessToast("Note auto-saved successfully");
       } else {
         setSyncStatus("offline");
-        showToast("Auto-saved offline. Will sync when connected.");
+        showWarningToast("Auto-saved offline. Will sync when connected.");
       }
     } catch (error) {
       console.error("Auto-save failed:", error);
       setSyncStatus("offline");
+      showErrorToast("Auto-save failed. Please check your connection.");
     }
   };
 
@@ -459,7 +446,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
         }
 
         // Show toast notification instead of navigating back automatically
-        showToast("Note saved successfully");
+        showSuccessToast("Note saved successfully");
 
         // Update sync status in header
         setSyncStatus("saved");
@@ -475,7 +462,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
       // navigation.goBack();
     } catch (error) {
       console.error("Error saving note:", error);
-      Alert.alert("Error", "Failed to save note. Please try again.");
+      showErrorToast("Failed to save note. Please try again.");
     } finally {
       // Add a slight delay before enabling the save button again
       // This prevents rapid double-clicks even after save completes
@@ -504,6 +491,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   };
 
   const handleAskRina = (text: string) => {
+    showInfoToast("Opening RINA chat with selected text...");
     Alert.alert(
       "Ask RINA",
       `You selected: "${text}"\n\nThis would open RINA chat with the selected text.`,
@@ -514,6 +502,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
           onPress: () => {
             // Here you would navigate to RINA chat or open a modal
             console.log("Opening RINA with text:", text);
+            showSuccessToast("RINA chat opened successfully");
           },
         },
       ]
@@ -524,11 +513,17 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     if (newTag.trim() && !tags.includes(newTag.trim())) {
       setTags((prev) => [...prev, newTag.trim()]);
       setNewTag("");
+      showSuccessToast(`Tag "${newTag.trim()}" added successfully`);
+    } else if (tags.includes(newTag.trim())) {
+      showWarningToast("Tag already exists");
+    } else {
+      showErrorToast("Please enter a valid tag name");
     }
   };
 
   const removeTag = (tagToRemove: string) => {
     setTags((prev) => prev.filter((tag) => tag !== tagToRemove));
+    showInfoToast(`Tag "${tagToRemove}" removed`);
   };
 
   const getSyncStatusIcon = () => {
@@ -574,14 +569,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
                 onPress={() => {
                   // If content has changed, show confirmation dialog before exiting
                   if (title.trim() || content.trim()) {
-                    Alert.alert(
-                      "Exit Editor",
-                      "Are you sure you want to exit the editor? Your changes have been saved.",
-                      [
-                        { text: "Cancel", style: "cancel" },
-                        { text: "Exit", onPress: () => navigation.goBack() },
-                      ]
-                    );
+                    setShowExitConfirmModal(true);
                   } else {
                     navigation.goBack();
                   }
@@ -923,16 +911,20 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
         <Modal
           visible={showFolderModal}
           transparent
-          animationType="slide"
+          animationType="fade"
           onRequestClose={() => setShowFolderModal(false)}
         >
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Select Folder</Text>
+              <View style={styles.modalHeader}>
+                <MaterialIcons name="folder" size={28} color="#6A009C" />
+                <Text style={[styles.modalTitle, { marginBottom: 0, marginLeft: 12 }]}>Select Folder</Text>
+              </View>
 
               <ScrollView
-                style={{ maxHeight: 300 }}
+                style={{ maxHeight: 400 }}
                 showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: 10 }}
               >
                 {/* Unorganized Notes Option */}
                 <TouchableOpacity
@@ -1001,11 +993,11 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
               <TouchableOpacity
                 style={[
                   styles.cancelButton,
-                  { marginTop: 16, alignSelf: "center", paddingVertical: 12 },
+                  { marginTop: 20, alignSelf: "stretch" },
                 ]}
                 onPress={() => setShowFolderModal(false)}
               >
-                <Text style={styles.modalCancelText}>Cancel</Text>
+                <Text style={[styles.modalCancelText, { textAlign: "center" }]}>Cancel</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1085,6 +1077,51 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
                   }}
                 >
                   <Text style={styles.modalCancelText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Exit Confirmation Modal */}
+        <Modal
+          visible={showExitConfirmModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowExitConfirmModal(false)}
+        >
+          <View style={styles.exitConfirmOverlay}>
+            <View style={styles.exitConfirmModal}>
+              <View style={styles.exitConfirmHeader}>
+                <MaterialIcons name="exit-to-app" size={28} color="#FF6B6B" />
+                <Text style={styles.exitConfirmTitle}>Exit Editor</Text>
+              </View>
+              
+              <Text style={styles.exitConfirmMessage}>
+                Are you sure you want to exit the editor?{'\n'}
+                Your changes have been saved automatically.
+              </Text>
+              
+              <View style={styles.exitConfirmActions}>
+                <TouchableOpacity
+                  style={[styles.exitConfirmButton, styles.exitConfirmCancelButton]}
+                  onPress={() => {
+                    setShowExitConfirmModal(false);
+                    showInfoToast("Continue editing");
+                  }}
+                >
+                  <Text style={styles.exitConfirmCancelText}>Continue Editing</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={[styles.exitConfirmButton, styles.exitConfirmExitButton]}
+                  onPress={() => {
+                    setShowExitConfirmModal(false);
+                    showInfoToast("Note editor closed");
+                    navigation.goBack();
+                  }}
+                >
+                  <Text style={styles.exitConfirmExitText}>Exit</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1309,38 +1346,47 @@ const styles = StyleSheet.create({
   folderItem: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 12,
+    padding: 16,
     borderRadius: 12,
     backgroundColor: "#FFFFFF",
-    marginBottom: 8,
+    marginBottom: 10,
     shadowColor: "#1E293B",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
+    shadowOpacity: 0.06,
     shadowRadius: 8,
-    elevation: 2,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
   },
   selectedFolderItem: {
-    backgroundColor: "#E0F2FE",
+    backgroundColor: "#F0F9FF",
+    borderColor: "#0EA5E9",
+    borderWidth: 2,
   },
   folderIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: 48,
+    height: 48,
+    borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   folderItemName: {
     fontSize: 16,
-    fontFamily: "Inter-Medium",
+    fontFamily: "Inter-SemiBold",
     color: "#374151",
-    marginLeft: 12,
+    marginLeft: 16,
     flex: 1,
   },
   folderDivider: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 8,
-    marginBottom: 8,
+    paddingVertical: 12,
+    marginVertical: 12,
   },
   folderDividerLine: {
     flex: 1,
@@ -1349,9 +1395,11 @@ const styles = StyleSheet.create({
   },
   folderDividerText: {
     fontSize: 14,
-    fontFamily: "Inter-Medium",
+    fontFamily: "Inter-SemiBold",
     color: "#64748B",
-    marginHorizontal: 8,
+    marginHorizontal: 12,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 8,
   },
   tagsContainer: {
     flexDirection: "row",
@@ -1426,22 +1474,36 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
     justifyContent: "center",
     alignItems: "center",
+    paddingHorizontal: 20,
   },
   modalContent: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 20,
-    width: "80%",
-    maxHeight: "70%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 24,
+    width: "90%",
+    maxWidth: 400,
+    maxHeight: "80%",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 10,
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 22,
     fontFamily: "Inter-Bold",
-    marginBottom: 16,
+    color: "#1F2937",
+    marginBottom: 20,
     textAlign: "center",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 20,
   },
   modalItem: {
     paddingVertical: 12,
@@ -1488,15 +1550,22 @@ const styles = StyleSheet.create({
     backgroundColor: "#007AFF",
   },
   cancelButton: {
-    backgroundColor: "#f5f5f5",
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 12,
   },
   modalActionText: {
     color: "#fff",
-    fontFamily: "Inter-Medium",
+    fontFamily: "Inter-SemiBold",
+    fontSize: 16,
   },
   modalCancelText: {
-    color: "#666",
-    fontWeight: "600",
+    color: "#64748B",
+    fontFamily: "Inter-SemiBold",
+    fontSize: 16,
   },
   floatingToolbarContainer: {
     position: "absolute",
@@ -1515,7 +1584,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(0,0,0,0.06)",
     paddingHorizontal: 12,
     paddingVertical: 8,
-    bottom: 80, // Changed from dynamic calculation to fixed position
+    bottom: 80,
   },
   headingText: {
     fontSize: 14,
@@ -1728,6 +1797,77 @@ const styles = StyleSheet.create({
   saveButtonDisabled: {
     backgroundColor: "#f5f5f5",
     opacity: 0.6,
+  },
+  
+  // Exit Confirmation Modal Styles
+  exitConfirmOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 20,
+  },
+  exitConfirmModal: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 24,
+    width: "100%",
+    maxWidth: 340,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  exitConfirmHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  exitConfirmTitle: {
+    fontSize: 20,
+    fontFamily: "Inter-Bold",
+    color: "#1F2937",
+    marginLeft: 12,
+  },
+  exitConfirmMessage: {
+    fontSize: 16,
+    fontFamily: "Inter-Regular",
+    color: "#6B7280",
+    textAlign: "center",
+    lineHeight: 24,
+    marginBottom: 24,
+  },
+  exitConfirmActions: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  exitConfirmButton: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  exitConfirmCancelButton: {
+    backgroundColor: "#F3F4F6",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  exitConfirmExitButton: {
+    backgroundColor: "#EF4444",
+  },
+  exitConfirmCancelText: {
+    fontSize: 15,
+    fontFamily: "Inter-Medium",
+    color: "#374151",
+  },
+  exitConfirmExitText: {
+    fontSize: 15,
+    fontFamily: "Inter-Medium",
+    color: "#FFFFFF",
   },
 });
 

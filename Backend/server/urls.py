@@ -33,6 +33,7 @@ urlpatterns = [
     path('chatbot/', include('chatbot.urls')),
     path('users/', include('users.urls')),
     path('notifications/', include('notifications.urls')),
+    path('logs/', include('logs.urls')),
 
     # Auth API URLs
     path('api-token-auth/', auth_view.obtain_auth_token, name='api-token-auth'),
@@ -44,7 +45,7 @@ urlpatterns = [
     path('signup/', views.signup, name='signup'),
     path('test_token/', views.test_token, name='test_token'),
     path('validate_token/', views.validate_token, name='validate_token'),
-
+    
     # Navigation URLs
     path('chatbot_page/', views.chatbot_page, name='chatbot_page'),
     path('notes_page/', views.notes_page, name='notes_page'),

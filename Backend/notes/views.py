@@ -21,6 +21,14 @@ def folder_list(request):
         serializer = FolderSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             serializer.save(user=user)
+            # Create notification for folder creation
+            create_notification(
+                user=user,
+                notification_type='system',
+                title='Folder Created',
+                message=f'Your folder "{serializer.data["name"]}" has been created successfully.',
+                priority='low'
+            )
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -86,28 +94,17 @@ def note_list(request):
         serializer = NoteSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             serializer.save(user=user)
+            # Create notification for note creation
+            create_notification(
+                user=user,
+                notification_type='note',
+                title='New Note Created',
+                message=f'You created a new note: "{serializer.data["title"]}"',
+                priority='low'
+            )
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
-
-def create(self, request, *args, **kwargs):
-    serializer = self.get_serializer(data=request.data)
-    serializer.is_valid(raise_exception=True)
-    self.perform_create(serializer)
-    
-    # Create notification for note creation
-    note = serializer.instance
-    create_notification(
-        user=request.user,
-        notification_type='note',
-        title='New Note Created',
-        message=f'You created a new note: "{note.title}"',
-        action_id=str(note.id),
-        priority='low'
-    )
-    
-    headers = self.get_success_headers(serializer.data)
-    return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 @api_auth_required(['GET', 'PUT', 'PATCH', 'DELETE'])
 def note_detail(request, pk):
@@ -127,11 +124,29 @@ def note_detail(request, pk):
         serializer = NoteSerializer(note, data=request.data, partial=request.method=='PATCH', context={'request': request})
         if serializer.is_valid():
             serializer.save()
+            # Create notification for note update
+            create_notification(
+                user=user,
+                notification_type='note',
+                title='Note Updated',
+                message=f'Your note "{serializer.data["title"]}" has been updated successfully.',
+                action_id=str(note.id),
+                priority='low'
+            )
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     elif request.method == 'DELETE':
         note.delete()
+        # Create notification for note deletion
+        create_notification(
+            user=user,
+            notification_type='note',
+            title='Note Deleted',
+            message=f'Your note "{note.title}" has been deleted successfully.',
+            action_id=str(note.id),
+            priority='low'
+        )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 @api_auth_required(['GET', 'POST'])
@@ -179,38 +194,39 @@ def tag_detail(request, pk):
 # Combine note-folder operations into a single view
 @api_auth_required(['POST'])
 def manage_note_folders(request):
-    """
-    Manage note folder assignments - supports:
-    1. Moving a single note to a folder
-    2. Moving multiple notes to a folder
-    3. Removing notes from folders
-    """
     user = request.user
-    
+
     # Get parameters
     folder_id = request.data.get('folder_id')
     note_ids = request.data.get('note_ids', [])
     note_id = request.data.get('note_id')
-    
+    action = request.data.get('action', '').lower()  # New: action parameter
+
     # If specific note_id is provided, convert to list format
     if note_id and not note_ids:
         note_ids = [note_id]
-    
+
     if not note_ids:
         return Response({"error": "No notes specified"}, status=status.HTTP_400_BAD_REQUEST)
-    
+
+    # Handle explicit remove action (remove notes from any folder)
+    if action == 'remove':
+        updated = Note.objects.filter(id__in=note_ids, user=user).update(folder=None)
+        return Response({"updated_notes": updated, "folder": None, "action": "removed"}, status=status.HTTP_200_OK)
+
     # Handle moving to "no folder" (unorganized)
     if folder_id in ['null', 'undefined', None, ''] or folder_id == 0:
         updated = Note.objects.filter(id__in=note_ids, user=user).update(folder=None)
         return Response({"updated_notes": updated, "folder": None}, status=status.HTTP_200_OK)
-    
+
     # Handle moving to a specific folder
     try:
         folder = Folder.objects.get(pk=folder_id, user=user)
         updated = Note.objects.filter(id__in=note_ids, user=user).update(folder=folder)
         return Response({
-            "updated_notes": updated, 
+            "updated_notes": updated,
             "folder": FolderSerializer(folder).data
         }, status=status.HTTP_200_OK)
+
     except Folder.DoesNotExist:
         return Response({"error": "Folder not found"}, status=status.HTTP_404_NOT_FOUND)

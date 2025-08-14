@@ -5,9 +5,9 @@ from django.conf import settings
 
 class UserProfile(models.Model):
     GENDER_CHOICES = (
-        ('M', 'Male'),
-        ('F', 'Female'),
-        ('O', 'Other'),
+        ('Male', 'Male'),
+        ('Female', 'Female'),
+        ('Other', 'Other'),
     )
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     username = models.CharField(max_length=150, blank=True)
@@ -16,7 +16,7 @@ class UserProfile(models.Model):
     phone_number = models.CharField(max_length=20, blank=True)
     address = models.CharField(max_length=255, blank=True)
     bio = models.TextField(blank=True)
-    gender = models.CharField(max_length=1, choices=GENDER_CHOICES, blank=True)
+    gender = models.CharField(choices=GENDER_CHOICES, blank=True)
     birthdate = models.DateField(blank=True, null=True)
 
     def __str__(self):

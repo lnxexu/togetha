@@ -33,7 +33,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-+^2p59aom-1u1r7%z0pg_vi4wg^y%10swf-=1!rpp!q6sr)q0p'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-# DEBUG = True
+DEBUG = True
 
 ALLOWED_HOSTS = [
     '*',  # Temporarily allow all hosts for testing
@@ -60,7 +60,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'debug_toolbar',
+    'debug_toolbar', 
     'rest_framework',
     'rest_framework.authtoken', 
     'corsheaders',
@@ -69,7 +69,9 @@ INSTALLED_APPS = [
     'task_manager',
     'notifications',
     'users',
+    'logs',
 ]
+
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
@@ -87,6 +89,7 @@ MIDDLEWARE = [
 CSRF_USE_SESSIONS = False  # Store CSRF in cookie instead
 CSRF_COOKIE_HTTPONLY = False  # Allow JavaScript to access CSRF cookie
 CSRF_COOKIE_SAMESITE = 'Lax'  # Less strict for better user experience
+CSRF_TRUSTED_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:8000', 'http://192.168.0.153:8000']  # Add your frontend URLs
 
 # CORS settings
 CORS_ALLOW_ALL_ORIGINS = True  # For development only, restrict in production
@@ -176,9 +179,6 @@ USE_I18N = True
 
 USE_TZ = True
 
-# Media files configuration for storing audio recordings
-MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
 
 
 # # REST Framework settings
@@ -195,7 +195,8 @@ REST_FRAMEWORK = {
 }
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
-
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 STATIC_URL = '/static/'
 STATICFILES_DIRS = [
     os.path.join(BASE_DIR, 'templates'), 

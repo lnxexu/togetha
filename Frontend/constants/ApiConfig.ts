@@ -55,7 +55,8 @@ export const API_ENDPOINTS = {
     NOTES: '/note_taking/notes/',
     NOTE_CATEGORIES: '/note_taking/categories/',
     NOTE_FOLDERS: '/note_taking/folders/',
-    
+    MANAGE_NOTE_FOLDERS: '/note_taking/manage-note-folders/',
+
     // Chatbot endpoints
     CHATBOT_OCR: '/chatbot/extract-text/',
     CHATBOT_CONVERSATIONS: '/chatbot/conversations/',
@@ -63,6 +64,7 @@ export const API_ENDPOINTS = {
 
     // Notification endpoints
     NOTIFICATIONS: '/notifications/',
+
 };
 
 export function getUserTimezone(): string {

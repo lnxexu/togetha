@@ -43,46 +43,45 @@ const Profile: React.FC = () => {
   );
 
   const loadUserData = async () => {
-  try {
-    setLoading(true);
-    
-    // Clear cache before fetching new data
-    await userService.clearProfileCache();
-    
-    // Get fresh data from the server
-    const userInfo = await userService.getUserInfo(true);
-    const userProfile = await userService.getUserProfile(true);
-    
-    // Combine profile data
-    const profile = { ...userInfo, ...userProfile };
-    
-    if (Object.keys(profile).length > 0) {
-      // Format dates if needed
-      if (profile.date_joined) {
-        profile.date_joined = new Date(profile.date_joined).toLocaleDateString();
-      }
-      
-      // Update state
-      setUserData(profile);
-      setUsername(profile.username || "");
-      
-      // Update AsyncStorage with new values
-      await AsyncStorage.setItem("username", profile.username || "");
-    }
-    
-    // Fetch progress data
-    const progressData = await userService.getUserProgress();
-    setProgress(progressData);
-  } catch (error) {
-    console.error("Error loading user data:", error);
-    Alert.alert("Error", "Failed to load profile data. Please try again.");
-  } finally {
-    setLoading(false);
-    setRefreshing(false);
-  }
-};
+    try {
+      setLoading(true);
 
-  
+      // Clear cache before fetching new data
+      await userService.clearProfileCache();
+
+      // Get fresh data from the server
+      const userInfo = await userService.getUserInfo(true);
+      // Combine profile data
+      const profile = { ...userInfo };
+
+      if (Object.keys(profile).length > 0) {
+        // Format dates if needed
+        if (profile.date_joined) {
+          profile.date_joined = new Date(
+            profile.date_joined
+          ).toLocaleDateString();
+        }
+
+        // Update state
+        setUserData(profile);
+        setUsername(profile.username || "");
+
+        // Update AsyncStorage with new values
+        await AsyncStorage.setItem("username", profile.username || "");
+      }
+
+      // Fetch progress data
+      const progressData = await userService.getUserProgress();
+      setProgress(progressData);
+    } catch (error) {
+      console.error("Error loading user data:", error);
+      Alert.alert("Error", "Failed to load profile data. Please try again.");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
   const onRefresh = () => {
     setRefreshing(true);
     loadUserData();
@@ -195,15 +194,22 @@ const Profile: React.FC = () => {
         const updatedProfile = await userService.updateProfilePicture(formData);
 
         // Update local state
-        setUserData({
-          ...userData,
-          profile_picture: updatedProfile.profile_picture,
-        });
+        setUserData((prev) =>
+          prev
+            ? {
+                ...prev,
+                profile: {
+                  ...prev.profile,
+                  profile_picture: updatedProfile.profile?.profile_picture,
+                },
+              }
+            : prev
+        );
 
         // Store in AsyncStorage for persistence
         await AsyncStorage.setItem(
           "userProfilePicture",
-          updatedProfile.profile_picture ?? ""
+          updatedProfile.profile?.profile_picture ?? ""
         );
 
         Alert.alert("Success", "Profile picture updated successfully!");
@@ -271,6 +277,14 @@ const Profile: React.FC = () => {
           <View style={styles.titleSection}>
             <Text style={styles.settingsTitle}>Settings</Text>
           </View>
+          {/* <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => navigation.navigate("Logs")}
+          >
+            <View style={styles.menuItemIcon}>
+              <MaterialIcons name="history" size={24} color="#ffffffff" />
+            </View>
+          </TouchableOpacity> */}
           <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
             <MaterialIcons name="logout" size={24} color="#FF5722" />
           </TouchableOpacity>
@@ -278,15 +292,11 @@ const Profile: React.FC = () => {
 
         <View style={styles.profileSection}>
           <View style={styles.profilePicContainer}>
-            {userData?.profile_picture ? (
+            {userData?.profile?.profile_picture ? (
               <Image
-                source={{
-                  uri: userData.profile_picture.startsWith("http")
-                    ? userData.profile_picture
-                    : `${API_URL}${userData.profile_picture}`,
-                }}
+                source={{ uri: `${API_URL}${userData.profile.profile_picture}` }}
                 style={styles.profilePic}
-                key={userData.profile_picture}
+                resizeMode="cover"
               />
             ) : (
               <View style={styles.defaultProfilePic}>
@@ -299,7 +309,7 @@ const Profile: React.FC = () => {
 
           <View style={styles.userInfo}>
             <Text style={styles.userName}>
-              {userData?.full_name || username || "User"}
+              {userData?.profile?.full_name || username || "User"}
             </Text>
             <Text style={styles.userUsername}>@{username || "username"}</Text>
             <Text style={styles.joinDate}>
@@ -758,6 +768,25 @@ const styles = StyleSheet.create({
   },
   dangerText: {
     color: "#FF5722",
+  },
+  menuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 7,
+    paddingHorizontal: 16,
+
+  },
+  menuItemIcon: {
+    width: 24,
+    height: 24,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 8,
+  },
+  menuItemText: {
+    fontSize: 16,
+    color: "#1E293B",
+    fontFamily: "Inter-Regular",
   },
 });
 

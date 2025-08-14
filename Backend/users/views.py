@@ -84,24 +84,6 @@ def user_profile(request):
             return Response({"detail": f"Server error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
 
-def update(self, request, *args, **kwargs):
-    partial = kwargs.pop('partial', False)
-    instance = self.get_object()
-    serializer = self.get_serializer(instance, data=request.data, partial=partial)
-    serializer.is_valid(raise_exception=True)
-    self.perform_update(serializer)
-
-    # Create notification for profile update
-    create_notification(
-        user=request.user,
-        notification_type='system',
-        title='Profile Updated',
-        message='Your profile information has been updated successfully',
-        priority='low'
-    )
-    
-    return Response(serializer.data)
-
 @api_auth_required(['GET'])
 def user_progress(request):
     """Get the user's progress statistics"""

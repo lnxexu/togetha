@@ -4,13 +4,17 @@ import { API_URL, API_ENDPOINTS } from "../../../constants/ApiConfig";
 export interface UserProfile {
   id?: string;
   username?: string;
-  full_name?: string;
   email?: string;
-  profile_picture?: string;
   date_joined?: string;
-  bio?: string;
-  location?: string;
-  phone?: string;
+  profile?: {
+    bio?: string;
+    location?: string;
+    full_name?: string;
+    phone_number?: string;
+    gender?: string;
+    birthdate?: string;
+    profile_picture?: string
+  }
 }
 
 export interface UserProgress {
@@ -99,141 +103,96 @@ class UserService {
       await this.clearProfileCache();
     }
     try {
-      return await this.apiRequest<UserProfile>(API_ENDPOINTS.USER_PROFILE);
+      // use USER_PROFILE and GET_USER_INFO endpoint
+      const [userProfile, userInfo] = await Promise.all([
+        this.apiRequest<UserProfile>(API_ENDPOINTS.USER_PROFILE),
+        this.apiRequest<UserProfile>(API_ENDPOINTS.GET_USER_INFO),
+      ]);
+
+      // Combine the results
+      return { ...userProfile, ...userInfo };
     } catch (error) {
       console.error("Error fetching user info:", error);
       throw error;
     }
   }
 
-  async getUserProfile(forceRefresh = false): Promise<UserProfile> {
-    if (forceRefresh) {
-      // Clear any cached data first
-      await this.clearProfileCache();
-    }
-    try {
-      return await this.apiRequest<UserProfile>(API_ENDPOINTS.GET_USER_INFO);
-    } catch (error) {
-      console.error("Error fetching user profile:", error);
-      throw error;
-    }
-  }
+
 
   async getUserProgress(): Promise<UserProgress> {
-    try {
-      const token = await AsyncStorage.getItem("authToken");
-      if (!token) {
-        throw new Error("No auth token found");
-      }
-
-      const response = await fetch(`${API_URL}${API_ENDPOINTS.USER_PROGRESS}`, {
-        method: "GET",
-        headers: {
-          Authorization: `Token ${token}`,
-          "Content-Type": "application/json",
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch user progress: ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      // Map the backend field names to your interface field names
-      return {
-        tasksCompleted: data.tasks_completed || 0,
-        notesCreated: data.notes_created || 0,
-        studyStreak: 0, // This field isn't in the backend response
-        learningHours: 0, // This field isn't in the backend response
-        chatbot_interactions: data.chatbot_interactions,
-        username: data.username,
-        email: data.email,
-        date_joined: data.date_joined,
-        last_login: data.last_login,
-      };
-    } catch (error) {
-      console.error("Error fetching user progress:", error);
-      // Return default values instead of throwing
-      return {
-        learningHours: 0,
-        notesCreated: 0,
-        studyStreak: 0,
-        tasksCompleted: 0,
-      };
-    }
+  try {
+    const response = await this.apiRequest<any>(API_ENDPOINTS.USER_PROGRESS);
+    
+    // Map the backend field names to your interface field names
+    return {
+      tasksCompleted: response.tasks_completed || 0,
+      notesCreated: response.notes_created || 0,
+      studyStreak: response.study_streak || 0,
+      learningHours: response.learning_hours || 0,
+      chatbot_interactions: response.chatbot_interactions || 0,
+      username: response.username,
+      email: response.email,
+      date_joined: response.date_joined,
+      last_login: response.last_login,
+    };
+  } catch (error) {
+    console.error("Error fetching user progress:", error);
+    return {
+      tasksCompleted: 0,
+      notesCreated: 0,
+      studyStreak: 0,
+      learningHours: 0,
+      chatbot_interactions: 0
+    };
   }
+}
 
   async updateUserProfile(updates: Partial<UserProfile>): Promise<UserProfile> {
-    try {
-      const token = await this.getAuthToken();
-      if (!token) {
-        throw new Error("No authentication token found");
-      }
-
-      // Create FormData object instead of JSON
-      const formData = new FormData();
-
-
-      // Add each field to the FormData
-      if (updates.username) formData.append("username", updates.username);
-      if (updates.full_name) formData.append("profile.full_name", updates.full_name);
-      if (updates.email) formData.append("email", updates.email);
-      if (updates.bio) formData.append("profile.bio", updates.bio);
-      if (updates.location)
-        formData.append("profile.address", updates.location);
-      if (updates.phone) formData.append("profile.phone_number", updates.phone);
-
-      // First get the CSRF token by making a GET request to the server
-      const csrfResponse = await fetch(`${API_URL}/users/csrf-token/`, {
-        method: "GET",
-        headers: {
-          Authorization: `Token ${token}`,
-        },
-      });
-
-      const csrfData = await csrfResponse.json();
-      const csrfToken = csrfData.csrfToken;
-
-      // Direct fetch with FormData
-      const response = await fetch(`${API_URL}${API_ENDPOINTS.USER_PROFILE}`, {
-        method: "PUT",
-        headers: {
-          Authorization: `Token ${token}`,
-          "X-CSRFToken": csrfToken,
-        },
-        body: formData,
-        credentials: "include", // Important for cookies
-      });
-
-      if (!response.ok) {
-        console.error("Failed request:", {
-          status: response.status,
-          statusText: response.statusText,
-          url: response.url,
-        });
-
-        const responseClone = response.clone();
-
-        try {
-          const errorData = await response.json();
-          throw new Error(
-            errorData.detail || `Request failed with status ${response.status}`
-          );
-        } catch (parseError) {
-          const errorText = await responseClone.text();
-          throw new Error(
-            errorText || `Request failed with status ${response.status}`
-          );
-        }
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error("Error updating profile:", error);
-      throw error;
+  try {
+    const token = await this.getAuthToken();
+    if (!token) {
+      throw new Error("No authentication token found");
     }
+
+    // Create FormData object
+    const formData = new FormData();
+
+    // Properly map fields to backend expected structure
+    if (updates.username) formData.append("username", updates.username);
+    if (updates.email) formData.append("email", updates.email);
+    
+    // Profile nested fields
+    if (updates.profile?.full_name) formData.append("profile.full_name", updates.profile.full_name);
+    if (updates.profile?.bio) formData.append("profile.bio", updates.profile.bio);
+    if (updates.profile?.location) formData.append("profile.address", updates.profile.location);
+    if (updates.profile?.phone_number) formData.append("profile.phone_number", updates.profile.phone_number);
+    if (updates.profile?.gender) formData.append("profile.gender", updates.profile.gender);
+    if (updates.profile?.birthdate) formData.append("profile.birthdate", updates.profile.birthdate);
+
+    // Send the update request
+    const response = await fetch(`${API_URL}${API_ENDPOINTS.USER_PROFILE}`, {
+      method: "PATCH", // PATCH is better for partial updates
+      headers: {
+        Authorization: `Token ${token}`,
+        
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || `Request failed with status ${response.status}`);
+    }
+
+    // Clear cache after successful update
+    await this.clearProfileCache();
+    
+    return await response.json();
+  } catch (error) {
+    console.error("Error updating profile:", error);
+    throw error;
   }
+}
 
   async uploadProfilePicture(
     imageUri: string

@@ -22,6 +22,8 @@ def login_api(request):
     """API endpoint for user login"""
     username = request.data.get('username')
     password = request.data.get('password')
+    device_info = request.data.get('device_info', {})
+    force_login = request.data.get('force_login', False)
     
     if not username or not password:
         return Response({'error': 'Please provide both username and password'}, 
@@ -30,7 +32,7 @@ def login_api(request):
     user = authenticate(username=username, password=password)
     
     if not user:
-        return Response({'error': 'Invalid credentials'}, 
+        return Response({'detail': 'Invalid credentials'}, 
                         status=status.HTTP_401_UNAUTHORIZED)
 
     # Use Django's login function to create a session
@@ -38,6 +40,44 @@ def login_api(request):
 
     # Create or get token for API authentication
     token, created = Token.objects.get_or_create(user=user)
+    
+    # Handle session creation (if using device management)
+    # Similar to your current implementation
+    try:
+        # Create session if you're using the UserSession model
+        from users.models import UserSession
+        import uuid
+        
+        # Check for existing sessions if force_login is false
+        if not force_login:
+            existing_sessions = UserSession.objects.filter(user=user, is_active=True)
+            if existing_sessions.exists():
+                latest_session = existing_sessions.first()
+                return Response({
+                    'message': f'Account is already in use on {latest_session.device_name}',
+                    'device': latest_session.device_name,
+                    'login_time': latest_session.login_timestamp
+                }, status=status.HTTP_409_CONFLICT)
+        else:
+            # Deactivate existing sessions if forcing login
+            UserSession.objects.filter(user=user, is_active=True).update(is_active=False)
+        
+        # Create new session
+        session_id = str(uuid.uuid4())
+        UserSession.objects.create(
+            user=user,
+            session_id=session_id,
+            device_id=device_info.get('device_id', 'unknown'),
+            device_name=device_info.get('device_name', 'Unknown Device'),
+            device_type=device_info.get('device_type', 'unknown'),
+            os_name=device_info.get('os_name', 'unknown'),
+            os_version=device_info.get('os_version', 'unknown'),
+            app_version=device_info.get('app_version', 'unknown'),
+            is_active=True
+        )
+    except Exception as e:
+        print(f"Session creation error: {str(e)}")
+        # Continue even if session creation fails
     
     return Response({
         'token': token.key,
