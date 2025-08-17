@@ -443,6 +443,17 @@ const Profile: React.FC = () => {
 
           <TouchableOpacity
             style={styles.settingItem}
+            onPress={() => navigation.navigate("Logs")}
+          >
+            <View style={styles.settingLeft}>
+              <MaterialIcons name="history" size={24} color="#6A009C" />
+              <Text style={styles.settingText}>Activity Logs</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#6c757d" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.settingItem}
             onPress={handleClearCache}
           >
             <View style={styles.settingLeft}>
@@ -468,7 +479,10 @@ const Profile: React.FC = () => {
             <MaterialIcons name="chevron-right" size={24} color="#6c757d" />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.settingItem}>
+          <TouchableOpacity 
+            style={styles.settingItem}
+            onPress={() => navigation.navigate("HelpSupport")}
+          >
             <View style={styles.settingLeft}>
               <MaterialIcons name="help" size={24} color="#6A009C" />
               <Text style={styles.settingText}>Help & Support</Text>
@@ -476,7 +490,10 @@ const Profile: React.FC = () => {
             <MaterialIcons name="chevron-right" size={24} color="#6c757d" />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.settingItem}>
+          <TouchableOpacity 
+            style={styles.settingItem}
+            onPress={() => navigation.navigate("About")}
+          >
             <View style={styles.settingLeft}>
               <MaterialIcons name="info" size={24} color="#6A009C" />
               <Text style={styles.settingText}>About</Text>

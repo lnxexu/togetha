@@ -1,4 +1,4 @@
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import * as DocumentPicker from "expo-document-picker";
 import { LinearGradient } from "expo-linear-gradient";
@@ -371,7 +371,7 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
           </View>
         </View>
         <TouchableOpacity style={styles.menuButton} onPress={handleMenuPress}>
-          <Ionicons name="menu" size={24} color="#FFFFFF" />
+          <MaterialIcons name="history" size={24} color="#FFFFFF" />
         </TouchableOpacity>
       </LinearGradient>
 
