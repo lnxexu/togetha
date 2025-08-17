@@ -19,6 +19,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { RootStackParamList } from "../navigation/AppNavigator";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
+import { NotificationService } from './services/notificationService';
 
 const { width } = Dimensions.get("window");
 
@@ -43,173 +44,75 @@ export default function Notifications() {
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
 
   // Sample notifications data (replace with API call)
-  const sampleNotifications: Notification[] = [
-    {
-      id: '1',
-      type: 'task',
-      title: 'Task Due Soon',
-      message: 'Your assignment "Math Homework" is due in 2 hours',
-      timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
-      read: false,
-      actionId: 'task-123',
-      priority: 'high'
-    },
+  const sampleNotifications: Notification[] = [];
 
-    {
-      id: '3',
-      type: 'reminder',
-      title: 'Study Reminder',
-      message: 'Time to review your chemistry notes',
-      timestamp: new Date(Date.now() - 6 * 60 * 60 * 1000), // 6 hours ago
-      read: true,
-      priority: 'medium'
-    },
-    {
-      id: '4',
-      type: 'system',
-      title: 'App Update',
-      message: 'New features are available! Update to the latest version',
-      timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day ago
-      read: true,
-      priority: 'low'
-    },
-    {
-      id: '5',
-      type: 'task',
-      title: 'Task Completed',
-      message: 'Great job! You completed "Physics Lab Report"',
-      timestamp: new Date(Date.now() - 48 * 60 * 60 * 1000), // 2 days ago
-      read: true,
-      actionId: 'task-789',
-      priority: 'low'
-    }
-  ];
-
-  useEffect(() => {
+ useEffect(() => {
     fetchNotifications();
   }, []);
 
   const fetchNotifications = async () => {
-  try {
-    setLoading(true);
-    
-    // Get the auth token
-    const token = await AsyncStorage.getItem('authToken');
-    
-    if (!token) {
-      console.error("No auth token found");
-      return;
+    try {
+      setLoading(true);
+      const data = await NotificationService.getNotifications();
+      
+      // Convert API data to our Notification format
+      const formattedNotifications: Notification[] = data.map((item: any) => ({
+        id: item.id.toString(),
+        type: item.type as 'task' | 'note' | 'reminder' | 'system',
+        title: item.title,
+        message: item.message,
+        timestamp: new Date(item.timestamp),
+        read: item.read,
+        actionId: item.action_id,
+        priority: item.priority as 'high' | 'medium' | 'low',
+      }));
+      
+      setNotifications(formattedNotifications);
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+      setNotifications([]); // Set empty array on error
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
-    
-    // Fetch notifications from the API
-    const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTIFICATIONS}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      }
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Error fetching notifications: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    
-    // Convert API data to our Notification format
-    const formattedNotifications: Notification[] = data.map((item: any) => ({
-      id: item.id.toString(),
-      type: item.type as 'task' | 'note' | 'reminder' | 'system',
-      title: item.title,
-      message: item.message,
-      timestamp: new Date(item.timestamp),
-      read: item.read,
-      actionId: item.action_id,
-      priority: item.priority as 'high' | 'medium' | 'low',
-    }));
-    
-    setNotifications(formattedNotifications);
-    
-  } catch (error) {
-    console.error("Error fetching notifications:", error);
-    // Fallback to sample data in case of error
-    setNotifications(sampleNotifications);
-  } finally {
-    setLoading(false);
-    setRefreshing(false);
-  }
-};
-
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchNotifications();
   };
+    
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchNotifications();
+  };
+  
 
   const markAsRead = async (notificationId: string) => {
-  try {
-    const token = await AsyncStorage.getItem('authToken');
-    
-    if (!token) {
-      console.error("No auth token found");
-      return;
+    try {
+      await NotificationService.markAsRead(notificationId);
+      // Update state
+      setNotifications(prev => 
+        prev.map(notif => 
+          notif.id === notificationId 
+            ? { ...notif, read: true }
+            : notif
+        )
+      );
+    } catch (error) {
+      console.error("Error marking notification as read:", error);
     }
-    
-    // Call the API to mark notification as read
-    const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTIFICATIONS}${notificationId}/mark_read/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      }
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Error marking notification as read: ${response.status}`);
-    }
-    
-    // Update state
-    setNotifications(prev => 
-      prev.map(notif => 
-        notif.id === notificationId 
-          ? { ...notif, read: true }
-          : notif
-      )
-    );
-  } catch (error) {
-    console.error("Error marking notification as read:", error);
-  }
-};
+  };
 
-  const markAllAsRead = async () => {
-  try {
-    const token = await AsyncStorage.getItem('authToken');
-    
-    if (!token) {
-      console.error("No auth token found");
-      return;
+    const markAllAsRead = async () => {
+    try {
+      const unreadNotifications = notifications.filter(notif => !notif.read);
+      await Promise.all(
+        unreadNotifications.map(notif => NotificationService.markAsRead(notif.id))
+      );
+      // Update state
+      setNotifications(prev => 
+        prev.map(notif => ({ ...notif, read: true }))
+      );
+    } catch (error) {
+      console.error("Error marking all notifications as read:", error);
     }
-    
-    // Call the API to mark all notifications as read
-    const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTIFICATIONS}mark_all_read/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      }
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Error marking all notifications as read: ${response.status}`);
-    }
-    
-    // Update state
-    setNotifications(prev => 
-      prev.map(notif => ({ ...notif, read: true }))
-    );
-  } catch (error) {
-    console.error("Error marking all notifications as read:", error);
-  }
-};
+  };
 
 
   const handleNotificationPress = (notification: Notification) => {

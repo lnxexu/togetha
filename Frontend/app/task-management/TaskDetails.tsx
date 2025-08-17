@@ -118,14 +118,9 @@ const TaskDetails: React.FC = () => {
   const formatTime = (datetime?: Date) => {
     if (!datetime) return "No time set";
 
-    // Parse ISO string to Date object
-    const dateObj = new Date(datetime);
-    const utc = dateObj.getTime() + dateObj.getTimezoneOffset() * 60000;
-    // do not convert into PH
-    const localDate = new Date(utc);
-
-    const hours = localDate.getHours();
-    const minutes = localDate.getMinutes();
+    // Use UTC methods to avoid timezone conversion
+    const hours = datetime.getUTCHours();
+    const minutes = datetime.getUTCMinutes();
 
     const formattedMinutes = minutes.toString().padStart(2, "0");
 
@@ -612,7 +607,19 @@ const TaskDetails: React.FC = () => {
                                     isSelected && styles.selectedCalendarDay,
                                   ]}
                                   onPress={() => {
-                                    setEditedDate(new Date(currentDate));
+                                    // Use UTC to avoid timezone shifts
+                                    const selectedDate = new Date(
+                                      Date.UTC(
+                                        currentDate.getFullYear(),
+                                        currentDate.getMonth(),
+                                        currentDate.getDate(),
+                                        0,
+                                        0,
+                                        0,
+                                        0
+                                      )
+                                    );
+                                    setEditedDate(selectedDate);
                                     setShowDatePicker(false);
                                   }}
                                 >
@@ -661,7 +668,7 @@ const TaskDetails: React.FC = () => {
                 onPress={() => setShowTimePicker(true)}
               >
                 <Text style={styles.cardValue}>
-                  {editedTime || "Select Time"}
+                  {task.due_datetime ? formatTime(task.due_datetime ?? undefined) : "Select Time"}
                 </Text>
                 <MaterialIcons
                   name="edit"
@@ -985,14 +992,15 @@ const styles = StyleSheet.create({
   daysContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 4,
+    justifyContent: "space-between", // Add this for better spacing
   },
   calendarDay: {
-    width: "13.2%",
+    width: "14.28%", // This is already correct for 7 columns
     aspectRatio: 1,
     justifyContent: "center",
     alignItems: "center",
     borderRadius: 8,
+    marginBottom: 2, // Add small margin for better visual separation
   },
   inactiveDay: {
     opacity: 0.3,

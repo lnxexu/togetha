@@ -32,8 +32,8 @@ export interface TaskFormData {
   description?: string | null;
   priority?: Priority;
   category?: string | null;
-  due_datetime?: Date | null;
-  due_time?: string | null; 
+  due_datetime?: Date | null | undefined;
+  due_time?: string | null | undefined;
   completed?: boolean;
   user?: string;
   completed_at?: Date;

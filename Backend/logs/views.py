@@ -4,13 +4,19 @@ from rest_framework.decorators import action
 from .models import Log
 from .serializers import LogSerializer
 from django.contrib.auth import get_user_model
+from rest_framework.pagination import PageNumberPagination
 
 User = get_user_model()
+
+class LogPagination(PageNumberPagination):
+    page_size = 20
+
 
 class LogViewSet(viewsets.ModelViewSet):
     queryset = Log.objects.all()
     serializer_class = LogSerializer
     permission_classes = [permissions.IsAuthenticated]
+    pagination_class = LogPagination
 
     def get_queryset(self):
         return Log.objects.filter(user=self.request.user).order_by('-timestamp')

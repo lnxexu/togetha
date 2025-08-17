@@ -277,14 +277,14 @@ const Profile: React.FC = () => {
           <View style={styles.titleSection}>
             <Text style={styles.settingsTitle}>Settings</Text>
           </View>
-          {/* <TouchableOpacity
+          <TouchableOpacity
             style={styles.menuItem}
             onPress={() => navigation.navigate("Logs")}
           >
             <View style={styles.menuItemIcon}>
               <MaterialIcons name="history" size={24} color="#ffffffff" />
             </View>
-          </TouchableOpacity> */}
+          </TouchableOpacity>
           <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
             <MaterialIcons name="logout" size={24} color="#FF5722" />
           </TouchableOpacity>

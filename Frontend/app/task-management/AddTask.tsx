@@ -106,7 +106,7 @@ const AddTask: React.FC = () => {
       if (formData.due_datetime) {
         dueDate = new Date(formData.due_datetime);
 
-        // If time is also provided, add it to the date
+        // If time is also provided, add it to the date using UTC
         if (formData.due_time) {
           const [timeStr, period] = formData.due_time.split(" ");
           let [hours, minutes] = timeStr.split(":").map(Number);
@@ -115,7 +115,8 @@ const AddTask: React.FC = () => {
           if (period === "PM" && hours < 12) hours += 12;
           if (period === "AM" && hours === 12) hours = 0;
 
-          dueDate.setHours(hours, minutes, 0, 0);
+          // Use UTC methods to avoid timezone conversion
+          dueDate.setUTCHours(hours, minutes, 0, 0);
         }
       }
 
@@ -387,9 +388,21 @@ const AddTask: React.FC = () => {
                                   isSelected && styles.selectedCalendarDay,
                                 ]}
                                 onPress={() => {
+                                  // Use UTC to avoid timezone shifts
+                                  const selectedDate = new Date(
+                                    Date.UTC(
+                                      currentDate.getFullYear(),
+                                      currentDate.getMonth(),
+                                      currentDate.getDate(),
+                                      0,
+                                      0,
+                                      0,
+                                      0
+                                    )
+                                  );
                                   handleInputChange(
                                     "due_datetime",
-                                    currentDate
+                                    selectedDate
                                   );
                                   setShowDatePicker(false);
                                 }}

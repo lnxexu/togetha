@@ -67,3 +67,46 @@ export const toPhilippineISOString = (date: Date | null | undefined): string | n
 export const getCurrentPhilippineDate = (): Date => {
   return convertToPhilippineTime(new Date());
 };
+
+export const formatLocalDate = (date: Date): string => {
+  return date.toLocaleDateString();
+};
+
+export const formatLocalTime = (date: Date): string => {
+  return date.toLocaleTimeString();
+};
+
+export const formatLocalDateTime = (date: Date): string => {
+  return date.toLocaleString();
+};
+
+export const isToday = (date: Date): boolean => {
+  const today = new Date();
+  return (
+    date.getDate() === today.getDate() &&
+    date.getMonth() === today.getMonth() &&
+    date.getFullYear() === today.getFullYear()
+  );
+};
+
+export const isSameDay = (date1: Date, date2: Date): boolean => {
+  return (
+    date1.getDate() === date2.getDate() &&
+    date1.getMonth() === date2.getMonth() &&
+    date1.getFullYear() === date2.getFullYear()
+  );
+};
+
+export const addDays = (date: Date, days: number): Date => {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
+};
+
+export const startOfDay = (date: Date): Date => {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+};
+
+export const endOfDay = (date: Date): Date => {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
+};

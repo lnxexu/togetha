@@ -33,7 +33,8 @@ urlpatterns = [
     path('chatbot/', include('chatbot.urls')),
     path('users/', include('users.urls')),
     path('notifications/', include('notifications.urls')),
-    path('logs/', include('logs.urls')),
+    path('activity_logs/', include('logs.urls')),
+    path('scheduler/', include('scheduler.urls')),
 
     # Auth API URLs
     path('api-token-auth/', auth_view.obtain_auth_token, name='api-token-auth'),

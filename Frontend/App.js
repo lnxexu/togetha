@@ -4,8 +4,10 @@ import React, { useEffect } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import AppNavigator from "./app/navigation/AppNavigator";
-import { NotificationProvider } from "./app/notifications/services/notificationProvider";
 import Toast from "react-native-toast-message";
+import { TaskProvider } from './app/context/TaskContext';
+import { TaskNotificationChecker } from "./app/notifications/components/TaskNotificationChecker";
+
 // import { LogsProvider } from './app/logs/services/logProvider';
 
 SplashScreen.preventAutoHideAsync();
@@ -37,10 +39,11 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <NotificationProvider>
-        <AppNavigator />
-        <Toast />
-      </NotificationProvider>
+        <TaskProvider>
+          <AppNavigator />
+          <TaskNotificationChecker />
+          <Toast />
+        </TaskProvider>
     </SafeAreaProvider>
   );
 }

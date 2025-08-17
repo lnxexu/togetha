@@ -13,7 +13,6 @@ from django.http import JsonResponse
 from django.middleware.csrf import get_token
 from rest_framework.decorators import api_view, permission_classes, parser_classes
 from rest_framework.permissions import AllowAny
-from notifications.views import create_notification
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
@@ -53,27 +52,11 @@ def user_profile(request):
                     try:
                         user_instance.profile.profile_picture.save(profile_picture.name, profile_picture)
                         user_instance.profile.save()
-                        # Notification for profile picture update
-                        create_notification(
-                            user=user,
-                            notification_type='system',
-                            title='Profile Picture Updated',
-                            message='Your profile picture has been updated successfully.',
-                            priority='low'
-                        )
                     except Exception as e:
                         print(f"Profile picture upload error: {e}")
                         return Response({"detail": f"Profile picture upload failed: {str(e)}"},
                                         status=status.HTTP_400_BAD_REQUEST)
 
-                # Notification for profile update (general info)
-                create_notification(
-                    user=user,
-                    notification_type='system',
-                    title='Profile Updated',
-                    message='Your profile information has been updated successfully.',
-                    priority='low'
-                )
 
                 return Response(UserSerializer(user_instance).data, status=status.HTTP_200_OK)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

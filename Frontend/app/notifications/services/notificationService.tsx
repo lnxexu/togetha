@@ -1,123 +1,72 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { AppState, AppStateStatus } from 'react-native';
 import { API_URL, API_ENDPOINTS } from '@/constants/ApiConfig';
-import { Platform } from 'react-native';
+import { NotificationUtils, TaskNotification } from '../utils/NotificationUtils';
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
-interface Notification {
-  id: string;
-  type: 'task' | 'note' | 'reminder' | 'system';
-  title: string;
-  message: string;
-  timestamp: Date;
-  read: boolean;
-  actionId?: string;
-  priority: 'high' | 'medium' | 'low';
-}
+export class NotificationService {
+  private static baseUrl = API_URL;
 
-let lastNotificationId: string | null = null;
-let pollingInterval: NodeJS.Timeout | null = null;
-const POLLING_INTERVAL = 60000; // Poll every minute
+  static async saveNotification(notification: Omit<TaskNotification, 'id' | 'createdAt'>): Promise<void> {
+    try {
+      const response = await fetch(`${this.baseUrl}${API_ENDPOINTS.NOTIFICATIONS}/save/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...notification,
+          createdAt: NotificationUtils.formatPhilippinesDateTime(NotificationUtils.getCurrentPhilippinesTime())
+        })
+      });
 
-let appStateSubscription: { remove: () => void } | null = null;
-
-export const startNotificationPolling = async () => {
-  if (pollingInterval) {
-    clearInterval(pollingInterval);
+      if (!response.ok) {
+        throw new Error('Failed to save notification');
+      }
+    } catch (error) {
+      console.error('Error saving notification:', error);
+    }
   }
 
-  // Get the last notification ID to avoid showing duplicates
-  lastNotificationId = await AsyncStorage.getItem('lastNotificationId');
-  
-  // Poll for new notifications
-  pollingInterval = setInterval(async () => {
-    await checkForNewNotifications();
-  }, POLLING_INTERVAL);
-
-  // Handle app state changes
-  if (!appStateSubscription) {
-    appStateSubscription = AppState.addEventListener('change', handleAppStateChange);
-  }
-};
-
-export const stopNotificationPolling = () => {
-  if (pollingInterval) {
-    clearInterval(pollingInterval);
-    pollingInterval = null;
-  }
-  if (appStateSubscription) {
-    appStateSubscription.remove();
-    appStateSubscription = null;
-  }
-};
-
-const handleAppStateChange = (nextAppState: AppStateStatus) => {
-  if (nextAppState === 'active') {
-    // App came to foreground, check for notifications immediately
-    checkForNewNotifications();
-  }
-};
-
-const checkForNewNotifications = async () => {
+  static async getNotifications(): Promise<any[]> {
   try {
     const token = await AsyncStorage.getItem('authToken');
-    
     if (!token) {
-      console.log('No auth token found, skipping notification check');
-      return;
+      throw new Error('No auth token found');
     }
-    
-    const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTIFICATIONS}?unread_only=true`, {
+
+    const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTIFICATIONS}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      }
+        'Authorization': `Token ${token}`,
+      },
     });
-    
-    if (!response.ok) {
-      throw new Error(`Error checking notifications: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    
-    if (data.length > 0) {
-      // If we have a new notification that we haven't seen before
-      if (!lastNotificationId || data[0].id !== lastNotificationId) {
-        // Update the last seen notification ID
-        lastNotificationId = data[0].id;
-        await AsyncStorage.setItem('lastNotificationId', data[0].id);
-        
-        // Show local notification
-        showLocalNotification(data[0]);
-      }
-    }
-  } catch (error) {
-    console.error('Error checking for new notifications:', error);
-  }
-};
 
-const showLocalNotification = (notification: any) => {
-  // Create a simple local notification using browser API if on web
-  if (Platform.OS === 'web' && 'Notification' in window) {
-    if (Notification.permission === 'granted') {
-      new Notification(notification.title, {
-        body: notification.message
-      });
-    } else if (Notification.permission !== 'denied') {
-      Notification.requestPermission().then(permission => {
-        if (permission === 'granted') {
-          new Notification(notification.title, {
-            body: notification.message
-          });
-        }
-      });
+    if (!response.ok) {
+      throw new Error('Failed to fetch notifications');
     }
-  } 
-  // On native platforms, we'll use a simple alert for now
-  // (Later you could enhance this with a custom UI overlay)
-  else {
-    // Create a custom notification UI
-    // This will be improved in the next step
-    console.log('New notification:', notification.title);
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching notifications:', error);
+    return [];
   }
-};
+}
+
+  static async markAsRead(notificationId: string): Promise<void> {
+    try {
+      const response = await fetch(`${this.baseUrl}${API_ENDPOINTS.NOTIFICATION_MARK_READ(notificationId)}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ isRead: true })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to mark notification as read');
+      }
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+    }
+  }
+}

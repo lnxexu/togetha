@@ -14,6 +14,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import authenticate, login as django_login, logout
+from logs.views import create_log
 
 
 @api_view(['POST'])
@@ -23,7 +24,6 @@ def login_api(request):
     username = request.data.get('username')
     password = request.data.get('password')
     device_info = request.data.get('device_info', {})
-    force_login = request.data.get('force_login', False)
     
     if not username or not password:
         return Response({'error': 'Please provide both username and password'}, 
@@ -41,28 +41,37 @@ def login_api(request):
     # Create or get token for API authentication
     token, created = Token.objects.get_or_create(user=user)
     
-    # Handle session creation (if using device management)
-    # Similar to your current implementation
+    # Handle session creation with automatic logout from other devices
     try:
-        # Create session if you're using the UserSession model
         from users.models import UserSession
         import uuid
         
-        # Check for existing sessions if force_login is false
-        if not force_login:
-            existing_sessions = UserSession.objects.filter(user=user, is_active=True)
-            if existing_sessions.exists():
-                latest_session = existing_sessions.first()
-                return Response({
-                    'message': f'Account is already in use on {latest_session.device_name}',
-                    'device': latest_session.device_name,
-                    'login_time': latest_session.login_timestamp
-                }, status=status.HTTP_409_CONFLICT)
-        else:
-            # Deactivate existing sessions if forcing login
-            UserSession.objects.filter(user=user, is_active=True).update(is_active=False)
+        # Check for existing active sessions
+        existing_sessions = UserSession.objects.filter(user=user, is_active=True)
         
-        # Create new session
+        # If there are existing sessions, log them out and log the action
+        if existing_sessions.exists():
+            # Get device names for logging
+            device_names = list(existing_sessions.values_list('device_name', flat=True))
+            
+            # Deactivate all existing sessions (automatic logout from other devices)
+            existing_sessions.update(is_active=False)
+            
+            # Log the automatic logout
+            try:
+                devices_str = ', '.join(device_names) if device_names else 'Unknown Devices'
+                create_log(
+                    user=user,
+                    level='WARNING',
+                    message=f"User automatically logged out from other devices: {devices_str}",
+                    action="Auto Logout Other Devices",
+                    entity_type="User",
+                    entity_id=user.id
+                )
+            except Exception as e:
+                print(f"Auto logout log creation error: {str(e)}")
+        
+        # Create new session for current device
         session_id = str(uuid.uuid4())
         UserSession.objects.create(
             user=user,
@@ -75,17 +84,73 @@ def login_api(request):
             app_version=device_info.get('app_version', 'unknown'),
             is_active=True
         )
+
+        # Log successful login
+        try:
+            create_log(
+                user=user,
+                level='INFO',
+                message=f"User logged in from {device_info.get('device_name', 'Unknown Device')}",
+                action="Login",
+                entity_type="User",
+                entity_id=user.id
+            )
+        except Exception as e:
+            print(f"Log creation error: {str(e)}")
+
     except Exception as e:
         print(f"Session creation error: {str(e)}")
-        # Continue even if session creation fails
+        return Response({
+            'error': 'Session creation failed',
+            'detail': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    # Prepare response message
+    message = 'Login successful'
+    if existing_sessions.exists():
+        device_count = len(device_names) if 'device_names' in locals() else existing_sessions.count()
+        message = f'Login successful. You have been automatically logged out from {device_count} other device(s).'
     
     return Response({
         'token': token.key,
         'user_id': user.id,
         'username': user.username,
         'email': user.email,
-        'message': 'Login successful'
+        'message': message
     }, status=status.HTTP_200_OK)
+
+@api_view(['POST'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def force_logout_all_sessions(request):
+    """Force logout from all devices"""
+    user = request.user
+    
+    try:
+        from users.models import UserSession
+        # Deactivate all sessions for this user
+        UserSession.objects.filter(user=user, is_active=True).update(is_active=False)
+        
+        # Log the action
+        create_log(
+            user=user,
+            level='WARNING',
+            message="User forced logout from all devices",
+            action="Force Logout All",
+            entity_type="User",
+            entity_id=user.id
+        )
+        
+        return Response({
+            'message': 'Successfully logged out from all devices'
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({
+            'error': 'Failed to logout from all devices',
+            'detail': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 @api_view(['POST'])
 def signup(request):
@@ -171,19 +236,54 @@ def get_user_info(request):
 
 # logout user
 @api_view(['POST'])
+@authentication_classes([TokenAuthentication, SessionAuthentication])
 @permission_classes([IsAuthenticated])
 def user_logout(request):
+    """API endpoint for user logout"""
+    user = request.user
+    device_info = request.data.get('device_info', {}) if hasattr(request, 'data') else {}
+    
+    # Deactivate specific session if device info is provided, otherwise all sessions
+    try:
+        from users.models import UserSession
+        if device_info.get('device_id'):
+            # Deactivate specific device session
+            UserSession.objects.filter(
+                user=user, 
+                device_id=device_info.get('device_id'),
+                is_active=True
+            ).update(is_active=False)
+        else:
+            # Deactivate all sessions if no specific device info
+            UserSession.objects.filter(user=user, is_active=True).update(is_active=False)
+    except Exception as e:
+        print(f"Session deactivation error: {str(e)}")
+    
     # Delete the token to logout
     try:
-        request.user.auth_token.delete()
-    except Exception:
-        pass
+        user.auth_token.delete()
+    except Exception as e:
+        print(f"Token deletion error: {str(e)}")
     
-    # Logout from session
+    # Logout from Django session
     logout(request)
-    
+
+    # Log user logout
+    try:
+        create_log(
+            user=user,
+            level='INFO',
+            message=f"User logged out from {device_info.get('device_name', 'Unknown Device')}",
+            action="Logout",
+            entity_type="User",
+            entity_id=user.id
+        )
+    except Exception as e:
+        print(f"Log creation error: {str(e)}")
+
     return Response({'message': 'Successfully logged out'}, 
                     status=status.HTTP_200_OK)
+
 
 def login_page(request):
     return render(request, 'login.html')

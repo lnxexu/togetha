@@ -1,5 +1,4 @@
-import datetime
-from rest_framework import viewsets, status
+from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -11,20 +10,32 @@ class NotificationViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        return Notification.objects.filter(user=self.request.user)
+        return Notification.objects.filter(user=self.request.user).order_by('-timestamp')
     
     @action(detail=False, methods=['post'])
     def mark_all_read(self, request):
         queryset = self.get_queryset()
+        count = queryset.filter(read=False).count()
         queryset.update(read=True)
-        return Response({'status': 'all notifications marked as read'})
+        return Response({
+            'status': 'success',
+            'message': f'{count} notifications marked as read'
+        })
     
     @action(detail=True, methods=['post'])
     def mark_read(self, request, pk=None):
         notification = self.get_object()
-        notification.read = True
-        notification.save()
-        return Response({'status': 'notification marked as read'})
+        if not notification.read:
+            notification.read = True
+            notification.save()
+            return Response({
+                'status': 'success',
+                'message': 'Notification marked as read'
+            })
+        return Response({
+            'status': 'info',
+            'message': 'Notification was already read'
+        })
 
 def create_notification(user, notification_type, title, message, action_id=None, priority='medium'):
     """
@@ -39,6 +50,3 @@ def create_notification(user, notification_type, title, message, action_id=None,
         priority=priority
     )
     return notification
-
-
-    

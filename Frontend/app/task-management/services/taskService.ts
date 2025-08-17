@@ -123,7 +123,7 @@ class TaskService {
   async createTask(taskData: TaskFormData): Promise<Task> {
     try {
       // Get the auth token
-      const token = await this.getAuthToken(); // Use your class method instead of direct AsyncStorage access
+      const token = await this.getAuthToken();
 
       // Get the username
       const username =
@@ -136,39 +136,19 @@ class TaskService {
         priority: taskData.priority || "not-urgent-not-important",
         category: taskData.category || "",
         completed: taskData.completed || false,
-        user: username, // Include the username
-        created_at: toPhilippineISOString(getCurrentPhilippineDate()), // Set created_at to now in Philippine time
-        updated_at: toPhilippineISOString(getCurrentPhilippineDate()), // Set updated_at to now in Philippine time
-        completed_at: toPhilippineISOString(taskData.completed_at),
-        due_datetime: toPhilippineISOString(taskData.due_datetime),
+        user: username,
+        created_at: new Date().toISOString(), // Use standard UTC ISO string
+        updated_at: new Date().toISOString(), // Use standard UTC ISO string
+        completed_at: taskData.completed_at
+          ? taskData.completed_at.toISOString()
+          : null,
+        due_datetime: taskData.due_datetime
+          ? taskData.due_datetime.toISOString()
+          : null,
       };
-
-      // Handle date and time properly
-      if (taskData.due_datetime) {
-        // Create a new date object based on the input date
-        const dueDate = new Date(taskData.due_datetime);
-
-        // If time is provided, add it to the date
-        if (taskData.due_time) {
-          const [timeStr, period] = (taskData.due_time || "").split(" ");
-          if (timeStr && timeStr.includes(":")) {
-            let [hours, minutes] = timeStr.split(":").map(Number);
-
-            // Convert to 24-hour format if needed
-            if (period === "PM" && hours < 12) hours += 12;
-            if (period === "AM" && hours === 12) hours = 0;
-
-            dueDate.setHours(hours, minutes, 0, 0);
-          }
-        }
-
-        // Format to ISO string in Philippine time that Django can parse
-        payload.due_datetime = toPhilippineISOString(dueDate);
-      }
 
       console.log("Sending to backend:", payload);
 
-      // Use the class apiRequest method which properly handles authentication
       const data = await this.apiRequest<Task>(
         API_ENDPOINTS.TASKS,
         "POST",
@@ -185,7 +165,7 @@ class TaskService {
     // Transform data to match API expectations
     const apiUpdates: any = {};
 
-    apiUpdates.updated_at = toPhilippineISOString(getCurrentPhilippineDate());
+    apiUpdates.updated_at = new Date().toISOString(); // Use standard UTC ISO string
 
     // Handle title correctly
     if (updates.title !== undefined) apiUpdates.title = updates.title;
@@ -193,15 +173,15 @@ class TaskService {
     if (updates.description !== undefined)
       apiUpdates.description = updates.description;
 
-    // Handle date properly for backend in Philippine time
+    // Handle date properly for backend in UTC
     if (updates.due_datetime !== undefined) {
       if (updates.due_datetime instanceof Date) {
-        // Send full Philippine time ISO string to backend
-        apiUpdates.due_datetime = toPhilippineISOString(updates.due_datetime);
+        // Send UTC ISO string to backend
+        apiUpdates.due_datetime = updates.due_datetime.toISOString();
       } else if (typeof updates.due_datetime === "string") {
-        // Convert string date to Date and then to Philippine time
+        // Convert string date to Date and then to UTC ISO string
         const dateObj = new Date(updates.due_datetime);
-        apiUpdates.due_datetime = toPhilippineISOString(dateObj);
+        apiUpdates.due_datetime = dateObj.toISOString();
       } else {
         apiUpdates.due_datetime = null; // Handle null case
       }
@@ -219,14 +199,13 @@ class TaskService {
     if (updates.completed !== undefined)
       apiUpdates.completed = updates.completed;
 
-    // Handle date timestamps in Philippine time
+    // Handle date timestamps in UTC
     if (updates.completed_at !== undefined) {
       if (updates.completed_at instanceof Date) {
-        apiUpdates.completed_at = toPhilippineISOString(updates.completed_at);
+        apiUpdates.completed_at = updates.completed_at.toISOString();
       } else if (typeof updates.completed_at === "string") {
-        // Convert string date to Date and then to Philippine time
         const dateObj = new Date(updates.completed_at);
-        apiUpdates.completed_at = toPhilippineISOString(dateObj);
+        apiUpdates.completed_at = dateObj.toISOString();
       } else {
         apiUpdates.completed_at = null;
       }
@@ -237,7 +216,6 @@ class TaskService {
     console.log("Now:", apiUpdates.updated_at);
 
     try {
-      // Use the class apiRequest method which handles authentication
       const data = await this.apiRequest<any>(
         API_ENDPOINTS.TASK_DETAIL(id),
         "PATCH",
@@ -256,7 +234,7 @@ class TaskService {
   async markTaskComplete(id: string): Promise<Task> {
     const apiUpdates = {
       completed: true,
-      completed_at: toPhilippineISOString(getCurrentPhilippineDate()),
+      completed_at: new Date().toISOString(), // Use standard UTC ISO string
     };
 
     const response = await this.apiRequest<any>(

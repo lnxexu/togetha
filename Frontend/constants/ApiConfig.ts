@@ -64,6 +64,11 @@ export const API_ENDPOINTS = {
 
     // Notification endpoints
     NOTIFICATIONS: '/notifications/',
+    NOTIFICATIONS_MARK_ALL_READ: '/notifications/mark_all_read/',
+    NOTIFICATION_MARK_READ: (notificationId: string) => `/notifications/${notificationId}/mark_read/`,
+    NOTIFICATIONS_CREATE_SAMPLE: '/notifications/create_sample/',
+    // Logs endpoints
+    LOGS: '/activity_logs/logs/',
 
 };
 
