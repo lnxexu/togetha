@@ -646,7 +646,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
             style={styles.content}
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={{
-              paddingBottom: keyboardHeight > 0 ? keyboardHeight + 60 : 100,
+              paddingBottom: keyboardHeight > 0 ? keyboardHeight + 120 : 120, // Increased to account for toolbar
             }}
           >
             <TextInput
@@ -704,6 +704,101 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
                   />
                 </TouchableOpacity>
               </View>
+            </View>
+
+            {/* Rich Text Toolbar - Positioned below folder selection */}
+            <View style={styles.richTextToolbarContainer}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.richTextToolbarContent}
+              >
+                <RichToolbar
+                  style={styles.richTextToolbar}
+                  editor={richTextRef}
+                  selectedIconTint="#007AFF"
+                  disabledIconTint="#666"
+                  actions={[
+                    "bold",
+                    "italic",
+                    "underline",
+                    "strikethrough",
+                    "heading1",
+                    "heading2",
+                    "heading3",
+                    "heading4",
+                    "heading5",
+                    "heading6",
+                    "blockquote",
+                    "code",
+                    "line",
+                    "unorderedList",
+                    "orderedList",
+                    "alignLeft",
+                    "alignCenter",
+                    "alignRight",
+                    "alignFull",
+                    "undo",
+                    "redo",
+                    "insertLink",
+                    "insertImage",
+                    "foreColor",
+                    "hiliteColor",
+                    "removeFormat",
+                  ]}
+                  iconMap={{
+                    bold: () => <MaterialIcons name="format-bold" size={20} />,
+                    italic: () => <MaterialIcons name="format-italic" size={20} />,
+                    underline: () => (
+                      <MaterialIcons name="format-underlined" size={20} />
+                    ),
+                    strikethrough: () => (
+                      <MaterialIcons name="strikethrough-s" size={20} />
+                    ),
+                    heading1: () => <Text style={styles.headingText}>H1</Text>,
+                    heading2: () => <Text style={styles.headingText}>H2</Text>,
+                    heading3: () => <Text style={styles.headingText}>H3</Text>,
+                    heading4: () => <Text style={styles.headingText}>H4</Text>,
+                    heading5: () => <Text style={styles.headingText}>H5</Text>,
+                    heading6: () => <Text style={styles.headingText}>H6</Text>,
+                    blockquote: () => <MaterialIcons name="format-quote" size={20} />,
+                    code: () => <MaterialIcons name="code" size={20} />,
+                    line: () => <MaterialIcons name="horizontal-rule" size={20} />,
+                    unorderedList: () => (
+                      <MaterialIcons name="format-list-bulleted" size={20} />
+                    ),
+                    orderedList: () => (
+                      <MaterialIcons name="format-list-numbered" size={20} />
+                    ),
+                    alignLeft: () => (
+                      <MaterialIcons name="format-align-left" size={20} />
+                    ),
+                    alignCenter: () => (
+                      <MaterialIcons name="format-align-center" size={20} />
+                    ),
+                    alignRight: () => (
+                      <MaterialIcons name="format-align-right" size={20} />
+                    ),
+                    alignFull: () => (
+                      <MaterialIcons name="format-align-justify" size={20} />
+                    ),
+                    undo: () => <MaterialIcons name="undo" size={20} />,
+                    redo: () => <MaterialIcons name="redo" size={20} />,
+                    insertLink: () => <MaterialIcons name="link" size={20} />,
+                    insertImage: () => <MaterialIcons name="image" size={20} />,
+                    foreColor: () => (
+                      <TouchableOpacity onPress={() => openColorPicker("text")}>
+                        <MaterialIcons name="format-color-text" size={20} />
+                      </TouchableOpacity>
+                    ),
+                    hiliteColor: () => (
+                      <TouchableOpacity onPress={() => openColorPicker("background")}>
+                        <MaterialIcons name="format-color-fill" size={20} />
+                      </TouchableOpacity>
+                    ),
+                  }}
+                />
+              </ScrollView>
             </View>
 
             {/* Rich Text Editor */}
@@ -810,93 +905,6 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
             </TouchableOpacity>
           </View>
         )}
-
-        {/* Full-featured Rich Text Toolbar */}
-        <RichToolbar
-          style={styles.floatingToolbarContainer}
-          editor={richTextRef}
-          selectedIconTint="#007AFF"
-          disabledIconTint="#666"
-          actions={[
-            "bold",
-            "italic",
-            "underline",
-            "strikethrough",
-            "heading1",
-            "heading2",
-            "heading3",
-            "heading4",
-            "heading5",
-            "heading6",
-            "blockquote",
-            "code",
-            "line",
-            "unorderedList",
-            "orderedList",
-            "alignLeft",
-            "alignCenter",
-            "alignRight",
-            "alignFull",
-            "undo",
-            "redo",
-            "insertLink",
-            "insertImage",
-            "foreColor",
-            "hiliteColor",
-            "removeFormat",
-          ]}
-          iconMap={{
-            bold: () => <MaterialIcons name="format-bold" size={20} />,
-            italic: () => <MaterialIcons name="format-italic" size={20} />,
-            underline: () => (
-              <MaterialIcons name="format-underlined" size={20} />
-            ),
-            strikethrough: () => (
-              <MaterialIcons name="strikethrough-s" size={20} />
-            ),
-            heading1: () => <Text style={styles.headingText}>H1</Text>,
-            heading2: () => <Text style={styles.headingText}>H2</Text>,
-            heading3: () => <Text style={styles.headingText}>H3</Text>,
-            heading4: () => <Text style={styles.headingText}>H4</Text>,
-            heading5: () => <Text style={styles.headingText}>H5</Text>,
-            heading6: () => <Text style={styles.headingText}>H6</Text>,
-            blockquote: () => <MaterialIcons name="format-quote" size={20} />,
-            code: () => <MaterialIcons name="code" size={20} />,
-            line: () => <MaterialIcons name="horizontal-rule" size={20} />,
-            unorderedList: () => (
-              <MaterialIcons name="format-list-bulleted" size={20} />
-            ),
-            orderedList: () => (
-              <MaterialIcons name="format-list-numbered" size={20} />
-            ),
-            alignLeft: () => (
-              <MaterialIcons name="format-align-left" size={20} />
-            ),
-            alignCenter: () => (
-              <MaterialIcons name="format-align-center" size={20} />
-            ),
-            alignRight: () => (
-              <MaterialIcons name="format-align-right" size={20} />
-            ),
-            alignFull: () => (
-              <MaterialIcons name="format-align-justify" size={20} />
-            ),
-            undo: () => <MaterialIcons name="undo" size={20} />,
-            redo: () => <MaterialIcons name="redo" size={20} />,
-            insertLink: () => <MaterialIcons name="link" size={20} />,
-            insertImage: () => <MaterialIcons name="image" size={20} />,
-            foreColor: () => (
-              <TouchableOpacity onPress={() => openColorPicker("text")}>
-                <MaterialIcons name="format-color-text" size={20} />
-              </TouchableOpacity>
-            ),
-            hiliteColor: () => (
-              <TouchableOpacity onPress={() => openColorPicker("background")}>
-                <MaterialIcons name="format-color-fill" size={20} />
-              </TouchableOpacity>
-            ),
-          }}
-        />
 
         {/* RINA Button for Text Selection */}
         <RinaButton
@@ -1148,7 +1156,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     paddingHorizontal: 24,
-    paddingTop: Platform.OS === "ios" ? 60 : 45,
+    paddingTop: Platform.OS === "ios" ? 50 : 50,
     paddingBottom: "100%",
     zIndex: 1,
   },
@@ -1322,7 +1330,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   folderSection: {
-    marginBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
     paddingBottom: 16,
@@ -1567,24 +1574,54 @@ const styles = StyleSheet.create({
     fontFamily: "Inter-SemiBold",
     fontSize: 16,
   },
-  floatingToolbarContainer: {
-    position: "absolute",
-    left: 12,
-    right: 12,
-    zIndex: 1000,
-    maxWidth: "100%",
-    backgroundColor: "#fff",
-    borderRadius: 28,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
+  // Rich Text Toolbar Styles (similar to Drawing Toolbar)
+  richTextToolbarContainer: {
+    width: '100%',
+    backgroundColor: "#fafbfc",
+    borderTopWidth: 1,
+    borderTopColor: "#e9ecef",
+    overflow: 'visible',
+    zIndex: 10,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: "rgba(0,0,0,0.06)",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    bottom: 80,
+    borderColor: "#E2E8F0",
+  },
+  richTextToolbarScrollView: {
+    width: '100%',
+    minWidth: 360,
+    backgroundColor: "#fafbfc",
+    borderRadius: 0,
+    borderWidth: 0,
+    shadowColor: "transparent",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    elevation: 0,
+    overflow: 'visible',
+    zIndex: 1,
+  },
+  richTextToolbarContent: {
+    flexDirection: 'row',
+    flexGrow: 1,
+    alignItems: "center",
+    justifyContent: "flex-start",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  richTextToolbar: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 0,
+    shadowColor: "transparent",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    elevation: 0,
+    borderWidth: 0,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    flexDirection: "row",
+    alignItems: "center",
   },
   headingText: {
     fontSize: 14,

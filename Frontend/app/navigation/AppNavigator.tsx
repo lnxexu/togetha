@@ -21,6 +21,7 @@ import Logs from '../logs/logs';
 //note-taking components
 import ImportPDFPage from '../note-taking/ImportPDFPage';
 import NewNoteEditor from '../note-taking/NewNoteEditor';
+import { DrawingEditor } from '../note-taking';
 
 //task management components
 import AddTask from '../task-management/AddTask';
@@ -80,6 +81,15 @@ export type RootStackParamList = {
   };
   PDFs: undefined;
   RINA: undefined;
+  DrawingEditor: {
+    initialSetup?: {
+      title: string;
+      size: string;
+      orientation: string;
+      template: string;
+      dimensions: string;
+    };
+  } | undefined;
   Profile: undefined;
   ManageProfile: undefined;
   EditProfile: undefined;
@@ -289,6 +299,7 @@ const AppNavigator: React.FC = () => {
         {/* Note Taking components */}
         <Stack.Screen name="NoteEditor" component={NewNoteEditor} />
         <Stack.Screen name="PDFs" component={ImportPDFPage} />
+        <Stack.Screen name="DrawingEditor" component={DrawingEditor} />
 
         {/* Task Management components */}
         <Stack.Screen name="TaskDetails" component={TaskDetails} />

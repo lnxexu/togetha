@@ -19,15 +19,18 @@ import {
   useWindowDimensions,
   TouchableWithoutFeedback,
 } from "react-native";
-import { Ionicons, MaterialIcons } from "@expo/vector-icons";
-
+import {
+  MaterialIcons,
+  MaterialCommunityIcons,
+  Ionicons,
+} from "@expo/vector-icons";
 import RenderHtml from "react-native-render-html";
 import Navbar from "../NavBar";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { RefreshControl } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-// Fix 1: Remove unused API_ENDPOINTS import
+import TemplateOverlay, { TemplateType } from "./components/TemplateOverlay";
 import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
 import {
   showSuccessToast,
@@ -102,12 +105,36 @@ const FOLDER_COLORS = [
   "#BB8FCE",
 ];
 
+const DRAWING_SIZES = [
+  { id: "small", name: "Small", landscape: "400×300", portrait: "300×400" },
+  { id: "medium", name: "Medium", landscape: "800×600", portrait: "600×800" },
+  { id: "large", name: "Large", landscape: "1200×900", portrait: "900×1200" },
+  {
+    id: "xl",
+    name: "Extra Large",
+    landscape: "1600×1200",
+    portrait: "1200×1600",
+  },
+];
+
+const DRAWING_TEMPLATES = [
+  { id: "blank", name: "Blank Canvas", icon: "crop-din" },
+  { id: "grid", name: "Grid", icon: "grid-on" },
+  { id: "lines", name: "Lined Paper", icon: "format-align-justify" },
+  { id: "dots", name: "Dot Grid", icon: "more-horiz" },
+  { id: "sketch", name: "Sketch Pad", icon: "brush" },
+  { id: "notes", name: "Note Taking", icon: "note-add" },
+];
+
 export default function NotesScreen({ navigation }: NotesScreenProps) {
+  // Track dropdown position for absolute positioning
+  const [dropdownPosition, setDropdownPosition] = useState({ x: 0, y: 0 });
+
   const [notes, setNotes] = useState<Note[]>(INITIAL_NOTES);
   const [folders, setFolders] = useState<Folder[]>(DUMMY_FOLDERS);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFilter, setSelectedFilter] = useState("all");
-  const [viewMode, setViewMode] = useState<"list" | "grid">("list");
+  // Removed list mode option - always using grid view for modern appearance
   const [showCreateFolderModal, setShowCreateFolderModal] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [selectedFolderColor, setSelectedFolderColor] = useState("#667EEA");
@@ -116,6 +143,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
   const [activeNoteOptions, setActiveNoteOptions] = useState<string | null>(
     null
   );
+
   const [isLoading, setIsLoading] = useState(false);
 
   // Fix 2: Either use error state or use _ to indicate unused variable
@@ -149,57 +177,63 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
   >(null);
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
   const [folderToDelete, setFolderToDelete] = useState<string | null>(null);
+  const [showAddOptionsMenu, setShowAddOptionsMenu] = useState(false);
+  const [showDrawingSetupModal, setShowDrawingSetupModal] = useState(false);
+  const [drawingTitle, setDrawingTitle] = useState("");
+  const [selectedSize, setSelectedSize] = useState("medium");
+  const [selectedOrientation, setSelectedOrientation] = useState("landscape");
+  const [selectedTemplate, setSelectedTemplate] = useState("blank");
 
-  // Memoize HTML tag styles to prevent recreation on every render
+  // Memoize HTML tag styles for grid view (now the only view)
   const htmlTagStyles = useMemo(
     () => ({
       p: {
         margin: 0,
         padding: 0,
         color: "#1E293B",
-        fontSize: viewMode === "grid" ? 13 : 15,
-        lineHeight: viewMode === "grid" ? 18 : 22,
+        fontSize: 13,
+        lineHeight: 18,
         fontFamily: "Inter-Regular",
       },
       body: { margin: 0, padding: 0 },
       li: {
-        fontSize: viewMode === "grid" ? 13 : 15,
-        lineHeight: viewMode === "grid" ? 18 : 22,
+        fontSize: 13,
+        lineHeight: 18,
         color: "#1E293B",
         fontFamily: "Inter-Regular",
       },
       h1: {
-        fontSize: viewMode === "grid" ? 15 : 17,
-        fontWeight: 700 as any, // Cast to avoid type error
+        fontSize: 15,
+        fontWeight: "700",
         color: "#0F172A",
         marginVertical: 2,
         fontFamily: "Inter-Bold",
       },
       h2: {
-        fontSize: viewMode === "grid" ? 14 : 16,
-        fontWeight: 700 as any, // Cast to avoid type error
+        fontSize: 14,
+        fontWeight: "700",
         color: "#0F172A",
         marginVertical: 2,
         fontFamily: "Inter-Bold",
       },
       h3: {
-        fontSize: viewMode === "grid" ? 13 : 15,
-        fontWeight: 700 as any, // Cast to avoid type error
+        fontSize: 13,
+        fontWeight: "700",
         color: "#0F172A",
         marginVertical: 2,
         fontFamily: "Inter-Bold",
       },
       a: {
         color: "#6A009C",
-        textDecorationLine: "underline" as "underline",
-        fontWeight: 500 as any, // Cast to avoid type error
+        textDecorationLine: "underline",
+        fontWeight: "500",
       },
       strong: {
-        fontWeight: 700 as any, // Cast to avoid type error
+        fontWeight: "700",
         color: "#0F172A",
       },
       em: {
-        fontStyle: "italic" as "italic", // Explicitly cast to the literal type
+        fontStyle: "italic",
         color: "#334155",
       },
       img: { maxWidth: "100%", height: "auto", marginVertical: 4 },
@@ -242,8 +276,61 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
         borderColor: "#E2E8F0",
       },
     }),
-    [viewMode]
-  ); // Only recreate when viewMode changes
+    []
+  );
+
+  // Create a separate preview tag styles with proper typings for RenderHtml
+  const previewHtmlTagStyles = useMemo(
+    () => ({
+      p: {
+        margin: 0,
+        padding: 0,
+        color: "#1E293B",
+        fontSize: 10,
+        lineHeight: 14,
+        fontFamily: "Inter-Regular",
+      },
+      body: { margin: 0, padding: 0 },
+      h1: {
+        fontSize: 12,
+        fontWeight: "700" as const,
+        color: "#0F172A",
+        marginVertical: 2,
+        fontFamily: "Inter-Bold",
+      },
+      h2: {
+        fontSize: 11,
+        fontWeight: "700" as const,
+        color: "#0F172A",
+        marginVertical: 1,
+        fontFamily: "Inter-Bold",
+      },
+      h3: {
+        fontSize: 10,
+        fontWeight: "700" as const,
+        color: "#0F172A",
+        marginVertical: 1,
+        fontFamily: "Inter-Bold",
+      },
+      li: {
+        fontSize: 10,
+        lineHeight: 14,
+        color: "#1E293B",
+        fontFamily: "Inter-Regular",
+      },
+      strong: {
+        fontWeight: "700" as const,
+      },
+      em: {
+        fontStyle: "italic" as const,
+      },
+      a: {
+        color: "#6A009C",
+        textDecorationLine: "underline" as const,
+      },
+    }),
+    []
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -505,7 +592,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
                   throw new Error("Failed to remove note from folder");
                 } else {
                   showSuccessToast("Note removed from folder successfully");
-                        // Update local state to reflect changes
+                  // Update local state to reflect changes
                   const updatedNotes = notes.map((note) =>
                     note.id === noteId
                       ? { ...note, folderId: undefined, folder: undefined }
@@ -528,8 +615,6 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
           },
         ]
       );
-
-
 
       // If we're filtering by a specific folder, we might need to refresh
       fetchNotes();
@@ -637,6 +722,45 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
     navigation.navigate("NoteEditor", {
       initialNote: initialNoteData,
     });
+  };
+
+  const handleCreateDrawing = () => {
+    // Show drawing setup modal instead of navigating directly
+    setShowDrawingSetupModal(true);
+  };
+
+  const closeDrawingSetupModal = () => {
+    setShowDrawingSetupModal(false);
+    setDrawingTitle("");
+    setSelectedSize("medium");
+    setSelectedOrientation("landscape");
+    setSelectedTemplate("blank");
+  };
+
+  const handleCreateDrawingWithSetup = () => {
+    // Get selected size dimensions
+    const sizeConfig = DRAWING_SIZES.find((size) => size.id === selectedSize);
+    const dimensions =
+      selectedOrientation === "landscape"
+        ? sizeConfig?.landscape
+        : sizeConfig?.portrait;
+
+    // Show toast message
+    showInfoToast("Creating new drawing...");
+
+    // Navigate to drawing editor with setup preferences
+    navigation.navigate("DrawingEditor", {
+      initialSetup: {
+        title: drawingTitle || "Untitled Drawing",
+        size: selectedSize,
+        orientation: selectedOrientation,
+        template: selectedTemplate,
+        dimensions: dimensions || "800×600",
+      },
+    });
+
+    // Close the modal and reset state
+    closeDrawingSetupModal();
   };
 
   const assignNotesToFolder = async (folderID: string, noteIDs: string[]) => {
@@ -1025,18 +1149,17 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
     return filteredNotes;
   }, [filteredNotes, selectedFilterFolder]);
 
-  // Pre-memoized separator component to avoid conditional hook rendering
-  const NoteSeparatorComponent = useMemo(
-    () => () => <View style={styles.noteSeparator} />,
-    []
-  );
+  // No separator component needed for grid view
 
   // Pre-memoized empty list component to avoid conditional hook rendering
   const NotesEmptyListComponent = useMemo(
     () => () =>
       (
         <View style={styles.emptyState}>
-          <MaterialIcons name="description" size={64} color="#CBD5E0" />
+          <View style={styles.emptyStateIconContainer}>
+            <MaterialIcons name="grid-view" size={36} color="#CBD5E0" />
+            <MaterialIcons name="note-add" size={64} color="#CBD5E0" />
+          </View>
           <Text style={styles.emptyStateTitle}>
             {selectedFilterFolder === "unorganized"
               ? "No unorganized notes"
@@ -1051,14 +1174,26 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
               ? "Loading your notes..."
               : selectedFilterFolder === "unorganized"
               ? "All your notes are organized in folders"
-              : "Create a new note to get started"}
+              : "Create a note or drawing to get started"}
           </Text>
-          <TouchableOpacity
-            style={styles.createButton}
-            onPress={() => handleCreateNote()}
-          >
-            <Text style={styles.createButtonText}>Create Note</Text>
-          </TouchableOpacity>
+
+          <View style={styles.emptyStateButtons}>
+            <TouchableOpacity
+              style={[styles.createButton, styles.emptyStateNoteButton]}
+              onPress={() => handleCreateNote()}
+            >
+              <MaterialIcons name="note-add" size={20} color="#FFFFFF" />
+              <Text style={styles.createButtonText}>Create Note</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.createButton, styles.emptyStateDrawingButton]}
+              onPress={() => setShowDrawingSetupModal(true)}
+            >
+              <MaterialIcons name="brush" size={20} color="#FFFFFF" />
+              <Text style={styles.createButtonText}>Create Drawing</Text>
+            </TouchableOpacity>
+          </View>
 
           {selectedFilterFolder === "unorganized" && (
             <Text style={styles.emptyStateHint}>
@@ -1067,122 +1202,230 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
           )}
         </View>
       ),
-    [searchQuery, isLoading, selectedFilterFolder, handleCreateNote]
+    [
+      searchQuery,
+      isLoading,
+      selectedFilterFolder,
+      handleCreateNote,
+      setShowDrawingSetupModal,
+    ]
   );
 
   const renderNoteItem = useCallback(
-    ({ item }: { item: Note }) => (
-      <TouchableOpacity
-        style={[
-          viewMode === "list" ? styles.noteItem : styles.gridNoteItem,
-          isSelectMode &&
-            selectedNotes.includes(item.id) &&
-            styles.selectedNoteItem,
-        ]}
-        activeOpacity={0.8}
-        onPress={() => {
-          if (isSelectMode) {
-            toggleNoteSelection(item.id);
-          } else {
-            handleNotePress(item);
-          }
-        }}
-        onLongPress={() => {
-          if (!isSelectMode) {
-            setIsSelectMode(true);
-            toggleNoteSelection(item.id);
-          }
-        }}
-      >
-        <View
-          style={[
-            styles.noteContent,
-            viewMode === "grid" && styles.gridNoteContent,
-          ]}
-        >
-          <View style={styles.noteHeader}>
-            <View style={styles.noteTitleContainer}>
-              <View
-                style={[
-                  styles.noteTypeIcon,
-                  viewMode === "grid" && styles.gridNoteTypeIcon,
-                  {
-                    backgroundColor:
-                      item.type === "image" ? "#FEF3C7" : "#d9e7f8ff",
-                  },
-                ]}
-              >
-                <Ionicons
-                  name={item.type === "image" ? "image" : "document-text"}
-                  size={viewMode === "grid" ? 16 : 22}
-                  color={item.type === "image" ? "#D97706" : "#3B82F6"}
+    ({ item }: { item: Note }) => {
+      // Create content preview for rendering as image placeholder
+      const getPreviewContent = () => {
+        // For drawing notes, create a drawing/sketch preview
+        if (item.type === "image") {
+          return (
+            <View style={styles.previewImageContainer}>
+              <View style={styles.drawingPreview}>
+                <MaterialIcons
+                  name="brush"
+                  size={36}
+                  color="#8B5CF6"
+                  style={styles.drawingIcon}
                 />
-              </View>
-              <View style={styles.noteTitleSection}>
-                <Text
-                  style={[
-                    styles.noteTitle,
-                    viewMode === "grid" && styles.gridNoteTitle,
-                  ]}
-                  numberOfLines={1}
-                  ellipsizeMode="tail"
-                >
-                  {item.title || "Untitled Note"}
-                </Text>
-
-                <View style={styles.noteDateContainer}>
-                  <Text style={styles.noteDate}>
-                    {item.updatedAt.toLocaleDateString("en-US", {
-                      year: "numeric",
-                      month: "short",
-                      day: "numeric",
-                    })}
-                  </Text>
-                  {!selectedFilterFolder && item.folderId && (
-                    <View style={[styles.folderBadge, { marginRight: 8 }]}>
-                      <MaterialIcons name="folder" size={10} color="#6A009C" />
-                      <Text style={styles.folderBadgeText}>
-                        {folders.find((f) => f.id === item.folderId)?.name ||
-                          "Folder"}
-                      </Text>
-                    </View>
-                  )}
+                <View style={styles.drawingPatterns}>
+                  {/* Decorative lines to simulate a drawing */}
+                  <View
+                    style={[styles.drawingLine, { width: "80%", opacity: 0.7 }]}
+                  />
+                  <View
+                    style={[styles.drawingLine, { width: "60%", opacity: 0.5 }]}
+                  />
+                  <View
+                    style={[styles.drawingLine, { width: "70%", opacity: 0.3 }]}
+                  />
                 </View>
               </View>
             </View>
+          );
+        }
+        // For text notes, create a preview of the actual content
+        else {
+          // If we have formatted content, display it
+          if (item.formatted_content) {
+            return (
+              <View style={styles.previewContentContainer}>
+                <RenderHtml
+                  contentWidth={windowWidth / 2 - 64}
+                  source={{ html: item.formatted_content }}
+                  tagsStyles={previewHtmlTagStyles}
+                  enableExperimentalMarginCollapsing={true}
+                />
+              </View>
+            );
+          }
+          // Otherwise display a simple text preview
+          else if (item.content) {
+            return (
+              <View style={styles.previewTextContainer}>
+                <Text style={styles.previewTextContent} numberOfLines={4}>
+                  {item.content}
+                </Text>
+              </View>
+            );
+          }
+          // Fallback for empty notes
+          else {
+            return (
+              <View style={styles.previewDocumentContainer}>
+                <View style={styles.documentLines}>
+                  {/* Title line */}
+                  <View
+                    style={[styles.documentLine, styles.documentTitleLine]}
+                  />
 
-            {!isSelectMode && (
-              <TouchableWithoutFeedback
-                onPress={(e) => {
-                  e.stopPropagation();
-                  setActiveNoteOptions(
-                    activeNoteOptions === item.id ? null : item.id
-                  );
-                }}
-              >
+                  {/* Content lines - shortened and varied widths to simulate text */}
+                  <View style={[styles.documentLine, { width: "90%" }]} />
+                  <View style={[styles.documentLine, { width: "75%" }]} />
+                  <View style={[styles.documentLine, { width: "85%" }]} />
+                  <View style={[styles.documentLine, { width: "65%" }]} />
+                </View>
+              </View>
+            );
+          }
+        }
+      };
+
+      return (
+        <TouchableOpacity
+          style={[
+            styles.gridNoteItem,
+            isSelectMode &&
+              selectedNotes.includes(item.id) &&
+              styles.selectedNoteItem,
+          ]}
+          activeOpacity={0.8}
+          onPress={() => {
+            if (isSelectMode) {
+              toggleNoteSelection(item.id);
+            } else {
+              handleNotePress(item);
+            }
+          }}
+          onLongPress={() => {
+            if (!isSelectMode) {
+              setIsSelectMode(true);
+              toggleNoteSelection(item.id);
+            }
+          }}
+        >
+          <View style={styles.gridNoteContent}>
+            {/* Preview Image Container */}
+            {getPreviewContent()}
+
+            {/* Note Header */}
+            <View style={styles.noteHeader}>
+              <View style={styles.noteTitleContainer}>
                 <View
-                  style={
-                    viewMode === "grid"
-                      ? styles.gridNoteOptionsButton
-                      : styles.noteOptionsButton
-                  }
+                  style={[
+                    styles.gridNoteTypeIcon,
+                    {
+                      backgroundColor:
+                        item.type === "image" ? "#FEF3C7" : "#d9e7f8ff",
+                    },
+                  ]}
                 >
-                  <MaterialIcons
-                    name="more-vert"
-                    size={viewMode === "grid" ? 16 : 20}
-                    color="#9CA3AF"
+                  <Ionicons
+                    name={item.type === "image" ? "image" : "document-text"}
+                    size={16}
+                    color={item.type === "image" ? "#D97706" : "#3B82F6"}
                   />
                 </View>
-              </TouchableWithoutFeedback>
-            )}
+                <View style={styles.noteTitleSection}>
+                  <Text
+                    style={styles.gridNoteTitle}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                  >
+                    {item.title || "Untitled Note"}
+                  </Text>
+                </View>
+              </View>
 
+              {!isSelectMode && (
+                <TouchableWithoutFeedback
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    setActiveNoteOptions(
+                      activeNoteOptions === item.id ? null : item.id
+                    );
+                  }}
+                >
+                  <View style={styles.gridNoteOptionsButton}>
+                    <MaterialIcons name="more-vert" size={16} color="#9CA3AF" />
+                  </View>
+                </TouchableWithoutFeedback>
+              )}
+            </View>
+
+            {/* Footer with date, folder and tags in one container */}
+            <View style={styles.noteFooter}>
+              <Text style={styles.noteDate}>
+                {item.updatedAt.toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                })}
+              </Text>
+
+              <View style={styles.metadataContainer}>
+                {!selectedFilterFolder && item.folderId && (
+                  <View style={styles.folderBadge}>
+                    <MaterialIcons name="folder" size={10} color="#6A009C" />
+                    <Text style={styles.folderBadgeText} numberOfLines={1}>
+                      {folders.find((f) => f.id === item.folderId)?.name ||
+                        "Folder"}
+                    </Text>
+                  </View>
+                )}
+
+                {/* Tags inline with folder */}
+                {item.tags && item.tags.length > 0 && (
+                  <View style={styles.inlineTagsContainer}>
+                    {item.tags.slice(0, 1).map((tag, idx) => (
+                      <View key={idx} style={styles.gridTag}>
+                        <MaterialIcons
+                          name="local-offer"
+                          size={8}
+                          color="#4B5563"
+                        />
+                        <Text style={styles.gridTagText}>
+                          {typeof tag === "string"
+                            ? tag
+                            : tag && typeof tag === "object" && "name" in tag
+                            ? tag.name
+                            : ""}
+                        </Text>
+                      </View>
+                    ))}
+                    {item.tags.length > 1 && (
+                      <View style={styles.gridMoreTagsIndicator}>
+                        <Text style={styles.gridMoreTagsText}>
+                          +{item.tags.length - 1}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+              </View>
+            </View>
+
+            {/* Options Dropdown - Always use grid version */}
             {activeNoteOptions === item.id && (
               <View
-                style={
-                  viewMode === "grid"
-                    ? styles.gridNoteOptionsDropdown
-                    : styles.noteOptionsDropdown
-                }
+                style={[
+                  styles.gridNoteOptionsDropdown,
+                  styles.dropdownMenuAbsolute,
+                  {
+                    position: "absolute",
+                    right: 5,
+                    top: 30,
+                    zIndex: 9999999,
+                  },
+                ]}
+                pointerEvents="auto"
               >
                 <TouchableWithoutFeedback
                   onPress={(e) => {
@@ -1191,7 +1434,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
                   }}
                 >
                   <View style={styles.noteOptionItem}>
-                    <MaterialIcons name="folder" size={18} color="#6A009C" />
+                    <Ionicons name="folder-outline" size={20} color="#333" />
                     <Text style={styles.noteOptionText}>
                       {item.folderId ? "Move to Folder" : "Add to Folder"}
                     </Text>
@@ -1206,10 +1449,10 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
                     }}
                   >
                     <View style={styles.noteOptionItem}>
-                      <MaterialIcons
-                        name="folder-off"
+                      <Ionicons
+                        name="remove-circle-outline"
                         size={18}
-                        color="#6A009C"
+                        color="#EF4444"
                       />
                       <Text style={styles.noteOptionText}>
                         Remove from Folder
@@ -1225,101 +1468,27 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
                   }}
                 >
                   <View style={styles.noteOptionItem}>
-                    <MaterialIcons name="delete" size={18} color="#EF4444" />
+                    <Ionicons name="trash-outline" size={20} color="#EF4444" />
                     <Text style={styles.noteOptionText}>Delete Note</Text>
                   </View>
                 </TouchableWithoutFeedback>
               </View>
             )}
           </View>
-
-          {/* Show tags */}
-          {item.tags && item.tags.length > 0 && (
-            <View
-              style={[
-                styles.tagsContainer,
-                viewMode === "grid" && styles.gridTagsContainer,
-              ]}
-            >
-              {item.tags
-                .slice(0, viewMode === "grid" ? 1 : 3)
-                .map((tag, idx) => (
-                  <View
-                    key={idx}
-                    style={[styles.tag, viewMode === "grid" && styles.gridTag]}
-                  >
-                    <Text
-                      style={[
-                        styles.tagText,
-                        viewMode === "grid" && styles.gridTagText,
-                      ]}
-                    >
-                      {typeof tag === "string"
-                        ? tag
-                        : tag && typeof tag === "object" && "name" in tag
-                        ? tag.name
-                        : ""}
-                    </Text>
-                  </View>
-                ))}
-              {item.tags.length > (viewMode === "grid" ? 1 : 3) && (
-                <View
-                  style={[
-                    styles.moreTagsIndicator,
-                    viewMode === "grid" && styles.gridMoreTagsIndicator,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.moreTagsText,
-                      viewMode === "grid" && styles.gridMoreTagsText,
-                    ]}
-                  >
-                    +{item.tags.length - (viewMode === "grid" ? 1 : 3)}
-                  </Text>
-                </View>
-              )}
-            </View>
-          )}
-
-          {/* Note content preview - now appears below the date */}
-          {item.formatted_content ? (
-            <View
-              style={[
-                styles.htmlPreviewContainer,
-                viewMode === "grid" && styles.gridHtmlPreviewContainer,
-              ]}
-            >
-              <RenderHtml
-                contentWidth={windowWidth - (viewMode === "grid" ? 96 : 88)}
-                source={{ html: item.formatted_content }}
-              />
-              <View style={styles.fadeOverlay} />
-            </View>
-          ) : (
-            <Text
-              style={[
-                styles.notePreview,
-                viewMode === "grid" && styles.gridNotePreview,
-              ]}
-              numberOfLines={viewMode === "grid" ? 4 : 3}
-              ellipsizeMode="tail"
-            >
-              {item.content}
-            </Text>
-          )}
-        </View>
-      </TouchableOpacity>
-    ),
+        </TouchableOpacity>
+      );
+    },
     [
-      viewMode,
       isSelectMode,
       selectedNotes,
       activeNoteOptions,
       folders,
-      htmlTagStyles,
       selectedFilterFolder,
-      windowWidth,
+      handleNotePress,
+      toggleNoteSelection,
+      handleAddToFolder,
+      handleRemoveFromFolder,
+      handleDeleteNote,
     ]
   );
 
@@ -1563,12 +1732,18 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
           <View style={{ flex: 1 }} />
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={closeCreateFolderModal}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
               <Text style={styles.modalTitle}>Create New Folder</Text>
               <TouchableOpacity
-                onPress={closeCreateFolderModal}
-                style={styles.modalCloseButton}
+                style={styles.createButton}
+                onPress={handleCreateFolder}
               >
-                <MaterialIcons name="close" size={24} color="#9CA3AF" />
+                <Text style={styles.createButtonText}>Create</Text>
               </TouchableOpacity>
             </View>
 
@@ -1619,21 +1794,218 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
                 </ScrollView>
               </View>
             </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
 
-            <View style={styles.modalFooter}>
+  const renderDrawingSetupModal = () => (
+    <Modal
+      visible={showDrawingSetupModal}
+      transparent={true}
+      animationType="slide"
+      onRequestClose={closeDrawingSetupModal}
+    >
+      <KeyboardAvoidingView
+        style={styles.modalContainer}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 60 : 20}
+        enabled
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={closeDrawingSetupModal}
+        >
+          <View style={{ flex: 1 }} />
+          <View style={styles.modalContent}>
+            {/* Header with Cancel and Create buttons */}
+            <View style={styles.modalHeader}>
               <TouchableOpacity
                 style={styles.cancelButton}
-                onPress={closeCreateFolderModal}
+                onPress={closeDrawingSetupModal}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
+              <Text style={styles.modalTitle}>Create New Drawing</Text>
               <TouchableOpacity
                 style={styles.createButton}
-                onPress={handleCreateFolder}
+                onPress={handleCreateDrawingWithSetup}
               >
-                <Text style={styles.createButtonText}>Create Folder</Text>
+                <Text style={styles.createButtonText}>Create</Text>
               </TouchableOpacity>
             </View>
+
+            <ScrollView
+              style={styles.modalBody}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              {/* Title Setup Section */}
+              <View style={styles.inputGroup}>
+                <View style={styles.singleRowTitleContainer}>
+                  <Text style={styles.inputLabel}>Drawing Title</Text>
+                  <TextInput
+                    style={styles.textInputSingleRow}
+                    value={drawingTitle}
+                    onChangeText={setDrawingTitle}
+                    placeholder="Enter drawing title"
+                    placeholderTextColor="#9CA3AF"
+                    maxLength={50}
+                    returnKeyType="done"
+                    numberOfLines={1}
+                  />
+                </View>
+              </View>
+
+              {/* Size Options Section */}
+              <View style={styles.inputGroup}>
+                <View style={styles.singleRowTitleContainer}>
+                  <Text style={styles.inputLabel}>Canvas Size</Text>
+                </View>
+                <View style={styles.sizeGrid}>
+                  {DRAWING_SIZES.map((size) => (
+                    <TouchableOpacity
+                      key={size.id}
+                      style={[
+                        styles.sizeOption,
+                        selectedSize === size.id && styles.selectedSizeOption,
+                      ]}
+                      onPress={() => setSelectedSize(size.id)}
+                    >
+                      <Text
+                        style={[
+                          styles.sizeOptionName,
+                          selectedSize === size.id &&
+                            styles.selectedSizeOptionText,
+                        ]}
+                      >
+                        {size.name}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.sizeOptionDimensions,
+                          selectedSize === size.id &&
+                            styles.selectedSizeOptionText,
+                        ]}
+                      >
+                        {selectedOrientation === "landscape"
+                          ? size.landscape
+                          : size.portrait}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* Orientation Toggle */}
+                <View style={styles.orientationContainer}>
+                  <View style={styles.singleRowTitleContainer}>
+                    <Text style={styles.orientationLabel}>Orientation</Text>
+                  </View>
+                  <View style={styles.orientationToggle}>
+                    <TouchableOpacity
+                      style={[
+                        styles.orientationButton,
+                        selectedOrientation === "landscape" &&
+                          styles.selectedOrientationButton,
+                      ]}
+                      onPress={() => setSelectedOrientation("landscape")}
+                    >
+                      <MaterialIcons
+                        name="crop-landscape"
+                        size={20}
+                        color={
+                          selectedOrientation === "landscape"
+                            ? "#FFFFFF"
+                            : "#6B7280"
+                        }
+                      />
+                      <Text
+                        style={[
+                          styles.orientationButtonText,
+                          selectedOrientation === "landscape" &&
+                            styles.selectedOrientationButtonText,
+                        ]}
+                      >
+                        Landscape
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.orientationButton,
+                        selectedOrientation === "portrait" &&
+                          styles.selectedOrientationButton,
+                      ]}
+                      onPress={() => setSelectedOrientation("portrait")}
+                    >
+                      <MaterialIcons
+                        name="crop-portrait"
+                        size={20}
+                        color={
+                          selectedOrientation === "portrait"
+                            ? "#FFFFFF"
+                            : "#6B7280"
+                        }
+                      />
+                      <Text
+                        style={[
+                          styles.orientationButtonText,
+                          selectedOrientation === "portrait" &&
+                            styles.selectedOrientationButtonText,
+                        ]}
+                      >
+                        Portrait
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+
+              {/* Templates Section */}
+              <View style={styles.inputGroup}>
+                <View style={styles.singleRowTitleContainer}>
+                  <Text style={styles.inputLabel}>Choose Template</Text>
+                </View>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.templateScrollRow}
+                >
+                  {DRAWING_TEMPLATES.map((template) => (
+                    <TouchableOpacity
+                      key={template.id}
+                      style={[
+                        styles.templateOption,
+                        selectedTemplate === template.id &&
+                          styles.selectedTemplateOption,
+                      ]}
+                      onPress={() => setSelectedTemplate(template.id)}
+                      activeOpacity={0.8}
+                    >
+                      <View style={styles.templatePreviewWrapper}>
+                        <TemplateOverlay
+                          template={template.id as TemplateType}
+                          canvasWidth={100}
+                          canvasHeight={60}
+                        />
+                      </View>
+                      <Text
+                        style={[
+                          styles.templateName,
+                          selectedTemplate === template.id &&
+                            styles.selectedTemplateName,
+                        ]}
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
+                      >
+                        {template.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            </ScrollView>
           </View>
         </TouchableOpacity>
       </KeyboardAvoidingView>
@@ -2003,10 +2375,19 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
         </View>
       </LinearGradient>
 
+      {/* Global overlay for dropdown - positioned absolutely over everything */}
+      {activeNoteOptions && (
+        <TouchableWithoutFeedback onPress={() => setActiveNoteOptions(null)}>
+          <View style={styles.overlayForDropdown}></View>
+        </TouchableWithoutFeedback>
+      )}
+
       {/* Options Dropdown - positioned outside header for proper overlay */}
+
       {showOptionsDropdown && (
         <View style={styles.optionsDropdownContainer}>
           <View style={styles.optionsDropdown}>
+            <View style={styles.dropdownPointer} />
             <TouchableOpacity
               style={styles.dropdownOption}
               onPress={() => {
@@ -2014,46 +2395,42 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
                 setShowOptionsDropdown(false);
               }}
             >
-              <MaterialIcons
-                name="create-new-folder"
-                size={20}
-                color="#6A009C"
-              />
+              <Ionicons name="folder-open-outline" size={20} color="#333" />
+
+              {/* No outlined variant, keep as is */}
               <Text style={styles.dropdownOptionText}>Create Folder</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.dropdownOption}
-              onPress={() => {
-                setViewMode(viewMode === "list" ? "grid" : "list");
-                setShowOptionsDropdown(false);
-              }}
-            >
-              <MaterialIcons
-                name={viewMode === "list" ? "grid-view" : "view-list"}
-                size={20}
-                color="#6A009C"
-              />
-              <Text style={styles.dropdownOptionText}>
-                {viewMode === "list" ? "Grid View" : "List View"}
-              </Text>
-            </TouchableOpacity>
+            {/* Removed list/grid view toggle - permanently using grid view */}
 
             <TouchableOpacity
               style={styles.dropdownOption}
               onPress={() => {
-                navigation.navigate("PDFs"); // Navigate to the ImportPDFPage
-                setShowOptionsDropdown(false); // Close the dropdown
+                setShowDrawingSetupModal(true);
+                setShowOptionsDropdown(false);
               }}
             >
-              <MaterialIcons name="picture-as-pdf" size={20} color="#6A009C" />
+              <MaterialCommunityIcons name="brush" size={20} color="#333" />
+              <Text style={styles.dropdownOptionText}>New Drawing</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.dropdownOption,
+                { borderBottomWidth: 0, borderBottomColor: "transparent" },
+              ]}
+              onPress={() => {
+                navigation.navigate("PDFs");
+                setShowOptionsDropdown(false);
+              }}
+            >
+              <Ionicons name="document-outline" size={20} color="#333" />
               <Text style={styles.dropdownOptionText}>Import PDF</Text>
             </TouchableOpacity>
           </View>
         </View>
       )}
-
-      {/* Main Notes List */}
+      {/* Main Notes List as Grid */}
       <FlatList
         data={notesViewData}
         renderItem={renderNoteItem}
@@ -2068,32 +2445,85 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
           />
         }
         ListEmptyComponent={NotesEmptyListComponent}
-        ItemSeparatorComponent={NoteSeparatorComponent}
-        removeClippedSubviews={true}
+        numColumns={2} // Display notes in 2 columns
+        columnWrapperStyle={styles.notesGridRow}
+        initialNumToRender={8}
         maxToRenderPerBatch={10}
-        initialNumToRender={10}
         windowSize={10}
-        // Fix 7: Remove unused data parameter
         getItemLayout={(_, index) => {
+          // Fixed height for grid items for better performance
+          const length = 220; // Height of grid note item
+          const offset = Math.floor(index / 2) * length;
           return {
-            length: viewMode === "grid" ? 180 : 120,
-            offset: (viewMode === "grid" ? 180 : 120) * index,
+            length,
+            offset,
             index,
           };
         }}
       />
 
-      {/* Floating Action Button */}
+      {/* Floating Action Buttons */}
+      {/* Add Options Menu */}
+      {showAddOptionsMenu && (
+        <View style={styles.addOptionsContainer}>
+          <TouchableWithoutFeedback
+            onPress={() => setShowAddOptionsMenu(false)}
+          >
+            <View style={styles.addOptionsOverlay} />
+          </TouchableWithoutFeedback>
+          <View style={styles.addOptionsMenu}>
+            <View style={styles.addOptionsPointer} />
+            <TouchableOpacity
+              style={[styles.addOptionButton, styles.drawingOptionButton]}
+              onPress={() => {
+                setShowAddOptionsMenu(false);
+                setShowDrawingSetupModal(true);
+              }}
+              activeOpacity={0.8}
+            >
+              <MaterialIcons name="brush" size={24} color="#8B5CF6" />
+              <Text style={[styles.addOptionText, { color: "#8B5CF6" }]}>
+                Drawing
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.addOptionButton, styles.textOptionButton]}
+              onPress={() => {
+                setShowAddOptionsMenu(false);
+                handleCreateNote();
+              }}
+              activeOpacity={0.8}
+            >
+              <MaterialIcons name="note-add" size={24} color="#3B82F6" />
+              <Text style={[styles.addOptionText, { color: "#3B82F6" }]}>
+                Text Note
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* Main Add Button */}
       <TouchableOpacity
-        style={[styles.fabButton, styles.textFab]}
-        onPress={handleCreateNote}
+        style={[
+          styles.fabButton,
+          styles.mainAddFab,
+          showAddOptionsMenu && styles.fabButtonRotated,
+        ]}
+        onPress={() => setShowAddOptionsMenu(!showAddOptionsMenu)}
         activeOpacity={0.8}
       >
-        <MaterialIcons name="note-add" size={28} color="#ffffffff" />
+        <MaterialIcons
+          name={showAddOptionsMenu ? "close" : "add"}
+          size={28}
+          color="#fff"
+        />
       </TouchableOpacity>
 
       <Navbar activeRoute="Notes" />
       {renderCreateFolderModal()}
+      {renderDrawingSetupModal()}
       {renderSortNotesModal()}
       {renderEditFolderModal()}
       {renderFolderOptionsModal()}
@@ -2113,7 +2543,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     paddingHorizontal: 24,
-    paddingTop: Platform.OS === "ios" ? 50 : 35,
+    paddingTop: Platform.OS === "ios" ? 50 : 50,
     paddingBottom: 24,
     // backgroundColor: "#F5E1FD", // REMOVE or COMMENT THIS LINE
     borderBottomLeftRadius: 25,
@@ -2154,7 +2584,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   activeSearchButton: {
-    backgroundColor: "#6A009C",
+    backgroundColor: "#3333",
   },
   searchContainer: {
     marginTop: 16,
@@ -2280,100 +2710,198 @@ const styles = StyleSheet.create({
     color: "#9CA3AF",
   },
   notesList: {
-    paddingHorizontal: 24,
+    paddingHorizontal: 16,
     marginTop: 30,
     paddingTop: 200, // Space for the expanded header with folder section
     paddingBottom: 120, // Space for the navbar
+    overflow: "visible", // Allow dropdowns to show above other items
   },
-  noteItem: {
-    marginVertical: 6,
+  notesGridRow: {
+    justifyContent: "space-between",
+    marginBottom: 16,
   },
   gridNoteItem: {
-    flex: 1,
-    marginHorizontal: 4,
-    maxWidth: (width - 72) / 2, // Account for padding and gap
+    width: (width - 40) / 2, // Adjust width to account for padding
+    marginBottom: 8,
+    overflow: "visible", // Allow dropdown to show above other items
+    height: 220, // Fixed height for consistent grid
   },
-  noteContent: {
+  gridNoteContent: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 20,
-    padding: 20,
+    borderRadius: 16,
+    padding: 12,
     shadowColor: "#1E293B",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 12,
     elevation: 3,
+    overflow: "visible", // Allow dropdown to show above other items
+    zIndex: 1, // Lower zIndex than the dropdown
+    position: "relative", // Ensure proper stacking context
+    height: "100%", // Fill the gridNoteItem height
+    display: "flex",
+    flexDirection: "column",
   },
-  gridNoteContent: {
-    padding: 16,
-    borderRadius: 16,
+  // Preview containers for notes
+  previewImageContainer: {
+    height: 100,
+    backgroundColor: "#F9FAFB",
+    borderRadius: 10,
+    marginBottom: 12,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  previewDocumentContainer: {
+    height: 100,
+    backgroundColor: "#F9FAFB",
+    borderRadius: 10,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+    marginBottom: 12,
+    overflow: "hidden",
+    padding: 12,
+    justifyContent: "center",
+  },
+  // Preview for actual note content
+  previewContentContainer: {
+    height: 100,
+    backgroundColor: "#F9FAFB",
+    borderRadius: 10,
+    marginBottom: 12,
+    overflow: "hidden",
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.8,
+    shadowRadius: 5,
+    padding: 12,
+  },
+  contentPreviewBaseStyle: {
+    fontSize: 12,
+    lineHeight: 16,
+    color: "#333",
+    padding: 0,
+    margin: 0,
+  },
+  // Preview for plain text
+  previewTextContainer: {
+    height: 100,
+    backgroundColor: "#F9FAFB",
+    borderRadius: 10,
+    marginBottom: 12,
+    overflow: "hidden",
+    padding: 12,
+    justifyContent: "center",
+  },
+  previewTextContent: {
+    fontSize: 12,
+    lineHeight: 16,
+    color: "#333",
+    fontFamily: "Inter-Regular",
+  },
+  // Drawing preview elements
+  drawingPreview: {
+    alignItems: "center",
+    justifyContent: "center",
+    width: "100%",
+    height: "100%",
+  },
+  drawingIcon: {
+    marginBottom: 8,
+    opacity: 0.7,
+  },
+  drawingPatterns: {
+    width: "80%",
+    alignItems: "center",
+  },
+  drawingLine: {
+    height: 2,
+    backgroundColor: "#8B5CF6",
+    marginVertical: 4,
+    borderRadius: 1,
+  },
+  // Document preview elements
+  documentLines: {
+    width: "100%",
+  },
+  documentLine: {
+    height: 6,
+    backgroundColor: "#E2E8F0",
+    marginVertical: 4,
+    borderRadius: 3,
+  },
+  documentTitleLine: {
+    height: 8,
+    backgroundColor: "#CBD5E1",
+    marginBottom: 10,
+    width: "60%",
   },
   noteHeader: {
     flexDirection: "row",
-    alignItems: "flex-start",
-    marginBottom: 16,
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  noteFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: "auto", // Push to bottom
+    paddingTop: 8,
+    flexWrap: "wrap",
   },
   noteTitleContainer: {
     flexDirection: "row",
     flex: 1,
-  },
-  noteTypeIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    justifyContent: "center",
     alignItems: "center",
-    marginRight: 12,
   },
   gridNoteTypeIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    justifyContent: "center",
+    alignItems: "center",
     marginRight: 8,
   },
   noteTitleSection: {
     flex: 1,
     justifyContent: "center",
   },
-  noteTitle: {
-    fontSize: 16,
-    fontFamily: "Inter-Bold",
-    color: "#1E293B",
-    marginBottom: 4,
-    lineHeight: 20,
-  },
   gridNoteTitle: {
     fontSize: 14,
+    fontFamily: "Inter-Medium",
+    color: "#1E293B",
     lineHeight: 18,
   },
-  noteDateContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  noteOptionsButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
+  gridNoteOptionsButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "#F8FAFC",
   },
-  noteOptionsDropdown: {
+  gridNoteOptionsDropdown: {
     position: "absolute",
     right: 0,
     top: 40,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#fafafaff",
     borderRadius: 8,
-    shadowColor: "#1E293B",
+    shadowColor: "#000000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    elevation: 3,
-    zIndex: 10,
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+    elevation: 9999,
+    zIndex: 9999999,
   },
   noteOptionItem: {
     flexDirection: "row",
     alignItems: "center",
     padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
   },
   noteOptionText: {
     fontSize: 14,
@@ -2381,17 +2909,7 @@ const styles = StyleSheet.create({
     color: "#1E293B",
     marginLeft: 8,
   },
-  gridNoteOptionsButton: {
-    position: "absolute",
-    right: 8,
-    top: 8,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#F8FAFC",
-  },
+
   notePreview: {
     fontSize: 14,
     fontFamily: "Inter-Regular",
@@ -2403,7 +2921,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: "Inter-Regular",
     color: "#9CA3AF",
-    marginRight: 12,
+    marginRight: 8,
   },
   gridNoteDate: {
     fontSize: 11,
@@ -2461,19 +2979,45 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 24,
+    marginTop: -40, // Adjust position for better visual balance
+  },
+  emptyStateIconContainer: {
+    position: "relative",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
   },
   emptyStateTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontFamily: "Inter-Bold",
     color: "#1E293B",
     marginTop: 16,
   },
   emptyStateSubtitle: {
-    fontSize: 14,
+    fontSize: 15,
     fontFamily: "Inter-Regular",
-    color: "#9CA3AF",
+    color: "#64748B",
     textAlign: "center",
     marginTop: 8,
+    marginBottom: 24,
+    maxWidth: 280,
+  },
+  emptyStateButtons: {
+    flexDirection: "row",
+    gap: 16,
+    marginTop: 8,
+  },
+  emptyStateNoteButton: {
+    backgroundColor: "#6A009C",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 24,
+  },
+  emptyStateDrawingButton: {
+    backgroundColor: "#8B5CF6",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 24,
   },
 
   fabButton: {
@@ -2495,6 +3039,11 @@ const styles = StyleSheet.create({
 
   textFab: {
     backgroundColor: "#9C27B0",
+  },
+  drawingFab: {
+    backgroundColor: "#2563EB",
+    bottom: 170, // Position above the text FAB
+    right: 24,
   },
   // Modal Styles
   modalContainer: {
@@ -2535,6 +3084,8 @@ const styles = StyleSheet.create({
     fontFamily: "Inter-Bold",
     color: "#1E293B",
     letterSpacing: -0.2,
+    flex: 1,
+    textAlign: "center",
   },
   modalCloseButton: {
     width: 36,
@@ -2564,12 +3115,34 @@ const styles = StyleSheet.create({
   inputGroup: {
     marginBottom: 28,
   },
+  singleRowTitleContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    width: "100%",
+    gap: 8, // or use marginRight on label if gap is not supported
+  },
   inputLabel: {
-    fontSize: 15,
-    fontFamily: "Inter-Medium",
+    minWidth: 100, // or your preferred width
     color: "#374151",
-    marginBottom: 10,
-    letterSpacing: -0.1,
+    fontFamily: "Inter-Regular",
+    fontSize: 16,
+    marginRight: 8,
+  },
+  templateScrollRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  textInputSingleRow: {
+    flex: 1,
+    minHeight: 40,
+    maxHeight: 40,
+    paddingHorizontal: 12,
+    backgroundColor: "#F3F4F6",
+    borderRadius: 8,
+    color: "#111827",
+    fontSize: 16,
   },
   textInput: {
     backgroundColor: "#FFFFFF",
@@ -2617,13 +3190,11 @@ const styles = StyleSheet.create({
     transform: [{ scale: 1.1 }],
   },
   cancelButton: {
-    flex: 1,
     backgroundColor: "#F8FAFC",
     borderRadius: 16,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
     alignItems: "center",
-    marginRight: 12,
     borderWidth: 1,
     borderColor: "#E2E8F0",
     shadowColor: "#64748B",
@@ -2633,17 +3204,16 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   cancelButtonText: {
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: "Inter-Medium",
     color: "#64748B",
     letterSpacing: -0.1,
   },
   createButton: {
-    flex: 1,
     backgroundColor: "#6A009C",
     borderRadius: 16,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
     alignItems: "center",
     shadowColor: "#6A009C",
     shadowOffset: { width: 0, height: 4 },
@@ -2652,7 +3222,7 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   createButtonText: {
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: "Inter-Medium",
     color: "#FFFFFF",
     letterSpacing: -0.1,
@@ -2664,28 +3234,44 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     zIndex: 5000,
-    pointerEvents: "box-none", // Allow touches to pass through to underlying elements except the dropdown
+    pointerEvents: "box-none",
   },
   optionsDropdown: {
     position: "absolute",
-    top: Platform.OS === "ios" ? 100 : 85, // Position below the header
-    right: 24,
-    backgroundColor: "#FFFFFF",
+    top: Platform.OS === "ios" ? 100 : 85,
+    right: 18,
+    backgroundColor: "#fafafaff", // 0.7 = 70% opacity
     borderRadius: 12,
-    paddingVertical: 8,
-    width: 180,
     shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 10,
+    shadowRadius: 5,
+    elevation: 4,
+    paddingVertical: 5,
+    width: 180,
     zIndex: 5000,
+  },
+  dropdownPointer: {
+    position: "absolute",
+    top: -10,
+    right: 20, // Adjust this value to align with your "more-vert" button
+    width: 0,
+    height: 0,
+    borderLeftWidth: 10,
+    borderRightWidth: 10,
+    borderBottomWidth: 10,
+    borderLeftColor: "transparent",
+    borderRightColor: "transparent",
+    borderBottomColor: "#fafafaff", // Match dropdown bg
+    zIndex: 5001,
   },
   dropdownOption: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
   },
   dropdownOptionText: {
     fontSize: 14,
@@ -2790,10 +3376,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
+    marginRight: 4,
   },
   folderBadgeText: {
     fontSize: 10,
-    fontFamily: "Inter-Medium",
+    fontFamily: "Inter-Regular",
     color: "#6A009C",
     marginLeft: 4,
   },
@@ -2811,20 +3398,47 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 6,
   },
-  gridNoteOptionsDropdown: {
+  metadataContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 4,
+  },
+  inlineTagsContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 2,
+  },
+
+  // New - Adding styles to ensure dropdown is always on top
+  overlayForDropdown: {
     position: "absolute",
-    top: 40,
-    right: 8,
-    backgroundColor: "#FFFFFF",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "transparent",
+    zIndex: 9998,
+  },
+  dropdownMenuAbsolute: {
+    position: "absolute",
+    elevation: 9999, // Extremely high elevation for Android
+    zIndex: 9999999, // Extremely high z-index for iOS
+  },
+  floatingOptionsMenu: {
+    backgroundColor: "#fff",
     borderRadius: 8,
-    paddingVertical: 4,
-    width: 140,
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-    zIndex: 100,
+    paddingVertical: 8,
+    minWidth: 150,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 9999,
   },
   gridTagsContainer: {
     flexDirection: "row",
@@ -2833,13 +3447,19 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   gridTag: {
-    fontSize: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F1F5F9",
     paddingHorizontal: 6,
     paddingVertical: 2,
+    borderRadius: 6,
+    fontSize: 10,
   },
   gridTagText: {
     fontSize: 9,
-    fontFamily: "Inter-Medium",
+    fontFamily: "Inter-Regular",
+    color: "#4B5563",
+    marginLeft: 2,
   },
   gridMoreTagsIndicator: {
     backgroundColor: "#E2E8F0",
@@ -3106,5 +3726,233 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: "Inter-Medium",
     color: "#FFFFFF",
+  },
+
+  // Add Options Menu Styles
+  addOptionsContainer: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 5000,
+    pointerEvents: "box-none",
+  },
+
+  addOptionsOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "transparent",
+  },
+
+  addOptionsMenu: {
+    position: "absolute",
+    bottom: 170,
+    right: 24,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    width: 160,
+    zIndex: 5000,
+  },
+
+  addOptionsPointer: {
+    position: "absolute",
+    bottom: -10,
+    right: 20,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 10,
+    borderRightWidth: 10,
+    borderTopWidth: 10,
+    borderLeftColor: "transparent",
+    borderRightColor: "transparent",
+    borderTopColor: "#FFFFFF",
+    zIndex: 5001,
+  },
+
+  addOptionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 8,
+    marginVertical: 2,
+    marginHorizontal: 4,
+  },
+
+  drawingOptionButton: {
+    backgroundColor: "#F0F4FF",
+  },
+
+  textOptionButton: {
+    backgroundColor: "#F0F9FF",
+  },
+
+  addOptionText: {
+    fontSize: 14,
+    fontFamily: "Inter-Medium",
+    marginLeft: 12,
+    flex: 1,
+  },
+
+  mainAddFab: {
+    backgroundColor: "#6366F1",
+    bottom: 100,
+    right: 24,
+  },
+
+  fabButtonRotated: {
+    transform: [{ rotate: "45deg" }],
+  },
+
+  // Drawing Setup Modal Styles
+  sizeGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    marginBottom: 16,
+  },
+
+  sizeOption: {
+    flex: 1,
+    minWidth: "45%",
+    backgroundColor: "#F8FAFC",
+    borderRadius: 12,
+    padding: 16,
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#E5E7EB",
+  },
+
+  selectedSizeOption: {
+    backgroundColor: "#6A009C",
+    borderColor: "#6A009C",
+  },
+
+  sizeOptionName: {
+    fontSize: 14,
+    fontFamily: "Inter-Medium",
+    color: "#374151",
+    marginBottom: 4,
+  },
+
+  sizeOptionDimensions: {
+    fontSize: 12,
+    fontFamily: "Inter-Regular",
+    color: "#6B7280",
+  },
+
+  selectedSizeOptionText: {
+    color: "#FFFFFF",
+  },
+
+  orientationContainer: {
+    marginTop: 16,
+  },
+
+  orientationLabel: {
+    fontSize: 14,
+    fontFamily: "Inter-Regular",
+    color: "#374151",
+    marginBottom: 8,
+  },
+
+  orientationToggle: {
+    flexDirection: "row",
+    backgroundColor: "#F1F5F9",
+    borderRadius: 12,
+    padding: 4,
+  },
+
+  orientationButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    gap: 8,
+  },
+
+  selectedOrientationButton: {
+    backgroundColor: "#6A009C",
+  },
+
+  orientationButtonText: {
+    fontSize: 14,
+    fontFamily: "Inter-Medium",
+    color: "#6B7280",
+  },
+
+  selectedOrientationButtonText: {
+    color: "#FFFFFF",
+  },
+
+  templateGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "flex-start",
+    gap: 8,
+  },
+
+  templateOption: {
+    marginRight: 12,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: "transparent",
+    padding: 8,
+    backgroundColor: "transparent",
+    alignItems: "center",
+    width: 120,
+  },
+  selectedTemplateOption: {
+    borderColor: "#6A009C",
+  },
+  templatePreviewWrapper: {
+    width: 100,
+    height: 60,
+    borderRadius: 8,
+    overflow: "hidden",
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    marginBottom: 4,
+  },
+  templateIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "#E5E7EB",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+
+  selectedTemplateIcon: {
+    backgroundColor: "#FFFFFF",
+  },
+
+  templateName: {
+    fontSize: 11,
+    color: "#374151",
+    textAlign: "center",
+    marginTop: 2,
+    fontFamily: "Inter-Regular",
+    width: 100,
+  },
+  selectedTemplateName: {
+    color: "#6A009C",
+    fontFamily: "Inter-Medium",
   },
 });
