@@ -3080,8 +3080,8 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   modalTitle: {
-    fontSize: 22,
-    fontFamily: "Inter-Bold",
+    fontSize: 20,
+    fontFamily: "Lexend",
     color: "#1E293B",
     letterSpacing: -0.2,
     flex: 1,
@@ -3210,12 +3210,12 @@ const styles = StyleSheet.create({
     letterSpacing: -0.1,
   },
   createButton: {
-    backgroundColor: "#6A009C",
+    backgroundColor: "#8B5CF6",
     borderRadius: 16,
     paddingVertical: 12,
     paddingHorizontal: 20,
     alignItems: "center",
-    shadowColor: "#6A009C",
+    shadowColor: "#8B5CF6",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -3835,8 +3835,8 @@ const styles = StyleSheet.create({
   },
 
   selectedSizeOption: {
-    backgroundColor: "#6A009C",
-    borderColor: "#6A009C",
+    backgroundColor: "#8B5CF6",
+    borderColor: "#8B5CF6",
   },
 
   sizeOptionName: {
@@ -3886,7 +3886,7 @@ const styles = StyleSheet.create({
   },
 
   selectedOrientationButton: {
-    backgroundColor: "#6A009C",
+    backgroundColor: "#8B5CF6",
   },
 
   orientationButtonText: {
@@ -3917,7 +3917,7 @@ const styles = StyleSheet.create({
     width: 120,
   },
   selectedTemplateOption: {
-    borderColor: "#6A009C",
+    borderColor: "#8B5CF6",
   },
   templatePreviewWrapper: {
     width: 100,

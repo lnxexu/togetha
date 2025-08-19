@@ -24,7 +24,6 @@ export const useDrawingState = ({ maxHistorySize = 50 }: UseDrawingStateProps = 
   
   const canUndo = historyIndex > 0;
   const canRedo = historyIndex < history.length - 1;
-
   // Add a new state to history
   const addToHistory = useCallback((newStrokes: Stroke[]) => {
     setHistory(prev => {
@@ -44,12 +43,38 @@ export const useDrawingState = ({ maxHistorySize = 50 }: UseDrawingStateProps = 
   }, [historyIndex, maxHistorySize]);
 
   // Handle stroke completion
-  const handleStrokeComplete = useCallback((stroke: Stroke) => {
-    const newStrokes = [...strokes, stroke];
-    setStrokes(newStrokes);
-    addToHistory(newStrokes);
-  }, [strokes, addToHistory]);
+  interface Stroke {
+    tool: DrawingTool;
+    points: Array<{ x: number; y: number }>;
+    color: string; // Added color property
+    width: number; // Added width property
+    erasedStrokes?: Stroke[]; // Optional property for erased strokes
+  }
 
+  const handleStrokeComplete = (newStroke: Stroke) => {
+    if (newStroke.tool === 'eraser') {
+      // Filter out strokes that intersect with the eraser's path
+      const updatedStrokes = strokes.filter(stroke => {
+        return !newStroke.points.some(eraserPoint => 
+          stroke.points.some(strokePoint => {
+            const distance = Math.sqrt(
+              Math.pow(strokePoint.x - eraserPoint.x, 2) +
+              Math.pow(strokePoint.y - eraserPoint.y, 2)
+            );
+            return distance < (stroke.width / 2); // Accessing stroke.width now works
+          })
+        );
+      });
+      
+      setStrokes(updatedStrokes);
+      addToHistory(updatedStrokes);
+    } else if (newStroke.points.length >= 2) {
+      // For normal strokes, add them to the drawing
+      const updatedStrokes = [...strokes, newStroke];
+      setStrokes(updatedStrokes);
+      addToHistory(updatedStrokes);
+    }
+  };
   // Undo last action
   const undo = useCallback(() => {
     if (canUndo) {
@@ -140,7 +165,7 @@ export const useDrawingState = ({ maxHistorySize = 50 }: UseDrawingStateProps = 
       totalStrokes: strokes.length,
       totalPoints,
       toolCounts,
-      colors: [...new Set(strokes.map(s => s.color))],
+      colors: [...new Set(strokes.map(s => s.color))], // Ensure Stroke type has a color property
     };
   }, [strokes]);
 

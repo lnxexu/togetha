@@ -1,5 +1,5 @@
-import React, { useState, useRef, useCallback, useMemo } from 'react';
-import { View, StyleSheet, PanResponder, GestureResponderEvent, PanResponderGestureState } from 'react-native';
+import React, { useState, useRef, useCallback } from 'react';
+import { View, StyleSheet, PanResponder, GestureResponderEvent } from 'react-native';
 import Svg, { Path, G } from 'react-native-svg';
 import { optimizeStroke, strokeToSVGPath } from '../utils/strokeUtils';
 import TemplateOverlay, { TemplateType } from './TemplateOverlay';
@@ -63,7 +63,6 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     }
   }, []);
 
-  // Smooth the path using quadratic curves for better stroke quality
   const createSmoothPath = useCallback((points: Point[]): string => {
     if (points.length < 2) return '';
     
@@ -74,7 +73,6 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       return path;
     }
 
-    // Use quadratic curves for smoother lines
     for (let i = 1; i < points.length - 1; i++) {
       const current = points[i];
       const next = points[i + 1];
@@ -84,14 +82,12 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       path += ` Q${current.x},${current.y} ${midX},${midY}`;
     }
     
-    // Add the last point
     const lastPoint = points[points.length - 1];
     path += ` L${lastPoint.x},${lastPoint.y}`;
     
     return path;
   }, []);
 
-  // Apply pressure-sensitive width variation
   const getPressureWidth = useCallback((pressure: number = 1, baseWidth: number): number => {
     const minWidth = baseWidth * 0.5;
     const maxWidth = baseWidth * 1.5;
@@ -104,22 +100,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     const { locationX, locationY } = evt.nativeEvent;
     const pressure = (evt.nativeEvent as any).force || 1;
     
-    // Set tool-specific opacity
-    let toolOpacity = 1.0;
-    switch (currentTool) {
-      case 'highlighter':
-        toolOpacity = 0.4;
-        break;
-      case 'pencil':
-        toolOpacity = 0.8;
-        break;
-      case 'marker':
-        toolOpacity = 0.9;
-        break;
-      default:
-        toolOpacity = 1.0;
-        break;
-    }
+    const isEraser = currentTool === 'eraser';
     
     const newStroke: Stroke = {
       id: `stroke_${Date.now()}_${strokeIdRef.current++}`,
@@ -129,10 +110,10 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         pressure,
         timestamp: Date.now()
       }],
-      color: currentColor,
-      width: currentWidth,
+      color: isEraser ? 'transparent' : currentColor,
+      width: isEraser ? currentWidth * 2 : currentWidth,
       tool: currentTool,
-      opacity: toolOpacity
+      opacity: isEraser ? 1 : (currentTool === 'highlighter' ? 0.4 : 1)
     };
 
     setCurrentStroke(newStroke);
@@ -146,13 +127,11 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     const { locationX, locationY } = evt.nativeEvent;
     const pressure = (evt.nativeEvent as any).force || 1;
     
-    // Add some smoothing by checking distance from last point
     const lastPoint = currentStroke.points[currentStroke.points.length - 1];
     const distance = Math.sqrt(
       Math.pow(locationX - lastPoint.x, 2) + Math.pow(locationY - lastPoint.y, 2)
     );
 
-    // Only add point if it's far enough from the last point (reduces noise)
     if (distance > 2) {
       const newPoint: Point = {
         x: locationX,
@@ -171,25 +150,74 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     }
   }, [isDrawing, currentStroke, disabled, onStrokeUpdate]);
 
+  const eraseIntersectingStrokes = (existingStrokes: Stroke[], eraserStroke: Stroke): Stroke[] => {
+    if (!eraserStroke.points.length) return existingStrokes;
+    
+    return existingStrokes.reduce((result, stroke) => {
+      if (stroke.points.length === 0) return result;
+      
+      const remainingPoints = stroke.points.filter(strokePoint => {
+        return !eraserStroke.points.some(eraserPoint => {
+          const distance = Math.sqrt(
+            Math.pow(strokePoint.x - eraserPoint.x, 2) + 
+            Math.pow(strokePoint.y - eraserPoint.y, 2)
+          );
+          return distance < (eraserStroke.width / 2);
+        });
+      });
+      
+      if (remainingPoints.length > 0) {
+        result.push({
+          ...stroke,
+          points: remainingPoints
+        });
+      }
+      
+      return result;
+    }, [] as Stroke[]);
+  };
+
   const handleTouchEnd = useCallback(() => {
     if (!isDrawing || !currentStroke || disabled) return;
-
-    // Ensure we have at least 2 points for a valid stroke
-    if (currentStroke.points.length >= 2) {
-      // Optimize the stroke before saving
+  
+    if (currentStroke.tool === 'eraser') {
+      const updatedStrokes = eraseIntersectingStrokes(strokes, currentStroke);
+      onStrokeComplete?.({
+        ...currentStroke
+      });
+    } else if (currentStroke.points.length >= 2) {
       const optimizedStroke = optimizeStroke(currentStroke, {
         simplify: true,
         smooth: true,
         tolerance: 1.5,
         smoothing: 0.3,
       });
-      onStrokeComplete(optimizedStroke);
+      onStrokeComplete?.(optimizedStroke);
     }
-
+  
     setCurrentStroke(null);
     setIsDrawing(false);
     onStrokeUpdate?.(null);
-  }, [isDrawing, currentStroke, disabled, onStrokeComplete, onStrokeUpdate]);
+  }, [isDrawing, currentStroke, disabled, onStrokeComplete, onStrokeUpdate, strokes]);
+
+  const getStrokeBounds = (stroke: Stroke): { minX: number; minY: number; maxX: number; maxY: number } => {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    
+    stroke.points.forEach(point => {
+      minX = Math.min(minX, point.x);
+      minY = Math.min(minY, point.y);
+      maxX = Math.max(maxX, point.x);
+      maxY = Math.max(maxY, point.y);
+    });
+    
+    const padding = stroke.width / 2;
+    return {
+      minX: minX - padding,
+      minY: minY - padding,
+      maxX: maxX + padding,
+      maxY: maxY + padding
+    };
+  };
 
   const panResponder = PanResponder.create({
     onStartShouldSetPanResponder: () => !disabled,
@@ -201,12 +229,10 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   });
 
   const renderStroke = useCallback((stroke: Stroke, index: number) => {
-    if (stroke.points.length < 2) return null;
+    if (stroke.points.length < 2 || stroke.tool === 'eraser') return null;
 
-    // Use optimized SVG path generation
     const pathData = strokeToSVGPath(stroke);
     
-    // Apply tool-specific styling
     let strokeWidth = stroke.width;
     let strokeOpacity = 1;
     let fillOpacity = 0;
@@ -258,13 +284,12 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     );
   }, []);
 
-    return (
+  return (
     <View 
       style={[styles.container, { backgroundColor }]} 
       onLayout={onLayout}
       {...panResponder.panHandlers}
     >
-      {/* Template overlay - rendered behind the drawing */}
       <TemplateOverlay 
         template={template}
         canvasWidth={canvasDimensions.width}
@@ -278,10 +303,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         style={StyleSheet.absoluteFillObject}
       >
         <G>
-          {/* Render completed strokes */}
           {strokes.map(renderStroke)}
-          
-          {/* Render current stroke being drawn */}
           {currentStroke && renderStroke(currentStroke, -1)}
         </G>
       </Svg>

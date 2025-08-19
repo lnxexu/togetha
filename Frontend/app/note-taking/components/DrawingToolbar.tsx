@@ -202,7 +202,7 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
                   <Ionicons
                     name={tool.icon as any}
                     size={isActive ? 32 : 22}
-                    color={isActive ? "#6A009C" : "#333"}
+                    color={isActive ? "#8B5CF6" : "#333"}
                     style={isActive ? styles.activeToolIcon : styles.toolIcon}
                   />
                 </TouchableOpacity>

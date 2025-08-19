@@ -23,7 +23,7 @@ function getApiBaseUrl() {
     
     // return 'http://172.16.5.215:8000'; // IP for Student3
   
-    return 'http://192.168.1.11:8000';   // Geric's's local IP address 
+    return 'http://192.168.81.164:8000';   // Geric's's local IP address 
 
     // return 'http://192.168.0.153:8000';   // Kobe's local IP address 
     
