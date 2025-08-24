@@ -153,6 +153,7 @@ def force_logout_all_sessions(request):
 
 
 @api_view(['POST'])
+@permission_classes([AllowAny]) 
 def signup(request):
     # Extract data from request
     username = request.data.get('username', '')
@@ -210,6 +211,8 @@ def signup(request):
         'token': token.key,
         'user': serializer.data
     }, status=status.HTTP_201_CREATED)
+    
+pass
 
 @api_view(['GET'])
 @authentication_classes([TokenAuthentication, SessionAuthentication])

@@ -1,170 +1,379 @@
-import { useState, useCallback, useRef } from 'react';
-import { Stroke, DrawingTool } from '../components/DrawingCanvas';
+import { useState, useCallback, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_URL, API_ENDPOINTS } from '@/constants/ApiConfig';
+import { drawingAPI, DrawingStroke } from '../services/drawingAPI';
 
 interface UseDrawingStateProps {
-  maxHistorySize?: number;
+  noteId?: string;
+  autoSave?: boolean;
+  autoSaveInterval?: number;
+  defaultTitle?: string;
+  skipInitialLoad?: boolean; // Add flag to skip initial loading
 }
 
-interface DrawingState {
-  strokes: Stroke[];
-  currentTool: DrawingTool;
-  currentColor: string;
-  currentWidth: number;
+interface SaveOptions {
+  type?: string;
+  title?: string;
+  template?: string;
+  folderId?: string | null;
 }
 
-export const useDrawingState = ({ maxHistorySize = 50 }: UseDrawingStateProps = {}) => {
-  const [strokes, setStrokes] = useState<Stroke[]>([]);
-  const [currentTool, setCurrentTool] = useState<DrawingTool>('pen');
-  const [currentColor, setCurrentColor] = useState('#000000');
-  const [currentWidth, setCurrentWidth] = useState(4);
-  
-  // History management for undo/redo
-  const [history, setHistory] = useState<Stroke[][]>([[]]);
-  const [historyIndex, setHistoryIndex] = useState(0);
-  
-  const canUndo = historyIndex > 0;
-  const canRedo = historyIndex < history.length - 1;
+export const useDrawingState = ({ 
+  noteId, 
+  autoSave = true, 
+  autoSaveInterval = 5000,
+  defaultTitle = 'Untitled Drawing',
+  skipInitialLoad = false
+}: UseDrawingStateProps = {}) => {
+  const [strokes, setStrokes] = useState<DrawingStroke[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [currentNoteId, setCurrentNoteId] = useState<string | undefined>(noteId);
+  const [lastSaveTime, setLastSaveTime] = useState<number>(0);
 
-  // Add a new state to history
-  const addToHistory = useCallback((newStrokes: Stroke[]) => {
-    setHistory(prev => {
-      const newHistory = prev.slice(0, historyIndex + 1);
-      newHistory.push([...newStrokes]);
-      
-      // Limit history size
-      if (newHistory.length > maxHistorySize) {
-        newHistory.shift();
-        setHistoryIndex(prev => prev - 1);
-        return newHistory;
-      }
-      
-      setHistoryIndex(newHistory.length - 1);
-      return newHistory;
-    });
-  }, [historyIndex, maxHistorySize]);
+  // Undo/Redo state
+  const [history, setHistory] = useState<DrawingStroke[][]>([[]]);
+  const [historyStep, setHistoryStep] = useState<number>(0);
 
-  // Handle stroke completion
-  const handleStrokeComplete = useCallback((stroke: Stroke) => {
-    const newStrokes = [...strokes, stroke];
-    setStrokes(newStrokes);
-    addToHistory(newStrokes);
-  }, [strokes, addToHistory]);
+  // Debug effect to monitor strokes changes
+  useEffect(() => {
+    console.log('useDrawingState: Strokes updated, count:', strokes.length);
+  }, [strokes]);
 
-  // Undo last action
-  const undo = useCallback(() => {
-    if (canUndo) {
-      const newIndex = historyIndex - 1;
-      setHistoryIndex(newIndex);
-      setStrokes([...history[newIndex]]);
+  // Load drawing when noteId changes, but only if we're not skipping initial load
+  useEffect(() => {
+    if (currentNoteId && !skipInitialLoad) {
+      console.log('useDrawingState: Loading drawing for noteId:', currentNoteId);
+      loadDrawing();
     }
-  }, [canUndo, historyIndex, history]);
+  }, [currentNoteId, skipInitialLoad]);
 
-  // Redo last undone action
-  const redo = useCallback(() => {
-    if (canRedo) {
-      const newIndex = historyIndex + 1;
-      setHistoryIndex(newIndex);
-      setStrokes([...history[newIndex]]);
+  // Auto-save functionality
+  useEffect(() => {
+    if (autoSave && hasUnsavedChanges && currentNoteId && strokes.length > 0) {
+      const timer = setTimeout(() => {
+        saveDrawing();
+      }, autoSaveInterval);
+
+      return () => clearTimeout(timer);
     }
-  }, [canRedo, historyIndex, history]);
+  }, [strokes, hasUnsavedChanges, autoSave, autoSaveInterval, currentNoteId]);
 
-  // Clear all strokes
-  const clear = useCallback(() => {
-    setStrokes([]);
-    addToHistory([]);
-  }, [addToHistory]);
-
-  // Tool change handlers
-  const changeTool = useCallback((tool: DrawingTool) => {
-    setCurrentTool(tool);
+  const loadDrawing = async () => {
+    console.log('useDrawingState: loadDrawing called for noteId:', currentNoteId);
     
-    // Auto-adjust width for different tools
-    switch (tool) {
-      case 'highlighter':
-        setCurrentWidth(16);
-        break;
-      case 'eraser':
-        setCurrentWidth(20);
-        break;
-      case 'brush':
-        setCurrentWidth(8);
-        break;
-      case 'pencil':
-        setCurrentWidth(2);
-        break;
-      case 'marker':
-        setCurrentWidth(6);
-        break;
-      case 'calligraphy':
-        setCurrentWidth(12);
-        break;
-      case 'pen':
-      default:
-        setCurrentWidth(4);
-        break;
+    if (!currentNoteId) {
+      console.log('useDrawingState: No currentNoteId, skipping load');
+      return;
     }
+
+    console.log('useDrawingState: Starting to load drawing from API...');
+    setIsLoading(true);
+    setError(null);
+    try {
+      const drawingData = await drawingAPI.getDrawing(currentNoteId);
+      console.log('useDrawingState: Loaded drawing data from API:', drawingData);
+      console.log('useDrawingState: API returned strokes:', drawingData.strokes.length);
+      setStrokes(drawingData.strokes);
+      setHasUnsavedChanges(false);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load drawing';
+      console.error('useDrawingState: loadDrawing failed:', error);
+      setError(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+ const saveDrawing = useCallback(async (options?: SaveOptions) => {
+  console.log('useDrawingState.saveDrawing called with:', {
+    strokesCount: strokes?.length || 0,
+    hasStrokes: !!strokes && strokes.length > 0,
+    currentNoteId,
+    options
+  });
+
+  if (!strokes || strokes.length === 0) {
+    console.warn('No strokes to save, strokes:', strokes);
+    return;
+  }
+
+  console.log('Proceeding with save, setting isSaving to true...');
+  setIsSaving(true);
+  setError(null);
+
+  try {
+    let noteId = currentNoteId;
+    let result;
+
+    console.log('Save logic - noteId:', noteId);
+
+    if (!noteId) {
+      // Create new note
+      console.log('Creating new note...');
+      const title = options?.title || defaultTitle || 'Untitled Drawing';
+      result = await drawingAPI.createDrawingNote(title, strokes, options?.folderId);
+      noteId = result.noteId;
+      setCurrentNoteId(noteId);
+      console.log('Created new note with ID:', noteId);
+    } else {
+      // Update existing note - combine drawing data and metadata in a single request
+      console.log('Updating existing note:', noteId);
+      
+      // Prepare the update data combining drawing data and metadata
+      const updateData: any = {
+        drawing_data: JSON.stringify(strokes)
+      };
+      
+      if (options?.title) updateData.title = options.title;
+      if (options?.folderId !== undefined) updateData.folder = options.folderId;
+      if (options?.template) updateData.template = options.template;
+      
+      console.log('Sending combined update:', {
+        hasDrawingData: !!updateData.drawing_data,
+        drawingDataLength: updateData.drawing_data.length,
+        metadata: { title: updateData.title, folder: updateData.folder, template: updateData.template }
+      });
+      
+      try {
+        const token = await AsyncStorage.getItem('authToken');
+        if (token) {
+          const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTES}${noteId}/`, {
+            method: 'PATCH',
+            headers: {
+              'Authorization': `Token ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(updateData),
+          });
+          
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+          }
+          
+          result = await response.json();
+          console.log('Combined update result:', result);
+        }
+      } catch (updateError) {
+        console.error('Failed to update note with combined data:', updateError);
+        throw updateError;
+      }
+    }
+
+    setHasUnsavedChanges(false);
+    setLastSaveTime(Date.now());
+
+    console.log('Save completed successfully');
+    return result;
+  } catch (error) {
+    console.error('Failed to save drawing:', error);
+    setError(error instanceof Error ? error.message : 'Failed to save drawing');
+    throw error;
+  } finally {
+    setIsSaving(false);
+  }
+}, [strokes, currentNoteId, defaultTitle]);
+
+  // Helper function to save state to history
+  const saveToHistory = useCallback((newStrokes: DrawingStroke[]) => {
+    setHistory(prev => {
+      const newHistory = prev.slice(0, historyStep + 1);
+      newHistory.push([...newStrokes]);
+      // Limit history to prevent memory issues (keep last 50 states)
+      return newHistory.length > 50 ? newHistory.slice(-50) : newHistory;
+    });
+    setHistoryStep(prev => prev + 1);
+  }, [historyStep]);
+
+  const addStroke = useCallback((stroke: DrawingStroke) => {
+    setStrokes(prev => {
+      const newStrokes = [...prev, stroke];
+      // Save to history after adding stroke
+      setTimeout(() => saveToHistory(newStrokes), 0);
+      return newStrokes;
+    });
+    setHasUnsavedChanges(true);
+  }, [saveToHistory]);
+
+  const undo = useCallback(() => {
+    if (historyStep > 0) {
+      const newStep = historyStep - 1;
+      setHistoryStep(newStep);
+      const previousState = history[newStep] || [];
+      setStrokes([...previousState]);
+      setHasUnsavedChanges(true);
+      console.log('Undo: Reverted to step', newStep, 'with', previousState.length, 'strokes');
+    }
+  }, [historyStep, history]);
+
+  const redo = useCallback(() => {
+    if (historyStep < history.length - 1) {
+      const newStep = historyStep + 1;
+      setHistoryStep(newStep);
+      const nextState = history[newStep] || [];
+      setStrokes([...nextState]);
+      setHasUnsavedChanges(true);
+      console.log('Redo: Advanced to step', newStep, 'with', nextState.length, 'strokes');
+    }
+  }, [historyStep, history]);
+
+  const canUndo = historyStep > 0;
+  const canRedo = historyStep < history.length - 1;
+
+  const clearDrawing = useCallback(async () => {
+    if (currentNoteId) {
+      try {
+        setIsSaving(true);
+        await drawingAPI.clearDrawing(currentNoteId);
+        const emptyStrokes: DrawingStroke[] = [];
+        setStrokes(emptyStrokes);
+        // Reset history when clearing
+        setHistory([emptyStrokes]);
+        setHistoryStep(0);
+        setHasUnsavedChanges(false);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to clear drawing';
+        setError(errorMessage);
+        console.error('Failed to clear drawing:', error);
+      } finally {
+        setIsSaving(false);
+      }
+    } else {
+      // No noteId - just clear the local state
+      const emptyStrokes: DrawingStroke[] = [];
+      setStrokes(emptyStrokes);
+      // Reset history when clearing
+      setHistory([emptyStrokes]);
+      setHistoryStep(0);
+      setHasUnsavedChanges(false);
+    }
+  }, [currentNoteId]);
+
+  const undoLastStroke = useCallback(() => {
+    // This is the legacy function - use the new undo instead
+    undo();
+  }, [undo]);
+
+  const clearError = useCallback(() => {
+    setError(null);
   }, []);
 
-  const changeColor = useCallback((color: string) => {
-    setCurrentColor(color);
-  }, []);
+  const importDrawing = useCallback((drawingData: any) => {
+    console.log('=== useDrawingState: importDrawing called ===');
+    console.log('useDrawingState: Importing drawing data:', drawingData);
+    console.log('useDrawingState: DrawingData type:', typeof drawingData);
+    console.log('useDrawingState: DrawingData keys:', drawingData ? Object.keys(drawingData) : 'null');
+    console.log('useDrawingState: Has strokes field:', !!drawingData?.strokes);
+    console.log('useDrawingState: Strokes field type:', Array.isArray(drawingData?.strokes) ? 'array' : typeof drawingData?.strokes);
+    console.log('useDrawingState: Strokes length:', drawingData?.strokes?.length || 0);
+    
+    if (drawingData) {
+      let strokesToImport = [];
+      
+      // Handle different data formats - prioritize direct strokes array
+      if (drawingData.strokes && Array.isArray(drawingData.strokes)) {
+        // Primary format: { strokes: [...] } (passed from notes.tsx)
+        strokesToImport = drawingData.strokes;
+        console.log('useDrawingState: Found strokes array at root level:', strokesToImport.length);
+      } else if (Array.isArray(drawingData)) {
+        // Direct array of strokes
+        strokesToImport = drawingData;
+        console.log('useDrawingState: Direct strokes array:', strokesToImport.length);
+      } else if (drawingData.drawing_data) {
+        // Handle nested drawing_data
+        if (typeof drawingData.drawing_data === 'string') {
+          try {
+            const parsed = JSON.parse(drawingData.drawing_data);
+            strokesToImport = Array.isArray(parsed) ? parsed : parsed.strokes || [];
+            console.log('useDrawingState: Parsed drawing_data string:', strokesToImport.length);
+          } catch (error) {
+            console.error('Failed to parse drawing_data:', error);
+            strokesToImport = [];
+          }
+        } else if (Array.isArray(drawingData.drawing_data)) {
+          strokesToImport = drawingData.drawing_data;
+          console.log('useDrawingState: Array drawing_data:', strokesToImport.length);
+        } else if (drawingData.drawing_data?.strokes) {
+          strokesToImport = drawingData.drawing_data.strokes;
+          console.log('useDrawingState: Nested strokes in drawing_data:', strokesToImport.length);
+        }
+      }
 
-  const changeWidth = useCallback((width: number) => {
-    setCurrentWidth(width);
-  }, []);
+      // Validate stroke format and log details
+      if (strokesToImport.length > 0) {
+        console.log('useDrawingState: First stroke sample:', strokesToImport[0]);
+        console.log('useDrawingState: Stroke validation:', {
+          hasId: !!strokesToImport[0]?.id,
+          hasPoints: Array.isArray(strokesToImport[0]?.points),
+          pointsLength: strokesToImport[0]?.points?.length,
+          pointsType: typeof strokesToImport[0]?.points?.[0],
+          hasColor: !!strokesToImport[0]?.color,
+          hasWidth: !!strokesToImport[0]?.width,
+          hasTool: !!strokesToImport[0]?.tool,
+        });
+      }
 
-  // Export drawing data
+      console.log('useDrawingState: About to setStrokes with:', strokesToImport.length, 'strokes');
+      setStrokes(strokesToImport);
+      // Initialize history with the imported strokes
+      setHistory([strokesToImport]);
+      setHistoryStep(0);
+      console.log('useDrawingState: setStrokes called and history initialized');
+      setHasUnsavedChanges(false);
+
+      // Set the note ID if available and not already set
+      // Don't set currentNoteId here as it will trigger loadDrawing which overwrites imported data
+      if (drawingData.id && !currentNoteId) {
+        console.log('useDrawingState: Would set note ID but skipping to avoid loadDrawing override:', drawingData.id);
+        // We'll set it later if needed, but for now avoid triggering the loadDrawing effect
+        // setCurrentNoteId(drawingData.id.toString());
+      }
+    } else {
+      console.log('useDrawingState: No drawing data provided');
+    }
+    console.log('=== useDrawingState: importDrawing completed ===');
+  }, [currentNoteId]);
+
   const exportDrawing = useCallback(() => {
     return {
       strokes,
-      timestamp: Date.now(),
-      version: '1.0'
+      strokeCount: strokes.length,
+      lastModified: new Date().toISOString(),
     };
   }, [strokes]);
 
-  // Import drawing data
-  const importDrawing = useCallback((data: { strokes: Stroke[] }) => {
-    setStrokes(data.strokes);
-    addToHistory(data.strokes);
-  }, [addToHistory]);
+  const clear = useCallback(() => {
+    clearDrawing();
+  }, [clearDrawing]);
 
-  // Get drawing statistics
-  const getStats = useCallback(() => {
-    const totalPoints = strokes.reduce((sum, stroke) => sum + stroke.points.length, 0);
-    const toolCounts = strokes.reduce((counts, stroke) => {
-      counts[stroke.tool] = (counts[stroke.tool] || 0) + 1;
-      return counts;
-    }, {} as Record<DrawingTool, number>);
-
-    return {
-      totalStrokes: strokes.length,
-      totalPoints,
-      toolCounts,
-      colors: [...new Set(strokes.map(s => s.color))],
-    };
-  }, [strokes]);
+  const setNoteId = useCallback((noteId: string) => {
+    console.log('useDrawingState: Setting note ID:', noteId);
+    setCurrentNoteId(noteId);
+  }, []);
 
   return {
-    // State
     strokes,
-    currentTool,
-    currentColor,
-    currentWidth,
+    isLoading,
+    isSaving,
+    hasUnsavedChanges,
+    error,
+    currentNoteId,
+    addStroke,
+    clearDrawing,
+    saveDrawing,
+    loadDrawing,
+    undoLastStroke, // Legacy function
+    undo, // New undo function
+    redo, // New redo function
     canUndo,
     canRedo,
-    
-    // Actions
-    handleStrokeComplete,
-    undo,
-    redo,
-    clear,
-    changeTool,
-    changeColor,
-    changeWidth,
-    
-    // Utilities
-    exportDrawing,
+    clearError,
     importDrawing,
-    getStats,
+    exportDrawing,
+    clear,
+    setNoteId,
   };
 };

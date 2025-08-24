@@ -23,6 +23,7 @@ class Note(models.Model):
         ('text', 'Text Note'),
         ('voice', 'Voice Note'),
         ('image', 'Image Note'),
+        ('drawing', 'Drawing Note'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -35,6 +36,24 @@ class Note(models.Model):
     is_archived = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    has_drawing = models.BooleanField(default=False)
+    drawing_data = models.TextField(null=True, blank=True)  # Store as JSON string
+    drawing_thumbnail = models.ImageField(upload_to='note_thumbnails/', null=True, blank=True)
+    last_drawing_update = models.DateTimeField(auto_now=True)
+    
+    def save_drawing_strokes(self, strokes_data):
+        """Helper method to save drawing strokes"""
+        self.drawing_data = strokes_data
+        self.has_drawing = True
+        # Automatically set note type to drawing when saving drawing data
+        if strokes_data and (isinstance(strokes_data, list) and len(strokes_data) > 0 or 
+                           isinstance(strokes_data, str) and strokes_data.strip()):
+            self.type = 'drawing'
+        self.save()
+    
+    def get_drawing_strokes(self):
+        """Helper method to retrieve drawing strokes"""
+        return self.drawing_data if self.drawing_data else []
 
     def __str__(self):
         return self.title

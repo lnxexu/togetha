@@ -1,3 +1,4 @@
+from django.shortcuts import get_object_or_404
 from rest_framework.response import Response
 from rest_framework import status
 from .models import Note, Folder, Tag
@@ -338,6 +339,40 @@ def manage_note_folders(request):
         
         return Response({"updated_notes": updated, "folder": None, "action": "removed"}, status=status.HTTP_200_OK)
 
+    # Handle explicit assign/move/add action
+    if action in ['assign', 'move', 'add'] and folder_id:
+        try:
+            folder = Folder.objects.get(pk=folder_id, user=user)
+            updated = Note.objects.filter(id__in=note_ids, user=user).update(folder=folder)
+            
+            # Log moving notes to a folder
+            create_log(
+                user=user,
+                action='organize',
+                entity_type='note',
+                entity_id=','.join(map(str, note_ids)),
+                message=f'Assigned {updated} notes to folder "{folder.name}".'
+            )
+            
+            return Response({
+                "updated_notes": updated,
+                "folder": FolderSerializer(folder).data,
+                "action": "assigned"
+            }, status=status.HTTP_200_OK)
+        
+        except Folder.DoesNotExist:
+            # Log failed folder operation
+            create_log(
+                user=user,
+                action='organize',
+                entity_type='note',
+                entity_id=','.join(map(str, note_ids)),
+                level='ERROR',
+                message=f'Failed to organize notes: folder (ID: {folder_id}) not found.'
+            )
+            
+            return Response({"error": "Folder not found"}, status=status.HTTP_404_NOT_FOUND)
+
     # Handle moving to "no folder" (unorganized)
     if folder_id in ['null', 'undefined', None, ''] or folder_id == 0:
         updated = Note.objects.filter(id__in=note_ids, user=user).update(folder=None)
@@ -576,3 +611,96 @@ def bulk_note_action(request):
         )
         
         return Response({"unarchived_count": count}, status=status.HTTP_200_OK)
+    
+@api_auth_required(['POST'])
+def save_drawing(request, note_id):
+    """Save drawing strokes for a specific note"""
+    try:
+        note = get_object_or_404(Note, id=note_id, user=request.user)
+        strokes_data = request.data.get('strokes', [])
+        
+        # Validate strokes data
+        if not isinstance(strokes_data, list):
+            return Response({
+                'error': 'Invalid strokes data format',
+                'detail': 'Strokes must be an array'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        note.save_drawing_strokes(strokes_data)
+        
+        # Create log entry
+        create_log(
+            user=request.user,
+            action='update',
+            entity_type='note_drawing',
+            entity_id=note.id,
+            message=f'Drawing updated for note "{note.title}" with {len(strokes_data)} strokes.'
+        )
+        
+        return Response({
+            'message': 'Drawing saved successfully',
+            'note_id': note.id,
+            'stroke_count': len(strokes_data),
+            'last_update': note.last_drawing_update
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({
+            'error': 'Failed to save drawing',
+            'detail': str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+@api_auth_required(['GET'])
+def get_drawing(request, note_id):
+    """Retrieve drawing strokes for a specific note"""
+    try:
+        note = get_object_or_404(Note, id=note_id, user=request.user)
+        
+        return Response({
+            'note_id': note.id,
+            'strokes': note.get_drawing_strokes(),
+            'has_drawing': note.has_drawing,
+            'last_update': note.last_drawing_update
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({
+            'error': 'Failed to retrieve drawing',
+            'detail': str(e)
+        }, status=status.HTTP_404_NOT_FOUND)
+
+@api_auth_required(['DELETE'])
+def clear_drawing(request, note_id):
+    """Clear drawing from a specific note"""
+    try:
+        note = get_object_or_404(Note, id=note_id, user=request.user)
+        
+        if not note.has_drawing:
+            return Response({
+                'message': 'No drawing to clear',
+                'note_id': note.id
+            }, status=status.HTTP_200_OK)
+        
+        note.drawing_data = None
+        note.has_drawing = False
+        note.save()
+        
+        # Create log entry
+        create_log(
+            user=request.user,
+            action='delete',
+            entity_type='note_drawing',
+            entity_id=note.id,
+            message=f'Drawing cleared from note "{note.title}".'
+        )
+        
+        return Response({
+            'message': 'Drawing cleared successfully',
+            'note_id': note.id
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({
+            'error': 'Failed to clear drawing',
+            'detail': str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)

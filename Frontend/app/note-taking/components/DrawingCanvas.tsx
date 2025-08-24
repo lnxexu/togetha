@@ -3,6 +3,7 @@ import { View, StyleSheet, PanResponder, GestureResponderEvent, PanResponderGest
 import Svg, { Path, G } from 'react-native-svg';
 import { optimizeStroke, strokeToSVGPath } from '../utils/strokeUtils';
 import TemplateOverlay, { TemplateType } from './TemplateOverlay';
+import { DrawingStroke } from '../services/drawingAPI';
 
 export interface Point {
   x: number;
@@ -23,8 +24,9 @@ export interface Stroke {
 }
 
 interface DrawingCanvasProps {
-  strokes: Stroke[];
+  strokes: DrawingStroke[];
   currentTool: DrawingTool;
+  onAddStroke: (stroke: DrawingStroke) => void;
   currentColor: string;
   currentWidth: number;
   onStrokeComplete: (stroke: Stroke) => void;
@@ -55,6 +57,23 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   const [isDrawing, setIsDrawing] = useState(false);
   const [canvasDimensions, setCanvasDimensions] = useState({ width: 400, height: 600 });
   const strokeIdRef = useRef(0);
+
+  // Debug effect to monitor strokes received
+  React.useEffect(() => {
+    console.log('DrawingCanvas: Received strokes:', strokes.length);
+    if (strokes.length > 0) {
+      console.log('DrawingCanvas: First stroke sample:', strokes[0]);
+      console.log('DrawingCanvas: First stroke validation:', {
+        hasId: !!strokes[0]?.id,
+        hasPoints: Array.isArray(strokes[0]?.points),
+        pointsLength: strokes[0]?.points?.length,
+        pointsFormat: strokes[0]?.points?.slice(0, 4),
+        hasColor: !!strokes[0]?.color,
+        hasWidth: !!strokes[0]?.width,
+        hasTool: !!strokes[0]?.tool,
+      });
+    }
+  }, [strokes]);
 
   const onLayout = useCallback((event: any) => {
     const { width, height } = event.nativeEvent.layout;
@@ -122,7 +141,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     }
     
     const newStroke: Stroke = {
-      id: `stroke_${Date.now()}_${strokeIdRef.current++}`,
+      id: `stroke_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       points: [{
         x: locationX,
         y: locationY,
@@ -200,11 +219,75 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     onPanResponderTerminate: handleTouchEnd,
   });
 
+  // Convert DrawingStroke to Stroke for rendering
+  const convertDrawingStrokeToStroke = useCallback((drawingStroke: DrawingStroke): Stroke => {
+    console.log(`Converting stroke ${drawingStroke.id}:`, {
+      originalPointsLength: drawingStroke.points.length,
+      originalPointsSample: drawingStroke.points.slice(0, 8),
+      pointsAreNumbers: drawingStroke.points.every(p => typeof p === 'number'),
+      color: drawingStroke.color,
+      width: drawingStroke.width,
+      tool: drawingStroke.tool
+    });
+    
+    const points: Point[] = [];
+    for (let i = 0; i < drawingStroke.points.length; i += 2) {
+      if (i + 1 < drawingStroke.points.length) {
+        const x = drawingStroke.points[i];
+        const y = drawingStroke.points[i + 1];
+        
+        if (typeof x === 'number' && typeof y === 'number') {
+          points.push({
+            x: x,
+            y: y,
+            timestamp: drawingStroke.timestamp
+          });
+        } else {
+          console.warn(`Invalid point data at index ${i}:`, { x, y, xType: typeof x, yType: typeof y });
+        }
+      }
+    }
+
+    const convertedStroke = {
+      id: drawingStroke.id,
+      points,
+      color: drawingStroke.color,
+      width: drawingStroke.width,
+      tool: drawingStroke.tool as DrawingTool,
+      opacity: drawingStroke.opacity || 1
+    };
+
+    console.log(`Converted stroke ${drawingStroke.id}:`, {
+      convertedPointsLength: convertedStroke.points.length,
+      convertedPointsSample: convertedStroke.points.slice(0, 4),
+      isValidStroke: convertedStroke.points.length >= 2,
+      allFieldsPresent: {
+        hasId: !!convertedStroke.id,
+        hasPoints: Array.isArray(convertedStroke.points),
+        hasColor: !!convertedStroke.color,
+        hasWidth: !!convertedStroke.width,
+        hasTool: !!convertedStroke.tool,
+      }
+    });
+
+    return convertedStroke;
+  }, []);
+
   const renderStroke = useCallback((stroke: Stroke, index: number) => {
-    if (stroke.points.length < 2) return null;
+    if (stroke.points.length < 2) {
+      console.log(`DrawingCanvas: Skipping stroke ${stroke.id} - insufficient points:`, stroke.points.length);
+      return null;
+    }
 
     // Use optimized SVG path generation
     const pathData = strokeToSVGPath(stroke);
+    
+    if (!pathData) {
+      console.log(`DrawingCanvas: No path data for stroke ${stroke.id}`);
+      return null;
+    }
+    
+    console.log(`DrawingCanvas: Rendering stroke ${stroke.id} with ${stroke.points.length} points, color: ${stroke.color}, width: ${stroke.width}`);
     
     // Apply tool-specific styling
     let strokeWidth = stroke.width;
@@ -279,7 +362,12 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       >
         <G>
           {/* Render completed strokes */}
-          {strokes.map(renderStroke)}
+          {strokes.map((drawingStroke, index) => {
+            console.log(`DrawingCanvas: Processing stroke ${index}:`, drawingStroke.id);
+            const convertedStroke = convertDrawingStrokeToStroke(drawingStroke);
+            console.log(`DrawingCanvas: Converted stroke ${index}:`, convertedStroke.id, 'points:', convertedStroke.points.length);
+            return renderStroke(convertedStroke, index);
+          })}
           
           {/* Render current stroke being drawn */}
           {currentStroke && renderStroke(currentStroke, -1)}

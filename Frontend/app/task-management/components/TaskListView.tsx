@@ -166,11 +166,11 @@ const TaskListView: React.FC<TaskListViewProps> = ({
               >
                 {task.title}
               </Text>
-              {task.dueDate && (
+              {task.due_datetime && (
                 <Text
                   style={[styles.cardDate, task.overdue && styles.overdueText]}
                 >
-                  Due: {task.dueDate.toLocaleDateString()}
+                  Due: {task.due_datetime.toLocaleDateString()}
                 </Text>
               )}
             </View>

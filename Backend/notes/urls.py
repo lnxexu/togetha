@@ -16,4 +16,9 @@ urlpatterns = [
     
     # Combined note folder management
     path('manage-note-folders/', views.manage_note_folders, name='manage_note_folders'),
+
+    # Drawing URLs
+    path('notes/<str:note_id>/drawing/save/', views.save_drawing, name='save_drawing'),
+    path('notes/<str:note_id>/drawing/', views.get_drawing, name='get_drawing'),
+    path('notes/<str:note_id>/drawing/clear/', views.clear_drawing, name='clear_drawing'),
 ]

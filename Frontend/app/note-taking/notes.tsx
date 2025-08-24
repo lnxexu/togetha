@@ -18,6 +18,7 @@ import {
   View,
   useWindowDimensions,
   TouchableWithoutFeedback,
+  RefreshControl
 } from "react-native";
 import {
   MaterialIcons,
@@ -28,14 +29,13 @@ import RenderHtml from "react-native-render-html";
 import Navbar from "../NavBar";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { RefreshControl } from "react-native";
+import DrawingPreview from "./components/DrawingPreview";
 import { LinearGradient } from "expo-linear-gradient";
-import TemplateOverlay, { TemplateType } from "./components/TemplateOverlay";
+import { TemplateOverlay, TemplateType } from "./components/TemplateOverlay";
 import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
 import {
   showSuccessToast,
   showErrorToast,
-  showInfoToast,
   showWarningToast,
 } from "../utils/ToastUtils";
 
@@ -57,15 +57,43 @@ interface Note {
   title: string;
   content: string;
   formatted_content?: string;
-  folder?: string; // This matches the backend response structure
-  folderId?: string; // You can keep this for compatibility with existing code
+  folder?: string;
+  folderId?: string;
   createdAt: Date;
   updatedAt: Date;
-  type: "text" | "image";
-  tags?: Array<string | TagObject>;
+  type: "text" | "image" | "drawing"; // Add "drawing" type
+  tags?: (string | TagObject)[];
   linkedTaskId?: string;
   attachments?: Attachment[];
-  is_archived?: boolean; // Add this to match backend response
+  is_archived?: boolean;
+  template?: string;
+  // Enhanced drawing_data field to handle your specific stroke array format
+  drawing_data?: 
+    | string  // JSON string containing stroke array or drawing object
+    | {  // Direct array of stroke objects (your format)
+        id: string;
+        points: number[];
+        color: string;
+        width: number;
+        tool: string;
+        timestamp: number;
+        opacity: number;
+      }[]
+    | {  // Object containing strokes or other drawing data
+        strokes?: {
+          id: string;
+          points: number[];
+          color: string;
+          width: number;
+          tool: string;
+          timestamp: number;
+          opacity: number;
+        }[];
+        template?: string;
+        type?: string;
+        [key: string]: any;
+      }
+    | null;
 }
 
 interface Attachment {
@@ -79,8 +107,12 @@ interface Attachment {
 interface Folder {
   id: string;
   name: string;
-  icon: keyof typeof MaterialIcons.glyphMap;
   color: string;
+  icon: keyof typeof MaterialIcons.glyphMap;
+  notes_count?: number;
+  description?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 const DUMMY_FOLDERS: Folder[] = [];
@@ -127,9 +159,6 @@ const DRAWING_TEMPLATES = [
 ];
 
 export default function NotesScreen({ navigation }: NotesScreenProps) {
-  // Track dropdown position for absolute positioning
-  const [dropdownPosition, setDropdownPosition] = useState({ x: 0, y: 0 });
-
   const [notes, setNotes] = useState<Note[]>(INITIAL_NOTES);
   const [folders, setFolders] = useState<Folder[]>(DUMMY_FOLDERS);
   const [searchQuery, setSearchQuery] = useState("");
@@ -143,6 +172,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
   const [activeNoteOptions, setActiveNoteOptions] = useState<string | null>(
     null
   );
+  const [dropdownPosition, setDropdownPosition] = useState<{x: number, y: number} | null>(null);
 
   const [isLoading, setIsLoading] = useState(false);
 
@@ -157,7 +187,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
   const { width: windowWidth } = useWindowDimensions();
 
   // Fix 3: Either use folderCounts or use _ to indicate unused variable
-  const [_, setFolderCounts] = useState<Record<string, number>>({});
+  const [folderCounts, setFolderCounts] = useState<Record<string, number>>({});
 
   const [showFolderDropdown, setShowFolderDropdown] = useState(false);
   const [selectedFilterFolder, setSelectedFilterFolder] = useState<
@@ -339,54 +369,53 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
   };
 
   const calculateFolderCounts = useCallback(() => {
-    const counts: Record<string, number> = {};
+  const counts: Record<string, number> = {};
 
-    // Initialize counts for all folders to zero
-    folders.forEach((folder) => {
-      counts[folder.id] = 0;
-    });
+  // Initialize counts for all folders to zero
+  folders.forEach((folder) => {
+    counts[folder.id] = 0;
+  });
 
-    // Count notes for each folder
-    notes.forEach((note) => {
-      if (note.folderId && counts[note.folderId] !== undefined) {
-        counts[note.folderId]++;
-      }
-    });
+  // Count notes for each folder (including both text and drawing notes)
+  notes.forEach((note) => {
+    if (note.folderId && counts.hasOwnProperty(note.folderId)) {
+      counts[note.folderId]++;
+    }
+  });
 
-    setFolderCounts(counts);
-  }, [notes, folders]);
+  // Also count unorganized notes (notes without folderId)
+  const unorganizedCount = notes.filter(note => !note.folderId).length;
+  counts['unorganized'] = unorganizedCount;
+
+  console.log('Calculated folder counts:', counts); // ✅ Add logging to debug
+
+  setFolderCounts(counts);
+}, [notes, folders]);
 
   useEffect(() => {
     calculateFolderCounts();
   }, [notes, folders, calculateFolderCounts]);
 
-  // Set up auto-refresh for real-time editing with improved performance
   useEffect(() => {
-    // Initial fetch
     fetchNotes();
     fetchFolders();
 
-    // Set up an interval to refresh notes less frequently (30 seconds instead of 10)
-    // This reduces network load while still keeping data reasonably fresh
     const refreshInterval = setInterval(() => {
-      // Only fetch if the app is in the foreground using AppState
+     
       if (AppState.currentState === "active") {
-        fetchNotes(false); // Pass false to indicate this is a background refresh
       }
     }, 30000);
 
     return () => {
-      clearInterval(refreshInterval); // Clean up interval on unmount
+      clearInterval(refreshInterval); 
     };
   }, []);
 
-  // Handle tab changes - fetch all notes when switching to "All Notes" tab
   useEffect(() => {
-    // Always fetch all notes since we only have one view now
     fetchNotes(false);
-  }, [selectedFilterFolder]); // Refetch when filter folder changes
+  }, [selectedFilterFolder]); 
 
-  // Add useFocusEffect to refresh notes when screen comes into focus (returning from editor)
+
   useFocusEffect(
     useCallback(() => {
       fetchNotes(true);
@@ -434,8 +463,12 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
       const fetchedFolders: Folder[] = data.map((folder: any) => ({
         id: folder.id.toString(),
         name: folder.name,
-        icon: folder.icon as keyof typeof MaterialIcons.glyphMap,
-        color: folder.color,
+        color: folder.color || "#667EEA", // Default color if not provided
+        icon: "folder" as keyof typeof MaterialIcons.glyphMap, // Default icon
+        notes_count: folder.notes_count || 0,
+        description: folder.description,
+        created_at: folder.created_at,
+        updated_at: folder.updated_at,
       }));
 
       // Only update state if folders have actually changed
@@ -455,263 +488,482 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
     }
   };
 
-  // Helper function to show toast notifications (using proper toast utils)
-  // Removed - now using imported toast utility functions
+const isDrawingNote = React.useCallback((note: Note): boolean => {
+  // Primary check: if type is explicitly set to drawing
+  if (note.type === 'drawing') {
+    return true;
+  }
 
-  // Last fetch timestamp to implement throttling
-  const fetchNotes = async (showLoading = true) => {
-    // Implement fetch throttling - don't fetch if it's been less than 5 seconds since the last fetch
-    // unless it's an explicit user-requested refresh (showLoading = true)
-    const now = Date.now();
-    if (!showLoading && now - lastNoteFetch < 5000) {
-      return; // Skip this fetch
+  // Secondary check: if drawing_data exists and has content
+  if (!note.drawing_data) {
+    return false;
+  }
+
+  try {
+    let parsedData = note.drawing_data;
+
+    // If it's a string, parse it
+    if (typeof note.drawing_data === "string") {
+      try {
+        parsedData = JSON.parse(note.drawing_data);
+      } catch (parseError) {
+        console.warn('Failed to parse drawing_data JSON:', parseError);
+        return false;
+      }
     }
 
-    if (showLoading) {
-      setIsLoading(true);
+    // Now check the parsed data structure
+    if (Array.isArray(parsedData)) {
+      // Direct array of strokes (your database format)
+      return parsedData.length > 0 && parsedData.every(stroke => 
+        stroke && 
+        typeof stroke === 'object' && 
+        stroke.id && 
+        stroke.points && 
+        Array.isArray(stroke.points) &&
+        stroke.points.length > 0 &&
+        typeof stroke.tool === 'string'
+      );
     }
-    setError(null);
-    setLastNoteFetch(now);
+
+    // Object with strokes array or other drawing indicators
+    if (typeof parsedData === 'object' && parsedData !== null) {
+      return !!(
+        (parsedData.strokes && Array.isArray(parsedData.strokes)) ||
+        (parsedData.type && parsedData.type === 'drawing') ||
+        parsedData.drawing
+      );
+    }
+
+    return false;
+  } catch (error) {
+    console.warn('Error in isDrawingNote:', error);
+    return false;
+  }
+}, []);
+
+
+  const fetchNotes = React.useCallback(
+    async (showLoading = true) => {
+      const now = Date.now();
+      if (!showLoading && now - lastNoteFetch < 5000) {
+        return; // Skip this fetch
+      }
+
+      if (showLoading) {
+        setIsLoading(true);
+      }
+      setError(null);
+      setLastNoteFetch(now);
+
+      try {
+        const token = await AsyncStorage.getItem("authToken");
+        if (!token) {
+          // Navigate to login if no token
+          navigation.navigate("Login");
+          return;
+        }
+
+        // Add pagination parameters to reduce data load
+        let endpoint = `${API_URL}${API_ENDPOINTS.NOTES}?limit=50`;
+
+        // Add filter for selected folder if one is chosen
+        if (selectedFilterFolder) {
+          endpoint += `&folder=${selectedFilterFolder}`;
+        }
+
+        const response = await fetch(endpoint, {
+          method: "GET",
+          headers: {
+            Authorization: `Token ${token}`,
+            "Content-Type": "application/json",
+          },
+          // Improve caching with cache control headers
+          cache: "default",
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch notes");
+        }
+
+        const data = await response.json();
+
+        // Transform the data to match your Note interface with optimized processing
+        const fetchedNotes: Note[] = data.map((note: any) => ({
+          id: note.id.toString(),
+          title: note.title || "",
+          content: note.content || "",
+          formatted_content: note.formatted_content || "",
+          folder: note.folder_name || null, // Use folder_name from backend
+          folderId: note.folder ? note.folder.toString() : null, // Map the folder ID
+          createdAt: new Date(note.created_at),
+          updatedAt: new Date(note.updated_at),
+          type: note.type || "text",
+          is_archived: note.is_archived || false,
+          tags: note.tags || [],
+          template: note.template || null,
+          drawing_data: note.drawing_data || null,
+        }));
+
+        // Check if notes have changed before updating state - only compare relevant fields
+        const currentNotesJson = JSON.stringify(
+          notes.map((n) => ({ id: n.id, updatedAt: n.updatedAt }))
+        );
+        const fetchedNotesJson = JSON.stringify(
+          fetchedNotes.map((n) => ({ id: n.id, updatedAt: n.updatedAt }))
+        );
+        const hasChanges = currentNotesJson !== fetchedNotesJson;
+
+        if (hasChanges) {
+          setNotes(fetchedNotes);
+        }
+      } catch (error) {
+        console.error("Error fetching notes:", error);
+        setError("Failed to load notes. Please try again.");
+      } finally {
+        if (showLoading) {
+          setIsLoading(false);
+        }
+      }
+    },
+    [lastNoteFetch, navigation, notes, selectedFilterFolder]
+  );
+
+  const handleAddToFolder = useCallback((noteId: string) => {
+    setSelectedNotes([noteId]);
+    setShowSortNotesModal(true);
+    setActiveNoteOptions(null);
+    setDropdownPosition(null);
+  }, []);
+
+  const handleDuplicateDrawing = useCallback(async (note: Note) => {
+    if (!isDrawingNote(note)) {
+      showErrorToast("Only drawings can be duplicated");
+      return;
+    }
 
     try {
+      setIsLoading(true);
+      setActiveNoteOptions(null);
+      setDropdownPosition(null);
+
       const token = await AsyncStorage.getItem("authToken");
       if (!token) {
-        // Navigate to login if no token
         navigation.navigate("Login");
         return;
       }
 
-      // Add pagination parameters to reduce data load
-      let endpoint = `${API_URL}${API_ENDPOINTS.NOTES}?limit=50`;
+      // Create duplicate with same drawing data but new title
+      const duplicateTitle = `${note.title} - Copy`;
+      const duplicateNote = {
+        title: duplicateTitle,
+        content: note.content,
+        formatted_content: note.formatted_content,
+        type: note.type,
+        template: note.template,
+        drawing_data: note.drawing_data, // Copy the drawing data
+        folderId: note.folderId, // Keep same folder
+      };
 
-      // Add filter for selected folder if one is chosen
-      if (selectedFilterFolder) {
-        endpoint += `&folder=${selectedFilterFolder}`;
-      }
-
-      const response = await fetch(endpoint, {
-        method: "GET",
+      const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTES}`, {
+        method: "POST",
         headers: {
           Authorization: `Token ${token}`,
           "Content-Type": "application/json",
         },
-        // Improve caching with cache control headers
-        cache: "default",
+        body: JSON.stringify(duplicateNote),
       });
 
       if (!response.ok) {
-        throw new Error("Failed to fetch notes");
+        throw new Error("Failed to duplicate drawing");
       }
 
-      const data = await response.json();
+      const newNote = await response.json();
+      
+      // Add the new note to the state
+      setNotes(prev => [
+        {
+          ...newNote,
+          createdAt: new Date(newNote.created_at),
+          updatedAt: new Date(newNote.updated_at),
+        },
+        ...prev
+      ]);
 
-      // Transform the data to match your Note interface with optimized processing
-      const fetchedNotes: Note[] = data.map((note: any) => ({
-        id: note.id.toString(),
-        title: note.title || "",
-        content: note.content || "",
-        formatted_content: note.formatted_content || "",
-        folderId: note.folder || null, // Map the folder field from backend
-        createdAt: new Date(note.created_at),
-        updatedAt: new Date(note.updated_at),
-        type: note.type || "text",
-        is_archived: note.is_archived || false,
-        tags: note.tags || [],
-      }));
-
-      // Check if notes have changed before updating state - only compare relevant fields
-      const currentNotesJson = JSON.stringify(
-        notes.map((n) => ({ id: n.id, updatedAt: n.updatedAt }))
-      );
-      const fetchedNotesJson = JSON.stringify(
-        fetchedNotes.map((n) => ({ id: n.id, updatedAt: n.updatedAt }))
-      );
-      const hasChanges = currentNotesJson !== fetchedNotesJson;
-
-      if (hasChanges) {
-        setNotes(fetchedNotes);
-      }
+      showSuccessToast("Drawing duplicated successfully");
     } catch (error) {
-      console.error("Error fetching notes:", error);
-      setError("Failed to load notes. Please try again.");
+      console.error("Error duplicating drawing:", error);
+      showErrorToast("Failed to duplicate drawing");
     } finally {
-      if (showLoading) {
+      setIsLoading(false);
+    }
+  }, [navigation, setIsLoading, setNotes]);
+
+  const handleRemoveFromFolder = useCallback(
+    async (noteId: string) => {
+      try {
+        setIsLoading(true);
+        setActiveNoteOptions(null);
+        setDropdownPosition(null);
+
+        const token = await AsyncStorage.getItem("authToken");
+        if (!token) {
+          navigation.navigate("Login");
+          return;
+        }
+
+        // alert before performing the deletion
+        Alert.alert(
+          "Remove from Folder",
+          "Are you sure you want to remove this note from its folder?",
+          [
+            {
+              text: "Cancel",
+              style: "cancel",
+            },
+            {
+              text: "Remove",
+              onPress: async () => {
+                try {
+                  setIsLoading(true);
+
+                  const response = await fetch(
+                    `${API_URL}${API_ENDPOINTS.MANAGE_NOTE_FOLDERS}`,
+                    {
+                      method: "POST",
+                      headers: {
+                        Authorization: `Token ${token}`,
+                        "Content-Type": "application/json",
+                      },
+                      body: JSON.stringify({
+                        action: "remove",
+                        note_ids: [noteId],
+                      }),
+                    }
+                  );
+
+                  if (!response.ok) {
+                    throw new Error("Failed to remove note from folder");
+                  } else {
+                    showSuccessToast("Note removed from folder successfully");
+                    // Update local state to reflect changes
+                    const updatedNotes = notes.map((note) =>
+                      note.id === noteId
+                        ? { ...note, folderId: undefined, folder: undefined }
+                        : note
+                    );
+
+                    setNotes(updatedNotes);
+                  }
+                } catch (error) {
+                  console.error("Error removing note from folder:", error);
+                  showErrorToast("Failed to move note to Unorganized Notes");
+                  Alert.alert(
+                    "Error",
+                    "Failed to move note to Unorganized Notes. Please try again."
+                  );
+                } finally {
+                  setIsLoading(false);
+                }
+              },
+            },
+          ]
+        );
+
+        // If we're filtering by a specific folder, we might need to refresh
+        fetchNotes();
+      } catch (error) {
+        console.error("Error removing note from folder:", error);
+        showErrorToast("Failed to move note to Unorganized Notes");
+        Alert.alert(
+          "Error",
+          "Failed to move note to Unorganized Notes. Please try again."
+        );
+      } finally {
         setIsLoading(false);
       }
-    }
-  };
+    },
+    [notes, navigation, setIsLoading, setActiveNoteOptions, fetchNotes]
+  );
 
-  const handleAddToFolder = (noteId: string) => {
-    setSelectedNotes([noteId]);
-    setShowSortNotesModal(true);
-    setActiveNoteOptions(null);
-  };
-
-  const handleRemoveFromFolder = async (noteId: string) => {
-    try {
-      setIsLoading(true);
+  const handleDeleteNote = useCallback(
+    (noteId: string) => {
+      // Close the dropdown menu first
       setActiveNoteOptions(null);
 
-      const token = await AsyncStorage.getItem("authToken");
-      if (!token) {
-        navigation.navigate("Login");
-        return;
-      }
-
-      // alert before performing the deletion
       Alert.alert(
-        "Remove from Folder",
-        "Are you sure you want to remove this note from its folder?",
+        "Delete Note",
+        "Are you sure you want to delete this note? This action cannot be undone.",
         [
           {
             text: "Cancel",
             style: "cancel",
           },
           {
-            text: "Remove",
+            text: "Delete",
+            style: "destructive",
             onPress: async () => {
               try {
-                setIsLoading(true);
-
+                setIsLoading(true); // Show loading indicator
+                const token = await AsyncStorage.getItem("authToken");
+                if (!token) {
+                  navigation.navigate("Login");
+                  return;
+                }
                 const response = await fetch(
-                  `${API_URL}${API_ENDPOINTS.MANAGE_NOTE_FOLDERS}`,
+                  `${API_URL}${API_ENDPOINTS.NOTES}${noteId}/`,
                   {
-                    method: "POST",
+                    method: "DELETE",
                     headers: {
                       Authorization: `Token ${token}`,
-                      "Content-Type": "application/json",
                     },
-                    body: JSON.stringify({
-                      action: "remove",
-                      note_ids: [noteId],
-                    }),
                   }
                 );
 
                 if (!response.ok) {
-                  throw new Error("Failed to remove note from folder");
-                } else {
-                  showSuccessToast("Note removed from folder successfully");
-                  // Update local state to reflect changes
-                  const updatedNotes = notes.map((note) =>
-                    note.id === noteId
-                      ? { ...note, folderId: undefined, folder: undefined }
-                      : note
-                  );
-
-                  setNotes(updatedNotes);
+                  throw new Error("Failed to delete note");
                 }
+
+                // If successful, update local state
+                setNotes((prev) => prev.filter((note) => note.id !== noteId));
+
+                // Show success toast
+                showSuccessToast("Note deleted successfully");
               } catch (error) {
-                console.error("Error removing note from folder:", error);
-                showErrorToast("Failed to move note to Unorganized Notes");
-                Alert.alert(
-                  "Error",
-                  "Failed to move note to Unorganized Notes. Please try again."
-                );
+                console.error("Error deleting note:", error);
+                showErrorToast("Failed to delete note");
+                Alert.alert("Error", "Failed to delete note. Please try again.");
               } finally {
-                setIsLoading(false);
+                setIsLoading(false); // Hide loading indicator
               }
             },
           },
         ]
       );
+    },
+    [setActiveNoteOptions, setIsLoading, setNotes, navigation]
+  );
 
-      // If we're filtering by a specific folder, we might need to refresh
-      fetchNotes();
+ const handleNotePress = useCallback((note: Note) => {
+  // Close any open options when navigating
+  setActiveNoteOptions(null);
+  setDropdownPosition(null);
+
+  // Use the enhanced drawing detection
+  const isDrawing = isDrawingNote(note);
+
+  if (isDrawing) {
+    // Parse drawing data properly - handle the stroke array format
+    let parsedDrawingData = null;
+    let strokesArray = [];
+
+    try {
+      if (typeof note.drawing_data === "string") {
+        // Parse the JSON string - this is the actual format from the database
+        const parsed = JSON.parse(note.drawing_data);
+        if (Array.isArray(parsed)) {
+          // Direct array of strokes (this is your actual format)
+          strokesArray = parsed;
+          parsedDrawingData = {
+            strokes: parsed,
+            template: note.template || "blank",
+            type: "drawing"
+          };
+        } else {
+          parsedDrawingData = parsed;
+          strokesArray = parsed.strokes || [];
+        }
+      } else if (Array.isArray(note.drawing_data)) {
+        // Direct array of strokes
+        strokesArray = note.drawing_data;
+        parsedDrawingData = {
+          strokes: note.drawing_data,
+          template: note.template || "blank",
+          type: "drawing"
+        };
+      } else if (note.drawing_data && typeof note.drawing_data === "object") {
+        // Object with strokes array
+        parsedDrawingData = note.drawing_data;
+        strokesArray = parsedDrawingData.strokes || [];
+      }
+
+      console.log("Parsed drawing data successfully:", {
+        originalType: typeof note.drawing_data,
+        isString: typeof note.drawing_data === "string",
+        parsedStrokesCount: strokesArray.length,
+        firstStrokeSample: strokesArray[0],
+      });
+
     } catch (error) {
-      console.error("Error removing note from folder:", error);
-      showErrorToast("Failed to move note to Unorganized Notes");
-      Alert.alert(
-        "Error",
-        "Failed to move note to Unorganized Notes. Please try again."
-      );
-    } finally {
-      setIsLoading(false);
+      console.error("Failed to parse drawing data:", error);
+      console.error("Raw drawing_data:", note.drawing_data);
+      // Fallback to empty drawing data
+      parsedDrawingData = { strokes: [], template: "blank", type: "drawing" };
+      strokesArray = [];
     }
-  };
 
-  const handleDeleteNote = (noteId: string) => {
-    // Close the dropdown menu first
-    setActiveNoteOptions(null);
+    // Prepare drawing data for editor - ensure proper format for importDrawing
+    const drawingData = {
+      id: note.id,
+      title: note.title || "Untitled Drawing",
+      strokes: strokesArray,
+      template: parsedDrawingData?.template || note.template || "blank",
+      drawing_data: parsedDrawingData,
+      createdAt: note.createdAt?.toISOString(),
+      updatedAt: note.updatedAt?.toISOString(),
+      // Also include the strokes at root level for importDrawing compatibility
+      ...parsedDrawingData,
+    };
 
-    Alert.alert(
-      "Delete Note",
-      "Are you sure you want to delete this note? This action cannot be undone.",
-      [
-        {
-          text: "Cancel",
-          style: "cancel",
-        },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              setIsLoading(true); // Show loading indicator
-              const token = await AsyncStorage.getItem("authToken");
-              if (!token) {
-                navigation.navigate("Login");
-                return;
-              }
-              const response = await fetch(
-                `${API_URL}${API_ENDPOINTS.NOTES}${noteId}/`,
-                {
-                  method: "DELETE",
-                  headers: {
-                    Authorization: `Token ${token}`,
-                  },
-                }
-              );
+    console.log("Opening drawing note with data:", {
+      noteId: note.id,
+      title: drawingData.title,
+      strokeCount: strokesArray.length,
+      hasValidStrokes: strokesArray.length > 0,
+      template: drawingData.template
+    });
 
-              if (!response.ok) {
-                throw new Error("Failed to delete note");
-              }
+    navigation.navigate("DrawingEditor", {
+      noteId: note.id,
+      initialDrawingData: drawingData,
+      readOnly: false,
+    });
+  } else {
 
-              // If successful, update local state
-              setNotes((prev) => prev.filter((note) => note.id !== noteId));
-
-              // Show success toast
-              showSuccessToast("Note deleted successfully");
-            } catch (error) {
-              console.error("Error deleting note:", error);
-              showErrorToast("Failed to delete note");
-              Alert.alert("Error", "Failed to delete note. Please try again.");
-            } finally {
-              setIsLoading(false); // Hide loading indicator
-            }
-          },
-        },
-      ]
-    );
-  };
-  const handleNotePress = (note: Note) => {
-    // Close any open options when navigating
-    setActiveNoteOptions(null);
     // Convert tag objects to strings for the editor if needed
     const processedTags = note.tags?.map((tag) =>
-      typeof tag === "object" && tag !== null && "name" in tag ? tag.name : tag
+      typeof tag === "object" && tag !== null && "name" in tag
+        ? tag.name
+        : tag
     );
 
     // Prepare note data for editor
     const noteForEditor = {
       title: note.title,
       content: note.content,
-      formatted_content: note.formatted_content || note.content, // Use formatted content if available, otherwise plain content
+      formatted_content: note.formatted_content || note.content,
       tags: processedTags || [],
+      folderId: note.folderId,
       createdAt: note.createdAt?.toISOString(),
       updatedAt: note.updatedAt?.toISOString(),
     };
+
+    console.log("Opening text note with data:", {
+      noteId: note.id,
+      title: noteForEditor.title,
+      hasContent: !!noteForEditor.content,
+      hasFormattedContent: !!noteForEditor.formatted_content
+    });
 
     navigation.navigate("NoteEditor", {
       noteId: note.id,
       initialNote: noteForEditor,
     });
-  };
+  }
+}, [setActiveNoteOptions, isDrawingNote, navigation]);
 
-  const handleCreateNote = () => {
-    // Show toast message
-    showInfoToast("Creating new note...");
 
+  const handleCreateNote = useCallback(() => {
     const initialNoteData = {
       title: "",
       content: "",
@@ -722,7 +974,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
     navigation.navigate("NoteEditor", {
       initialNote: initialNoteData,
     });
-  };
+  }, [navigation]);
 
   const handleCreateDrawing = () => {
     // Show drawing setup modal instead of navigating directly
@@ -743,10 +995,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
     const dimensions =
       selectedOrientation === "landscape"
         ? sizeConfig?.landscape
-        : sizeConfig?.portrait;
-
-    // Show toast message
-    showInfoToast("Creating new drawing...");
+        : sizeConfig?.portrait
 
     // Navigate to drawing editor with setup preferences
     navigation.navigate("DrawingEditor", {
@@ -777,7 +1026,6 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
         note_ids: noteIDs,
       };
 
-      // Fix: Update the API endpoint to match the backend route
       const response = await fetch(
         `${API_URL}${API_ENDPOINTS.MANAGE_NOTE_FOLDERS}`,
         {
@@ -795,8 +1043,6 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
       );
       if (!response.ok) {
         throw new Error("Failed to assign notes to folder");
-      } else {
-        showSuccessToast("Notes assigned to folder successfully");
       }
 
       // Update local state to reflect changes
@@ -902,7 +1148,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
     );
   };
   // Function to toggle note selection in select mode
-  const toggleNoteSelection = (noteId: string) => {
+  const toggleNoteSelection = useCallback((noteId: string) => {
     setSelectedNotes((prev) => {
       if (prev.includes(noteId)) {
         return prev.filter((id) => id !== noteId);
@@ -910,7 +1156,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
         return [...prev, noteId];
       }
     });
-  };
+  }, []);
 
   // Add this helper function
   const updateFolderName = async (folderId: string, newName: string) => {
@@ -1063,6 +1309,83 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
     }
   };
 
+  const renderFolderCard = (folder: Folder) => (
+  <TouchableOpacity
+    key={folder.id}
+    style={[
+      styles.folderCard,
+      selectedFilterFolder === folder.id && styles.selectedFolderCard,
+    ]}
+    onPress={() => setSelectedFilterFolder(folder.id)}
+    onLongPress={() => handleFolderLongPress(folder.id)}
+  >
+    <View style={styles.folderCardHeader}>
+      <View style={[styles.folderIcon, { backgroundColor: Array.isArray(folder.color) ? folder.color[0] : folder.color }]}>
+        <MaterialIcons 
+          name={folder.icon} 
+          size={20} 
+          color={selectedFilterFolder === folder.id ? "#FFFFFF" : "#FFFFFF"}
+        />
+      </View>
+      <TouchableOpacity
+        style={styles.folderOptionsButton}
+        onPress={() => handleFolderLongPress(folder.id)}
+      >
+        <MaterialIcons name="more-vert" size={16} color="#9CA3AF" />
+      </TouchableOpacity>
+    </View>
+    
+    <Text style={[
+      styles.folderName,
+      selectedFilterFolder === folder.id && styles.activeFolderName,
+    ]}>
+      {folder.name}
+    </Text>
+    
+    <View style={styles.folderStatsRow}>
+      <Text style={[
+        styles.folderCount,
+        selectedFilterFolder === folder.id && styles.activeFolderName,
+      ]}>
+        {folderCounts[folder.id] || 0} notes
+      </Text>
+    </View>
+  </TouchableOpacity>
+);
+
+// For unorganized folder:
+const renderUnorganizedFolder = () => (
+  <TouchableOpacity
+    style={[
+      styles.unorganizedFolderCard,
+      selectedFilterFolder === 'unorganized' && styles.selectedUnorganizedFolderCard,
+    ]}
+    onPress={() => setSelectedFilterFolder('unorganized')}
+  >
+    <View style={[
+      styles.unorganizedFolderIcon,
+      selectedFilterFolder === 'unorganized' && { backgroundColor: '#FFFFFF' }
+    ]}>
+      <MaterialIcons 
+        name="folder-open" 
+        size={18} 
+        color={selectedFilterFolder === 'unorganized' ? '#6A009C' : '#9CA3AF'} 
+      />
+    </View>
+    <Text style={[
+      styles.unorganizedFolderName,
+      selectedFilterFolder === 'unorganized' && styles.activeUnorganizedFolderName,
+    ]}>
+      Unorganized Notes
+    </Text>
+    <Text style={[
+      styles.unorganizedFolderCount,
+      selectedFilterFolder === 'unorganized' && styles.activeUnorganizedFolderName,
+    ]}>
+      {folderCounts['unorganized'] || 0}
+    </Text>
+  </TouchableOpacity>
+);
   // Add function to handle folder long press
   const handleFolderLongPress = (folderId: string) => {
     setSelectedFolderForOptions(folderId);
@@ -1153,7 +1476,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
 
   // Pre-memoized empty list component to avoid conditional hook rendering
   const NotesEmptyListComponent = useMemo(
-    () => () =>
+    () =>
       (
         <View style={styles.emptyState}>
           <View style={styles.emptyStateIconContainer}>
@@ -1212,240 +1535,352 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
   );
 
   const renderNoteItem = useCallback(
-    ({ item }: { item: Note }) => {
-      // Create content preview for rendering as image placeholder
-      const getPreviewContent = () => {
-        // For drawing notes, create a drawing/sketch preview
-        if (item.type === "image") {
-          return (
-            <View style={styles.previewImageContainer}>
-              <View style={styles.drawingPreview}>
+  ({ item }: { item: Note }) => {
+    // Use the enhanced drawing detection
+    const isDrawing = isDrawingNote(item);
+
+    // Enhanced stroke count calculation
+    const getStrokeCount = () => {
+      if (!item.drawing_data) return 0;
+      
+      try {
+        let parsedData = item.drawing_data;
+
+        // Parse if it's a string
+        if (typeof item.drawing_data === "string") {
+          parsedData = JSON.parse(item.drawing_data);
+        }
+
+        // Count based on data structure
+        if (Array.isArray(parsedData)) {
+          // Direct array of strokes
+          return parsedData.filter(stroke => 
+            stroke && 
+            stroke.points && 
+            Array.isArray(stroke.points) && 
+            stroke.points.length > 0
+          ).length;
+        }
+        
+        if (parsedData && typeof parsedData === "object") {
+          if (parsedData.strokes && Array.isArray(parsedData.strokes)) {
+            return parsedData.strokes.length;
+          }
+          if (parsedData.drawing && Array.isArray(parsedData.drawing)) {
+            return parsedData.drawing.length;
+          }
+        }
+        
+        return 0;
+      } catch (error) {
+        console.warn('Error calculating stroke count:', error);
+        return 0;
+      }
+    };
+
+    // Enhanced preview content with better visual differentiation
+    const getPreviewContent = () => {
+      if (isDrawing) {
+        const strokeCount = getStrokeCount();
+        
+        return (
+          <View style={styles.previewImageContainer}>
+            <View style={styles.drawingPreview}>
+              {/* Enhanced drawing preview with actual drawing */}
+              <View style={styles.drawingPreviewHeader}>
                 <MaterialIcons
                   name="brush"
-                  size={36}
+                  size={28}
                   color="#8B5CF6"
                   style={styles.drawingIcon}
                 />
-                <View style={styles.drawingPatterns}>
-                  {/* Decorative lines to simulate a drawing */}
-                  <View
-                    style={[styles.drawingLine, { width: "80%", opacity: 0.7 }]}
-                  />
-                  <View
-                    style={[styles.drawingLine, { width: "60%", opacity: 0.5 }]}
-                  />
-                  <View
-                    style={[styles.drawingLine, { width: "70%", opacity: 0.3 }]}
-                  />
+                <View style={styles.drawingBadge}>
+                  <Text style={styles.drawingBadgeText}>Drawing</Text>
                 </View>
+              </View>
+              
+              {strokeCount > 0 ? (
+                <DrawingPreview
+                  drawingData={item.drawing_data}
+                  width={windowWidth / 2 - 64}
+                  height={120}
+                />
+              ) : (
+                <View style={styles.emptyDrawingContainer}>
+                  <Text style={styles.emptyDrawingText}>Empty Drawing</Text>
+                </View>
+              )}
+              
+              {/* Show stroke count */}
+              <Text style={styles.drawingDataStatus}>
+                {strokeCount > 0 ? `${strokeCount} strokes` : "No strokes"}
+              </Text>
+            </View>
+          </View>
+        );
+      } else {
+        // Text note preview (existing logic remains the same)
+        if (item.formatted_content) {
+          return (
+            <View style={styles.previewContentContainer}>
+              <RenderHtml
+                contentWidth={windowWidth / 2 - 64}
+                source={{ html: item.formatted_content }}
+                tagsStyles={previewHtmlTagStyles}
+                enableExperimentalMarginCollapsing={true}
+              />
+            </View>
+          );
+        } else if (item.content) {
+          return (
+            <View style={styles.previewTextContainer}>
+              <Text style={styles.previewTextContent} numberOfLines={4}>
+                {item.content}
+              </Text>
+            </View>
+          );
+        } else {
+          return (
+            <View style={styles.previewDocumentContainer}>
+              <View style={styles.documentLines}>
+                <View
+                  style={[styles.documentLine, styles.documentTitleLine]}
+                />
+                <View style={[styles.documentLine, { width: "90%" }]} />
+                <View style={[styles.documentLine, { width: "75%" }]} />
+                <View style={[styles.documentLine, { width: "85%" }]} />
+                <View style={[styles.documentLine, { width: "65%" }]} />
               </View>
             </View>
           );
         }
-        // For text notes, create a preview of the actual content
-        else {
-          // If we have formatted content, display it
-          if (item.formatted_content) {
-            return (
-              <View style={styles.previewContentContainer}>
-                <RenderHtml
-                  contentWidth={windowWidth / 2 - 64}
-                  source={{ html: item.formatted_content }}
-                  tagsStyles={previewHtmlTagStyles}
-                  enableExperimentalMarginCollapsing={true}
+      }
+    };
+
+    return (
+      <TouchableOpacity
+        style={[
+          styles.gridNoteItem,
+          // Enhanced visual differentiation for drawing notes
+          isDrawing && styles.drawingNoteItem,
+          isSelectMode &&
+            selectedNotes.includes(item.id) &&
+            styles.selectedNoteItem,
+        ]}
+        activeOpacity={0.8}
+        onPress={() => {
+          if (isSelectMode) {
+            toggleNoteSelection(item.id);
+          } else {
+            handleNotePress(item);
+          }
+        }}
+        onLongPress={() => {
+          if (!isSelectMode) {
+            setIsSelectMode(true);
+            toggleNoteSelection(item.id);
+          }
+        }}
+      >
+        <View
+          style={[
+            styles.gridNoteContent,
+            isDrawing && styles.drawingNoteContent,
+          ]}
+        >
+          {/* Preview Image Container */}
+          {getPreviewContent()}
+
+          {/* Enhanced Note Header with better type indication */}
+          <View style={styles.noteHeader}>
+            <View style={styles.noteTitleContainer}>
+              <View
+                style={[
+                  styles.gridNoteTypeIcon,
+                  {
+                    backgroundColor: isDrawing ? "#EDE9FE" : "#DBEAFE",
+                  },
+                ]}
+              >
+                <Ionicons
+                  name={isDrawing ? "brush" : "document-text"}
+                  size={16}
+                  color={isDrawing ? "#8B5CF6" : "#3B82F6"}
                 />
               </View>
-            );
-          }
-          // Otherwise display a simple text preview
-          else if (item.content) {
-            return (
-              <View style={styles.previewTextContainer}>
-                <Text style={styles.previewTextContent} numberOfLines={4}>
-                  {item.content}
-                </Text>
-              </View>
-            );
-          }
-          // Fallback for empty notes
-          else {
-            return (
-              <View style={styles.previewDocumentContainer}>
-                <View style={styles.documentLines}>
-                  {/* Title line */}
-                  <View
-                    style={[styles.documentLine, styles.documentTitleLine]}
-                  />
-
-                  {/* Content lines - shortened and varied widths to simulate text */}
-                  <View style={[styles.documentLine, { width: "90%" }]} />
-                  <View style={[styles.documentLine, { width: "75%" }]} />
-                  <View style={[styles.documentLine, { width: "85%" }]} />
-                  <View style={[styles.documentLine, { width: "65%" }]} />
-                </View>
-              </View>
-            );
-          }
-        }
-      };
-
-      return (
-        <TouchableOpacity
-          style={[
-            styles.gridNoteItem,
-            isSelectMode &&
-              selectedNotes.includes(item.id) &&
-              styles.selectedNoteItem,
-          ]}
-          activeOpacity={0.8}
-          onPress={() => {
-            if (isSelectMode) {
-              toggleNoteSelection(item.id);
-            } else {
-              handleNotePress(item);
-            }
-          }}
-          onLongPress={() => {
-            if (!isSelectMode) {
-              setIsSelectMode(true);
-              toggleNoteSelection(item.id);
-            }
-          }}
-        >
-          <View style={styles.gridNoteContent}>
-            {/* Preview Image Container */}
-            {getPreviewContent()}
-
-            {/* Note Header */}
-            <View style={styles.noteHeader}>
-              <View style={styles.noteTitleContainer}>
-                <View
+              <View style={styles.noteTitleSection}>
+                <Text
                   style={[
-                    styles.gridNoteTypeIcon,
-                    {
-                      backgroundColor:
-                        item.type === "image" ? "#FEF3C7" : "#d9e7f8ff",
-                    },
+                    styles.gridNoteTitle,
+                    isDrawing && styles.drawingNoteTitle,
+                  ]}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  {item.title ||
+                    (isDrawing ? "Untitled Drawing" : "Untitled Note")}
+                </Text>
+                {/* Add type indicator text */}
+                <Text
+                  style={[
+                    styles.noteTypeIndicator,
+                    isDrawing && styles.drawingTypeIndicator,
                   ]}
                 >
-                  <Ionicons
-                    name={item.type === "image" ? "image" : "document-text"}
-                    size={16}
-                    color={item.type === "image" ? "#D97706" : "#3B82F6"}
-                  />
+                  {isDrawing ? "Drawing" : "Text Note"}
+                </Text>
+              </View>
+            </View>
+
+            {!isSelectMode && (
+              <TouchableWithoutFeedback
+                onPress={(e) => {
+                  e.stopPropagation();
+                  // Measure the kebab button position
+                  if (activeNoteOptions === item.id) {
+                    setActiveNoteOptions(null);
+                    setDropdownPosition(null);
+                  } else {
+                                        // Get the kebab button's position on screen
+                    e.target.measure((x, y, width, height, pageX, pageY) => {
+                      const screenWidth = Dimensions.get('window').width;
+                      const dropdownWidth = 180; // Fixed dropdown width
+                      
+                      let dropdownX;
+                      // If button is on left half, align dropdown's right edge with button's right edge
+                      if (pageX < screenWidth / 2) {
+                        dropdownX = pageX + width - dropdownWidth;
+                      } else {
+                        // If button is on right half, align dropdown's left edge with button's left edge
+                        dropdownX = pageX;
+                      }
+                      
+                      // Ensure dropdown stays within screen bounds
+                      if (dropdownX < 10) {
+                        dropdownX = 10;
+                      }
+                      if (dropdownX + dropdownWidth > screenWidth - 10) {
+                        dropdownX = screenWidth - dropdownWidth - 10;
+                      }
+                      
+                      setDropdownPosition({
+                        x: dropdownX,
+                        y: pageY + height
+                      });
+                      setActiveNoteOptions(item.id);
+                    });
+                  }
+                }}
+              >
+                <View style={styles.gridNoteOptionsButton}>
+                  <MaterialIcons name="more-vert" size={16} color="#9CA3AF" />
                 </View>
-                <View style={styles.noteTitleSection}>
-                  <Text
-                    style={styles.gridNoteTitle}
-                    numberOfLines={1}
-                    ellipsizeMode="tail"
-                  >
-                    {item.title || "Untitled Note"}
+              </TouchableWithoutFeedback>
+            )}
+          </View>
+
+          {/* Rest of the existing footer code... */}
+          <View style={styles.noteFooter}>
+            <Text style={styles.noteDate}>
+              {item.updatedAt.toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+              })}
+            </Text>
+
+            <View style={styles.metadataContainer}>
+              {!selectedFilterFolder && item.folderId && (
+                <View style={styles.folderBadge}>
+                  <MaterialIcons name="folder" size={10} color="#6A009C" />
+                  <Text style={styles.folderBadgeText} numberOfLines={1}>
+                    {folders.find((f) => f.id === item.folderId)?.name ||
+                      "Folder"}
                   </Text>
                 </View>
-              </View>
+              )}
 
-              {!isSelectMode && (
-                <TouchableWithoutFeedback
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    setActiveNoteOptions(
-                      activeNoteOptions === item.id ? null : item.id
-                    );
-                  }}
-                >
-                  <View style={styles.gridNoteOptionsButton}>
-                    <MaterialIcons name="more-vert" size={16} color="#9CA3AF" />
-                  </View>
-                </TouchableWithoutFeedback>
+              {item.tags && item.tags.length > 0 && (
+                <View style={styles.inlineTagsContainer}>
+                  {item.tags.slice(0, 1).map((tag, idx) => (
+                    <View key={idx} style={styles.gridTag}>
+                      <MaterialIcons
+                        name="local-offer"
+                        size={8}
+                        color="#4B5563"
+                      />
+                      <Text style={styles.gridTagText}>
+                        {typeof tag === "string" ? tag : tag.name}
+                      </Text>
+                    </View>
+                  ))}
+                  {item.tags.length > 1 && (
+                    <View style={styles.gridMoreTagsIndicator}>
+                      <Text style={styles.gridMoreTagsText}>
+                        +{item.tags.length - 1}
+                      </Text>
+                    </View>
+                  )}
+                </View>
               )}
             </View>
+          </View>
 
-            {/* Footer with date, folder and tags in one container */}
-            <View style={styles.noteFooter}>
-              <Text style={styles.noteDate}>
-                {item.updatedAt.toLocaleDateString("en-US", {
-                  month: "short",
-                  day: "numeric",
-                })}
-              </Text>
-
-              <View style={styles.metadataContainer}>
-                {!selectedFilterFolder && item.folderId && (
-                  <View style={styles.folderBadge}>
-                    <MaterialIcons name="folder" size={10} color="#6A009C" />
-                    <Text style={styles.folderBadgeText} numberOfLines={1}>
-                      {folders.find((f) => f.id === item.folderId)?.name ||
-                        "Folder"}
-                    </Text>
-                  </View>
-                )}
-
-                {/* Tags inline with folder */}
-                {item.tags && item.tags.length > 0 && (
-                  <View style={styles.inlineTagsContainer}>
-                    {item.tags.slice(0, 1).map((tag, idx) => (
-                      <View key={idx} style={styles.gridTag}>
-                        <MaterialIcons
-                          name="local-offer"
-                          size={8}
-                          color="#4B5563"
-                        />
-                        <Text style={styles.gridTagText}>
-                          {typeof tag === "string"
-                            ? tag
-                            : tag && typeof tag === "object" && "name" in tag
-                            ? tag.name
-                            : ""}
-                        </Text>
-                      </View>
-                    ))}
-                    {item.tags.length > 1 && (
-                      <View style={styles.gridMoreTagsIndicator}>
-                        <Text style={styles.gridMoreTagsText}>
-                          +{item.tags.length - 1}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                )}
-              </View>
-            </View>
-
-            {/* Options Dropdown - Always use grid version */}
-            {activeNoteOptions === item.id && (
+          {/* Options Dropdown as Modal */}
+          {activeNoteOptions === item.id && dropdownPosition && (
+            <Modal
+              transparent
+              animationType="fade"
+              visible={true}
+              onRequestClose={() => {
+                setActiveNoteOptions(null);
+                setDropdownPosition(null);
+              }}
+            >
+              <TouchableWithoutFeedback onPress={() => {
+                setActiveNoteOptions(null);
+                setDropdownPosition(null);
+              }}>
+                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.1)' }} />
+              </TouchableWithoutFeedback>
               <View
                 style={[
                   styles.gridNoteOptionsDropdown,
-                  styles.dropdownMenuAbsolute,
                   {
                     position: "absolute",
-                    right: 5,
-                    top: 30,
+                    left: dropdownPosition.x,
+                    top: dropdownPosition.y,
+                    width: 180, // Fixed width for consistency
                     zIndex: 9999999,
                   },
                 ]}
                 pointerEvents="auto"
               >
-                <TouchableWithoutFeedback
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    handleAddToFolder(item.id);
-                  }}
-                >
-                  <View style={styles.noteOptionItem}>
-                    <Ionicons name="folder-outline" size={20} color="#333" />
-                    <Text style={styles.noteOptionText}>
-                      {item.folderId ? "Move to Folder" : "Add to Folder"}
-                    </Text>
-                  </View>
-                </TouchableWithoutFeedback>
+                {/* Add to Folder or Move to Folder option */}
+                {(!item.folderId || selectedFilterFolder !== null) && (
+                  <TouchableOpacity
+                    onPress={() => {
+                      handleAddToFolder(item.id);
+                      console.log("Add to/Move to Folder pressed for note:", item.id);
+                      setActiveNoteOptions(null);
+                      setDropdownPosition(null);
+                    }}
+                  >
+                    <View style={styles.noteOptionItem}>
+                      <Ionicons name="folder-outline" size={20} color="#333" />
+                      <Text style={styles.noteOptionText}>
+                        {!item.folderId ? "Add to Folder" : "Move to Folder"}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                )}
 
+                {/* Remove from Folder option - only show if note is in a folder */}
                 {item.folderId && (
-                  <TouchableWithoutFeedback
-                    onPress={(e) => {
-                      e.stopPropagation();
+                  <TouchableOpacity
+                    onPress={() => {
                       handleRemoveFromFolder(item.id);
+                      setActiveNoteOptions(null);
+                      setDropdownPosition(null);
                     }}
                   >
                     <View style={styles.noteOptionItem}>
@@ -1458,39 +1893,67 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
                         Remove from Folder
                       </Text>
                     </View>
-                  </TouchableWithoutFeedback>
+                  </TouchableOpacity>
                 )}
 
-                <TouchableWithoutFeedback
-                  onPress={(e) => {
-                    e.stopPropagation();
+                {/* Duplicate Drawing option - only for drawings */}
+                {isDrawing && (
+                  <TouchableOpacity
+                    onPress={() => {
+                      handleDuplicateDrawing(item);
+                      setActiveNoteOptions(null);
+                      setDropdownPosition(null);
+                    }}
+                  >
+                    <View style={styles.noteOptionItem}>
+                      <Ionicons name="copy-outline" size={20} color="#6B7280" />
+                      <Text style={styles.noteOptionText}>
+                        Duplicate Drawing
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                )}
+
+                {/* Delete Note/Drawing option */}
+                <TouchableOpacity
+                  onPress={() => {
                     handleDeleteNote(item.id);
+                    console.log("Delete Note/Drawing pressed for note:", item.id);
+                    setActiveNoteOptions(null);
+                    setDropdownPosition(null);
                   }}
+                  style={styles.noteOptionItem}
+                  activeOpacity={0.7}
                 >
-                  <View style={styles.noteOptionItem}>
-                    <Ionicons name="trash-outline" size={20} color="#EF4444" />
-                    <Text style={styles.noteOptionText}>Delete Note</Text>
-                  </View>
-                </TouchableWithoutFeedback>
+                  <Ionicons name="trash-outline" size={20} color="#EF4444" />
+                  <Text style={styles.noteOptionText}>
+                    {isDrawing ? "Delete Drawing" : "Delete Note"}
+                  </Text>
+                </TouchableOpacity>
               </View>
-            )}
-          </View>
-        </TouchableOpacity>
-      );
-    },
-    [
-      isSelectMode,
-      selectedNotes,
-      activeNoteOptions,
-      folders,
-      selectedFilterFolder,
-      handleNotePress,
-      toggleNoteSelection,
-      handleAddToFolder,
-      handleRemoveFromFolder,
-      handleDeleteNote,
-    ]
-  );
+            </Modal>
+          )}
+        </View>
+      </TouchableOpacity>
+    );
+  },
+  [
+    isSelectMode,
+    selectedNotes,
+    activeNoteOptions,
+    dropdownPosition,
+    folders,
+    selectedFilterFolder,
+    windowWidth,
+    previewHtmlTagStyles,
+    handleNotePress,
+    toggleNoteSelection,
+    handleAddToFolder,
+    handleRemoveFromFolder,
+    handleDeleteNote,
+    handleDuplicateDrawing,
+  ]
+);
 
   // Folder Options Modal
   const renderFolderOptionsModal = () => (
@@ -1564,8 +2027,8 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
 
           <Text style={styles.deleteConfirmTitle}>Delete Folder?</Text>
           <Text style={styles.deleteConfirmMessage}>
-            Are you sure you want to delete "
-            {folders.find((f) => f.id === folderToDelete)?.name}"? This action
+            Are you sure you want to delete &quot;
+            {folders.find((f) => f.id === folderToDelete)?.name}&quot;? This action
             cannot be undone.
           </Text>
 
@@ -1663,7 +2126,14 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
                 }}
               >
                 <View
-                  style={[styles.folderIcon, { backgroundColor: folder.color }]}
+                  style={[
+                    styles.folderIcon,
+                    {
+                      backgroundColor: Array.isArray(folder.color)
+                        ? folder.color[0]
+                        : folder.color,
+                    },
+                  ]}
                 >
                   <MaterialIcons name="folder" size={20} color="#FFFFFF" />
                 </View>
@@ -2075,17 +2545,9 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
   );
 
   return (
-    <TouchableOpacity
-      style={styles.container}
-      activeOpacity={1}
-      onPress={() => {
-        if (activeNoteOptions) {
-          setActiveNoteOptions(null);
-        }
-        setShowOptionsDropdown(false);
-      }}
-    >
+    <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+
       {isSelectMode && (
         <View style={styles.selectionModeHeader}>
           <Text style={styles.selectionModeText}>
@@ -2098,10 +2560,8 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
               style={styles.selectionModeButton}
               onPress={() => {
                 if (selectedFolder && selectedNotes.length > 0) {
-                  // Assign selected notes to the selected folder
                   assignNotesToFolder(selectedFolder, selectedNotes);
                 } else {
-                  // Show folder selection modal if we have selected notes but no folder
                   if (selectedNotes.length > 0 && folders.length > 0) {
                     setShowSortNotesModal(true);
                   } else if (folders.length === 0) {
@@ -2112,11 +2572,9 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
                 }
               }}
             >
-              {/* icon for adding to folder */}
               <MaterialIcons name="folder" size={20} color="#FFFFFF" />
             </TouchableOpacity>
 
-            {/* Add the delete button */}
             <TouchableOpacity
               style={[
                 styles.selectionModeButton,
@@ -2124,7 +2582,6 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
               ]}
               onPress={handleBulkDeleteNotes}
             >
-              {/* icon for delete */}
               <MaterialIcons name="delete" size={20} color="#FFFFFF" />
             </TouchableOpacity>
 
@@ -2135,245 +2592,297 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
                 setSelectedNotes([]);
               }}
             >
-              {/* cancel icon */}
               <MaterialIcons name="cancel" size={20} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
         </View>
       )}
-      <LinearGradient
-        colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={styles.header}
-      >
-        <View style={styles.headerTopRow}>
-          <View style={styles.headerTitleSection}>
-            <Text style={styles.headerTitle}>All Notes</Text>
-          </View>
-          <View style={styles.headerActions}>
-            <TouchableOpacity
-              style={[
-                styles.headerActionButton,
-                showSearchBar && styles.activeSearchButton,
-              ]}
-              onPress={toggleSearch}
+
+      {/* Replace the main FlatList with a single FlatList that includes header */}
+      <FlatList
+        data={notesViewData}
+        renderItem={renderNoteItem}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.notesList}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={["#6A009C"]}
+          />
+        }
+        ListEmptyComponent={NotesEmptyListComponent}
+        numColumns={2}
+        columnWrapperStyle={styles.notesGridRow}
+        initialNumToRender={8}
+        maxToRenderPerBatch={10}
+        windowSize={10}
+        getItemLayout={(_, index) => {
+          const length = 220;
+          const offset = Math.floor(index / 2) * length;
+          return {
+            length,
+            offset,
+            index,
+          };
+        }}
+        ListHeaderComponent={() => (
+          <View>
+            <LinearGradient
+              colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.headerInList}
             >
-              <MaterialIcons
-                name="search"
-                size={22}
-                color="#ffffffff"
-                elevation={10}
-                shadowColor="#2c2c2cff"
-                shadowOffset={{ width: 0, height: 2 }}
-                shadowOpacity={0.8}
-                shadowRadius={8}
-              />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.headerActionButton}
-              onPress={() => setShowOptionsDropdown(!showOptionsDropdown)}
-            >
-              <MaterialIcons
-                name="more-vert"
-                size={22}
-                color="#ffffffff"
-                elevation={10}
-                shadowColor="#2c2c2cff"
-                shadowOffset={{ width: 0, height: 2 }}
-                shadowOpacity={0.8}
-                shadowRadius={8}
-              />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {showSearchBar && (
-          <View style={styles.searchContainer}>
-            <View style={styles.searchInputContainer}>
-              <MaterialIcons
-                name="search"
-                size={20}
-                color="#9CA3AF"
-                style={styles.searchIcon}
-              />
-              <TextInput
-                style={styles.searchInput}
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                placeholder="Search notes..."
-                placeholderTextColor="#9CA3AF"
-                autoFocus={true}
-                returnKeyType="search"
-              />
-              {searchQuery.length > 0 && (
-                <TouchableOpacity
-                  style={styles.clearSearchButton}
-                  onPress={() => setSearchQuery("")}
-                >
-                  <MaterialIcons name="clear" size={18} color="#9CA3AF" />
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-        )}
-
-        {/* Folder Section inside Header */}
-        <View style={styles.folderSectionInHeader}>
-          <TouchableOpacity
-            style={styles.folderToggle}
-            onPress={() => setShowFolderDropdown(!showFolderDropdown)}
-            activeOpacity={0.7}
-          >
-            <View style={styles.folderToggleLeft}>
-              <MaterialIcons
-                name="folder"
-                size={22}
-                color="#FFDE21"
-                elevation={50}
-                shadowOpacity={5}
-                shadowRadius={50}
-                shadowColor="#000000"
-              />
-              <Text style={styles.folderToggleText}>
-                {selectedFilterFolder === "unorganized"
-                  ? "Unorganized Notes"
-                  : selectedFilterFolder
-                  ? folders.find((f) => f.id === selectedFilterFolder)?.name ||
-                    "Folders"
-                  : "Folders"}
-              </Text>
-            </View>
-            <MaterialIcons
-              name={showFolderDropdown ? "expand-less" : "expand-more"}
-              size={24}
-              color="#9CA3AF"
-            />
-          </TouchableOpacity>
-
-          {showFolderDropdown && (
-            <View style={styles.folderDropdownContainer}>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.foldersScrollContent}
-              >
-                {folders.map((folder) => (
+              <View style={styles.headerTopRow}>
+                <View style={styles.headerTitleSection}>
+                  <Text style={styles.headerTitle}>All Notes</Text>
+                </View>
+                <View style={styles.headerActions}>
                   <TouchableOpacity
-                    key={folder.id}
                     style={[
-                      styles.folderCard,
-                      selectedFilterFolder === folder.id &&
-                        styles.selectedFolderCard,
+                      styles.headerActionButton,
+                      showSearchBar && styles.activeSearchButton,
                     ]}
-                    activeOpacity={0.8}
-                    onPress={() => {
-                      setSelectedFilterFolder(
-                        selectedFilterFolder === folder.id ? null : folder.id
-                      );
-                      setShowFolderDropdown(false);
-                    }}
-                    onLongPress={() => handleFolderLongPress(folder.id)}
-                    delayLongPress={500}
+                    onPress={toggleSearch}
                   >
-                    <View style={styles.folderCardHeader}>
-                      <View
-                        style={[
-                          styles.folderIcon,
-                          { backgroundColor: folder.color },
-                        ]}
+                    <MaterialIcons name="search" size={22} color="#ffffffff" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.headerActionButton}
+                    onPress={() => setShowOptionsDropdown(!showOptionsDropdown)}
+                  >
+                    <MaterialIcons
+                      name="more-vert"
+                      size={22}
+                      color="#ffffffff"
+                    />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {showSearchBar && (
+                <View style={styles.searchContainer}>
+                  <View style={styles.searchInputContainer}>
+                    <MaterialIcons
+                      name="search"
+                      size={20}
+                      color="#9CA3AF"
+                      style={styles.searchIcon}
+                    />
+                    <TextInput
+                      style={styles.searchInput}
+                      value={searchQuery}
+                      onChangeText={setSearchQuery}
+                      placeholder="Search notes..."
+                      placeholderTextColor="#9CA3AF"
+                      autoFocus={true}
+                      returnKeyType="search"
+                    />
+                    {searchQuery.length > 0 && (
+                      <TouchableOpacity
+                        style={styles.clearSearchButton}
+                        onPress={() => setSearchQuery("")}
                       >
+                        <MaterialIcons name="clear" size={18} color="#9CA3AF" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              )}
+
+              {/* Folder Section inside Header */}
+              <View style={styles.folderSectionInHeader}>
+                <TouchableOpacity
+                  style={styles.folderToggle}
+                  onPress={() => setShowFolderDropdown(!showFolderDropdown)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.folderToggleLeft}>
+                    <MaterialIcons name="folder" size={22} color="#FFDE21" />
+                    <Text style={styles.folderToggleText}>
+                      {selectedFilterFolder === "unorganized"
+                        ? "Unorganized Notes"
+                        : selectedFilterFolder
+                        ? folders.find((f) => f.id === selectedFilterFolder)
+                            ?.name || "Folders"
+                        : "Folders"}
+                    </Text>
+                  </View>
+                  <MaterialIcons
+                    name={showFolderDropdown ? "expand-less" : "expand-more"}
+                    size={24}
+                    color="#9CA3AF"
+                  />
+                </TouchableOpacity>
+
+                {showFolderDropdown && (
+                  <View style={styles.folderDropdownContainer}>
+                    {/* Replace ScrollView with FlatList for horizontal folder list */}
+                    <FlatList
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.foldersScrollContent}
+                      data={[
+                        ...folders,
+                        {
+                          id: "add-folder",
+                          name: "Add Folder",
+                          isAddButton: true,
+                        },
+                      ]}
+                      keyExtractor={(item) => item.id}
+                      renderItem={({ item }) => {
+                        // Type guard to check if item is the add button
+                        if ("isAddButton" in item && item.isAddButton) {
+                          return (
+                            <TouchableOpacity
+                              style={styles.addFolderCard}
+                              onPress={() => {
+                                setShowCreateFolderModal(true);
+                                setShowFolderDropdown(false);
+                              }}
+                              activeOpacity={0.8}
+                            >
+                              <View style={styles.addFolderIcon}>
+                                <MaterialIcons
+                                  name="add"
+                                  size={24}
+                                  color="#6A009C"
+                                />
+                              </View>
+                              <Text style={styles.addFolderText}>
+                                New Folder
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        }
+
+                        return (
+                          <TouchableOpacity
+                            key={item.id}
+                            style={[
+                              styles.folderCard,
+                              selectedFilterFolder === item.id &&
+                                styles.selectedFolderCard,
+                            ]}
+                            activeOpacity={0.8}
+                            onPress={() => {
+                              setSelectedFilterFolder(
+                                selectedFilterFolder === item.id
+                                  ? null
+                                  : item.id
+                              );
+                              setShowFolderDropdown(false);
+                            }}
+                            onLongPress={() => handleFolderLongPress(item.id)}
+                            delayLongPress={500}
+                          >
+                            <View style={styles.folderCardHeader}>
+                              <View
+                                style={[
+                                  styles.folderIcon,
+                                  {
+                                    backgroundColor:
+                                      "color" in item
+                                        ? Array.isArray(item.color)
+                                          ? item.color[0]
+                                          : item.color
+                                        : "#E5E7EB",
+                                  },
+                                ]}
+                              >
+                                <MaterialIcons
+                                  name="folder"
+                                  size={20}
+                                  color="#FFFFFF"
+                                />
+                              </View>
+                              <TouchableOpacity
+                                style={styles.folderOptionsButton}
+                                onPress={() => handleFolderLongPress(item.id)}
+                                hitSlop={{
+                                  top: 10,
+                                  bottom: 10,
+                                  left: 10,
+                                  right: 10,
+                                }}
+                              >
+                                <MaterialIcons
+                                  name="more-vert"
+                                  size={16}
+                                  color="#9CA3AF"
+                                />
+                              </TouchableOpacity>
+                            </View>
+                            <Text
+                              style={[
+                                styles.folderName,
+                                selectedFilterFolder === item.id &&
+                                  styles.activeFolderName,
+                              ]}
+                              numberOfLines={2}
+                            >
+                              {item.name}
+                            </Text>
+                            <Text style={styles.folderCount}>
+                              {
+                                notes.filter(
+                                  (note) => note.folderId === item.id
+                                ).length
+                              }{" "}
+                              notes
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      }}
+                    />
+
+                    {/* Unorganized folder outside scroll */}
+                    <TouchableOpacity
+                      style={[
+                        styles.unorganizedFolderCard,
+                        selectedFilterFolder === "unorganized" &&
+                          styles.selectedUnorganizedFolderCard,
+                      ]}
+                      activeOpacity={0.8}
+                      onPress={() => {
+                        setSelectedFilterFolder(
+                          selectedFilterFolder === "unorganized"
+                            ? null
+                            : "unorganized"
+                        );
+                        setShowFolderDropdown(false);
+                      }}
+                    >
+                      <View style={styles.unorganizedFolderIcon}>
                         <MaterialIcons
-                          name="folder"
+                          name="folder-open"
                           size={20}
-                          color="#FFFFFF"
+                          color="#64748B"
                         />
                       </View>
-                      <TouchableOpacity
-                        style={styles.folderOptionsButton}
-                        onPress={() => handleFolderLongPress(folder.id)}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      <Text
+                        style={[
+                          styles.unorganizedFolderName,
+                          selectedFilterFolder === "unorganized" &&
+                            styles.activeUnorganizedFolderName,
+                        ]}
                       >
-                        <MaterialIcons
-                          name="more-vert"
-                          size={16}
-                          color="#9CA3AF"
-                        />
-                      </TouchableOpacity>
-                    </View>
-                    <Text
-                      style={[
-                        styles.folderName,
-                        selectedFilterFolder === folder.id &&
-                          styles.activeFolderName,
-                      ]}
-                      numberOfLines={2}
-                    >
-                      {folder.name}
-                    </Text>
-                    <Text style={styles.folderCount}>
-                      {
-                        notes.filter((note) => note.folderId === folder.id)
-                          .length
-                      }{" "}
-                      notes
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-
-                {/* Add New Folder Button in horizontal scroll */}
-                <TouchableOpacity
-                  style={styles.addFolderCard}
-                  onPress={() => {
-                    setShowCreateFolderModal(true);
-                    setShowFolderDropdown(false);
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.addFolderIcon}>
-                    <MaterialIcons name="add" size={24} color="#6A009C" />
+                        Unorganized Notes
+                      </Text>
+                      <Text style={styles.unorganizedFolderCount}>
+                        {notes.filter((note) => !note.folderId).length} notes
+                      </Text>
+                    </TouchableOpacity>
                   </View>
-                  <Text style={styles.addFolderText}>New Folder</Text>
-                </TouchableOpacity>
-              </ScrollView>
-
-              {/* Unorganized folder outside scroll */}
-              <TouchableOpacity
-                style={[
-                  styles.unorganizedFolderCard,
-                  selectedFilterFolder === "unorganized" &&
-                    styles.selectedUnorganizedFolderCard,
-                ]}
-                activeOpacity={0.8}
-                onPress={() => {
-                  setSelectedFilterFolder(
-                    selectedFilterFolder === "unorganized"
-                      ? null
-                      : "unorganized"
-                  );
-                  setShowFolderDropdown(false);
-                }}
-              >
-                <View style={styles.unorganizedFolderIcon}>
-                  <MaterialIcons name="folder-open" size={20} color="#64748B" />
-                </View>
-                <Text
-                  style={[
-                    styles.unorganizedFolderName,
-                    selectedFilterFolder === "unorganized" &&
-                      styles.activeUnorganizedFolderName,
-                  ]}
-                >
-                  Unorganized Notes
-                </Text>
-                <Text style={styles.unorganizedFolderCount}>
-                  {notes.filter((note) => !note.folderId).length} notes
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-      </LinearGradient>
+                )}
+              </View>
+            </LinearGradient>
+          </View>
+        )}
+      />
 
       {/* Global overlay for dropdown - positioned absolutely over everything */}
       {activeNoteOptions && (
@@ -2383,7 +2892,6 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
       )}
 
       {/* Options Dropdown - positioned outside header for proper overlay */}
-
       {showOptionsDropdown && (
         <View style={styles.optionsDropdownContainer}>
           <View style={styles.optionsDropdown}>
@@ -2396,12 +2904,8 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
               }}
             >
               <Ionicons name="folder-open-outline" size={20} color="#333" />
-
-              {/* No outlined variant, keep as is */}
               <Text style={styles.dropdownOptionText}>Create Folder</Text>
             </TouchableOpacity>
-
-            {/* Removed list/grid view toggle - permanently using grid view */}
 
             <TouchableOpacity
               style={styles.dropdownOption}
@@ -2430,39 +2934,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
           </View>
         </View>
       )}
-      {/* Main Notes List as Grid */}
-      <FlatList
-        data={notesViewData}
-        renderItem={renderNoteItem}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.notesList}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={["#6A009C"]}
-          />
-        }
-        ListEmptyComponent={NotesEmptyListComponent}
-        numColumns={2} // Display notes in 2 columns
-        columnWrapperStyle={styles.notesGridRow}
-        initialNumToRender={8}
-        maxToRenderPerBatch={10}
-        windowSize={10}
-        getItemLayout={(_, index) => {
-          // Fixed height for grid items for better performance
-          const length = 220; // Height of grid note item
-          const offset = Math.floor(index / 2) * length;
-          return {
-            length,
-            offset,
-            index,
-          };
-        }}
-      />
 
-      {/* Floating Action Buttons */}
       {/* Add Options Menu */}
       {showAddOptionsMenu && (
         <View style={styles.addOptionsContainer}>
@@ -2528,7 +3000,7 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
       {renderEditFolderModal()}
       {renderFolderOptionsModal()}
       {renderDeleteConfirmModal()}
-    </TouchableOpacity>
+    </View>
   );
 }
 
@@ -2711,10 +3183,21 @@ const styles = StyleSheet.create({
   },
   notesList: {
     paddingHorizontal: 16,
-    marginTop: 30,
-    paddingTop: 200, // Space for the expanded header with folder section
     paddingBottom: 120, // Space for the navbar
-    overflow: "visible", // Allow dropdowns to show above other items
+    overflow: "visible",
+  },
+  headerInList: {
+    paddingHorizontal: 24,
+    paddingTop: Platform.OS === "ios" ? 50 : 50,
+    paddingBottom: 24,
+    borderBottomLeftRadius: 25,
+    borderBottomRightRadius: 25,
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+    marginBottom: 16,
   },
   notesGridRow: {
     justifyContent: "space-between",
@@ -2813,14 +3296,14 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   drawingPatterns: {
-    width: "80%",
-    alignItems: "center",
+    width: "90%",
+    alignItems: "flex-start",
   },
   drawingLine: {
-    height: 2,
+    height: 3,
     backgroundColor: "#8B5CF6",
-    marginVertical: 4,
-    borderRadius: 1,
+    marginVertical: 2,
+    borderRadius: 2,
   },
   // Document preview elements
   documentLines: {
@@ -3895,6 +4378,22 @@ const styles = StyleSheet.create({
     color: "#6B7280",
   },
 
+  emptyDrawingText: {
+    fontSize: 12,
+    fontFamily: "Inter-Regular",
+    color: "#9CA3AF",
+    textAlign: "center",
+    fontStyle: "italic",
+  },
+
+  emptyDrawingContainer: {
+    height: 120,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#FAFAFA",
+    borderRadius: 8,
+  },
+
   selectedOrientationButtonText: {
     color: "#FFFFFF",
   },
@@ -3954,5 +4453,58 @@ const styles = StyleSheet.create({
   selectedTemplateName: {
     color: "#6A009C",
     fontFamily: "Inter-Medium",
+  },
+  drawingNoteItem: {
+    borderWidth: 2,
+    borderColor: "#E0E7FF",
+  },
+
+  drawingNoteContent: {
+    backgroundColor: "#FEFBFF",
+  },
+
+  drawingNoteTitle: {
+    color: "#7C3AED",
+  },
+
+  drawingPreviewHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    width: "100%",
+    marginBottom: 8,
+  },
+
+  drawingBadge: {
+    backgroundColor: "#8B5CF6",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+
+  drawingBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontFamily: "Inter-Medium",
+  },
+
+  noteTypeIndicator: {
+    fontSize: 10,
+    fontFamily: "Inter-Regular",
+    color: "#9CA3AF",
+    marginTop: 2,
+  },
+
+  drawingTypeIndicator: {
+    color: "#8B5CF6",
+  },
+
+  drawingDataStatus: {
+    fontSize: 9,
+    fontFamily: "Inter-Regular",
+    color: "#8B5CF6",
+    textAlign: "center",
+    marginTop: 4,
+    opacity: 0.7,
   },
 });

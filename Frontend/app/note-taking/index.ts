@@ -7,6 +7,11 @@ export { default as DrawingToolbar } from './components/DrawingToolbar';
 
 // Hooks
 export { useDrawingState } from './hooks/useDrawingState';
+export { useDrawingAPI, useAutoSaveDrawing } from './hooks/useDrawingAPI';
+
+// Services
+export { drawingAPI } from './services/drawingAPI';
+export type { DrawingStroke, DrawingData } from './services/drawingAPI';
 
 // Utilities
 export * from './utils/strokeUtils';

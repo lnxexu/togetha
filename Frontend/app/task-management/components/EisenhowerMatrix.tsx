@@ -147,22 +147,22 @@ const EisenhowerMatrix: React.FC<EisenhowerMatrixProps> = ({
               navigation.navigate("EisenhowerList", {
                 tasks: tasks.map((task) => ({
                   ...task,
-                  createdAt:
-                    task.createdAt instanceof Date
-                      ? task.createdAt.toISOString()
-                      : task.createdAt,
-                  dueDate:
-                    task.dueDate instanceof Date
-                      ? task.dueDate.toISOString()
-                      : task.dueDate,
+                  created_at:
+                    task.created_at 
+                      ? task.created_at.toString()
+                      : task.created_at,
+                  due_datetime:
+                    task.due_datetime instanceof Date
+                      ? task.due_datetime.toISOString()
+                      : task.due_datetime,
                   updatedAt:
-                    task.updatedAt instanceof Date
-                      ? task.updatedAt.toISOString()
-                      : task.updatedAt,
+                    task.updated_at 
+                      ? task.updated_at.toString()
+                      : task.updated_at,
                   completedAt:
-                    task.completedAt instanceof Date
-                      ? task.completedAt.toISOString()
-                      : task.completedAt,
+                    task.completed_at 
+                      ? task.completed_at.toString()
+                      : task.completed_at,
                 })),
                 quadrant: quadrant.priority,
               })

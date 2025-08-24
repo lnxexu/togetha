@@ -17,15 +17,19 @@ function getApiBaseUrl() {
     }
     // For real devices, use your machine's local IP address or production URL
 
+    // return 'http://172.16.18.240:8000' // IP for Guest1
+
     // return 'http://192.168.36.165:8000'; // IP for Kobe's DITO  
 
     // return 'http://192.168.81.162:8000'; // IP for ITRC
     
     // return 'http://172.16.5.215:8000'; // IP for Student3
-  
-    return 'http://192.168.1.11:8000';   // Geric's's local IP address 
 
-    // return 'http://192.168.0.153:8000';   // Kobe's local IP address 
+    // return 'http://192.168.15.25:8000' // IP for SIMWIFI2 5G
+  
+    // return 'http://192.168.1.11:8000';   // Geric's's local IP address 
+
+    return 'http://192.168.0.153:8000';   // Kobe's local IP address 
     
     // return 'http://192.168.1.177:8000';// Paul's local IP address 
 }
@@ -58,6 +62,11 @@ export const API_ENDPOINTS = {
     NOTE_CATEGORIES: '/note_taking/categories/',
     NOTE_FOLDERS: '/note_taking/folders/',
     MANAGE_NOTE_FOLDERS: '/note_taking/manage-note-folders/',
+    
+    // Drawing endpoints
+    NOTE_DRAWING_SAVE: (noteId: string) => `/note_taking/notes/${noteId}/drawing/save/`,
+    NOTE_DRAWING_GET: (noteId: string) => `/note_taking/notes/${noteId}/drawing/`,
+    NOTE_DRAWING_CLEAR: (noteId: string) => `/note_taking/notes/${noteId}/drawing/clear/`,
 
     // Chatbot endpoints
     CHATBOT_OCR: '/chatbot/extract-text/',

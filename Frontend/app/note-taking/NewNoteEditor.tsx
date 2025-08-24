@@ -19,7 +19,7 @@ import {
 } from "react-native";
 import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
 import { LinearGradient } from "expo-linear-gradient";
-import { showSuccessToast, showErrorToast, showInfoToast, showWarningToast } from "../utils/ToastUtils";
+import { showSuccessToast, showErrorToast, showWarningToast } from "../utils/ToastUtils";
 
 
 const { RichEditor, RichToolbar } = require("react-native-pell-rich-editor");
@@ -235,17 +235,41 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     };
   }, []);
 
+  // Enhanced auto-save logic (similar to DrawingEditor)
   useEffect(() => {
     const autoSaveInterval = setInterval(() => {
       if (title.trim() || content.trim()) {
+        console.log('NewNoteEditor: Auto-save timer triggered');
         handleAutoSave();
       }
-    }, 30000);
+    }, 30000); // Keep 30 seconds for text content
 
     return () => {
       clearInterval(autoSaveInterval);
     };
   }, [title, content]);
+
+  // Real-time auto-save with debounce (similar to DrawingEditor)
+  useEffect(() => {
+    console.log('NewNoteEditor: Content change detected:', {
+      titleLength: title.length,
+      contentLength: content.length,
+      hasContent: !!(title.trim() || content.trim())
+    });
+    
+    if (title.trim() || content.trim()) {
+      console.log('NewNoteEditor: Setting up auto-save timeout...');
+      const timeoutId = setTimeout(() => {
+        console.log('NewNoteEditor: Debounced auto-save triggered');
+        handleAutoSave();
+      }, 2000); // 2 second debounce for real-time saving
+
+      return () => {
+        console.log('NewNoteEditor: Clearing auto-save timeout');
+        clearTimeout(timeoutId);
+      };
+    }
+  }, [title, content, formattedContent, selectedFolderId, tags]);
 
   // Helper functions
   const basicColors = [
@@ -271,7 +295,6 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     } else {
       setSelectedFolderId(null);
       setFolderName("Unorganized Notes");
-      showInfoToast("Moved to Unorganized Notes");
     }
     setShowFolderModal(false);
   };
@@ -491,7 +514,6 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   };
 
   const handleAskRina = (text: string) => {
-    showInfoToast("Opening RINA chat with selected text...");
     Alert.alert(
       "Ask RINA",
       `You selected: "${text}"\n\nThis would open RINA chat with the selected text.`,
@@ -523,7 +545,6 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
 
   const removeTag = (tagToRemove: string) => {
     setTags((prev) => prev.filter((tag) => tag !== tagToRemove));
-    showInfoToast(`Tag "${tagToRemove}" removed`);
   };
 
   const getSyncStatusIcon = () => {
@@ -929,10 +950,8 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
                 <Text style={[styles.modalTitle, { marginBottom: 0, marginLeft: 12 }]}>Select Folder</Text>
               </View>
 
-              <ScrollView
-                style={{ maxHeight: 400 }}
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={{ paddingBottom: 10 }}
+              <View
+                style={{ maxHeight: 400, paddingBottom: 10 }}
               >
                 {/* Unorganized Notes Option */}
                 <TouchableOpacity
@@ -996,7 +1015,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
                     )}
                   </TouchableOpacity>
                 ))}
-              </ScrollView>
+              </View>
 
               <TouchableOpacity
                 style={[
@@ -1115,7 +1134,6 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
                   style={[styles.exitConfirmButton, styles.exitConfirmCancelButton]}
                   onPress={() => {
                     setShowExitConfirmModal(false);
-                    showInfoToast("Continue editing");
                   }}
                 >
                   <Text style={styles.exitConfirmCancelText}>Continue Editing</Text>
@@ -1125,7 +1143,6 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
                   style={[styles.exitConfirmButton, styles.exitConfirmExitButton]}
                   onPress={() => {
                     setShowExitConfirmModal(false);
-                    showInfoToast("Note editor closed");
                     navigation.goBack();
                   }}
                 >

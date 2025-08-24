@@ -21,7 +21,9 @@ import Logs from '../logs/logs';
 //note-taking components
 import ImportPDFPage from '../note-taking/ImportPDFPage';
 import NewNoteEditor from '../note-taking/NewNoteEditor';
-import { DrawingEditor } from '../note-taking';
+import DrawingNoteEditor from '../note-taking/DrawingNoteEditor';
+// eslint-disable-next-line import/no-named-as-default
+import DrawingEditor from '../note-taking/DrawingEditor';
 
 //task management components
 import AddTask from '../task-management/AddTask';
@@ -54,7 +56,8 @@ export type RootStackParamList = {
       attachments?: any[];
       createdAt?: string;
       updatedAt?: string;
-      folderId?: string | null; // Optional folderId for note organization
+      folderId?: string | null; 
+      drawing_data?: any;
     };
   
   } | undefined;
@@ -82,6 +85,16 @@ export type RootStackParamList = {
   PDFs: undefined;
   RINA: undefined;
   DrawingEditor: {
+    noteId?: string;
+    initialDrawingData?: {
+      id: string;
+      title: string;
+      strokes: any[];
+      template?: string;
+      createdAt?: string;
+      updatedAt?: string;
+    };
+    readOnly?: boolean;
     initialSetup?: {
       title: string;
       size: string;
@@ -96,6 +109,22 @@ export type RootStackParamList = {
   HelpSupport: undefined;
   About: undefined;
   Logs: undefined;
+  DrawingNoteEditor: {
+    noteId?: string;
+    initialDrawingData?: {
+      id: string;
+      title: string;
+      strokes: any[];
+      template?: string;
+      createdAt?: string;
+      updatedAt?: string;
+      drawing_data?: any;
+    };
+    readOnly?: boolean;
+    title?: string;
+    onSave?: (drawingData: any) => void;
+    onBack?: () => void;
+  } | undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -300,6 +329,11 @@ const AppNavigator: React.FC = () => {
         <Stack.Screen name="NoteEditor" component={NewNoteEditor} />
         <Stack.Screen name="PDFs" component={ImportPDFPage} />
         <Stack.Screen name="DrawingEditor" component={DrawingEditor} />
+        <Stack.Screen 
+          name="DrawingNoteEditor" 
+        >
+          {(props) => <DrawingNoteEditor noteId={''} {...props} />}
+        </Stack.Screen>
 
         {/* Task Management components */}
         <Stack.Screen name="TaskDetails" component={TaskDetails} />
