@@ -12,3 +12,4 @@ venv/
 Frontend/.env
 Backend/.env
 */.env
+Backend/db.sqlite3
