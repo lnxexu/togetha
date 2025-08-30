@@ -24,6 +24,7 @@ class Note(models.Model):
         ('voice', 'Voice Note'),
         ('image', 'Image Note'),
         ('drawing', 'Drawing Note'),
+        ('document', 'Document Note'),  # Add document type
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -40,6 +41,10 @@ class Note(models.Model):
     drawing_data = models.TextField(null=True, blank=True)  # Store as JSON string
     drawing_thumbnail = models.ImageField(upload_to='note_thumbnails/', null=True, blank=True)
     last_drawing_update = models.DateTimeField(auto_now=True)
+    
+    # Document fields
+    document_file = models.FileField(upload_to='documents/', null=True, blank=True)
+    document_annotations = models.JSONField(null=True, blank=True)  # Store annotations as JSON
     
     def save_drawing_strokes(self, strokes_data):
         """Helper method to save drawing strokes"""

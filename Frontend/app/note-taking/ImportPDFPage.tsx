@@ -21,6 +21,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Svg, { Rect, Circle, Text as SvgText } from 'react-native-svg';
 import { PanGestureHandler, State } from 'react-native-gesture-handler';
 import Navbar from "../NavBar";
+import { DocumentAnnotationTool, type Annotation } from "./components/DocumentAnnotationTool";
 
 const { RichEditor, RichToolbar } = require("react-native-pell-rich-editor");
 
@@ -77,6 +78,8 @@ const ImportPDFPage = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [pdfScale, setPdfScale] = useState(1);
+  const [showAnnotationPanel, setShowAnnotationPanel] = useState(false);
+  const [documentNoteId, setDocumentNoteId] = useState<string | null>(null);
   const [pdfOffset, setPdfOffset] = useState({ x: 0, y: 0 });
   const [selectionArea, setSelectionArea] = useState<SelectionArea | null>(null);
   const [isSelecting, setIsSelecting] = useState(false);
@@ -100,6 +103,8 @@ const ImportPDFPage = () => {
         setAnnotations(parsedDocument.annotations || []);
         setPdfNotes(parsedDocument.notes || "");
         setTotalPages(parsedDocument.totalPages || 0);
+        // Set a mock note ID for the annotation tool
+        setDocumentNoteId(parsedDocument.noteId || `doc_${Date.now()}`);
       }
     } catch (error) {
       console.error("Error loading saved data:", error);
@@ -143,6 +148,9 @@ const ImportPDFPage = () => {
         setAnnotations([]);
         setPdfNotes("");
         setTotalPages(5); // Set default pages for demo
+        // Generate a mock note ID for the annotation tool
+        const mockNoteId = `doc_${Date.now()}`;
+        setDocumentNoteId(mockNoteId);
         await saveData(newDocument);
       }
     } catch (error) {
@@ -449,6 +457,13 @@ const ImportPDFPage = () => {
         </View>
         
         <View style={styles.headerActions}>
+          <TouchableOpacity 
+            style={[styles.headerButton, showAnnotationPanel && styles.headerButtonActive]} 
+            onPress={() => setShowAnnotationPanel(!showAnnotationPanel)}
+          >
+            <MaterialIcons name="comment" size={24} color={showAnnotationPanel ? "#FFFFFF" : "#6A009C"} />
+          </TouchableOpacity>
+
           <TouchableOpacity 
             style={styles.headerButton} 
             onPress={() => setShowNotesModal(true)}
@@ -811,6 +826,28 @@ const ImportPDFPage = () => {
         </View>
       </Modal>
 
+      {/* Document Annotation Panel */}
+      {showAnnotationPanel && documentNoteId && pdfDocument && (
+        <Modal
+          visible={showAnnotationPanel}
+          animationType="slide"
+          presentationStyle="fullScreen"
+          onRequestClose={() => setShowAnnotationPanel(false)}
+        >
+          <DocumentAnnotationTool
+            noteId={documentNoteId}
+            documentUri={pdfDocument.uri}
+            documentName={pdfDocument.name}
+            documentType="pdf"
+            onClose={() => setShowAnnotationPanel(false)}
+            onAnnotationsChange={(annotations: Annotation[]) => {
+              // Update local annotations if needed
+              console.log('Annotations updated:', annotations.length);
+            }}
+          />
+        </Modal>
+      )}
+
       <Navbar activeRoute="PDFs" />
     </View>
   );
@@ -878,6 +915,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 2,
+  },
+  headerButtonActive: {
+    backgroundColor: "#6366F1",
+    shadowColor: "#6366F1",
   },
   selectionModeIndicator: {
     flexDirection: "row",
@@ -1257,6 +1298,20 @@ const styles = StyleSheet.create({
   headingText: {
     fontSize: 14,
     fontWeight: "bold",
+  },
+  annotationPanel: {
+    position: 'absolute',
+    right: 0,
+    top: 130,
+    bottom: 80,
+    width: width * 0.4,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: -2, height: 0 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 4,
+    zIndex: 100,
   },
 });
 

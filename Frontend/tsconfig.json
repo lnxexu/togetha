@@ -1,4 +1,5 @@
 {
+  "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "target": "esnext",
     "module": "esnext",
@@ -24,5 +25,4 @@
     "**/*.ts",
     "**/*.tsx"
   ],
-  "extends": "expo/tsconfig.base"
 }

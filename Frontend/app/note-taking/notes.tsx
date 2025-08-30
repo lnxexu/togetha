@@ -30,6 +30,8 @@ import Navbar from "../NavBar";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import DrawingPreview from "./components/DrawingPreview";
+import { DocumentPreviewModal } from "./components/DocumentPreviewModal";
+import { DocumentViewer } from "./components/DocumentViewer";
 import { LinearGradient } from "expo-linear-gradient";
 import { TemplateOverlay, TemplateType } from "./components/TemplateOverlay";
 import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
@@ -61,12 +63,15 @@ interface Note {
   folderId?: string;
   createdAt: Date;
   updatedAt: Date;
-  type: "text" | "image" | "drawing"; // Add "drawing" type
+  type: "text" | "image" | "drawing" | "document"; // Add "document" type for PDF/Word documents
   tags?: (string | TagObject)[];
   linkedTaskId?: string;
   attachments?: Attachment[];
   is_archived?: boolean;
   template?: string;
+  document_file?: string; // URL or path to the document file
+  document_url?: string; // Full URL to the document file
+  document_annotations?: any; // JSON field for annotations
   // Enhanced drawing_data field to handle your specific stroke array format
   drawing_data?: 
     | string  // JSON string containing stroke array or drawing object
@@ -207,12 +212,22 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
   >(null);
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
   const [folderToDelete, setFolderToDelete] = useState<string | null>(null);
+  const [showDocumentPreviewModal, setShowDocumentPreviewModal] = useState(false);
   const [showAddOptionsMenu, setShowAddOptionsMenu] = useState(false);
   const [showDrawingSetupModal, setShowDrawingSetupModal] = useState(false);
   const [drawingTitle, setDrawingTitle] = useState("");
   const [selectedSize, setSelectedSize] = useState("medium");
   const [selectedOrientation, setSelectedOrientation] = useState("landscape");
   const [selectedTemplate, setSelectedTemplate] = useState("blank");
+  
+  // Document viewer state
+  const [showDocumentViewer, setShowDocumentViewer] = useState(false);
+  const [currentDocument, setCurrentDocument] = useState<{
+    uri: string;
+    name: string;
+    noteId: string;
+    type: 'pdf' | 'word' | 'document' | 'image' | 'txt';
+  } | null>(null);
 
   // Memoize HTML tag styles for grid view (now the only view)
   const htmlTagStyles = useMemo(
@@ -603,6 +618,8 @@ const isDrawingNote = React.useCallback((note: Note): boolean => {
           tags: note.tags || [],
           template: note.template || null,
           drawing_data: note.drawing_data || null,
+          document_file: note.document_file || null, // Add document file URL
+          document_annotations: note.document_annotations || null, // Add document annotations
         }));
 
         // Check if notes have changed before updating state - only compare relevant fields
@@ -849,6 +866,31 @@ const isDrawingNote = React.useCallback((note: Note): boolean => {
   setActiveNoteOptions(null);
   setDropdownPosition(null);
 
+  // Check if it's a document type note
+  if (note.type === 'document') {
+    // Open document in DocumentViewer for annotation
+    const documentType = note.title?.toLowerCase().includes('.pdf') ? 'pdf' : 
+                        note.title?.toLowerCase().includes('.doc') ? 'word' : 
+                        'document';
+    
+    // Get document URL from note data - prioritize document_url over document_file
+    const documentUrl = note.document_url || note.document_file;
+    
+    if (documentUrl) {
+      setCurrentDocument({
+        uri: documentUrl,
+        name: note.title || 'Untitled Document',
+        noteId: note.id,
+        type: documentType,
+      });
+      setShowDocumentViewer(true);
+      return;
+    } else {
+      console.warn('Document note found but no document URL available:', note);
+      // Fall through to regular note editor as fallback
+    }
+  }
+
   // Use the enhanced drawing detection
   const isDrawing = isDrawingNote(note);
 
@@ -925,7 +967,13 @@ const isDrawingNote = React.useCallback((note: Note): boolean => {
 
     navigation.navigate("DrawingEditor", {
       noteId: note.id,
-      initialDrawingData: drawingData,
+      initialDrawingData: {
+        ...drawingData,
+        folderId: note.folderId,
+        folder_id: note.folderId, // Also provide snake_case version
+        folderName: note.folder, // Include folder name
+        folder: note.folder, // Include folder field as well
+      },
       readOnly: false,
     });
   } else {
@@ -979,6 +1027,74 @@ const isDrawingNote = React.useCallback((note: Note): boolean => {
   const handleCreateDrawing = () => {
     // Show drawing setup modal instead of navigating directly
     setShowDrawingSetupModal(true);
+  };
+
+  const handleImportDocument = () => {
+    // Show document preview modal instead of navigating directly
+    setShowDocumentPreviewModal(true);
+  };
+
+  const handleConfirmDocumentImport = async (documentInfo: any) => {
+    try {
+      // Create a note with the document information
+      const token = await AsyncStorage.getItem("authToken");
+      if (!token) {
+        navigation.navigate("Login");
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('title', documentInfo.name);
+      formData.append('content', `Imported document: ${documentInfo.name}`);
+      formData.append('type', 'document');
+      
+      // Add document file as attachment
+      formData.append('document', {
+        uri: documentInfo.uri,
+        type: documentInfo.mimeType || 'application/octet-stream',
+        name: documentInfo.name,
+      } as any);
+
+      const response = await fetch(`${API_URL}${API_ENDPOINTS.DOCUMENT_UPLOAD}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Token ${token}`,
+        },
+        body: formData,
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        showSuccessToast('Document imported successfully!');
+        // Refresh the notes list to show the new document
+        fetchNotes(true);
+        
+        // Open the document in DocumentViewer for annotation instead of NoteEditor
+        const documentType = documentInfo.mimeType?.includes('pdf') ? 'pdf' : 
+                           documentInfo.mimeType?.includes('word') || documentInfo.mimeType?.includes('document') ? 'word' : 
+                           documentInfo.mimeType?.includes('image') || documentInfo.name?.match(/\.(jpg|jpeg|png|gif|bmp|webp|svg)$/i) ? 'image' :
+                           documentInfo.name?.match(/\.txt$/i) ? 'txt' :
+                           'document';
+        
+        setCurrentDocument({
+          uri: result.document_url || result.document_file || documentInfo.uri,
+          name: result.title || documentInfo.name,
+          noteId: result.id,
+          type: documentType,
+        });
+        setShowDocumentViewer(true);
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to import document');
+      }
+    } catch (error) {
+      console.error('Error importing document:', error);
+      showErrorToast(
+        typeof error === "object" && error !== null && "message" in error
+          ? (error as { message?: string }).message || 'Failed to import document. Please try again.'
+          : 'Failed to import document. Please try again.'
+      );
+    }
   };
 
   const closeDrawingSetupModal = () => {
@@ -1516,6 +1632,14 @@ const renderUnorganizedFolder = () => (
               <MaterialIcons name="brush" size={20} color="#FFFFFF" />
               <Text style={styles.createButtonText}>Create Drawing</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.createButton, styles.emptyStateImportButton]}
+              onPress={() => handleImportDocument()}
+            >
+              <MaterialIcons name="upload-file" size={20} color="#FFFFFF" />
+              <Text style={styles.createButtonText}>Import Document</Text>
+            </TouchableOpacity>
           </View>
 
           {selectedFilterFolder === "unorganized" && (
@@ -1531,6 +1655,7 @@ const renderUnorganizedFolder = () => (
       selectedFilterFolder,
       handleCreateNote,
       setShowDrawingSetupModal,
+      handleImportDocument,
     ]
   );
 
@@ -1538,6 +1663,9 @@ const renderUnorganizedFolder = () => (
   ({ item }: { item: Note }) => {
     // Use the enhanced drawing detection
     const isDrawing = isDrawingNote(item);
+    
+    // Document detection
+    const isDocument = item.type === 'document' || (item.document_file && item.document_file.trim() !== '');
 
     // Enhanced stroke count calculation
     const getStrokeCount = () => {
@@ -1615,6 +1743,57 @@ const renderUnorganizedFolder = () => (
               <Text style={styles.drawingDataStatus}>
                 {strokeCount > 0 ? `${strokeCount} strokes` : "No strokes"}
               </Text>
+            </View>
+          </View>
+        );
+      } else if (isDocument) {
+        // Document preview
+        const documentType = item.document_file?.toLowerCase().includes('.pdf') ? 'PDF' :
+                           item.document_file?.toLowerCase().includes('.doc') ? 'Word' : 'Document';
+        const documentIcon = documentType === 'PDF' ? 'picture-as-pdf' : 'description';
+        const documentColor = documentType === 'PDF' ? '#FF5722' : '#1976D2';
+        
+        return (
+          <View style={styles.previewImageContainer}>
+            <View style={styles.documentPreview}>
+              <View style={styles.documentPreviewHeader}>
+                <MaterialIcons
+                  name={documentIcon as any}
+                  size={32}
+                  color={documentColor}
+                  style={styles.documentIcon}
+                />
+                <View style={[styles.documentBadge, { backgroundColor: documentColor }]}>
+                  <Text style={styles.documentBadgeText}>{documentType}</Text>
+                </View>
+              </View>
+              
+              <View style={styles.documentInfo}>
+                <Text style={styles.documentTitle} numberOfLines={2}>
+                  {item.title || 'Untitled Document'}
+                </Text>
+                <Text style={styles.documentDataStatus}>
+                  {item.document_annotations ? `${Object.keys(item.document_annotations).length} annotations` : 'No annotations'}
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.viewDocumentButton}
+                onPress={() => {
+                  const docType = documentType === 'PDF' ? 'pdf' : 
+                               documentType === 'Word' ? 'word' : 'document';
+                  setCurrentDocument({
+                    uri: item.document_url || item.document_file || '',
+                    name: item.title || 'Untitled Document',
+                    noteId: item.id,
+                    type: docType,
+                  });
+                  setShowDocumentViewer(true);
+                }}
+              >
+                <MaterialIcons name="visibility" size={16} color="#FFFFFF" />
+                <Text style={styles.viewDocumentButtonText}>View Document</Text>
+              </TouchableOpacity>
             </View>
           </View>
         );
@@ -2972,6 +3151,20 @@ const renderUnorganizedFolder = () => (
                 Text Note
               </Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.addOptionButton, styles.importOptionButton]}
+              onPress={() => {
+                setShowAddOptionsMenu(false);
+                handleImportDocument();
+              }}
+              activeOpacity={0.8}
+            >
+              <MaterialIcons name="upload-file" size={24} color="#F59E0B" />
+              <Text style={[styles.addOptionText, { color: "#F59E0B" }]}>
+                Import Document
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
       )}
@@ -3000,6 +3193,33 @@ const renderUnorganizedFolder = () => (
       {renderEditFolderModal()}
       {renderFolderOptionsModal()}
       {renderDeleteConfirmModal()}
+      
+      <DocumentPreviewModal 
+        visible={showDocumentPreviewModal}
+        onClose={() => setShowDocumentPreviewModal(false)}
+        onConfirmImport={handleConfirmDocumentImport}
+      />
+
+      {/* Document Viewer Modal */}
+      {showDocumentViewer && currentDocument && (
+        <Modal
+          visible={showDocumentViewer}
+          animationType="slide"
+          presentationStyle="fullScreen"
+          onRequestClose={() => setShowDocumentViewer(false)}
+        >
+          <DocumentViewer
+            documentUri={currentDocument.uri}
+            documentName={currentDocument.name}
+            noteId={currentDocument.noteId}
+            documentType={currentDocument.type}
+            onClose={() => {
+              setShowDocumentViewer(false);
+              setCurrentDocument(null);
+            }}
+          />
+        </Modal>
+      )}
     </View>
   );
 }
@@ -3498,6 +3718,12 @@ const styles = StyleSheet.create({
   },
   emptyStateDrawingButton: {
     backgroundColor: "#8B5CF6",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 24,
+  },
+  emptyStateImportButton: {
+    backgroundColor: "#F59E0B",
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 24,
@@ -4281,6 +4507,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#F0F9FF",
   },
 
+  importOptionButton: {
+    backgroundColor: "#FFFBEB",
+  },
+
   addOptionText: {
     fontSize: 14,
     fontFamily: "Inter-Medium",
@@ -4485,6 +4715,75 @@ const styles = StyleSheet.create({
   drawingBadgeText: {
     color: "#FFFFFF",
     fontSize: 10,
+    fontFamily: "Inter-Medium",
+  },
+
+  // Document preview styles
+  documentPreview: {
+    flex: 1,
+    backgroundColor: "#F8F9FA",
+    borderRadius: 12,
+    padding: 16,
+    minHeight: 140,
+    justifyContent: "space-between",
+  },
+
+  documentPreviewHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+
+  documentIcon: {
+    marginBottom: 4,
+  },
+
+  documentBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+
+  documentBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontFamily: "Inter-Medium",
+  },
+
+  documentInfo: {
+    flex: 1,
+    justifyContent: "center",
+  },
+
+  documentTitle: {
+    fontSize: 14,
+    fontFamily: "Inter-Bold",
+    color: "#1F2937",
+    marginBottom: 4,
+  },
+
+  documentDataStatus: {
+    fontSize: 11,
+    fontFamily: "Inter-Regular",
+    color: "#6B7280",
+    marginBottom: 12,
+  },
+
+  viewDocumentButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#6366F1",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+    gap: 6,
+  },
+
+  viewDocumentButtonText: {
+    color: "#FFFFFF",
+    fontSize: 12,
     fontFamily: "Inter-Medium",
   },
 

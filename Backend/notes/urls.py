@@ -21,4 +21,10 @@ urlpatterns = [
     path('notes/<str:note_id>/drawing/save/', views.save_drawing, name='save_drawing'),
     path('notes/<str:note_id>/drawing/', views.get_drawing, name='get_drawing'),
     path('notes/<str:note_id>/drawing/clear/', views.clear_drawing, name='clear_drawing'),
+    
+    # Document URLs
+    path('documents/upload/', views.upload_document, name='upload_document'),
+    path('documents/<str:note_id>/annotations/', views.document_annotations, name='document_annotations'),
+    path('documents/<str:note_id>/annotations/<str:annotation_id>/', views.delete_annotation, name='delete_annotation'),
+    path('documents/<str:note_id>/serve/', views.serve_document, name='serve_document'),
 ]

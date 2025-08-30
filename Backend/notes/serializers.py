@@ -12,6 +12,9 @@ class NoteSerializer(serializers.ModelSerializer):
     drawing_strokes = serializers.JSONField(source='drawing_data', required=False)
     folder_name = serializers.CharField(source='folder.name', read_only=True)
     folder_color = serializers.CharField(source='folder.color', read_only=True)
+    document_file = serializers.FileField(required=False)
+    document_url = serializers.SerializerMethodField()  # Add computed document URL field
+    document_annotations = serializers.JSONField(required=False)
 
     class Meta:
         model = Note
@@ -19,9 +22,22 @@ class NoteSerializer(serializers.ModelSerializer):
             'id', 'title', 'content', 'created_at', 'updated_at', 
             'drawing_strokes', 'drawing_thumbnail', 
             'last_drawing_update', 'tag_names', 'formatted_content', 'tags',
-            'type', 'folder', 'folder_name', 'folder_color', 'has_drawing', 'drawing_data'
+            'type', 'folder', 'folder_name', 'folder_color', 'has_drawing', 'drawing_data',
+            'document_file', 'document_url', 'document_annotations'
         ]
         read_only_fields = ['created_at', 'updated_at', 'last_drawing_update', 'folder_name', 'folder_color']
+    
+    def get_document_url(self, obj):
+        """Generate the full URL for the document file"""
+        if obj.document_file:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.document_file.url)
+            else:
+                # Fallback when no request context is available
+                from django.conf import settings
+                return f"{settings.MEDIA_URL}{obj.document_file.name}"
+        return None
     
     
     def create(self, validated_data):

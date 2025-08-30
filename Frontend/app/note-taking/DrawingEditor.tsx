@@ -344,11 +344,30 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
       if (effectiveInitialDrawingData.folderId) {
         console.log('DrawingEditor: Setting folder from initial data:', effectiveInitialDrawingData.folderId);
         setSelectedFolderId(effectiveInitialDrawingData.folderId.toString());
-        // We'll update the folder name when folders are fetched
+        // Set folder name if available in the data
+        if (effectiveInitialDrawingData.folderName) {
+          setFolderName(effectiveInitialDrawingData.folderName);
+        }
       } else if (effectiveInitialDrawingData.folder_id) {
         // Also check for snake_case version
         console.log('DrawingEditor: Setting folder from initial data (snake_case):', effectiveInitialDrawingData.folder_id);
         setSelectedFolderId(effectiveInitialDrawingData.folder_id.toString());
+        // Set folder name if available in the data
+        if (effectiveInitialDrawingData.folderName) {
+          setFolderName(effectiveInitialDrawingData.folderName);
+        }
+      }
+      
+      // Additional check for folder object in the data
+      if (effectiveInitialDrawingData.folder && typeof effectiveInitialDrawingData.folder === 'object') {
+        console.log('DrawingEditor: Setting folder from folder object:', effectiveInitialDrawingData.folder);
+        setSelectedFolderId(effectiveInitialDrawingData.folder.id?.toString() || effectiveInitialDrawingData.folder);
+        if (effectiveInitialDrawingData.folder.name) {
+          setFolderName(effectiveInitialDrawingData.folder.name);
+        }
+      } else if (effectiveInitialDrawingData.folder && typeof effectiveInitialDrawingData.folder === 'string') {
+        // If folder is just a folder name string
+        setFolderName(effectiveInitialDrawingData.folder);
       }
     }
   }, [effectiveInitialDrawingData, importDrawing]);

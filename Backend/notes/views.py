@@ -120,7 +120,7 @@ def note_list(request):
                 Q(content__icontains=search_query)
             )
             
-        serializer = NoteSerializer(notes, many=True)
+        serializer = NoteSerializer(notes, many=True, context={'request': request})
         return Response(serializer.data)
     
     elif request.method == 'POST':
@@ -159,7 +159,7 @@ def note_detail(request, pk):
         return Response({"error": "Note not found"}, status=status.HTTP_404_NOT_FOUND)
     
     if request.method == 'GET':
-        serializer = NoteSerializer(note)
+        serializer = NoteSerializer(note, context={'request': request})
         
         # Log note access
         create_log(
@@ -472,7 +472,7 @@ def manage_note_tags(request):
             message=f'Added tags "{tag_names}" to note "{note.title}".'
         )
         
-        serializer = NoteSerializer(note)
+        serializer = NoteSerializer(note, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
     
     elif action == 'remove':
@@ -490,7 +490,7 @@ def manage_note_tags(request):
             message=f'Removed tags "{tag_names}" from note "{note.title}".'
         )
         
-        serializer = NoteSerializer(note)
+        serializer = NoteSerializer(note, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 @api_auth_required(['POST'])
@@ -702,5 +702,256 @@ def clear_drawing(request, note_id):
     except Exception as e:
         return Response({
             'error': 'Failed to clear drawing',
+            'detail': str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_auth_required(['POST'])
+def upload_document(request):
+    """Upload a document and create a note"""
+    user = request.user
+    
+    try:
+        # Get the uploaded file
+        document = request.FILES.get('document')
+        if not document:
+            return Response({
+                'error': 'No document file provided'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validate file type
+        allowed_types = [
+            'application/pdf',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'text/plain',
+            'text/rtf'
+        ]
+        
+        if document.content_type not in allowed_types:
+            return Response({
+                'error': f'Unsupported file type: {document.content_type}'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Create note data
+        title = request.data.get('title', document.name)
+        content = request.data.get('content', f'Imported document: {document.name}')
+        folder_id = request.data.get('folder')
+        
+        # Create the note
+        note_data = {
+            'title': title,
+            'content': content,
+            'type': 'document',
+            'document_file': document
+        }
+        
+        if folder_id:
+            try:
+                folder = Folder.objects.get(id=folder_id, user=user)
+                note_data['folder'] = folder
+            except Folder.DoesNotExist:
+                pass  # Ignore invalid folder ID
+        
+        # Create note with document
+        note = Note.objects.create(user=user, **note_data)
+        
+        # Log the document upload
+        create_log(
+            user=user,
+            action='create',
+            entity_type='document',
+            entity_id=note.id,
+            message=f'Document "{document.name}" uploaded successfully.'
+        )
+        
+        serializer = NoteSerializer(note, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        
+    except Exception as e:
+        return Response({
+            'error': 'Failed to upload document',
+            'detail': str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_auth_required(['GET', 'POST', 'PUT'])
+def document_annotations(request, note_id):
+    """Handle document annotations"""
+    user = request.user
+    
+    try:
+        note = Note.objects.get(id=note_id, user=user, type='document')
+    except Note.DoesNotExist:
+        return Response({
+            'error': 'Document note not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    if request.method == 'GET':
+        # Get existing annotations
+        annotations = note.document_annotations or []
+        return Response({
+            'annotations': annotations,
+            'note_id': note.id
+        }, status=status.HTTP_200_OK)
+    
+    elif request.method == 'POST':
+        # Add new annotation
+        annotation_data = request.data
+        
+        if not note.document_annotations:
+            note.document_annotations = []
+        
+        # Add timestamp and ID to annotation
+        import uuid
+        from datetime import datetime
+        
+        annotation_data['id'] = str(uuid.uuid4())
+        annotation_data['created_at'] = datetime.now().isoformat()
+        
+        note.document_annotations.append(annotation_data)
+        note.save()
+        
+        # Log annotation creation
+        create_log(
+            user=user,
+            action='create',
+            entity_type='annotation',
+            entity_id=note.id,
+            message=f'Annotation added to document "{note.title}".'
+        )
+        
+        return Response({
+            'message': 'Annotation added successfully',
+            'annotation': annotation_data
+        }, status=status.HTTP_201_CREATED)
+    
+    elif request.method == 'PUT':
+        # Update all annotations
+        annotations = request.data.get('annotations', [])
+        note.document_annotations = annotations
+        note.save()
+        
+        # Log annotation update
+        create_log(
+            user=user,
+            action='update',
+            entity_type='annotation',
+            entity_id=note.id,
+            message=f'Annotations updated for document "{note.title}".'
+        )
+        
+        return Response({
+            'message': 'Annotations updated successfully',
+            'annotations': annotations
+        }, status=status.HTTP_200_OK)
+
+
+@api_auth_required(['DELETE'])
+def delete_annotation(request, note_id, annotation_id):
+    """Delete a specific annotation"""
+    user = request.user
+    
+    try:
+        note = Note.objects.get(id=note_id, user=user, type='document')
+    except Note.DoesNotExist:
+        return Response({
+            'error': 'Document note not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    if not note.document_annotations:
+        return Response({
+            'error': 'No annotations found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    # Find and remove the annotation
+    annotations = note.document_annotations
+    original_count = len(annotations)
+    annotations = [ann for ann in annotations if ann.get('id') != annotation_id]
+    
+    if len(annotations) == original_count:
+        return Response({
+            'error': 'Annotation not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    note.document_annotations = annotations
+    note.save()
+    
+    # Log annotation deletion
+    create_log(
+        user=user,
+        action='delete',
+        entity_type='annotation',
+        entity_id=note.id,
+        message=f'Annotation deleted from document "{note.title}".'
+    )
+    
+    return Response({
+        'message': 'Annotation deleted successfully'
+    }, status=status.HTTP_200_OK)
+
+
+@api_auth_required(['GET'])
+def serve_document(request, note_id):
+    """Serve document file with proper CORS headers for PDF.js compatibility"""
+    user = request.user
+    
+    try:
+        # Get the note and verify ownership
+        note = get_object_or_404(Note, id=note_id, user=user)
+        
+        if not note.document_file:
+            return Response({
+                'error': 'No document file found for this note'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Import required modules
+        from django.http import HttpResponse, Http404
+        from django.conf import settings
+        import os
+        import mimetypes
+        
+        # Get the file path
+        file_path = note.document_file.path
+        
+        if not os.path.exists(file_path):
+            return Response({
+                'error': 'Document file not found on server'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Determine content type
+        content_type, _ = mimetypes.guess_type(file_path)
+        if not content_type:
+            content_type = 'application/octet-stream'
+        
+        # Create response with file content
+        with open(file_path, 'rb') as f:
+            response = HttpResponse(f.read(), content_type=content_type)
+        
+        # Add CORS headers for PDF.js compatibility
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response['Cross-Origin-Embedder-Policy'] = 'require-corp'
+        response['Cross-Origin-Opener-Policy'] = 'same-origin'
+        
+        # Add content disposition for proper handling
+        filename = os.path.basename(file_path)
+        response['Content-Disposition'] = f'inline; filename="{filename}"'
+        
+        # Log document access
+        create_log(
+            user=user,
+            action='view',
+            entity_type='document',
+            entity_id=note.id,
+            message=f'Document "{note.title}" served successfully.'
+        )
+        
+        return response
+        
+    except Exception as e:
+        return Response({
+            'error': 'Failed to serve document',
             'detail': str(e)
         }, status=status.HTTP_400_BAD_REQUEST)

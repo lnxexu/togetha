@@ -57,6 +57,8 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
   ]);
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingMessage, setStreamingMessage] = useState("");
   const [showChatHistory, setShowChatHistory] = useState(false);
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([
     {
@@ -156,20 +158,92 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
     };
 
     setMessages((prev) => [...prev, userMessage]);
+    const currentInput = inputText;
     setInputText("");
     setIsLoading(true);
+    setIsStreaming(false);
+    setStreamingMessage("");
 
-    // Simulate AI response using LLama 3.0 (replace with actual API call)
-    setTimeout(() => {
-      const aiResponse: Message = {
+    try {
+      // Check if Ollama is available
+      const isOllamaAvailable = await chatbotServices.isOllamaAvailable();
+      
+      if (isOllamaAvailable) {
+        // Convert messages to Ollama format
+        const ollamaMessages = messages.map(msg => ({
+          role: (msg.isUser ? 'user' : 'assistant') as 'user' | 'assistant',
+          content: msg.text
+        }));
+        
+        // Add current user message
+        ollamaMessages.push({
+          role: 'user' as const,
+          content: currentInput
+        });
+
+        setIsLoading(false);
+        setIsStreaming(true);
+
+        // Create a placeholder message for streaming
+        const streamingMessageId = (Date.now() + 1).toString();
+        const placeholderMessage: Message = {
+          id: streamingMessageId,
+          text: "",
+          isUser: false,
+          timestamp: new Date(),
+        };
+        
+        setMessages((prev) => [...prev, placeholderMessage]);
+
+        // Stream response from Ollama
+        let fullResponse = "";
+        await chatbotServices.streamChatMessage(
+          ollamaMessages,
+          'llama3',
+          (chunk: string) => {
+            fullResponse += chunk;
+            setStreamingMessage(fullResponse);
+            
+            // Update the message in real-time
+            setMessages((prev) => 
+              prev.map(msg => 
+                msg.id === streamingMessageId 
+                  ? { ...msg, text: fullResponse }
+                  : msg
+              )
+            );
+          }
+        );
+
+        setIsStreaming(false);
+        setStreamingMessage("");
+        
+      } else {
+        // Fallback to simulated response if Ollama is not available
+        setIsLoading(false);
+        const aiResponse: Message = {
+          id: (Date.now() + 1).toString(),
+          text: "I understand your question and I'm here to help! As your AI tutoring assistant, I can help you with explanations, summaries, practice questions, and more. What specific topic would you like to explore? (Note: Ollama backend is currently unavailable, using fallback response)",
+          isUser: false,
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, aiResponse]);
+      }
+    } catch (error) {
+      console.error('Chat Error:', error);
+      setIsLoading(false);
+      setIsStreaming(false);
+      setStreamingMessage("");
+      
+      // Fallback response on error
+      const errorResponse: Message = {
         id: (Date.now() + 1).toString(),
-        text: "I understand your question and I'm here to help! As your AI tutoring assistant, I can help you with explanations, summaries, practice questions, and more. What specific topic would you like to explore?",
+        text: "I apologize, but I'm having trouble connecting to the AI service right now. Please try again in a moment.",
         isUser: false,
         timestamp: new Date(),
       };
-      setMessages((prev) => [...prev, aiResponse]);
-      setIsLoading(false);
-    }, 1500);
+      setMessages((prev) => [...prev, errorResponse]);
+    }
   };
 
   const handleFileImport = async () => {
@@ -325,20 +399,90 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
     setInputText(prompt);
   };
 
-  const handleSummarize = () => {
-    handlePromptSelection("Please summarize the uploaded document");
+  const handleSummarize = async () => {
+    if (!streamingMessage && messages.length > 1) {
+      try {
+        setIsLoading(true);
+        const lastMessage = messages[messages.length - 1];
+        if (!lastMessage.isUser) {
+          const summary = await chatbotServices.summarizeText(lastMessage.text);
+          
+          const summaryMessage: Message = {
+            id: Date.now().toString(),
+            text: `**Summary:** ${summary}`,
+            isUser: false,
+            timestamp: new Date(),
+          };
+          
+          setMessages((prev) => [...prev, summaryMessage]);
+        }
+      } catch (error) {
+        console.error('Summarization error:', error);
+        Alert.alert('Error', 'Failed to generate summary. Please try again.');
+      } finally {
+        setIsLoading(false);
+      }
+    } else {
+      handlePromptSelection("Please summarize the uploaded document");
+    }
   };
 
-  const handleExplain = () => {
-    handlePromptSelection(
-      "Please explain the key concepts in the uploaded document"
-    );
+  const handleExplain = async () => {
+    if (!streamingMessage && messages.length > 1) {
+      try {
+        setIsLoading(true);
+        const lastMessage = messages[messages.length - 1];
+        if (!lastMessage.isUser) {
+          const explanation = await chatbotServices.explainConcept(lastMessage.text);
+          
+          const explanationMessage: Message = {
+            id: Date.now().toString(),
+            text: `**Explanation:** ${explanation}`,
+            isUser: false,
+            timestamp: new Date(),
+          };
+          
+          setMessages((prev) => [...prev, explanationMessage]);
+        }
+      } catch (error) {
+        console.error('Explanation error:', error);
+        Alert.alert('Error', 'Failed to generate explanation. Please try again.');
+      } finally {
+        setIsLoading(false);
+      }
+    } else {
+      handlePromptSelection("Please explain the key concepts in the uploaded document");
+    }
   };
 
-  const handleGenerateQuiz = () => {
-    handlePromptSelection(
-      "Please generate a quiz based on the uploaded document"
-    );
+  const handleGenerateQuiz = async () => {
+    if (!streamingMessage && messages.length > 1) {
+      try {
+        setIsLoading(true);
+        const conversationText = messages
+          .filter(msg => !msg.isUser)
+          .map(msg => msg.text)
+          .join('\n\n');
+        
+        const quiz = await chatbotServices.generateQuiz(conversationText, 5);
+        
+        const quizMessage: Message = {
+          id: Date.now().toString(),
+          text: `**Quiz Questions:** ${quiz}`,
+          isUser: false,
+          timestamp: new Date(),
+        };
+        
+        setMessages((prev) => [...prev, quizMessage]);
+      } catch (error) {
+        console.error('Quiz generation error:', error);
+        Alert.alert('Error', 'Failed to generate quiz. Please try again.');
+      } finally {
+        setIsLoading(false);
+      }
+    } else {
+      handlePromptSelection("Please generate a quiz based on the uploaded document");
+    }
   };
 
   const handleOCR = () => {
