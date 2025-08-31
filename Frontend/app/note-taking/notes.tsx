@@ -2492,27 +2492,23 @@ const renderUnorganizedFolder = () => (
               keyboardShouldPersistTaps="handled"
             >
               {/* Title Setup Section */}
-              <View style={styles.inputGroup}>
-                <View style={styles.singleRowTitleContainer}>
-                  <Text style={styles.inputLabel}>Drawing Title</Text>
-                  <TextInput
-                    style={styles.textInputSingleRow}
-                    value={drawingTitle}
-                    onChangeText={setDrawingTitle}
-                    placeholder="Enter drawing title"
-                    placeholderTextColor="#9CA3AF"
-                    maxLength={50}
-                    returnKeyType="done"
-                    numberOfLines={1}
-                  />
-                </View>
+              <View style={styles.drawingModalSection}>
+                <Text style={styles.drawingModalSectionLabel}>Drawing Title</Text>
+                <TextInput
+                  style={styles.drawingModalTextInput}
+                  value={drawingTitle}
+                  onChangeText={setDrawingTitle}
+                  placeholder="Enter drawing title"
+                  placeholderTextColor="#9CA3AF"
+                  maxLength={50}
+                  returnKeyType="done"
+                  numberOfLines={1}
+                />
               </View>
 
               {/* Size Options Section */}
-              <View style={styles.inputGroup}>
-                <View style={styles.singleRowTitleContainer}>
-                  <Text style={styles.inputLabel}>Canvas Size</Text>
-                </View>
+              <View style={styles.drawingModalSection}>
+                <Text style={styles.drawingModalSectionLabel}>Canvas Size</Text>
                 <View style={styles.sizeGrid}>
                   {DRAWING_SIZES.map((size) => (
                     <TouchableOpacity
@@ -2548,10 +2544,8 @@ const renderUnorganizedFolder = () => (
                 </View>
 
                 {/* Orientation Toggle */}
-                <View style={styles.orientationContainer}>
-                  <View style={styles.singleRowTitleContainer}>
-                    <Text style={styles.orientationLabel}>Orientation</Text>
-                  </View>
+                <View style={styles.orientationSubSection}>
+                  <Text style={styles.drawingModalSubLabel}>Orientation</Text>
                   <View style={styles.orientationToggle}>
                     <TouchableOpacity
                       style={[
@@ -2612,10 +2606,8 @@ const renderUnorganizedFolder = () => (
               </View>
 
               {/* Templates Section */}
-              <View style={styles.inputGroup}>
-                <View style={styles.singleRowTitleContainer}>
-                  <Text style={styles.inputLabel}>Choose Template</Text>
-                </View>
+              <View style={styles.drawingModalSection}>
+                <Text style={styles.drawingModalSectionLabel}>Choose Template</Text>
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
@@ -2725,7 +2717,260 @@ const renderUnorganizedFolder = () => (
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+      <StatusBar barStyle="light-content" backgroundColor="#7C3AED" />
+
+      {/* Fixed Header - outside of content container */}
+      <LinearGradient
+        colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.header}
+      >
+        <View style={styles.headerTopRow}>
+          <View style={styles.headerTitleSection}>
+            <Text style={styles.headerTitle}>All Notes</Text>
+          </View>
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              style={[
+                styles.headerActionButton,
+                showSearchBar && styles.activeSearchButton,
+              ]}
+              onPress={toggleSearch}
+            >
+              <MaterialIcons name="search" size={22} color="#ffffffff" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.headerActionButton}
+              onPress={() => setShowOptionsDropdown(!showOptionsDropdown)}
+            >
+              <MaterialIcons
+                name="more-vert"
+                size={22}
+                color="#ffffffff"
+              />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {showSearchBar && (
+          <View style={styles.searchContainer}>
+            <View style={styles.searchInputContainer}>
+              <MaterialIcons
+                name="search"
+                size={20}
+                color="#9CA3AF"
+                style={styles.searchIcon}
+              />
+              <TextInput
+                style={styles.searchInput}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholder="Search notes..."
+                placeholderTextColor="#9CA3AF"
+                autoFocus={true}
+                returnKeyType="search"
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity
+                  style={styles.clearSearchButton}
+                  onPress={() => setSearchQuery("")}
+                >
+                  <MaterialIcons name="clear" size={18} color="#9CA3AF" />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        )}
+
+        {/* Folder Section inside Header */}
+        <View style={styles.folderSectionInHeader}>
+          <TouchableOpacity
+            style={styles.folderToggle}
+            onPress={() => setShowFolderDropdown(!showFolderDropdown)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.folderToggleLeft}>
+              <MaterialIcons name="folder" size={22} color="#FFDE21" />
+              <Text style={styles.folderToggleText}>
+                {selectedFilterFolder === "unorganized"
+                  ? "Unorganized Notes"
+                  : selectedFilterFolder
+                  ? folders.find((f) => f.id === selectedFilterFolder)
+                      ?.name || "Folders"
+                  : "Folders"}
+              </Text>
+            </View>
+            <MaterialIcons
+              name={showFolderDropdown ? "expand-less" : "expand-more"}
+              size={24}
+              color="#9CA3AF"
+            />
+          </TouchableOpacity>
+
+          {showFolderDropdown && (
+            <View style={styles.folderDropdownContainer}>
+              {/* Replace ScrollView with FlatList for horizontal folder list */}
+              <FlatList
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.foldersScrollContent}
+                data={[
+                  ...folders,
+                  {
+                    id: "add-folder",
+                    name: "Add Folder",
+                    isAddButton: true,
+                  },
+                ]}
+                keyExtractor={(item) => item.id}
+                renderItem={({ item }) => {
+                  // Type guard to check if item is the add button
+                  if ("isAddButton" in item && item.isAddButton) {
+                    return (
+                      <TouchableOpacity
+                        style={styles.addFolderCard}
+                        onPress={() => {
+                          setShowCreateFolderModal(true);
+                          setShowFolderDropdown(false);
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <View style={styles.addFolderIcon}>
+                          <MaterialIcons
+                            name="add"
+                            size={24}
+                            color="#6A009C"
+                          />
+                        </View>
+                        <Text style={styles.addFolderText}>
+                          New Folder
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  }
+
+                  return (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={[
+                        styles.folderCard,
+                        selectedFilterFolder === item.id &&
+                          styles.selectedFolderCard,
+                      ]}
+                      activeOpacity={0.8}
+                      onPress={() => {
+                        setSelectedFilterFolder(
+                          selectedFilterFolder === item.id
+                            ? null
+                            : item.id
+                        );
+                        setShowFolderDropdown(false);
+                      }}
+                      onLongPress={() => handleFolderLongPress(item.id)}
+                      delayLongPress={500}
+                    >
+                      <View style={styles.folderCardHeader}>
+                        <View
+                          style={[
+                            styles.folderIcon,
+                            {
+                              backgroundColor:
+                                "color" in item
+                                  ? Array.isArray(item.color)
+                                    ? item.color[0]
+                                    : item.color
+                                  : "#E5E7EB",
+                            },
+                          ]}
+                        >
+                          <MaterialIcons
+                            name="folder"
+                            size={20}
+                            color="#FFFFFF"
+                          />
+                        </View>
+                        <TouchableOpacity
+                          style={styles.folderOptionsButton}
+                          onPress={() => handleFolderLongPress(item.id)}
+                          hitSlop={{
+                            top: 10,
+                            bottom: 10,
+                            left: 10,
+                            right: 10,
+                          }}
+                        >
+                          <MaterialIcons
+                            name="more-vert"
+                            size={16}
+                            color="#9CA3AF"
+                          />
+                        </TouchableOpacity>
+                      </View>
+                      <Text
+                        style={[
+                          styles.folderName,
+                          selectedFilterFolder === item.id &&
+                            styles.activeFolderName,
+                        ]}
+                        numberOfLines={2}
+                      >
+                        {item.name}
+                      </Text>
+                      <Text style={styles.folderCount}>
+                        {
+                          notes.filter(
+                            (note) => note.folderId === item.id
+                          ).length
+                        }{" "}
+                        notes
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                }}
+              />
+
+              {/* Unorganized folder outside scroll */}
+              <TouchableOpacity
+                style={[
+                  styles.unorganizedFolderCard,
+                  selectedFilterFolder === "unorganized" &&
+                    styles.selectedUnorganizedFolderCard,
+                ]}
+                activeOpacity={0.8}
+                onPress={() => {
+                  setSelectedFilterFolder(
+                    selectedFilterFolder === "unorganized"
+                      ? null
+                      : "unorganized"
+                  );
+                  setShowFolderDropdown(false);
+                }}
+              >
+                <View style={styles.unorganizedFolderIcon}>
+                  <MaterialIcons
+                    name="folder-open"
+                    size={20}
+                    color="#64748B"
+                  />
+                </View>
+                <Text
+                  style={[
+                    styles.unorganizedFolderName,
+                    selectedFilterFolder === "unorganized" &&
+                      styles.activeUnorganizedFolderName,
+                  ]}
+                >
+                  Unorganized Notes
+                </Text>
+                <Text style={styles.unorganizedFolderCount}>
+                  {notes.filter((note) => !note.folderId).length} notes
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      </LinearGradient>
 
       {isSelectMode && (
         <View style={styles.selectionModeHeader}>
@@ -2777,291 +3022,38 @@ const renderUnorganizedFolder = () => (
         </View>
       )}
 
-      {/* Replace the main FlatList with a single FlatList that includes header */}
-      <FlatList
-        data={notesViewData}
-        renderItem={renderNoteItem}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.notesList}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={["#6A009C"]}
-          />
-        }
-        ListEmptyComponent={NotesEmptyListComponent}
-        numColumns={2}
-        columnWrapperStyle={styles.notesGridRow}
-        initialNumToRender={8}
-        maxToRenderPerBatch={10}
-        windowSize={10}
-        getItemLayout={(_, index) => {
-          const length = 220;
-          const offset = Math.floor(index / 2) * length;
-          return {
-            length,
-            offset,
-            index,
-          };
-        }}
-        ListHeaderComponent={() => (
-          <View>
-            <LinearGradient
-              colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.headerInList}
-            >
-              <View style={styles.headerTopRow}>
-                <View style={styles.headerTitleSection}>
-                  <Text style={styles.headerTitle}>All Notes</Text>
-                </View>
-                <View style={styles.headerActions}>
-                  <TouchableOpacity
-                    style={[
-                      styles.headerActionButton,
-                      showSearchBar && styles.activeSearchButton,
-                    ]}
-                    onPress={toggleSearch}
-                  >
-                    <MaterialIcons name="search" size={22} color="#ffffffff" />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.headerActionButton}
-                    onPress={() => setShowOptionsDropdown(!showOptionsDropdown)}
-                  >
-                    <MaterialIcons
-                      name="more-vert"
-                      size={22}
-                      color="#ffffffff"
-                    />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {showSearchBar && (
-                <View style={styles.searchContainer}>
-                  <View style={styles.searchInputContainer}>
-                    <MaterialIcons
-                      name="search"
-                      size={20}
-                      color="#9CA3AF"
-                      style={styles.searchIcon}
-                    />
-                    <TextInput
-                      style={styles.searchInput}
-                      value={searchQuery}
-                      onChangeText={setSearchQuery}
-                      placeholder="Search notes..."
-                      placeholderTextColor="#9CA3AF"
-                      autoFocus={true}
-                      returnKeyType="search"
-                    />
-                    {searchQuery.length > 0 && (
-                      <TouchableOpacity
-                        style={styles.clearSearchButton}
-                        onPress={() => setSearchQuery("")}
-                      >
-                        <MaterialIcons name="clear" size={18} color="#9CA3AF" />
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                </View>
-              )}
-
-              {/* Folder Section inside Header */}
-              <View style={styles.folderSectionInHeader}>
-                <TouchableOpacity
-                  style={styles.folderToggle}
-                  onPress={() => setShowFolderDropdown(!showFolderDropdown)}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.folderToggleLeft}>
-                    <MaterialIcons name="folder" size={22} color="#FFDE21" />
-                    <Text style={styles.folderToggleText}>
-                      {selectedFilterFolder === "unorganized"
-                        ? "Unorganized Notes"
-                        : selectedFilterFolder
-                        ? folders.find((f) => f.id === selectedFilterFolder)
-                            ?.name || "Folders"
-                        : "Folders"}
-                    </Text>
-                  </View>
-                  <MaterialIcons
-                    name={showFolderDropdown ? "expand-less" : "expand-more"}
-                    size={24}
-                    color="#9CA3AF"
-                  />
-                </TouchableOpacity>
-
-                {showFolderDropdown && (
-                  <View style={styles.folderDropdownContainer}>
-                    {/* Replace ScrollView with FlatList for horizontal folder list */}
-                    <FlatList
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      contentContainerStyle={styles.foldersScrollContent}
-                      data={[
-                        ...folders,
-                        {
-                          id: "add-folder",
-                          name: "Add Folder",
-                          isAddButton: true,
-                        },
-                      ]}
-                      keyExtractor={(item) => item.id}
-                      renderItem={({ item }) => {
-                        // Type guard to check if item is the add button
-                        if ("isAddButton" in item && item.isAddButton) {
-                          return (
-                            <TouchableOpacity
-                              style={styles.addFolderCard}
-                              onPress={() => {
-                                setShowCreateFolderModal(true);
-                                setShowFolderDropdown(false);
-                              }}
-                              activeOpacity={0.8}
-                            >
-                              <View style={styles.addFolderIcon}>
-                                <MaterialIcons
-                                  name="add"
-                                  size={24}
-                                  color="#6A009C"
-                                />
-                              </View>
-                              <Text style={styles.addFolderText}>
-                                New Folder
-                              </Text>
-                            </TouchableOpacity>
-                          );
-                        }
-
-                        return (
-                          <TouchableOpacity
-                            key={item.id}
-                            style={[
-                              styles.folderCard,
-                              selectedFilterFolder === item.id &&
-                                styles.selectedFolderCard,
-                            ]}
-                            activeOpacity={0.8}
-                            onPress={() => {
-                              setSelectedFilterFolder(
-                                selectedFilterFolder === item.id
-                                  ? null
-                                  : item.id
-                              );
-                              setShowFolderDropdown(false);
-                            }}
-                            onLongPress={() => handleFolderLongPress(item.id)}
-                            delayLongPress={500}
-                          >
-                            <View style={styles.folderCardHeader}>
-                              <View
-                                style={[
-                                  styles.folderIcon,
-                                  {
-                                    backgroundColor:
-                                      "color" in item
-                                        ? Array.isArray(item.color)
-                                          ? item.color[0]
-                                          : item.color
-                                        : "#E5E7EB",
-                                  },
-                                ]}
-                              >
-                                <MaterialIcons
-                                  name="folder"
-                                  size={20}
-                                  color="#FFFFFF"
-                                />
-                              </View>
-                              <TouchableOpacity
-                                style={styles.folderOptionsButton}
-                                onPress={() => handleFolderLongPress(item.id)}
-                                hitSlop={{
-                                  top: 10,
-                                  bottom: 10,
-                                  left: 10,
-                                  right: 10,
-                                }}
-                              >
-                                <MaterialIcons
-                                  name="more-vert"
-                                  size={16}
-                                  color="#9CA3AF"
-                                />
-                              </TouchableOpacity>
-                            </View>
-                            <Text
-                              style={[
-                                styles.folderName,
-                                selectedFilterFolder === item.id &&
-                                  styles.activeFolderName,
-                              ]}
-                              numberOfLines={2}
-                            >
-                              {item.name}
-                            </Text>
-                            <Text style={styles.folderCount}>
-                              {
-                                notes.filter(
-                                  (note) => note.folderId === item.id
-                                ).length
-                              }{" "}
-                              notes
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      }}
-                    />
-
-                    {/* Unorganized folder outside scroll */}
-                    <TouchableOpacity
-                      style={[
-                        styles.unorganizedFolderCard,
-                        selectedFilterFolder === "unorganized" &&
-                          styles.selectedUnorganizedFolderCard,
-                      ]}
-                      activeOpacity={0.8}
-                      onPress={() => {
-                        setSelectedFilterFolder(
-                          selectedFilterFolder === "unorganized"
-                            ? null
-                            : "unorganized"
-                        );
-                        setShowFolderDropdown(false);
-                      }}
-                    >
-                      <View style={styles.unorganizedFolderIcon}>
-                        <MaterialIcons
-                          name="folder-open"
-                          size={20}
-                          color="#64748B"
-                        />
-                      </View>
-                      <Text
-                        style={[
-                          styles.unorganizedFolderName,
-                          selectedFilterFolder === "unorganized" &&
-                            styles.activeUnorganizedFolderName,
-                        ]}
-                      >
-                        Unorganized Notes
-                      </Text>
-                      <Text style={styles.unorganizedFolderCount}>
-                        {notes.filter((note) => !note.folderId).length} notes
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </View>
-            </LinearGradient>
-          </View>
-        )}
-      />
+      {/* Content Container - holds the notes list and other content */}
+      <View style={styles.contentContainer}>
+        <FlatList
+          data={notesViewData}
+          renderItem={renderNoteItem}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.notesList}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={["#6A009C"]}
+            />
+          }
+          ListEmptyComponent={NotesEmptyListComponent}
+          numColumns={2}
+          columnWrapperStyle={styles.notesGridRow}
+          initialNumToRender={8}
+          maxToRenderPerBatch={10}
+          windowSize={10}
+          getItemLayout={(_, index) => {
+            const length = 220;
+            const offset = Math.floor(index / 2) * length;
+            return {
+              length,
+              offset,
+              index,
+            };
+          }}
+        />
+      </View>
 
       {/* Global overlay for dropdown - positioned absolutely over everything */}
       {activeNoteOptions && (
@@ -3228,16 +3220,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#F8FAFC",
+    
   },
   header: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: 24,
-    paddingTop: Platform.OS === "ios" ? 50 : 50,
+    paddingTop: Platform.OS === "ios" ? 50 : 35,
     paddingBottom: 24,
-    // backgroundColor: "#F5E1FD", // REMOVE or COMMENT THIS LINE
+    paddingHorizontal: 24,
     borderBottomLeftRadius: 25,
     borderBottomRightRadius: 25,
     shadowColor: "#1E293B",
@@ -3245,15 +3233,34 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 5,
-    zIndex: 1000,
   },
+  headerInList: {
+    paddingTop: Platform.OS === "ios" ? 50 : 35,
+    paddingBottom: 24,
+    paddingHorizontal: 24,
+    borderBottomLeftRadius: 25,
+    borderBottomRightRadius: 25,
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  contentContainer: {
+    flex: 1,
+    marginTop: 20, // To overlap with header's bottom curve
+    backgroundColor: "#F8FAFC",
+  },
+  
   headerTopRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
+    // Remove paddingHorizontal from here - it should be at parent level
   },
+  
   headerTitleSection: {
-    flex: 1,
+    flex: 1, // This ensures proper space allocation
   },
   headerTitle: {
     fontSize: 32,
@@ -3273,10 +3280,11 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
     elevation: 2,
   },
   activeSearchButton: {
-    backgroundColor: "#3333",
+    backgroundColor: "rgba(255, 255, 255, 0.3)",
   },
   searchContainer: {
     marginTop: 16,
@@ -3402,22 +3410,9 @@ const styles = StyleSheet.create({
     color: "#9CA3AF",
   },
   notesList: {
-    paddingHorizontal: 16,
     paddingBottom: 120, // Space for the navbar
+    paddingHorizontal: 16,
     overflow: "visible",
-  },
-  headerInList: {
-    paddingHorizontal: 24,
-    paddingTop: Platform.OS === "ios" ? 50 : 50,
-    paddingBottom: 24,
-    borderBottomLeftRadius: 25,
-    borderBottomRightRadius: 25,
-    shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
-    marginBottom: 16,
   },
   notesGridRow: {
     justifyContent: "space-between",
@@ -3682,7 +3677,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 24,
-    marginTop: -40, // Adjust position for better visual balance
+    marginTop: 40, // Add margin between empty state and header
   },
   emptyStateIconContainer: {
     position: "relative",
@@ -4529,6 +4524,47 @@ const styles = StyleSheet.create({
   },
 
   // Drawing Setup Modal Styles
+  drawingModalSection: {
+    marginBottom: 32,
+  },
+
+  drawingModalSectionLabel: {
+    fontSize: 18,
+    fontFamily: "Inter-SemiBold",
+    color: "#1F2937",
+    marginBottom: 16,
+    paddingLeft: 4,
+  },
+
+  drawingModalSubLabel: {
+    fontSize: 16,
+    fontFamily: "Inter-Medium",
+    color: "#374151",
+    marginBottom: 12,
+    paddingLeft: 4,
+  },
+
+  drawingModalTextInput: {
+    backgroundColor: "#F9FAFB",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 16,
+    fontFamily: "Inter-Regular",
+    color: "#1F2937",
+    borderWidth: 2,
+    borderColor: "#E5E7EB",
+    shadowColor: "#64748B",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+
+  orientationSubSection: {
+    marginTop: 20,
+  },
+
   sizeGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -4545,11 +4581,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderWidth: 2,
     borderColor: "#E5E7EB",
+    shadowColor: "#64748B",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
 
   selectedSizeOption: {
     backgroundColor: "#8B5CF6",
     borderColor: "#8B5CF6",
+    shadowColor: "#8B5CF6",
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
   },
 
   sizeOptionName: {
@@ -4585,6 +4630,11 @@ const styles = StyleSheet.create({
     backgroundColor: "#F1F5F9",
     borderRadius: 12,
     padding: 4,
+    shadowColor: "#64748B",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
 
   orientationButton: {
@@ -4637,16 +4687,26 @@ const styles = StyleSheet.create({
 
   templateOption: {
     marginRight: 12,
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 2,
     borderColor: "transparent",
-    padding: 8,
+    padding: 12,
     backgroundColor: "transparent",
     alignItems: "center",
     width: 120,
+    shadowColor: "#64748B",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   selectedTemplateOption: {
     borderColor: "#8B5CF6",
+    backgroundColor: "#F5F3FF",
+    shadowColor: "#8B5CF6",
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
   },
   templatePreviewWrapper: {
     width: 100,
@@ -4656,7 +4716,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderWidth: 1,
     borderColor: "#e5e7eb",
-    marginBottom: 4,
+    marginBottom: 8,
+    shadowColor: "#64748B",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   templateIcon: {
     width: 48,
