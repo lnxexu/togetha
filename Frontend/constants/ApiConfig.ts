@@ -96,6 +96,7 @@ export const API_ENDPOINTS = {
     GET_USER_INFO: "/get_user_info/",
     USER_PROFILE: "/users/profile/",
     USER_PROGRESS: "/users/progress/",
+    CHANGE_PASSWORD: "/users/change-password/",
     CSRF_TOKEN: "/users/csrf-token/",
 
     // Notes endpoints

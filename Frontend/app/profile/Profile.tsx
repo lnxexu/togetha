@@ -396,13 +396,6 @@ const Profile: React.FC = () => {
         <Text style={styles.sectionTitle}>Account Settings</Text>
 
         <View style={styles.settingsContainer}>
-          <TouchableOpacity style={styles.settingItem}>
-            <View style={styles.settingLeft}>
-              <MaterialIcons name="notifications" size={24} color="#6A009C" />
-              <Text style={styles.settingText}>Notifications</Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={24} color="#6c757d" />
-          </TouchableOpacity>
 
           <TouchableOpacity style={styles.settingItem}>
             <View style={styles.settingLeft}>
@@ -412,7 +405,10 @@ const Profile: React.FC = () => {
             <MaterialIcons name="chevron-right" size={24} color="#6c757d" />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.settingItem}>
+          <TouchableOpacity 
+            style={styles.settingItem}
+            onPress={() => navigation.navigate("ChangePassword")}
+          >
             <View style={styles.settingLeft}>
               <MaterialIcons name="lock" size={24} color="#6A009C" />
               <Text style={styles.settingText}>Change Password</Text>
@@ -533,7 +529,7 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 24,
-    paddingTop: Platform.OS === "ios" ? 50 : 35,
+    paddingTop: Platform.OS === "ios" ? 70 : 50,
     paddingBottom: 20,
     borderBottomLeftRadius: 25,
     borderBottomRightRadius: 25,

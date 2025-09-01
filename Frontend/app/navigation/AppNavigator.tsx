@@ -34,6 +34,7 @@ import EisenhowerListPage from '../task-management/EisenhowerListPage';
 import Profile from '../profile/Profile';
 import ManageProfile from '../profile/ManageProfile';
 import EditProfile from '../profile/EditProfile';
+import ChangePassword from '../profile/ChangePassword';
 import HelpSupport from '../profile/HelpSupport';
 import About from '../profile/About';
 
@@ -106,6 +107,7 @@ export type RootStackParamList = {
   Profile: undefined;
   ManageProfile: undefined;
   EditProfile: undefined;
+  ChangePassword: undefined;
   HelpSupport: undefined;
   About: undefined;
   Logs: undefined;
@@ -321,6 +323,7 @@ const AppNavigator: React.FC = () => {
         {/* Profile components */}
         <Stack.Screen name="ManageProfile" component={ManageProfile} />
         <Stack.Screen name="EditProfile" component={EditProfile} />
+        <Stack.Screen name="ChangePassword" component={ChangePassword} />
         <Stack.Screen name="HelpSupport" component={HelpSupport} />
         <Stack.Screen name="About" component={About} />
 

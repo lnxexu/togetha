@@ -12,6 +12,8 @@ import {
   View,
   Alert,
   ActivityIndicator,
+  useWindowDimensions,
+  ScrollView,
 } from "react-native";
 import LoginIllustration from "../../assets/illustrations/undraw_access-account_aydp (1).svg";
 import type { RootStackParamList } from "../navigation/AppNavigator";
@@ -24,6 +26,8 @@ import {
 export default function SignIn() {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -129,87 +133,180 @@ export default function SignIn() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      <View style={styles.formContainer}>
-        <Text style={styles.appName}>Welcome Back!</Text>
-        <LoginIllustration
-          width={250}
-          height={220}
-          style={styles.loginIllustration}
-        />
-
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-        <View style={styles.inputContainer}>
-          <MaterialIcons
-            name="person"
-            size={24}
-            color="#7F8C8D"
-            style={styles.inputIcon}
+      <ScrollView 
+        contentContainerStyle={[
+          styles.scrollContainer,
+          { 
+            minHeight: height,
+            paddingVertical: isLandscape ? 10 : 40,
+          }
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={[
+          styles.formContainer,
+          {
+            paddingHorizontal: isLandscape ? width * 0.1 : 20,
+            maxWidth: isLandscape ? width : '100%',
+          }
+        ]}>
+          <Text style={[
+            styles.appName,
+            {
+              fontSize: isLandscape ? width * 0.03 : 28,
+              marginBottom: isLandscape ? 5 : 10,
+            }
+          ]}>Welcome Back!</Text>
+          <LoginIllustration
+            width={isLandscape ? width * 0.15 : 250}
+            height={isLandscape ? width * 0.13 : 220}
+            style={[
+              styles.loginIllustration,
+              { marginBottom: isLandscape ? 10 : 20 }
+            ]}
           />
-          <TextInput
-            style={styles.input}
-            placeholder="Enter your username"
-            placeholderTextColor="#7F8C8D"
-            autoCapitalize="none"
-            value={username}
-            onChangeText={setUsername}
-          />
-        </View>
 
-        <View style={styles.inputContainer}>
-          <MaterialIcons
-            name="lock"
-            size={24}
-            color="#7F8C8D"
-            style={styles.inputIcon}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Enter your password"
-            placeholderTextColor="#7F8C8D"
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-          />
-        </View>
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-        <TouchableOpacity onPress={() => {}}>
-          <Text style={styles.forgotPassword}>Forgot Password?</Text>
-        </TouchableOpacity>
+          <View style={[
+            styles.inputContainer,
+            { marginBottom: isLandscape ? 8 : 15 }
+          ]}>
+            <MaterialIcons
+              name="person"
+              size={isLandscape ? 20 : 24}
+              color="#7F8C8D"
+              style={styles.inputIcon}
+            />
+            <TextInput
+              style={[
+                styles.input,
+                { 
+                  padding: isLandscape ? 10 : 15,
+                  fontSize: isLandscape ? 14 : 15,
+                }
+              ]}
+              placeholder="Enter your username"
+              placeholderTextColor="#7F8C8D"
+              autoCapitalize="none"
+              value={username}
+              onChangeText={setUsername}
+            />
+          </View>
 
-        <TouchableOpacity
-          style={styles.signInButton}
-          onPress={handleLogin}
-          disabled={isLoading}
-        >
-          {isLoading ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <Text style={styles.buttonText}>Log in</Text>
-          )}
-        </TouchableOpacity>
+          <View style={[
+            styles.inputContainer,
+            { marginBottom: isLandscape ? 8 : 15 }
+          ]}>
+            <MaterialIcons
+              name="lock"
+              size={isLandscape ? 20 : 24}
+              color="#7F8C8D"
+              style={styles.inputIcon}
+            />
+            <TextInput
+              style={[
+                styles.input,
+                { 
+                  padding: isLandscape ? 10 : 15,
+                  fontSize: isLandscape ? 14 : 15,
+                }
+              ]}
+              placeholder="Enter your password"
+              placeholderTextColor="#7F8C8D"
+              secureTextEntry
+              value={password}
+              onChangeText={setPassword}
+            />
+          </View>
 
-        <View style={styles.orContainer}>
-          <View style={styles.orLine} />
-          <Text style={styles.orText}>- OR LOG IN WITH -</Text>
-          <View style={styles.orLine} />
-        </View>
-
-        <TouchableOpacity style={styles.googleButton}>
-          <Image
-            source={require("../../assets/images/pngtree-google-internet-icon-vector-png-image_9183287.png")}
-            style={styles.googleLogo}
-          />
-          <Text style={styles.googleButtonText}>Google</Text>
-        </TouchableOpacity>
-
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>Don't have an account? </Text>
-          <TouchableOpacity onPress={() => navigation.navigate("Signup")}>
-            <Text style={styles.linkText}>Sign Up</Text>
+          <TouchableOpacity onPress={() => {}}>
+            <Text style={[
+              styles.forgotPassword,
+              { 
+                marginBottom: isLandscape ? 10 : 20,
+                fontSize: isLandscape ? 12 : 14,
+              }
+            ]}>Forgot Password?</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.signInButton,
+              {
+                paddingVertical: isLandscape ? 10 : 15,
+                marginTop: isLandscape ? 10 : 20,
+                marginBottom: isLandscape ? 10 : 20,
+              }
+            ]}
+            onPress={handleLogin}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={[
+                styles.buttonText,
+                { fontSize: isLandscape ? 14 : 16 }
+              ]}>Log in</Text>
+            )}
+          </TouchableOpacity>
+
+          <View style={[
+            styles.orContainer,
+            { marginVertical: isLandscape ? 10 : 20 }
+          ]}>
+            <View style={styles.orLine} />
+            <Text style={[
+              styles.orText,
+              { fontSize: isLandscape ? 12 : 14 }
+            ]}>- OR LOG IN WITH -</Text>
+            <View style={styles.orLine} />
+          </View>
+
+          <TouchableOpacity style={[
+            styles.googleButton,
+            {
+              paddingVertical: isLandscape ? 8 : 12,
+              marginBottom: isLandscape ? 10 : 20,
+            }
+          ]}>
+            <Image
+              source={require("../../assets/images/pngtree-google-internet-icon-vector-png-image_9183287.png")}
+              style={[
+                styles.googleLogo,
+                {
+                  width: isLandscape ? 20 : 24,
+                  height: isLandscape ? 20 : 24,
+                }
+              ]}
+            />
+            <Text style={[
+              styles.googleButtonText,
+              { 
+                fontSize: isLandscape ? 16 : 18,
+                marginLeft: isLandscape ? 8 : 10,
+              }
+            ]}>Google</Text>
+          </TouchableOpacity>
+
+          <View style={[
+            styles.footer,
+            { marginTop: isLandscape ? 10 : 20 }
+          ]}>
+            <Text style={[
+              styles.footerText,
+              { fontSize: isLandscape ? 13 : 15 }
+            ]}>Don't have an account? </Text>
+            <TouchableOpacity onPress={() => navigation.navigate("Signup")}>
+              <Text style={[
+                styles.linkText,
+                { fontSize: isLandscape ? 13 : 15 }
+              ]}>Sign Up</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -219,11 +316,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F1D3FF",
   },
+  scrollContainer: {
+    flexGrow: 1,
+    justifyContent: "center",
+  },
   formContainer: {
     flex: 1,
     justifyContent: "center",
-    paddingHorizontal: 20,
-    paddingTop: 40,
+    alignItems: "center",
+    width: "100%",
   },
   appName: {
     fontSize: 28,
@@ -243,6 +344,8 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginBottom: 15,
     paddingHorizontal: 10,
+    width: "100%",
+    maxWidth: 400,
   },
   inputIcon: {
     marginRight: 10,
@@ -260,6 +363,8 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     fontSize: 14,
     fontFamily: "Inter-Regular",
+    width: "100%",
+    maxWidth: 400,
   },
   signInButton: {
     backgroundColor: "#A32EDA",
@@ -267,6 +372,8 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginTop: 20,
     marginBottom: 20,
+    width: "100%",
+    maxWidth: 400,
   },
   buttonText: {
     color: "#FFFFFF",
@@ -278,6 +385,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     marginVertical: 20,
+    width: "100%",
+    maxWidth: 400,
   },
   orLine: {
     flex: 1,
@@ -300,6 +409,8 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     borderWidth: 1,
     borderColor: "#E0E0E0",
+    width: "100%",
+    maxWidth: 400,
   },
   googleLogo: {
     width: 24,
@@ -315,6 +426,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
     marginTop: 20,
+    width: "100%",
+    maxWidth: 400,
   },
   footerText: {
     color: "#7F8C8D",
@@ -331,5 +444,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 15,
     fontFamily: "Inter-Regular",
+    width: "100%",
+    maxWidth: 400,
   },
 });

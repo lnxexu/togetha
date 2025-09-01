@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   View,
   Animated,
+  useWindowDimensions,
 } from "react-native";
 import type { RootStackParamList } from "../navigation/AppNavigator";
 import Toast from "react-native-toast-message";
@@ -39,6 +40,8 @@ type SignUpScreenProp = NativeStackNavigationProp<RootStackParamList, "Signup">;
 
 export default function SignUp() {
   const navigation = useNavigation<SignUpScreenProp>();
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
   const [formData, setFormData] = useState({
     username: "",
     email: "",
@@ -220,23 +223,58 @@ export default function SignUp() {
     >
       <ScrollView
         style={styles.container}
-        contentContainerStyle={{ flexGrow: 1 }}
+        contentContainerStyle={[
+          styles.scrollContainer,
+          { 
+            minHeight: height,
+            paddingVertical: isLandscape ? 10 : 0,
+          }
+        ]}
+        showsVerticalScrollIndicator={false}
       >
         <StatusBar barStyle="dark-content" />
 
-        <View style={styles.formContainer}>
-          <Text style={styles.appName}>Welcome onboard!</Text>
-          <Text style={styles.title}>Let's help you meet up your tasks</Text>
+        <View style={[
+          styles.formContainer,
+          {
+            paddingHorizontal: isLandscape ? width * 0.1 : 20,
+            paddingTop: isLandscape ? 20 : 40,
+            maxWidth: isLandscape ? width : '100%',
+          }
+        ]}>
+          <Text style={[
+            styles.appName,
+            {
+              fontSize: isLandscape ? width * 0.03 : 28,
+              marginBottom: isLandscape ? 5 : 10,
+            }
+          ]}>Welcome onboard!</Text>
+          <Text style={[
+            styles.title,
+            {
+              fontSize: isLandscape ? width * 0.018 : 15,
+              marginBottom: isLandscape ? 15 : 20,
+            }
+          ]}>Let's help you meet up your tasks</Text>
 
-          <View style={styles.inputContainer}>
+          <View style={[
+            styles.inputContainer,
+            { marginBottom: isLandscape ? 8 : 15 }
+          ]}>
             <MaterialIcons
               name="person"
-              size={20}
+              size={isLandscape ? 18 : 20}
               color="#7F8C8D"
               style={styles.inputIcon}
             />
             <TextInput
-              style={styles.input}
+              style={[
+                styles.input,
+                { 
+                  padding: isLandscape ? 10 : 15,
+                  fontSize: isLandscape ? 14 : 15,
+                }
+              ]}
               placeholder="Enter your username"
               placeholderTextColor="#7F8C8D"
               keyboardType="default"
@@ -246,15 +284,24 @@ export default function SignUp() {
             />
           </View>
 
-          <View style={styles.inputContainer}>
+          <View style={[
+            styles.inputContainer,
+            { marginBottom: isLandscape ? 8 : 15 }
+          ]}>
             <MaterialIcons
               name="email"
-              size={20}
+              size={isLandscape ? 18 : 20}
               color="#7F8C8D"
               style={styles.inputIcon}
             />
             <TextInput
-              style={styles.input}
+              style={[
+                styles.input,
+                { 
+                  padding: isLandscape ? 10 : 15,
+                  fontSize: isLandscape ? 14 : 15,
+                }
+              ]}
               placeholder="Enter your email"
               placeholderTextColor="#7F8C8D"
               keyboardType="email-address"
@@ -264,15 +311,24 @@ export default function SignUp() {
             />
           </View>
 
-          <View style={styles.inputContainer}>
+          <View style={[
+            styles.inputContainer,
+            { marginBottom: isLandscape ? 8 : 15 }
+          ]}>
             <MaterialIcons
               name="lock"
-              size={20}
+              size={isLandscape ? 18 : 20}
               color="#7F8C8D"
               style={styles.inputIcon}
             />
             <TextInput
-              style={styles.input}
+              style={[
+                styles.input,
+                { 
+                  padding: isLandscape ? 10 : 15,
+                  fontSize: isLandscape ? 14 : 15,
+                }
+              ]}
               placeholder="Enter password"
               placeholderTextColor="#7F8C8D"
               secureTextEntry={!showPassword1}
@@ -285,21 +341,30 @@ export default function SignUp() {
             >
               <Ionicons
                 name={showPassword1 ? "eye-off" : "eye"}
-                size={22}
+                size={isLandscape ? 20 : 22}
                 color="#7F8C8D"
               />
             </TouchableOpacity>
           </View>
 
-          <View style={styles.inputContainer}>
+          <View style={[
+            styles.inputContainer,
+            { marginBottom: isLandscape ? 8 : 15 }
+          ]}>
             <MaterialIcons
               name="lock"
-              size={20}
+              size={isLandscape ? 18 : 20}
               color="#7F8C8D"
               style={styles.inputIcon}
             />
             <TextInput
-              style={styles.input}
+              style={[
+                styles.input,
+                { 
+                  padding: isLandscape ? 10 : 15,
+                  fontSize: isLandscape ? 14 : 15,
+                }
+              ]}
               placeholder="Confirm password"
               placeholderTextColor="#7F8C8D"
               secureTextEntry={!showPassword2}
@@ -312,40 +377,84 @@ export default function SignUp() {
             >
               <Ionicons
                 name={showPassword2 ? "eye-off" : "eye"}
-                size={22}
+                size={isLandscape ? 20 : 22}
                 color="#7F8C8D"
               />
             </TouchableOpacity>
           </View>
 
           <TouchableOpacity
-            style={[styles.signUpButton, loading && styles.buttonDisabled]}
+            style={[
+              styles.signUpButton, 
+              loading && styles.buttonDisabled,
+              {
+                paddingVertical: isLandscape ? 10 : 15,
+                marginTop: isLandscape ? 10 : 20,
+                marginBottom: isLandscape ? 10 : 20,
+              }
+            ]}
             onPress={handleSignUpInitiate}
             disabled={loading}
           >
-            <Text style={styles.buttonText}>
+            <Text style={[
+              styles.buttonText,
+              { fontSize: isLandscape ? 14 : 16 }
+            ]}>
               {loading ? "Signing Up..." : "Sign Up"}
             </Text>
           </TouchableOpacity>
 
-          <View style={styles.orContainer}>
+          <View style={[
+            styles.orContainer,
+            { marginVertical: isLandscape ? 10 : 20 }
+          ]}>
             <View style={styles.orLine} />
-            <Text style={styles.orText}>- OR SIGN UP WITH -</Text>
+            <Text style={[
+              styles.orText,
+              { fontSize: isLandscape ? 12 : 14 }
+            ]}>- OR SIGN UP WITH -</Text>
             <View style={styles.orLine} />
           </View>
 
-          <TouchableOpacity style={styles.googleButton}>
+          <TouchableOpacity style={[
+            styles.googleButton,
+            {
+              paddingVertical: isLandscape ? 8 : 12,
+              marginBottom: isLandscape ? 10 : 20,
+            }
+          ]}>
             <Image
               source={require("../../assets/images/pngtree-google-internet-icon-vector-png-image_9183287.png")}
-              style={styles.googleLogo}
+              style={[
+                styles.googleLogo,
+                {
+                  width: isLandscape ? 20 : 24,
+                  height: isLandscape ? 20 : 24,
+                }
+              ]}
             />
-            <Text style={styles.googleButtonText}>Google</Text>
+            <Text style={[
+              styles.googleButtonText,
+              { 
+                fontSize: isLandscape ? 16 : 18,
+                marginLeft: isLandscape ? 8 : 10,
+              }
+            ]}>Google</Text>
           </TouchableOpacity>
 
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>Already have an account? </Text>
+          <View style={[
+            styles.footer,
+            { marginTop: isLandscape ? 10 : 20 }
+          ]}>
+            <Text style={[
+              styles.footerText,
+              { fontSize: isLandscape ? 13 : 15 }
+            ]}>Already have an account? </Text>
             <TouchableOpacity onPress={() => navigation.navigate("Login")}>
-              <Text style={styles.linkText}>Sign In</Text>
+              <Text style={[
+                styles.linkText,
+                { fontSize: isLandscape ? 13 : 15 }
+              ]}>Sign In</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -358,9 +467,21 @@ export default function SignUp() {
           onRequestClose={() => setShowConfirmation(false)}
         >
           <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Confirm Registration</Text>
-              <Text style={styles.modalText}>
+            <View style={[
+              styles.modalContent,
+              {
+                width: isLandscape ? "70%" : "90%",
+                maxWidth: isLandscape ? 500 : 400,
+              }
+            ]}>
+              <Text style={[
+                styles.modalTitle,
+                { fontSize: isLandscape ? 18 : 20 }
+              ]}>Confirm Registration</Text>
+              <Text style={[
+                styles.modalText,
+                { fontSize: isLandscape ? 14 : 16 }
+              ]}>
                 Are you sure you want to create an account with the provided
                 information?
               </Text>
@@ -369,13 +490,19 @@ export default function SignUp() {
                   style={[styles.modalButton, styles.cancelButton]}
                   onPress={() => setShowConfirmation(false)}
                 >
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                  <Text style={[
+                    styles.cancelButtonText,
+                    { fontSize: isLandscape ? 14 : 16 }
+                  ]}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.modalButton, styles.confirmButton]}
                   onPress={handleSignUp}
                 >
-                  <Text style={styles.confirmButtonText}>Confirm</Text>
+                  <Text style={[
+                    styles.confirmButtonText,
+                    { fontSize: isLandscape ? 14 : 16 }
+                  ]}>Confirm</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -466,11 +593,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F1D3FF",
   },
+  scrollContainer: {
+    flexGrow: 1,
+    justifyContent: "center",
+  },
   formContainer: {
     flex: 1,
     justifyContent: "center",
-    paddingHorizontal: 20,
-    paddingTop: 40,
+    alignItems: "center",
+    width: "100%",
   },
   appName: {
     fontSize: 28,
@@ -494,6 +625,8 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     paddingHorizontal: 10,
     position: "relative",
+    width: "100%",
+    maxWidth: 400,
   },
   inputIcon: {
     marginRight: 10,
@@ -511,6 +644,8 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginTop: 20,
     marginBottom: 20,
+    width: "100%",
+    maxWidth: 400,
   },
   buttonText: {
     color: "#FFFFFF",
@@ -522,6 +657,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     marginVertical: 20,
+    width: "100%",
+    maxWidth: 400,
   },
   orLine: {
     flex: 1,
@@ -544,6 +681,8 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     borderWidth: 1,
     borderColor: "#E0E0E0",
+    width: "100%",
+    maxWidth: 400,
   },
   googleLogo: {
     width: 24,
@@ -559,6 +698,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
     marginTop: 20,
+    width: "100%",
+    maxWidth: 400,
   },
   footerText: {
     color: "#7F8C8D",

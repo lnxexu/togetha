@@ -259,6 +259,53 @@ class UserService {
     }
   }
 
+  async changePassword(data: {
+    currentPassword: string;
+    newPassword: string;
+  }): Promise<{ message: string; token: string }> {
+    try {
+      const token = await this.getAuthToken();
+      if (!token) {
+        throw new Error("No authentication token found");
+      }
+
+      const response = await fetch(`${API_URL}${API_ENDPOINTS.CHANGE_PASSWORD}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Token ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          current_password: data.currentPassword,
+          new_password: data.newPassword,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(
+          errorData.detail || 
+          errorData.error || 
+          errorData.current_password?.[0] || 
+          errorData.new_password?.[0] || 
+          `Request failed with status ${response.status}`
+        );
+      }
+
+      const result = await response.json();
+      
+      // Update the stored auth token with the new one
+      if (result.token) {
+        await AsyncStorage.setItem("authToken", result.token);
+      }
+
+      return result;
+    } catch (error) {
+      console.error("Error changing password:", error);
+      throw error;
+    }
+  }
+
   async clearProfileCache() {
     try {
      await AsyncStorage.multiRemove([
