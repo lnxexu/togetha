@@ -5,19 +5,28 @@ import {
   SafeAreaView,
   StyleSheet,
   useWindowDimensions,
+  StatusBar,
+  Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Swiper from 'react-native-swiper';
 import type { RootStackParamList } from '../navigation/AppNavigator';
+import { OnboardingColors } from '../../constants/Colors';
 import WelcomePage1 from './WelcomePage1';
 import WelcomePage2 from './WelcomePage2';
 import WelcomePage3 from './WelcomePage3';
+import { getPaginationBottomPosition, getStatusBarConfig, getSafeAreaContainerStyle } from './utils/SafeAreaUtils';
 
 type WelcomeScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Welcome'>;
 
 const WelcomeScreen: React.FC = () => {
   const navigation = useNavigation<WelcomeScreenNavigationProp>();
   const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const isLandscape = width > height;
+  const statusBarConfig = getStatusBarConfig();
+  const safeAreaStyle = getSafeAreaContainerStyle();
+  const paginationBottom = getPaginationBottomPosition(insets, isLandscape);
   
   const handleLoginPress = () => {
     navigation.navigate('Login');
@@ -28,40 +37,50 @@ const WelcomeScreen: React.FC = () => {
   };
   
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#F1D3FF' }}>
-      <Swiper
-        loop={false}
-        showsButtons={false}
-        dotStyle={styles.paginationDot}
-        activeDotStyle={styles.paginationActiveDot}
-        paginationStyle={[styles.paginationContainer, { bottom: isLandscape ? 30 : 50 }]}
-        testID="welcome-swiper"
-      >
-        <WelcomePage1 onLoginPress={handleLoginPress} />
-        <WelcomePage2 />
-        <WelcomePage3 onGetStartedPress={handleGetStartedPress} />
-      </Swiper>
-    </SafeAreaView>
+    <>
+      <StatusBar {...statusBarConfig} />
+      <SafeAreaView style={[styles.container, safeAreaStyle, { paddingTop: insets.top }]}>
+        <Swiper
+          loop={false}
+          showsButtons={false}
+          dotStyle={styles.paginationDot}
+          activeDotStyle={styles.paginationActiveDot}
+          paginationStyle={[
+            styles.paginationContainer, 
+            { bottom: paginationBottom }
+          ]}
+          testID="welcome-swiper"
+        >
+          <WelcomePage1 onLoginPress={handleLoginPress} />
+          <WelcomePage2 />
+          <WelcomePage3 onGetStartedPress={handleGetStartedPress} />
+        </Swiper>
+      </SafeAreaView>
+    </>
   );
 };
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#FAF5FF',
+  },
   paginationContainer: {
     
   },
   paginationDot: {
-    backgroundColor: 'rgba(138, 43, 226, 0.4)',
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginHorizontal: 3,
+    backgroundColor: `${OnboardingColors.primary.main}40`,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginHorizontal: 4,
   },
   paginationActiveDot: {
-    backgroundColor: '#8A2BE2',
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginHorizontal: 3,
+    backgroundColor: OnboardingColors.primary.main,
+    width: 24,
+    height: 10,
+    borderRadius: 5,
+    marginHorizontal: 4,
   },
 });
 

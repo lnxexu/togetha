@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import WelcomeScreen from '../onboarding/Welcome';
 import LoginScreen from '../onboarding/signin';
 import SignupScreen from '../onboarding/signup';
+import ForgotPasswordScreen from '../onboarding/ForgotPassword';
 
 //main pages
 import ChatBot from '../chatbot/AI';
@@ -42,8 +43,12 @@ export type RootStackParamList = {
   Welcome: undefined;
   Signup: undefined;
   Login: undefined;
+  ForgotPassword: undefined;
   Home: undefined;
-  Notes: undefined;
+  Notes: {
+    folderId?: string;
+    folderName?: string;
+  } | undefined;
   Notifications: undefined;
   NoteEditor: {
     noteId?: string;
@@ -71,7 +76,7 @@ export type RootStackParamList = {
   };
   editTaskId: { editTaskId: string } | undefined;
   AllItemsView: {
-    viewType: 'tasks' | 'activity';
+    viewType: 'tasks' | 'activity' | 'notes' | 'urgent-tasks';
   };
   EisenhowerList: {
     tasks: any[];
@@ -310,6 +315,7 @@ const AppNavigator: React.FC = () => {
         <Stack.Screen name="Welcome" component={WelcomeScreen} />
         <Stack.Screen name="Signup" component={SignupScreen} />
         <Stack.Screen name="Login" component={LoginScreen} />
+        <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
 
         {/* Main Screens */}
         <Stack.Screen name="Home" component={Home} />

@@ -48,13 +48,22 @@ ALLOWED_HOSTS = [
     '127.0.0.1',    
 ]
 
-DEFAULT_FROM_EMAIL = 'noreply@togetha.com'
-# For production, use SMTP settings:
-# EMAIL_HOST = 'smtp.gmail.com'
-# EMAIL_PORT = 587
-# EMAIL_HOST_USER = 'your_email@gmail.com'
-# EMAIL_HOST_PASSWORD = 'your_password'
-# EMAIL_USE_TLS = True
+DEFAULT_FROM_EMAIL = 'kcorpuz_220000002183@uic.edu.ph'
+
+
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'kcorpuz_220000002183@uic.edu.ph'  # Your Gmail
+EMAIL_HOST_PASSWORD = 'tjsw zzdo piwn zjea'  # Your Gmail App Password
+
+# For console testing only (uncomment the line below to test locally)
+# EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+
+# Security settings
+EMAIL_TIMEOUT = 30
+EMAIL_USE_LOCALTIME = False
 
 # Application definition
 
@@ -85,6 +94,7 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
+    'server.middleware.CSRFExemptAPIMiddleware',  # Add before CSRF middleware
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'server.middleware.DebugAuthMiddleware',  # Our custom middleware
@@ -203,6 +213,10 @@ REST_FRAMEWORK = {
     ],
     # Add exception handler to provide better error messages
     'EXCEPTION_HANDLER': 'server.utils.custom_exception_handler',
+    # Disable CSRF for API endpoints
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+    ],
 }
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
@@ -217,7 +231,7 @@ STATICFILES_DIRS = [
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'  # For development (prints email to console)
+# Email backend is configured above in the email section
 
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 

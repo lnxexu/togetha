@@ -39,7 +39,6 @@ const quadrants: Record<string, QuadrantData> = {
   all: {
     title: "All Tasks",
     subtitle: "View all tasks",
-    // make the color have a contrast to the white
     color: "#3498db",
     borderColor: "#2980b9",
     priority: "all",
@@ -88,22 +87,15 @@ const TaskListView: React.FC<TaskListViewProps> = ({
   selectedCategory,
   onCategoryChange,
 }) => {
-  // Change the default selected quadrant to 'urgent-important' instead of 'all'
-  const [selectedQuadrant, setSelectedQuadrant] =
-    useState<string>("urgent-important");
-
-  const getTasksByQuadrant = (priority: string) => {
-    return tasks.filter((task) => task.priority === priority);
-  };
+  const [selectedQuadrant, setSelectedQuadrant] = useState<string>("urgent-important");
 
   const getFilteredTasks = () => {
-    // When "all" is selected, return all tasks without filtering by priority
     if (selectedQuadrant === "all") {
       return tasks;
     }
-    // Otherwise filter by the selected quadrant's priority
     return tasks.filter((task) => task.priority === selectedQuadrant);
   };
+
   const handleTaskLongPress = (task: Task) => {
     Alert.alert(task.title, "What would you like to do?", [
       { text: "View Details", onPress: () => onTaskPress(task.id) },
@@ -129,9 +121,10 @@ const TaskListView: React.FC<TaskListViewProps> = ({
         style={[
           styles.taskCard,
           {
-            borderColor: quadrant?.color || "#e9ecef",
+            borderLeftColor: quadrant?.color || "#e9ecef",
+            borderLeftWidth: 4,
             backgroundColor: quadrant?.color
-              ? `${quadrant.color}15`
+              ? `${quadrant.color}08`
               : "#ffffff",
           },
           task.overdue && !task.completed && styles.overdueTask,
@@ -141,91 +134,83 @@ const TaskListView: React.FC<TaskListViewProps> = ({
         onLongPress={() => handleTaskLongPress(task)}
       >
         <View style={styles.cardContent}>
-          <View style={styles.cardTopSection}>
+          <View style={styles.cardHeader}>
+            <TouchableOpacity
+              style={styles.checkbox}
+              onPress={() => onMarkComplete(task.id)}
+            >
+              <MaterialIcons
+                name={task.completed ? "check-box" : "check-box-outline-blank"}
+                size={20}
+                color={
+                  task.completed
+                    ? "#27ae60"
+                    : task.overdue
+                    ? "#e74c3c"
+                    : "#7f8c8d"
+                }
+              />
+            </TouchableOpacity>
+            
             {task.priority && (
               <View
                 style={[
-                  styles.taskIcon,
+                  styles.priorityBadge,
                   { backgroundColor: quadrant?.color || "#ecf0f1" },
                 ]}
               >
                 <MaterialIcons
-                  name={quadrant?.icon as any}
-                  size={20}
-                  color="#FFFFFF"
+                  name={quadrant?.icon || "view-list"}
+                  size={12}
+                  color="#fff"
                 />
               </View>
             )}
-            <View style={styles.cardTextSection}>
+          </View>
+
+          <View style={styles.cardBody}>
+            <Text
+              style={[
+                styles.taskTitle,
+                task.completed && styles.completedTaskTitle,
+                task.overdue && !task.completed && styles.overdueTaskTitle,
+              ]}
+              numberOfLines={2}
+            >
+              {task.title}
+            </Text>
+            
+            {task.description && (
               <Text
                 style={[
-                  styles.cardTitle,
-                  task.completed && styles.completedTaskText,
+                  styles.taskDescription,
+                  task.completed && styles.completedTaskDescription,
                 ]}
-                numberOfLines={2}
+                numberOfLines={1}
               >
-                {task.title}
+                {task.description}
               </Text>
+            )}
+
+            <View style={styles.taskMeta}>
+              {task.category && (
+                <View style={styles.categoryTag}>
+                  <Text style={styles.categoryText}>{task.category}</Text>
+                </View>
+              )}
+              
               {task.due_datetime && (
-                <Text
-                  style={[styles.cardDate, task.overdue && styles.overdueText]}
-                >
-                  Due: {task.due_datetime.toLocaleDateString()}
-                </Text>
+                <View style={styles.dueDateContainer}>
+                  <MaterialIcons name="schedule" size={12} color="#6c757d" />
+                  <Text style={styles.dueDateText}>
+                    {new Date(task.due_datetime).toLocaleDateString()}
+                  </Text>
+                </View>
               )}
             </View>
-            <TouchableOpacity
-              style={styles.statusButton}
-              onPress={() => onMarkComplete(task.id)}
-            >
-              <MaterialIcons
-                name={
-                  task.completed ? "check-circle" : "radio-button-unchecked"
-                }
-                size={20}
-                color={task.completed ? "#27ae60" : "#bdc3c7"}
-              />
-            </TouchableOpacity>
           </View>
         </View>
       </TouchableOpacity>
-    );
-  };
-
-  const renderQuadrantSection = (quadrantKey: string) => {
-    const quadrant = quadrants[quadrantKey];
-    const quadrantTasks = getTasksByQuadrant(quadrant.priority);
-
-    return (
-      <View key={quadrantKey} style={styles.quadrantSection}>
-        <View style={styles.sectionHeader}>
-          <View style={[styles.titleCard, { backgroundColor: quadrant.color }]}>
-            <View style={styles.titleIconContainer}>
-              <MaterialIcons name={quadrant.icon} size={16} color="#FFFFFF" />
-              <Text style={styles.quadrantTitle}>{quadrant.title}</Text>
-            </View>
-            <Text style={styles.quadrantSubtitle}>{quadrant.subtitle}</Text>
-          </View>
-          <View style={styles.taskCount}>
-            <Text style={styles.taskCountText}>{quadrantTasks.length}</Text>
-          </View>
-        </View>
-        {quadrantTasks.length === 0 ? (
-          <View style={styles.emptyQuadrant}>
-            <Text style={styles.emptyText}>No tasks in this category</Text>
-          </View>
-        ) : (
-          <FlatList
-            data={quadrantTasks}
-            renderItem={renderTaskCard}
-            keyExtractor={(item) => item.id}
-            horizontal={true}
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.horizontalList}
-            ItemSeparatorComponent={() => <View style={styles.cardSeparator} />}
-          />
-        )}
-      </View>
     );
   };
 
@@ -307,30 +292,27 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  scrollContainer: {
-    flex: 1,
+  filtersSection: {
+    marginBottom: 16,
   },
-  matrixContainer: {
-    paddingBottom: 20,
+  tasksSection: {
+    flex: 1,
   },
   quadrantFiltersContainer: {
     flexDirection: "row",
     paddingHorizontal: 5,
     paddingVertical: 12,
-    gap: 3,
-    height: 60, // Fixed height instead of percentage
+    gap: 8,
   },
   quadrantFilterChip: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 16,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#ffffffff",
     backgroundColor: "transparent",
     marginRight: 8,
-    height: 36,
   },
   activeQuadrantFilterChip: {
     backgroundColor: "#6A009C",
@@ -348,18 +330,18 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
   },
   tasksList: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 0,
+    paddingVertical: 8,
   },
   taskSeparator: {
-    height: 12,
+    height: 8,
   },
   emptyListContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 20,
-    marginTop: 20, // Changed from top: -150
+    paddingTop: 60,
   },
   emptyListText: {
     fontSize: 16,
@@ -374,177 +356,104 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: "center",
   },
-  quadrantSection: {
-    marginBottom: 16,
-  },
-  sectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 15,
-  },
-  titleCard: {
-    alignSelf: "flex-start",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-    minWidth: 140,
-  },
-  quadrantTitle: {
-    fontSize: 13,
-    color: "#fff",
-    fontFamily: "Inter-Medium",
-  },
-  taskCount: {
-    backgroundColor: "#f8f9fa",
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderWidth: 1,
-    borderColor: "#e9ecef",
-  },
-  taskCountText: {
-    fontSize: 12,
-    color: "#2c3e50",
-    fontFamily: "Inter-Bold",
-  },
-  emptyQuadrant: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 40,
-    paddingHorizontal: 16,
-  },
-  emptyText: {
-    fontSize: 12,
-    color: "#bdc3c7",
-    marginTop: 8,
-    textAlign: "center",
-    fontFamily: "Inter-Regular",
-  },
-  horizontalList: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    minHeight: 130,
-  },
-  cardSeparator: {
-    width: 12,
-  },
   taskCard: {
-    width: "100%",
     backgroundColor: "#ffffff",
-    borderRadius: 16,
+    borderRadius: 12,
     padding: 16,
     borderWidth: 1,
+    borderColor: "#f0f0f0",
     shadowColor: "#1E293B",
     shadowOffset: {
       width: 0,
-      height: 4,
+      height: 2,
     },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 5,
-    marginBottom: 12,
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
+    marginBottom: 8,
   },
   overdueTask: {
     backgroundColor: "#FEF2F2",
     borderColor: "#EF4444",
-    borderWidth: 2,
+    borderWidth: 1,
   },
-  cardHeader: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    marginBottom: 8,
+  completedTask: {
+    backgroundColor: "#F0FDF4",
+    opacity: 0.7,
   },
   cardContent: {
     flex: 1,
   },
-  cardTopSection: {
+  cardHeader: {
     flexDirection: "row",
-    alignItems: "center",
     justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
   },
-  taskIcon: {
-    width: 48,
-    height: 48,
+  checkbox: {
+    padding: 4,
+  },
+  priorityBadge: {
+    width: 24,
+    height: 24,
     borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 16,
   },
-  cardTextSection: {
+  cardBody: {
     flex: 1,
   },
-  statusButton: {
-    padding: 2,
-  },
-  cardTitle: {
+  taskTitle: {
     fontSize: 16,
+    fontFamily: "Inter-SemiBold",
     color: "#1E293B",
-    lineHeight: 20,
-    fontFamily: "Inter-Bold",
     marginBottom: 4,
+    lineHeight: 20,
   },
-  cardSubject: {
-    fontSize: 11,
-    color: "#AD00FF",
-    marginBottom: 6,
-    fontFamily: "Inter-Medium",
-  },
-  cardDescription: {
-    fontSize: 12,
-    color: "#7f8c8d",
-    lineHeight: 16,
-    marginBottom: 8,
-    fontFamily: "Inter-Regular",
-  },
-  cardFooter: {
-    marginTop: "auto",
-  },
-  cardDate: {
-    fontSize: 14,
-    color: "#64748B",
-    fontFamily: "Inter-Medium",
-    marginTop: 2,
-  },
-  overdueText: {
-    color: "#e74c3c",
-    fontWeight: "500",
-  },
-  completedTask: {
-    opacity: 0.6,
-    backgroundColor: "#F8F9FA !important",
-  },
-  completedTaskText: {
+  completedTaskTitle: {
     textDecorationLine: "line-through",
-    color: "#999",
+    color: "#6b7280",
   },
-  titleContainer: {
+  overdueTaskTitle: {
+    color: "#dc2626",
+  },
+  taskDescription: {
+    fontSize: 14,
+    fontFamily: "Inter-Regular",
+    color: "#6b7280",
+    marginBottom: 8,
+    lineHeight: 18,
+  },
+  completedTaskDescription: {
+    textDecorationLine: "line-through",
+    opacity: 0.6,
+  },
+  taskMeta: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    flexWrap: "wrap",
-    gap: 4,
+    marginTop: 8,
   },
-  titleIconContainer: {
+  categoryTag: {
+    backgroundColor: "#f3f4f6",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  categoryText: {
+    fontSize: 11,
+    fontFamily: "Inter-Medium",
+    color: "#374151",
+  },
+  dueDateContainer: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: 4,
   },
-  quadrantSubtitle: {
-    fontSize: 10,
-    color: "rgba(255,255,255,0.8)",
+  dueDateText: {
+    fontSize: 12,
     fontFamily: "Inter-Regular",
-    marginTop: 2,
-  },
-  filtersSection: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: "#f8f9fa",
-    borderBottomWidth: 1,
-    borderColor: "#e9ecef",
-  },
-  tasksSection: {
-    flex: 1,
+    color: "#6c757d",
   },
 });
 

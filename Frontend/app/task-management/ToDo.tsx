@@ -9,7 +9,10 @@ import TaskListView from "./components/TaskListView";
 import { Task } from "./types/Task";
 import { LinearGradient } from "expo-linear-gradient";
 import  taskService  from "./services/taskService";
-import { ActivityIndicator } from "react-native";
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getEnhancedSafeAreaConfig, getStatusBarConfig, getSafeAreaContainerStyle } from '../utils/SafeAreaUtils';
+import EnhancedLoadingScreen from '../components/EnhancedLoadingScreen';
+import SkeletonLoader from '../components/SkeletonLoader';
 import {
   View,
   Text,
@@ -19,11 +22,24 @@ import {
   Platform,
   Dimensions,
   Modal,
+  SafeAreaView,
+  StatusBar,
+  useWindowDimensions,
+  Animated,
+  FlatList,
+  TextInput,
 } from "react-native";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 const ToDo: React.FC = () => {
+  const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const isLandscape = width > height;
+  const safeAreaConfig = getEnhancedSafeAreaConfig(insets, height, isLandscape);
+  const statusBarConfig = getStatusBarConfig();
+  const safeAreaStyle = getSafeAreaContainerStyle();
+  
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const navigation = useNavigation<NavigationProp>();
   const [viewMode, setViewMode] = useState<"matrix" | "list">("matrix");
@@ -35,13 +51,24 @@ const ToDo: React.FC = () => {
     "all"
   );
 
-  // New states for calendar
+  // Enhanced states for improved calendar and UX
   const [selectedStatus, setSelectedStatus] = useState<
     "all" | "pending" | "completed" | "overdue"
   >("all");
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [calendarDate, setCalendarDate] = useState(new Date());
+  const [calendarViewMode, setCalendarViewMode] = useState<"month" | "week">("month");
+  const [animatedValue] = useState(new Animated.Value(0));
+  const [showQuickFilters, setShowQuickFilters] = useState(false);
+  
+  // Search functionality states
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showSearchBar, setShowSearchBar] = useState(false);
+  
+  // Selected date tasks modal state
+  const [showDateTasksModal, setShowDateTasksModal] = useState(false);
+  const [dateTasksModalDate, setDateTasksModalDate] = useState<Date | null>(null);
   // Dropdown options
   const statusOptions = [
     { value: "all", label: "All Tasks" },
@@ -62,16 +89,32 @@ const ToDo: React.FC = () => {
     setSelectedFilter(status);
   };
 
-  // Get screen dimensions and orientation
-  const { width, height } = Dimensions.get("window");
-  const isLandscape = width > height;
+  // Search functionality
+  const toggleSearch = () => {
+    setShowSearchBar(!showSearchBar);
+    if (showSearchBar) {
+      setSearchQuery(""); // Clear search when closing
+    }
+  };
 
-  // Generate week dates
+  // Enhanced date task handlers
+  const handleCalendarDateClick = (date: Date) => {
+    const tasksForDate = getTasksForDate(date);
+    if (tasksForDate.length > 0) {
+      setDateTasksModalDate(date);
+      setShowDateTasksModal(true);
+    }
+    setSelectedDate(date);
+  };
+
+  const handleTaskClick = (taskId: string) => {
+    navigation.navigate("TaskDetails", { taskId });
+  };
+
+  // Enhanced Calendar Functions with Google Calendar-like features
   const getWeekDates = () => {
-    const today = new Date();
-    const currentDay = today.getDay();
-    const startOfWeek = new Date(today);
-    startOfWeek.setDate(today.getDate() - currentDay);
+    const startOfWeek = new Date(calendarDate);
+    startOfWeek.setDate(calendarDate.getDate() - calendarDate.getDay());
 
     const weekDates = [];
     for (let i = 0; i < 7; i++) {
@@ -82,7 +125,7 @@ const ToDo: React.FC = () => {
     return weekDates;
   };
 
-  // Generate calendar days for monthly view
+  // Enhanced calendar days generation with better week handling
   const getCalendarDays = () => {
     const year = calendarDate.getFullYear();
     const month = calendarDate.getMonth();
@@ -94,12 +137,47 @@ const ToDo: React.FC = () => {
 
     const days = [];
     for (let i = 0; i < 42; i++) {
-      // 6 weeks * 7 days
       const date = new Date(startDate);
       date.setDate(startDate.getDate() + i);
       days.push(date);
     }
     return days;
+  };
+
+  // Get tasks for a specific date (Google Calendar style)
+  const getTasksForDate = (date: Date) => {
+    return tasks.filter(task => {
+      if (!task.due_datetime) return false;
+      const taskDate = new Date(task.due_datetime);
+      return taskDate.toDateString() === date.toDateString();
+    });
+  };
+
+  // Quick navigation functions
+  const navigateToToday = () => {
+    const today = new Date();
+    setCalendarDate(today);
+    setSelectedDate(today);
+  };
+
+  const navigateToPrevPeriod = () => {
+    const newDate = new Date(calendarDate);
+    if (calendarViewMode === "month") {
+      newDate.setMonth(newDate.getMonth() - 1);
+    } else {
+      newDate.setDate(newDate.getDate() - 7);
+    }
+    setCalendarDate(newDate);
+  };
+
+  const navigateToNextPeriod = () => {
+    const newDate = new Date(calendarDate);
+    if (calendarViewMode === "month") {
+      newDate.setMonth(newDate.getMonth() + 1);
+    } else {
+      newDate.setDate(newDate.getDate() + 7);
+    }
+    setCalendarDate(newDate);
   };
 
   const weekDates = getWeekDates();
@@ -126,6 +204,19 @@ const ToDo: React.FC = () => {
       loadTasks();
     }, [])
   );
+
+  // Initialize animation when modal opens
+  React.useEffect(() => {
+    if (showCalendarModal) {
+      Animated.timing(animatedValue, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      animatedValue.setValue(0);
+    }
+  }, [showCalendarModal]);
 
   const loadTasks = async () => {
     try {
@@ -204,6 +295,17 @@ const ToDo: React.FC = () => {
       // Filter by category/subject
       if (selectedCategory === "all") return true;
       return task.category === selectedCategory;
+    })
+    .filter((task) => {
+      // Filter by search query
+      if (searchQuery === "") return true;
+      
+      const searchLower = searchQuery.toLowerCase();
+      const titleMatch = task.title.toLowerCase().includes(searchLower);
+      const descriptionMatch = task.description?.toLowerCase().includes(searchLower) || false;
+      const categoryMatch = task.category_name?.toLowerCase().includes(searchLower) || false;
+      
+      return titleMatch || descriptionMatch || categoryMatch;
     });
 
   const categories = [
@@ -228,18 +330,8 @@ const ToDo: React.FC = () => {
   };
 
   const handleCalendarDateSelect = (date: Date) => {
-    setSelectedDate(date);
+    handleCalendarDateClick(date);
     setShowCalendarModal(false);
-  };
-
-  const navigateMonth = (direction: "prev" | "next") => {
-    const newDate = new Date(calendarDate);
-    if (direction === "prev") {
-      newDate.setMonth(newDate.getMonth() - 1);
-    } else {
-      newDate.setMonth(newDate.getMonth() + 1);
-    }
-    setCalendarDate(newDate);
   };
 
   const getCurrentDateDisplay = () => {
@@ -248,19 +340,31 @@ const ToDo: React.FC = () => {
   };
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <LinearGradient
-        colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={styles.header}
-      >
+    <>
+      <StatusBar {...statusBarConfig} />
+      <SafeAreaView style={[styles.container, safeAreaStyle]}>
+        {/* Header */}
+        <LinearGradient
+          colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={[styles.header, { paddingTop: safeAreaConfig.paddingTop }]}
+        >
         <View style={styles.headerTopRow}>
           <View style={styles.headerTitleSection}>
             <Text style={styles.title}>Tasks</Text>
           </View>
           <View style={styles.headerActions}>
+            <TouchableOpacity
+              style={styles.searchButton}
+              onPress={toggleSearch}
+            >
+              <Ionicons
+                name={showSearchBar ? "close" : "search"}
+                size={24}
+                color="#ffffff"
+              />
+            </TouchableOpacity>
             <TouchableOpacity
               style={styles.calendarButton}
               onPress={() => setShowCalendarModal(true)}
@@ -296,8 +400,30 @@ const ToDo: React.FC = () => {
             </TouchableOpacity>
           </View>
         </View>
+        
+        {/* Search Bar */}
+        {showSearchBar && (
+          <View style={styles.searchBarContainer}>
+            <View style={styles.searchInputContainer}>
+              <Ionicons name="search" size={20} color="#999" />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search tasks..."
+                placeholderTextColor="#999"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                autoFocus={showSearchBar}
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchQuery("")}>
+                  <Ionicons name="close-circle" size={20} color="#999" />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        )}
 
-        {/* Calendar Modal */}
+        {/* Enhanced Calendar Modal with Google Calendar features */}
         <Modal
           visible={showCalendarModal}
           transparent={true}
@@ -309,33 +435,81 @@ const ToDo: React.FC = () => {
             activeOpacity={1}
             onPress={() => setShowCalendarModal(false)}
           >
-            <View style={styles.calendarModal}>
-              <View style={styles.calendarHeader}>
-                <TouchableOpacity
-                  style={styles.monthNavButton}
-                  onPress={() => navigateMonth("prev")}
-                >
-                  <MaterialIcons
-                    name="chevron-left"
-                    size={20}
-                    color="#495057"
-                  />
-                </TouchableOpacity>
-                <Text style={styles.monthYearText}>
-                  {monthNames[calendarDate.getMonth()]}{" "}
-                  {calendarDate.getFullYear()}
-                </Text>
-                <TouchableOpacity
-                  style={styles.monthNavButton}
-                  onPress={() => navigateMonth("next")}
-                >
-                  <MaterialIcons
-                    name="chevron-right"
-                    size={20}
-                    color="#495057"
-                  />
-                </TouchableOpacity>
+            <Animated.View 
+              style={[
+                styles.calendarModal,
+                {
+                  transform: [{
+                    scale: animatedValue.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.8, 1],
+                    })
+                  }],
+                  opacity: animatedValue,
+                }
+              ]}
+            >
+              {/* Calendar Header with view toggles */}
+              <View style={styles.calendarModalHeader}>
+                <View style={styles.calendarControls}>
+                  <TouchableOpacity
+                    style={styles.calendarNavButton}
+                    onPress={navigateToPrevPeriod}
+                  >
+                    <MaterialIcons name="chevron-left" size={24} color="#495057" />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={styles.monthYearContainer}
+                    onPress={navigateToToday}
+                  >
+                    <Text style={styles.monthYearText}>
+                      {calendarViewMode === "month" 
+                        ? `${monthNames[calendarDate.getMonth()]} ${calendarDate.getFullYear()}`
+                        : `Week of ${monthNames[calendarDate.getMonth()]} ${calendarDate.getDate()}`
+                      }
+                    </Text>
+                    <Text style={styles.todayHint}>Tap to go to today</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={styles.calendarNavButton}
+                    onPress={navigateToNextPeriod}
+                  >
+                    <MaterialIcons name="chevron-right" size={24} color="#495057" />
+                  </TouchableOpacity>
+                </View>
+
+                {/* View Mode Toggle */}
+                <View style={styles.viewModeToggle}>
+                  <TouchableOpacity
+                    style={[
+                      styles.viewModeButton,
+                      calendarViewMode === "month" && styles.activeViewModeButton
+                    ]}
+                    onPress={() => setCalendarViewMode("month")}
+                  >
+                    <Text style={[
+                      styles.viewModeText,
+                      calendarViewMode === "month" && styles.activeViewModeText
+                    ]}>Month</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.viewModeButton,
+                      calendarViewMode === "week" && styles.activeViewModeButton
+                    ]}
+                    onPress={() => setCalendarViewMode("week")}
+                  >
+                    <Text style={[
+                      styles.viewModeText,
+                      calendarViewMode === "week" && styles.activeViewModeText
+                    ]}>Week</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
+
+              {/* Calendar Grid */}
               <View style={styles.calendarGrid}>
                 {/* Day headers */}
                 <View style={styles.dayHeadersRow}>
@@ -345,35 +519,168 @@ const ToDo: React.FC = () => {
                     </Text>
                   ))}
                 </View>
-                {/* Calendar days */}
+
+                {/* Calendar Days */}
                 <View style={styles.daysContainer}>
-                  {calendarDays.map((date, index) => (
-                    <TouchableOpacity
-                      key={index}
-                      style={[
-                        styles.calendarDay,
-                        !isCurrentMonth(date) && styles.inactiveDay,
-                        isCurrentDate(date) && styles.todayCalendarDay,
-                        isDateSelected(date) && styles.selectedCalendarDay,
-                      ]}
-                      onPress={() => handleCalendarDateSelect(date)}
-                    >
-                      <Text
+                  {(calendarViewMode === "month" ? calendarDays : getWeekDates()).map((date, index) => {
+                    const dayTasks = getTasksForDate(date);
+                    const hasOverdueTasks = dayTasks.some(task => task.overdue && !task.completed);
+                    const hasCompletedTasks = dayTasks.some(task => task.completed);
+                    
+                    return (
+                      <TouchableOpacity
+                        key={index}
                         style={[
-                          styles.calendarDayText,
-                          !isCurrentMonth(date) && styles.inactiveDayText,
-                          isCurrentDate(date) && styles.todayDayText,
-                          isDateSelected(date) && styles.selectedDayText,
+                          styles.calendarDay,
+                          calendarViewMode === "month" && !isCurrentMonth(date) && styles.inactiveDay,
+                          isCurrentDate(date) && styles.todayCalendarDay,
+                          isDateSelected(date) && styles.selectedCalendarDay,
                         ]}
+                        onPress={() => handleCalendarDateSelect(date)}
                       >
-                        {date.getDate()}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+                        <Text
+                          style={[
+                            styles.calendarDayText,
+                            calendarViewMode === "month" && !isCurrentMonth(date) && styles.inactiveDayText,
+                            isCurrentDate(date) && styles.todayDayText,
+                            isDateSelected(date) && styles.selectedDayText,
+                          ]}
+                        >
+                          {date.getDate()}
+                        </Text>
+                        
+                        {/* Task indicators */}
+                        {dayTasks.length > 0 && (
+                          <View style={styles.taskIndicators}>
+                            {hasOverdueTasks && <View style={[styles.taskDot, styles.overdueDot]} />}
+                            {hasCompletedTasks && <View style={[styles.taskDot, styles.completedDot]} />}
+                            {dayTasks.length > 2 && (
+                              <Text style={styles.taskCount}>+{dayTasks.length - 2}</Text>
+                            )}
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
               </View>
-            </View>
+
+              {/* Today's Tasks Preview */}
+              {getTasksForDate(selectedDate).length > 0 && (
+                <View style={styles.tasksPreview}>
+                  <Text style={styles.tasksPreviewTitle}>
+                    Tasks for {selectedDate.toLocaleDateString()}
+                  </Text>
+                  <FlatList
+                    data={getTasksForDate(selectedDate).slice(0, 3)}
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    keyExtractor={(item) => item.id}
+                    renderItem={({ item }) => (
+                      <TouchableOpacity
+                        style={styles.taskPreviewCard}
+                        onPress={() => {
+                          setShowCalendarModal(false);
+                          handleTaskClick(item.id);
+                        }}
+                      >
+                        <Text style={styles.taskPreviewTitle} numberOfLines={1}>
+                          {item.title}
+                        </Text>
+                        <Text style={[
+                          styles.taskPreviewStatus,
+                          item.completed && styles.completedStatus,
+                          item.overdue && !item.completed && styles.overdueStatus
+                        ]}>
+                          {item.completed ? 'Completed' : item.overdue ? 'Overdue' : 'Pending'}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  />
+                </View>
+              )}
+            </Animated.View>
           </TouchableOpacity>
+        </Modal>
+
+        {/* Date Tasks Modal */}
+        <Modal
+          visible={showDateTasksModal}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setShowDateTasksModal(false)}
+        >
+          <View style={styles.dateTasksModalOverlay}>
+            <TouchableOpacity
+              style={styles.dateTasksModalOverlay}
+              activeOpacity={1}
+              onPress={() => setShowDateTasksModal(false)}
+            >
+              <View style={styles.dateTasksModalContent}>
+                <View style={styles.dateTasksModalHeader}>
+                  <Text style={styles.dateTasksModalTitle}>
+                    Tasks for {dateTasksModalDate?.toLocaleDateString()}
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.dateTasksModalCloseButton}
+                    onPress={() => setShowDateTasksModal(false)}
+                  >
+                    <Ionicons name="close" size={24} color="#666" />
+                  </TouchableOpacity>
+                </View>
+                
+                <FlatList
+                  data={dateTasksModalDate ? getTasksForDate(dateTasksModalDate) : []}
+                  keyExtractor={(item) => item.id}
+                  showsVerticalScrollIndicator={false}
+                  renderItem={({ item }) => (
+                    <TouchableOpacity
+                      style={styles.dateTaskItem}
+                      onPress={() => {
+                        setShowDateTasksModal(false);
+                        handleTaskClick(item.id);
+                      }}
+                    >
+                      <View style={styles.dateTaskItemHeader}>
+                        <Text style={styles.dateTaskItemTitle} numberOfLines={2}>
+                          {item.title}
+                        </Text>
+                        <View style={[
+                          styles.dateTaskItemStatus,
+                          item.completed && styles.dateTaskStatusCompleted,
+                          item.overdue && !item.completed && styles.dateTaskStatusOverdue,
+                        ]}>
+                          <Text style={styles.dateTaskItemStatusText}>
+                            {item.completed ? 'Completed' : item.overdue ? 'Overdue' : 'Pending'}
+                          </Text>
+                        </View>
+                      </View>
+                      {item.description && (
+                        <Text style={styles.dateTaskItemDescription} numberOfLines={2}>
+                          {item.description}
+                        </Text>
+                      )}
+                      <View style={styles.dateTaskItemFooter}>
+                        <Text style={styles.dateTaskItemCategory}>
+                          {item.category_name || 'No Category'}
+                        </Text>
+                        {item.due_time && (
+                          <Text style={styles.dateTaskItemTime}>
+                            {item.due_time}
+                          </Text>
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  )}
+                  ListEmptyComponent={() => (
+                    <View style={styles.dateTasksEmptyState}>
+                      <Text style={styles.dateTasksEmptyText}>No tasks for this date</Text>
+                    </View>
+                  )}
+                />
+              </View>
+            </TouchableOpacity>
+          </View>
         </Modal>
 
         {/* Dropdown Backdrop - Only show in list view */}
@@ -386,97 +693,143 @@ const ToDo: React.FC = () => {
         )}
       </LinearGradient>
 
-      {/* Dashboard Card - overlaps header and content */}
+      {/* Dashboard Card with clickable filters - overlaps header and content */}
       <View style={styles.dashboardCardWrapper}>
         <View style={styles.dashboardCardContainer}>
           <View style={styles.dashboardRow}>
-            <View
+            <TouchableOpacity
               style={[
                 styles.dashboardCardItem,
                 styles.dashboardCardItemWithBorder,
+                selectedFilter === "pending" && styles.activeDashboardCard,
               ]}
+              onPress={() => handleStatusSelect("pending")}
             >
-              <Text style={styles.dashboardNumber}>
+              <Text style={[
+                styles.dashboardNumber,
+                selectedFilter === "pending" && styles.activeDashboardNumber
+              ]}>
                 {
                   tasks.filter((task) => !task.completed && !task.overdue)
                     .length
                 }
               </Text>
-              <Text style={styles.dashboardLabel}>Pending</Text>
-            </View>
-            <View
+              <Text style={[
+                styles.dashboardLabel,
+                selectedFilter === "pending" && styles.activeDashboardLabel
+              ]}>Pending</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
               style={[
                 styles.dashboardCardItem,
                 styles.dashboardCardItemWithBorder,
+                selectedFilter === "completed" && styles.activeDashboardCard,
               ]}
+              onPress={() => handleStatusSelect("completed")}
             >
-              <Text style={styles.dashboardNumber}>
+              <Text style={[
+                styles.dashboardNumber,
+                selectedFilter === "completed" && styles.activeDashboardNumber
+              ]}>
                 {tasks.filter((task) => task.completed).length}
               </Text>
-              <Text style={styles.dashboardLabel}>Completed</Text>
-            </View>
-            <View
+              <Text style={[
+                styles.dashboardLabel,
+                selectedFilter === "completed" && styles.activeDashboardLabel
+              ]}>Completed</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
               style={[
                 styles.dashboardCardItem,
                 styles.dashboardCardItemWithBorder,
+                selectedFilter === "overdue" && styles.activeDashboardCard,
               ]}
+              onPress={() => handleStatusSelect("overdue")}
             >
-              <Text style={styles.dashboardNumber}>
+              <Text style={[
+                styles.dashboardNumber,
+                selectedFilter === "overdue" && styles.activeDashboardNumber
+              ]}>
                 {tasks.filter((task) => task.overdue && !task.completed).length}
               </Text>
-              <Text style={styles.dashboardLabel}>Overdue</Text>
-            </View>
-            <View style={styles.dashboardCardItem}>
-              <Text style={styles.dashboardNumber}>{tasks.length}</Text>
-              <Text style={styles.dashboardLabel}>Total</Text>
-            </View>
+              <Text style={[
+                styles.dashboardLabel,
+                selectedFilter === "overdue" && styles.activeDashboardLabel
+              ]}>Overdue</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[
+                styles.dashboardCardItem,
+                selectedFilter === "all" && styles.activeDashboardCard,
+              ]}
+              onPress={() => handleStatusSelect("all")}
+            >
+              <Text style={[
+                styles.dashboardNumber,
+                selectedFilter === "all" && styles.activeDashboardNumber
+              ]}>
+                {tasks.length}
+              </Text>
+              <Text style={[
+                styles.dashboardLabel,
+                selectedFilter === "all" && styles.activeDashboardLabel
+              ]}>Total</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </View>
 
-      {/* Content */}
+      {/* Enhanced Content Section with better navigation */}
       <View
         style={[
           styles.content,
           viewMode === "matrix" ? styles.contentMatrix : styles.contentList,
         ]}
       >
+        {/* Loading State */}
         {isLoading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#6A009C" />
-            <Text style={styles.loadingText}>Loading tasks...</Text>
+            <SkeletonLoader type="tasks" count={viewMode === "matrix" ? 8 : 5} />
           </View>
-        ) : viewMode === "matrix" ? (
-          <EisenhowerMatrix
-            tasks={tasks}
-            onTaskPress={handleTaskPress}
-            onAddTask={handleAddTask}
-            onDeleteTask={handleDeleteTask}
-            onMarkComplete={handleMarkComplete}
-          />
         ) : (
-          <TaskListView
-            tasks={filteredTasks} // Use filtered tasks here
-            onTaskPress={handleTaskPress}
-            onDeleteTask={handleDeleteTask}
-            onMarkComplete={handleMarkComplete}
-            categories={categories}
-            selectedCategory={selectedCategory}
-            onCategoryChange={setSelectedCategory}
-          />
+          /* Content Views */
+          viewMode === "matrix" ? (
+            <EisenhowerMatrix
+              tasks={tasks}
+              onTaskPress={handleTaskPress}
+              onAddTask={handleAddTask}
+              onDeleteTask={handleDeleteTask}
+              onMarkComplete={handleMarkComplete}
+            />
+          ) : (
+            <TaskListView
+              tasks={filteredTasks}
+              onTaskPress={handleTaskPress}
+              onDeleteTask={handleDeleteTask}
+              onMarkComplete={handleMarkComplete}
+              categories={categories}
+              selectedCategory={selectedCategory}
+              onCategoryChange={setSelectedCategory}
+            />
+          )
         )}
       </View>
 
-      {/* Floating Add Task Button */}
+      {/* Enhanced Floating Action Button with better positioning */}
       <TouchableOpacity
-        style={styles.addTaskButton}
+        style={[
+          styles.addTaskButton,
+          { bottom: Platform.OS === "ios" ? 110 : 105 } // Better positioning to avoid navbar
+        ]}
         onPress={() => handleAddTask()}
       >
         <MaterialIcons name="add" size={28} color="#ffffffff" />
+        <View style={styles.fabRipple} />
       </TouchableOpacity>
 
       <Navbar activeRoute="ToDo" />
-    </View>
+      </SafeAreaView>
+    </>
   );
 };
 
@@ -560,15 +913,131 @@ const styles = StyleSheet.create({
   },
   calendarModal: {
     backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 20,
-    maxWidth: 350,
-    width: "100%",
+    borderRadius: 20,
+    padding: 24,
+    maxWidth: 400,
+    width: "95%",
+    maxHeight: "80%",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.25,
     shadowRadius: 20,
     elevation: 10,
+  },
+  calendarModalHeader: {
+    marginBottom: 20,
+  },
+  calendarControls: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  calendarNavButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: "#f8f9fa",
+  },
+  monthYearContainer: {
+    flex: 1,
+    alignItems: "center",
+  },
+  monthYearText: {
+    fontSize: 18,
+    fontFamily: "Inter-Bold",
+    color: "#495057",
+  },
+  todayHint: {
+    fontSize: 12,
+    fontFamily: "Inter-Regular",
+    color: "#6c757d",
+    marginTop: 2,
+  },
+  viewModeToggle: {
+    flexDirection: "row",
+    backgroundColor: "#f8f9fa",
+    borderRadius: 8,
+    padding: 2,
+  },
+  viewModeButton: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+    alignItems: "center",
+  },
+  activeViewModeButton: {
+    backgroundColor: "#AD00FF",
+  },
+  viewModeText: {
+    fontSize: 14,
+    fontFamily: "Inter-Medium",
+    color: "#6c757d",
+  },
+  activeViewModeText: {
+    color: "#fff",
+  },
+  taskIndicators: {
+    position: "absolute",
+    bottom: 2,
+    left: 0,
+    right: 0,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 2,
+  },
+  taskDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+  },
+  overdueDot: {
+    backgroundColor: "#e74c3c",
+  },
+  completedDot: {
+    backgroundColor: "#27ae60",
+  },
+  taskCount: {
+    fontSize: 8,
+    color: "#6c757d",
+    fontFamily: "Inter-Medium",
+  },
+  tasksPreview: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: "#e9ecef",
+  },
+  tasksPreviewTitle: {
+    fontSize: 14,
+    fontFamily: "Inter-SemiBold",
+    color: "#495057",
+    marginBottom: 12,
+  },
+  taskPreviewCard: {
+    backgroundColor: "#f8f9fa",
+    borderRadius: 8,
+    padding: 8,
+    marginRight: 8,
+    minWidth: 120,
+  },
+  taskPreviewTitle: {
+    fontSize: 12,
+    fontFamily: "Inter-Medium",
+    color: "#495057",
+    marginBottom: 4,
+  },
+  taskPreviewStatus: {
+    fontSize: 10,
+    fontFamily: "Inter-Regular",
+    color: "#6c757d",
+  },
+  completedStatus: {
+    color: "#27ae60",
+  },
+  overdueStatus: {
+    color: "#e74c3c",
   },
   calendarHeader: {
     flexDirection: "row",
@@ -579,11 +1048,6 @@ const styles = StyleSheet.create({
   monthNavButton: {
     padding: 8,
     borderRadius: 8,
-  },
-  monthYearText: {
-    fontSize: 18,
-    fontFamily: "Inter-Bold",
-    color: "#495057",
   },
   calendarGrid: {
     gap: 8,
@@ -742,17 +1206,30 @@ const styles = StyleSheet.create({
     borderRightWidth: 1,
     borderRightColor: "#e0e0e0",
   },
+  activeDashboardCard: {
+    backgroundColor: "#f0e6ff",
+    borderRadius: 8,
+    marginHorizontal: 2,
+  },
   dashboardNumber: {
     fontSize: 20,
     fontFamily: "Inter-Bold",
     color: "#6A009C",
     marginBottom: 4,
   },
+  activeDashboardNumber: {
+    color: "#AD00FF",
+    fontWeight: "bold",
+  },
   dashboardLabel: {
     fontSize: 12,
     fontFamily: "Inter-Medium",
     color: "#535151ff",
     textAlign: "center",
+  },
+  activeDashboardLabel: {
+    color: "#AD00FF",
+    fontWeight: "600",
   },
   dayText: {
     fontSize: 12,
@@ -801,15 +1278,21 @@ const styles = StyleSheet.create({
 
   content: {
     flex: 1,
-    paddingBottom: 100, // Space for navbar
+    paddingBottom: 120, // Enhanced space for navbar
   },
   contentMatrix: {
-    paddingTop: Platform.OS === "ios" ? 180 : 165, // Enough space for header + dashboard
+    paddingTop: Platform.OS === "ios" ? 190 : 175, // Better spacing for dashboard
     paddingHorizontal: 20,
   },
   contentList: {
-    paddingTop: Platform.OS === "ios" ? 180 : 165,
+    paddingTop: Platform.OS === "ios" ? 190 : 175,
     paddingHorizontal: 20,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
   },
   viewToggleContainer: {
     flexDirection: "row",
@@ -963,11 +1446,10 @@ const styles = StyleSheet.create({
   },
   addTaskButton: {
     position: "absolute",
-    bottom: 100, // Above the navbar
     right: 24,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     backgroundColor: "#6366F1",
     justifyContent: "center",
     alignItems: "center",
@@ -975,7 +1457,15 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.24,
     shadowRadius: 16,
-    elevation: 8,
+    elevation: 12,
+    zIndex: 1000,
+  },
+  fabRipple: {
+    position: "absolute",
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "rgba(255,255,255,0.1)",
   },
   // Dashboard styles
 
@@ -1014,18 +1504,137 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontFamily: "Inter-SemiBold",
   },
-
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
+  
+  // Search functionality styles
+  searchButton: {
+    marginRight: 12,
+    padding: 8,
+    borderRadius: 20,
   },
-  loadingText: {
-    marginTop: 16,
+  searchBarContainer: {
+    paddingHorizontal: 20,
+    paddingBottom: 15,
+  },
+  searchInputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
+    borderRadius: 25,
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    gap: 10,
+  },
+  searchInput: {
+    flex: 1,
     fontSize: 16,
-    color: "#6A009C",
+    fontFamily: "Inter-Regular",
+    color: "#333",
+  },
+  
+  // Date Tasks Modal styles
+  dateTasksModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "flex-end",
+  },
+  dateTasksModalContent: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: "80%",
+    paddingTop: 20,
+  },
+  dateTasksModalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingBottom: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+  },
+  dateTasksModalTitle: {
+    fontSize: 18,
+    fontFamily: "Inter-SemiBold",
+    color: "#333",
+  },
+  dateTasksModalCloseButton: {
+    padding: 8,
+  },
+  dateTaskItem: {
+    backgroundColor: "#fff",
+    marginHorizontal: 20,
+    marginVertical: 6,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#f0f0f0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  dateTaskItemHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 8,
+  },
+  dateTaskItemTitle: {
+    flex: 1,
+    fontSize: 16,
+    fontFamily: "Inter-SemiBold",
+    color: "#333",
+    marginRight: 12,
+  },
+  dateTaskItemStatus: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: "#f0f0f0",
+  },
+  dateTaskStatusCompleted: {
+    backgroundColor: "#d4edda",
+  },
+  dateTaskStatusOverdue: {
+    backgroundColor: "#f8d7da",
+  },
+  dateTaskItemStatusText: {
+    fontSize: 12,
     fontFamily: "Inter-Medium",
+    color: "#666",
+  },
+  dateTaskItemDescription: {
+    fontSize: 14,
+    fontFamily: "Inter-Regular",
+    color: "#666",
+    marginBottom: 8,
+    lineHeight: 20,
+  },
+  dateTaskItemFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  dateTaskItemCategory: {
+    fontSize: 12,
+    fontFamily: "Inter-Medium",
+    color: "#8B5CF6",
+  },
+  dateTaskItemTime: {
+    fontSize: 12,
+    fontFamily: "Inter-Regular",
+    color: "#999",
+  },
+  dateTasksEmptyState: {
+    padding: 40,
+    alignItems: "center",
+  },
+  dateTasksEmptyText: {
+    fontSize: 16,
+    fontFamily: "Inter-Regular",
+    color: "#999",
   },
 });
 

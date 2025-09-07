@@ -7,6 +7,10 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { OnboardingColors } from '../../constants/Colors';
+import { getSafeAreaConfig } from './utils/SafeAreaUtils';
 
 interface WelcomePage1Props {
   onLoginPress: () => void;
@@ -14,15 +18,22 @@ interface WelcomePage1Props {
 
 const WelcomePage1: React.FC<WelcomePage1Props> = ({ onLoginPress }) => {
   const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const isLandscape = width > height;
+  const safeAreaConfig = getSafeAreaConfig(insets, height, isLandscape);
 
   return (
-    <View style={[styles.slide, { 
-      width, 
-      minHeight: height, 
-      padding: isLandscape ? 10 : 20,
-      maxWidth: isLandscape ? '100%' : width
-    }]}>
+    <LinearGradient
+      colors={['#FAF5FF', '#F3E8FF'] as const}
+      style={[styles.slide, { 
+        width, 
+        minHeight: safeAreaConfig.minHeight, 
+        paddingTop: isLandscape ? 10 : 20,
+        paddingBottom: safeAreaConfig.paddingBottom,
+        paddingHorizontal: isLandscape ? 10 : 20,
+        maxWidth: isLandscape ? '100%' : width
+      }]}
+    >
       <View style={[styles.contentContainer, { 
         flex: 1,
         maxWidth: isLandscape ? '100%' : width * 0.9
@@ -47,7 +58,7 @@ const WelcomePage1: React.FC<WelcomePage1Props> = ({ onLoginPress }) => {
           <Text style={[styles.title, { 
             fontSize: isLandscape ? width * 0.02 : width * 0.05,
             marginBottom: isLandscape ? 3 : 10
-          }]}>Gets things done with Togetha</Text>
+          }]}>Get things done with Togetha</Text>
           <Text style={[styles.subtitle, { 
             fontSize: isLandscape ? width * 0.015 : width * 0.035, 
             maxWidth: isLandscape ? '100%' : width * 0.85,
@@ -58,9 +69,9 @@ const WelcomePage1: React.FC<WelcomePage1Props> = ({ onLoginPress }) => {
           </Text>
           <TouchableOpacity
             style={[styles.loginButton, { 
-              paddingVertical: isLandscape ? width * 0.005 : width * 0.025, 
+              paddingVertical: isLandscape ? width * 0.008 : width * 0.025, 
               paddingHorizontal: isLandscape ? width * 0.025 : width * 0.06, 
-              borderRadius: isLandscape ? width * 0.015 : width * 0.05,
+              borderRadius: isLandscape ? width * 0.02 : width * 0.05,
               marginTop: isLandscape ? 5 : 15
             }]}
             onPress={onLoginPress}
@@ -69,7 +80,7 @@ const WelcomePage1: React.FC<WelcomePage1Props> = ({ onLoginPress }) => {
           </TouchableOpacity>
         </View>
       </View>
-    </View>
+    </LinearGradient>
   );
 };
 
@@ -78,7 +89,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F1D3FF',
   },
   contentContainer: {
     flex: 1,
@@ -90,35 +100,54 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   topTitle: {
-    color: '#6A009C',
-    fontFamily: 'Lexend',
+    color: OnboardingColors.primary.main,
+    fontWeight: '800',
+    letterSpacing: 1,
   },
   welcomeImage: {
-    borderRadius: 10,
+    borderRadius: 20,
+    shadowColor: OnboardingColors.shadow.purple,
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
   },
   textSection: {
     alignItems: 'center',
     width: '100%',
   },
   title: {
-    fontFamily: 'Inter-Bold',
+    fontWeight: '700',
     textAlign: 'center',
-    color: '#A600F4',
+    color: OnboardingColors.primary.main,
+    letterSpacing: 0.5,
   },
   subtitle: {
-    fontFamily: 'Inter-Medium',
+    fontWeight: '500',
     textAlign: 'center',
-    color: '#000000',
+    color: OnboardingColors.text.secondary,
+    lineHeight: 24,
   },
   loginButton: {
     backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: '#A32EDA',
+    borderWidth: 2,
+    borderColor: OnboardingColors.primary.main,
     alignSelf: 'center',
+    shadowColor: OnboardingColors.shadow.light,
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 4,
   },
   loginButtonText: {
-    color: '#A32EDA',
-    fontFamily: 'Inter-Medium',
+    color: OnboardingColors.primary.main,
+    fontWeight: '600',
     textAlign: 'center',
   },
 });

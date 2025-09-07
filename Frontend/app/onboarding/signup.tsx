@@ -12,7 +12,11 @@ import {
   View,
   Animated,
   useWindowDimensions,
+  ActivityIndicator,
+  SafeAreaView,
 } from "react-native";
+import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { RootStackParamList } from "../navigation/AppNavigator";
 import Toast from "react-native-toast-message";
 import {
@@ -28,7 +32,20 @@ import {
   API_ENDPOINTS,
   getUserTimezone,
 } from "../../constants/ApiConfig";
+import { OnboardingColors } from "../../constants/Colors";
 import { showSuccessToast, showErrorToast } from "../utils/ToastUtils";
+import {
+  sendEmailVerification,
+  verifyEmailAndSignup,
+  validateEmail,
+  validateUsername,
+  validatePassword,
+  testServerConnectivity,
+} from '../services/EmailVerificationService';
+import EmailVerificationModal from '../components/EmailVerificationModal';
+import EnhancedLoadingScreen from '../components/EnhancedLoadingScreen';
+import { getEnhancedSafeAreaConfig, getStatusBarConfig, getSafeAreaContainerStyle, getPlatformShadow } from '../utils/SafeAreaUtils';
+import GoogleAuthService from "./service/GoogleAuthServiceWeb";
 
 // Add type declaration for global.isRunningInExpoClient
 declare global {
@@ -41,7 +58,11 @@ type SignUpScreenProp = NativeStackNavigationProp<RootStackParamList, "Signup">;
 export default function SignUp() {
   const navigation = useNavigation<SignUpScreenProp>();
   const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const isLandscape = width > height;
+  const safeAreaConfig = getEnhancedSafeAreaConfig(insets, height, isLandscape);
+  const statusBarConfig = getStatusBarConfig();
+  const safeAreaStyle = getSafeAreaContainerStyle();
   const [formData, setFormData] = useState({
     username: "",
     email: "",
@@ -49,30 +70,16 @@ export default function SignUp() {
     password2: "",
   });
   const [loading, setLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
+  const [showEmailVerification, setShowEmailVerification] = useState(false);
+  const [showLoadingScreen, setShowLoadingScreen] = useState(false);
+  const [emailVerificationLoading, setEmailVerificationLoading] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
 
   // Password visibility toggles
   const [showPassword1, setShowPassword1] = useState(false);
   const [showPassword2, setShowPassword2] = useState(false);
-
-  // Add this function to detect network connectivity
-  const checkNetworkConnectivity = async () => {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-      const response = await fetch("https://www.google.com", {
-        method: "HEAD",
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-      return response.status >= 200 && response.status < 300;
-    } catch (error) {
-      console.log("Network connectivity check failed:", error);
-      return false;
-    }
-  };
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({
@@ -89,30 +96,38 @@ export default function SignUp() {
     }
   };
 
-  const showToast = (message: string, type: "success" | "error" | "info") => {
-    Toast.show({
-      type: type,
-      text1:
-        type === "success" ? "Success" : type === "error" ? "Error" : "Info",
-      text2: message,
-      position: "top",
-      visibilityTime: 4000,
-    });
-  };
-
   const validateForm = () => {
+    // Validate username
     if (!formData.username.trim()) {
       showErrorToast("Please enter your username");
       return false;
     }
 
+    if (!validateUsername(formData.username)) {
+      showErrorToast("Username must be 3-30 characters long and contain only letters, numbers, and underscores");
+      return false;
+    }
+
+    // Validate email
     if (!formData.email.trim()) {
       showErrorToast("Please enter your email");
       return false;
     }
 
+    if (!validateEmail(formData.email)) {
+      showErrorToast("Please enter a valid email address");
+      return false;
+    }
+
+    // Validate password
     if (!formData.password1) {
       showErrorToast("Please enter a password");
+      return false;
+    }
+
+    const passwordValidation = validatePassword(formData.password1);
+    if (!passwordValidation.isValid) {
+      showErrorToast(passwordValidation.errors[0]);
       return false;
     }
 
@@ -124,474 +139,450 @@ export default function SignUp() {
     return true;
   };
 
-  const handleSignUpInitiate = () => {
-    if (validateForm()) {
-      setShowConfirmation(true);
-    }
-  };
+  const handleSignUpInitiate = async () => {
+    if (!validateForm()) return;
 
-  const handleSignUp = async () => {
-    setShowConfirmation(false);
     setLoading(true);
-
+    
     try {
-      // First check if device is connected to internet
-      const isConnected = await checkNetworkConnectivity();
-      if (!isConnected) {
-        showErrorToast(
-          "No internet connection. Please check your network settings."
-        );
+      // Test server connectivity first
+      const connectivityTest = await testServerConnectivity();
+      console.log('Connectivity test result:', connectivityTest);
+      
+      if (!connectivityTest.success) {
         setLoading(false);
+        showErrorToast(`Cannot connect to server: ${connectivityTest.message}`);
         return;
       }
-
-      const signupData = {
-        username: formData.username,
+      
+      // Send email verification
+      const result = await sendEmailVerification({
         email: formData.email,
-        password: formData.password1,
-        timezone: getUserTimezone(), // Get user's timezone
-      };
-
-      console.log("Sending data:", signupData);
-      console.log("API URL:", `${API_URL}${API_ENDPOINTS.SIGNUP}`);
-      console.log("Platform:", Platform.OS);
-      console.log(
-        "Running in Expo?",
-        global.isRunningInExpoClient ? "Yes" : "No"
-      );
-
-      // Add timeout to the fetch request
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-
-      const response = await fetch(`${API_URL}${API_ENDPOINTS.SIGNUP}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify(signupData),
-        signal: controller.signal,
+        username: formData.username,
       });
 
-      clearTimeout(timeoutId);
-      console.log("Response received, status:", response.status);
-
-      const data = await response.json();
-      console.log("Response data:", data);
-
-      if (response.ok) {
-        showSuccessToast("Account created successfully!");
-        // Save user data or token if provided
-        if (data.token) {
-          await AsyncStorage.setItem("userToken", data.token);
-        }
-        // Navigate to login or next screen
-        setTimeout(() => {
-          navigation.navigate("Login");
-        }, 1000);
+      if (result.success) {
+        setLoading(false);
+        setShowEmailVerification(true);
+        showSuccessToast("Verification code sent to your email!");
       } else {
-        // Handle server error responses
-        const errorMessage =
-          data.message || data.error || "Signup failed. Please try again.";
-        showErrorToast(errorMessage);
+        setLoading(false);
+        showErrorToast(result.message);
       }
     } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") {
-        showErrorToast("Request timed out. Server may be down or unreachable.");
-      } else if (
-        error instanceof TypeError &&
-        error.message === "Network request failed"
-      ) {
-        showErrorToast(
-          `Cannot connect to server. Please check that your backend is running at ${API_URL}`
-        );
-      } else {
-        showErrorToast(
-          `Error: ${error instanceof Error ? error.message : "Unknown error"}`
-        );
-      }
-    } finally {
       setLoading(false);
+      showErrorToast("Failed to send verification email. Please try again.");
+      console.error('Signup initiation error:', error);
     }
   };
 
+  const handleGoogleSignUp = async () => {
+    try {
+      setIsGoogleLoading(true);
+
+      const result = await GoogleAuthService.signInWithGoogle();
+
+      if (result.success && result.token) {
+        setIsGoogleLoading(false);
+        setShowLoadingScreen(true);
+        
+        showSuccessToast(`Welcome ${result.user?.name || 'User'}! 🎉`);
+        
+        // Show loading screen then navigate
+        setTimeout(() => {
+          setShowLoadingScreen(false);
+          navigation.reset({
+            index: 0,
+            routes: [{ name: "Home" }],
+          });
+        }, 2000);
+      } else {
+        throw new Error(result.error || 'Google sign-up failed');
+      }
+    } catch (error: any) {
+      console.error('Google sign-up error:', error);
+      showErrorToast(error.message || 'Google sign-up failed. Please try again.');
+    } finally {
+      setIsGoogleLoading(false);
+    }
+  };
+
+  const handleEmailVerification = async (verificationCode: string) => {
+    setEmailVerificationLoading(true);
+    
+    try {
+      const result = await verifyEmailAndSignup({
+        email: formData.email,
+        username: formData.username,
+        password: formData.password1,
+        verificationCode,
+      });
+
+      setEmailVerificationLoading(false);
+
+      if (result.success) {
+        setShowEmailVerification(false);
+        setShowLoadingScreen(true);
+        
+        showSuccessToast("Account created successfully!");
+        
+        // Show loading screen for 3 seconds
+        setTimeout(() => {
+          setShowLoadingScreen(false);
+          navigation.navigate("Login");
+        }, 3000);
+      } else {
+        showErrorToast(result.message);
+      }
+    } catch (error) {
+      setEmailVerificationLoading(false);
+      showErrorToast("Verification failed. Please try again.");
+    }
+  };
+
+  const handleResendVerification = async () => {
+    setResendLoading(true);
+    
+    try {
+      const result = await sendEmailVerification({
+        email: formData.email,
+        username: formData.username,
+      });
+
+      setResendLoading(false);
+
+      if (result.success) {
+        showSuccessToast("New verification code sent!");
+      } else {
+        showErrorToast(result.message);
+      }
+    } catch (error) {
+      setResendLoading(false);
+      showErrorToast("Failed to resend verification code.");
+    }
+  };
+
+  // Show loading screen if active
+  if (showLoadingScreen) {
+    return (
+      <EnhancedLoadingScreen 
+        message="Creating Your Account"
+        subMessage="Setting up your personalized workspace..."
+        showLogo={true}
+      />
+    );
+  }
+
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-    >
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={[
-          styles.scrollContainer,
-          { 
-            minHeight: height,
-            paddingVertical: isLandscape ? 10 : 0,
-          }
-        ]}
-        showsVerticalScrollIndicator={false}
-      >
-        <StatusBar barStyle="dark-content" />
-
-        <View style={[
-          styles.formContainer,
-          {
-            paddingHorizontal: isLandscape ? width * 0.1 : 20,
-            paddingTop: isLandscape ? 20 : 40,
-            maxWidth: isLandscape ? width : '100%',
-          }
-        ]}>
-          <Text style={[
-            styles.appName,
-            {
-              fontSize: isLandscape ? width * 0.03 : 28,
-              marginBottom: isLandscape ? 5 : 10,
-            }
-          ]}>Welcome onboard!</Text>
-          <Text style={[
-            styles.title,
-            {
-              fontSize: isLandscape ? width * 0.018 : 15,
-              marginBottom: isLandscape ? 15 : 20,
-            }
-          ]}>Let's help you meet up your tasks</Text>
-
-          <View style={[
-            styles.inputContainer,
-            { marginBottom: isLandscape ? 8 : 15 }
-          ]}>
-            <MaterialIcons
-              name="person"
-              size={isLandscape ? 18 : 20}
-              color="#7F8C8D"
-              style={styles.inputIcon}
-            />
-            <TextInput
-              style={[
-                styles.input,
-                { 
-                  padding: isLandscape ? 10 : 15,
-                  fontSize: isLandscape ? 14 : 15,
-                }
-              ]}
-              placeholder="Enter your username"
-              placeholderTextColor="#7F8C8D"
-              keyboardType="default"
-              autoCapitalize="none"
-              value={formData.username}
-              onChangeText={(text) => handleInputChange("username", text)}
-            />
-          </View>
-
-          <View style={[
-            styles.inputContainer,
-            { marginBottom: isLandscape ? 8 : 15 }
-          ]}>
-            <MaterialIcons
-              name="email"
-              size={isLandscape ? 18 : 20}
-              color="#7F8C8D"
-              style={styles.inputIcon}
-            />
-            <TextInput
-              style={[
-                styles.input,
-                { 
-                  padding: isLandscape ? 10 : 15,
-                  fontSize: isLandscape ? 14 : 15,
-                }
-              ]}
-              placeholder="Enter your email"
-              placeholderTextColor="#7F8C8D"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              value={formData.email}
-              onChangeText={(text) => handleInputChange("email", text)}
-            />
-          </View>
-
-          <View style={[
-            styles.inputContainer,
-            { marginBottom: isLandscape ? 8 : 15 }
-          ]}>
-            <MaterialIcons
-              name="lock"
-              size={isLandscape ? 18 : 20}
-              color="#7F8C8D"
-              style={styles.inputIcon}
-            />
-            <TextInput
-              style={[
-                styles.input,
-                { 
-                  padding: isLandscape ? 10 : 15,
-                  fontSize: isLandscape ? 14 : 15,
-                }
-              ]}
-              placeholder="Enter password"
-              placeholderTextColor="#7F8C8D"
-              secureTextEntry={!showPassword1}
-              value={formData.password1}
-              onChangeText={(text) => handleInputChange("password1", text)}
-            />
-            <TouchableOpacity
-              style={styles.passwordToggle}
-              onPress={() => togglePasswordVisibility("password1")}
-            >
-              <Ionicons
-                name={showPassword1 ? "eye-off" : "eye"}
-                size={isLandscape ? 20 : 22}
-                color="#7F8C8D"
-              />
-            </TouchableOpacity>
-          </View>
-
-          <View style={[
-            styles.inputContainer,
-            { marginBottom: isLandscape ? 8 : 15 }
-          ]}>
-            <MaterialIcons
-              name="lock"
-              size={isLandscape ? 18 : 20}
-              color="#7F8C8D"
-              style={styles.inputIcon}
-            />
-            <TextInput
-              style={[
-                styles.input,
-                { 
-                  padding: isLandscape ? 10 : 15,
-                  fontSize: isLandscape ? 14 : 15,
-                }
-              ]}
-              placeholder="Confirm password"
-              placeholderTextColor="#7F8C8D"
-              secureTextEntry={!showPassword2}
-              value={formData.password2}
-              onChangeText={(text) => handleInputChange("password2", text)}
-            />
-            <TouchableOpacity
-              style={styles.passwordToggle}
-              onPress={() => togglePasswordVisibility("password2")}
-            >
-              <Ionicons
-                name={showPassword2 ? "eye-off" : "eye"}
-                size={isLandscape ? 20 : 22}
-                color="#7F8C8D"
-              />
-            </TouchableOpacity>
-          </View>
-
-          <TouchableOpacity
-            style={[
-              styles.signUpButton, 
-              loading && styles.buttonDisabled,
-              {
-                paddingVertical: isLandscape ? 10 : 15,
-                marginTop: isLandscape ? 10 : 20,
-                marginBottom: isLandscape ? 10 : 20,
-              }
-            ]}
-            onPress={handleSignUpInitiate}
-            disabled={loading}
-          >
-            <Text style={[
-              styles.buttonText,
-              { fontSize: isLandscape ? 14 : 16 }
-            ]}>
-              {loading ? "Signing Up..." : "Sign Up"}
-            </Text>
-          </TouchableOpacity>
-
-          <View style={[
-            styles.orContainer,
-            { marginVertical: isLandscape ? 10 : 20 }
-          ]}>
-            <View style={styles.orLine} />
-            <Text style={[
-              styles.orText,
-              { fontSize: isLandscape ? 12 : 14 }
-            ]}>- OR SIGN UP WITH -</Text>
-            <View style={styles.orLine} />
-          </View>
-
-          <TouchableOpacity style={[
-            styles.googleButton,
-            {
-              paddingVertical: isLandscape ? 8 : 12,
-              marginBottom: isLandscape ? 10 : 20,
-            }
-          ]}>
-            <Image
-              source={require("../../assets/images/pngtree-google-internet-icon-vector-png-image_9183287.png")}
-              style={[
-                styles.googleLogo,
-                {
-                  width: isLandscape ? 20 : 24,
-                  height: isLandscape ? 20 : 24,
-                }
-              ]}
-            />
-            <Text style={[
-              styles.googleButtonText,
-              { 
-                fontSize: isLandscape ? 16 : 18,
-                marginLeft: isLandscape ? 8 : 10,
-              }
-            ]}>Google</Text>
-          </TouchableOpacity>
-
-          <View style={[
-            styles.footer,
-            { marginTop: isLandscape ? 10 : 20 }
-          ]}>
-            <Text style={[
-              styles.footerText,
-              { fontSize: isLandscape ? 13 : 15 }
-            ]}>Already have an account? </Text>
-            <TouchableOpacity onPress={() => navigation.navigate("Login")}>
-              <Text style={[
-                styles.linkText,
-                { fontSize: isLandscape ? 13 : 15 }
-              ]}>Sign In</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Confirmation Modal */}
-        <Modal
-          transparent={true}
-          visible={showConfirmation}
-          animationType="fade"
-          onRequestClose={() => setShowConfirmation(false)}
+    <>
+      <StatusBar {...statusBarConfig} />
+      <SafeAreaView style={[styles.safeArea, safeAreaStyle]}>
+        <LinearGradient
+          colors={['#FAF5FF', '#F3E8FF'] as const}
+          style={styles.container}
         >
-          <View style={styles.modalOverlay}>
-            <View style={[
-              styles.modalContent,
-              {
-                width: isLandscape ? "70%" : "90%",
-                maxWidth: isLandscape ? 500 : 400,
-              }
-            ]}>
+          <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+          >
+            <ScrollView
+              contentContainerStyle={[
+                styles.scrollContainer,
+                { 
+                  minHeight: safeAreaConfig.minHeight,
+                  paddingTop: safeAreaConfig.paddingTop,
+                  paddingBottom: safeAreaConfig.paddingBottom,
+                }
+              ]}
+              showsVerticalScrollIndicator={false}
+        >
+          <View style={[
+            styles.formContainer,
+            {
+              paddingHorizontal: isLandscape ? width * 0.1 : 24,
+              maxWidth: isLandscape ? width : '100%',
+            }
+          ]}>
+            {/* Header Section */}
+            <View style={styles.headerSection}>
               <Text style={[
-                styles.modalTitle,
-                { fontSize: isLandscape ? 18 : 20 }
-              ]}>Confirm Registration</Text>
+                styles.welcomeTitle,
+                {
+                  fontSize: isLandscape ? width * 0.035 : 32,
+                  marginBottom: isLandscape ? 8 : 12,
+                }
+              ]}>Create Account</Text>
               <Text style={[
-                styles.modalText,
-                { fontSize: isLandscape ? 14 : 16 }
+                styles.welcomeSubtitle,
+                {
+                  fontSize: isLandscape ? width * 0.02 : 16,
+                  marginBottom: isLandscape ? 20 : 32,
+                }
+              ]}>Join us and start organizing your life</Text>
+            </View>
+
+            {/* Form Section */}
+            <View style={styles.formSection}>
+              {/* Username Input */}
+              <View style={[
+                styles.inputContainer,
+                { marginBottom: isLandscape ? 12 : 16 }
               ]}>
-                Are you sure you want to create an account with the provided
-                information?
-              </Text>
-              <View style={styles.modalButtons}>
+                <MaterialIcons
+                  name="person-outline"
+                  size={isLandscape ? 20 : 22}
+                  color={OnboardingColors.input.icon}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={[
+                    styles.input,
+                    { 
+                      padding: isLandscape ? 12 : 16,
+                      fontSize: isLandscape ? 14 : 16,
+                    }
+                  ]}
+                  placeholder="Username"
+                  placeholderTextColor={OnboardingColors.input.placeholder}
+                  autoCapitalize="none"
+                  value={formData.username}
+                  onChangeText={(text) => handleInputChange("username", text)}
+                  editable={!loading && !isGoogleLoading}
+                />
+              </View>
+
+              {/* Email Input */}
+              <View style={[
+                styles.inputContainer,
+                { marginBottom: isLandscape ? 12 : 16 }
+              ]}>
+                <MaterialIcons
+                  name="email"
+                  size={isLandscape ? 20 : 22}
+                  color={OnboardingColors.input.icon}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={[
+                    styles.input,
+                    { 
+                      padding: isLandscape ? 12 : 16,
+                      fontSize: isLandscape ? 14 : 16,
+                    }
+                  ]}
+                  placeholder="Email address"
+                  placeholderTextColor={OnboardingColors.input.placeholder}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  value={formData.email}
+                  onChangeText={(text) => handleInputChange("email", text)}
+                  editable={!loading && !isGoogleLoading}
+                />
+              </View>
+
+              {/* Password Input */}
+              <View style={[
+                styles.inputContainer,
+                { marginBottom: isLandscape ? 12 : 16 }
+              ]}>
+                <MaterialIcons
+                  name="lock-outline"
+                  size={isLandscape ? 20 : 22}
+                  color={OnboardingColors.input.icon}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={[
+                    styles.input,
+                    { 
+                      padding: isLandscape ? 12 : 16,
+                      fontSize: isLandscape ? 14 : 16,
+                      paddingRight: 50,
+                    }
+                  ]}
+                  placeholder="Password"
+                  placeholderTextColor={OnboardingColors.input.placeholder}
+                  secureTextEntry={!showPassword1}
+                  value={formData.password1}
+                  onChangeText={(text) => handleInputChange("password1", text)}
+                  editable={!loading && !isGoogleLoading}
+                />
                 <TouchableOpacity
-                  style={[styles.modalButton, styles.cancelButton]}
-                  onPress={() => setShowConfirmation(false)}
+                  style={styles.passwordToggle}
+                  onPress={() => togglePasswordVisibility("password1")}
+                  disabled={loading || isGoogleLoading}
                 >
-                  <Text style={[
-                    styles.cancelButtonText,
-                    { fontSize: isLandscape ? 14 : 16 }
-                  ]}>Cancel</Text>
+                  <MaterialIcons
+                    name={showPassword1 ? "visibility" : "visibility-off"}
+                    size={isLandscape ? 18 : 20}
+                    color={OnboardingColors.input.icon}
+                  />
                 </TouchableOpacity>
+              </View>
+
+              {/* Confirm Password Input */}
+              <View style={[
+                styles.inputContainer,
+                { marginBottom: isLandscape ? 16 : 24 }
+              ]}>
+                <MaterialIcons
+                  name="lock-outline"
+                  size={isLandscape ? 20 : 22}
+                  color={OnboardingColors.input.icon}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={[
+                    styles.input,
+                    { 
+                      padding: isLandscape ? 12 : 16,
+                      fontSize: isLandscape ? 14 : 16,
+                      paddingRight: 50,
+                    }
+                  ]}
+                  placeholder="Confirm password"
+                  placeholderTextColor={OnboardingColors.input.placeholder}
+                  secureTextEntry={!showPassword2}
+                  value={formData.password2}
+                  onChangeText={(text) => handleInputChange("password2", text)}
+                  editable={!loading && !isGoogleLoading}
+                />
                 <TouchableOpacity
-                  style={[styles.modalButton, styles.confirmButton]}
-                  onPress={handleSignUp}
+                  style={styles.passwordToggle}
+                  onPress={() => togglePasswordVisibility("password2")}
+                  disabled={loading || isGoogleLoading}
+                >
+                  <MaterialIcons
+                    name={showPassword2 ? "visibility" : "visibility-off"}
+                    size={isLandscape ? 18 : 20}
+                    color={OnboardingColors.input.icon}
+                  />
+                </TouchableOpacity>
+              </View>
+
+              {/* Sign Up Button */}
+              <TouchableOpacity
+                style={[
+                  styles.signUpButton,
+                  {
+                    paddingVertical: isLandscape ? 12 : 16,
+                    marginBottom: isLandscape ? 12 : 16,
+                    opacity: (loading || isGoogleLoading) ? 0.7 : 1,
+                  }
+                ]}
+                onPress={handleSignUpInitiate}
+                disabled={loading || isGoogleLoading}
+              >
+                {loading ? (
+                  <ActivityIndicator color={OnboardingColors.text.white} size="small" />
+                ) : (
+                  <Text style={[
+                    styles.buttonText,
+                    { fontSize: isLandscape ? 15 : 16 }
+                  ]}>Create Account</Text>
+                )}
+              </TouchableOpacity>
+
+              {/* Divider */}
+              <View style={[
+                styles.divider,
+                { marginVertical: isLandscape ? 12 : 20 }
+              ]}>
+                <View style={styles.dividerLine} />
+                <Text style={[
+                  styles.dividerText,
+                  { fontSize: isLandscape ? 12 : 13 }
+                ]}>Or sign up with</Text>
+                <View style={styles.dividerLine} />
+              </View>
+
+              {/* Google Sign-Up Button */}
+              <TouchableOpacity 
+                style={[
+                  styles.googleButton,
+                  {
+                    paddingVertical: isLandscape ? 10 : 14,
+                    marginBottom: isLandscape ? 12 : 20,
+                    opacity: (loading || isGoogleLoading) ? 0.7 : 1,
+                  }
+                ]}
+                onPress={handleGoogleSignUp}
+                disabled={loading || isGoogleLoading}
+              >
+                {isGoogleLoading ? (
+                  <ActivityIndicator color={OnboardingColors.text.primary} size="small" />
+                ) : (
+                  <>
+                    <Image
+                      source={require("../../assets/images/pngtree-google-internet-icon-vector-png-image_9183287.png")}
+                      style={[
+                        styles.googleLogo,
+                        {
+                          width: isLandscape ? 20 : 22,
+                          height: isLandscape ? 20 : 22,
+                        }
+                      ]}
+                    />
+                    <Text style={[
+                      styles.googleButtonText,
+                      { 
+                        fontSize: isLandscape ? 14 : 15,
+                        marginLeft: isLandscape ? 8 : 10,
+                      }
+                    ]}>Continue with Google</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              {/* Footer */}
+              <View style={[
+                styles.footer,
+                { marginTop: isLandscape ? 12 : 24 }
+              ]}>
+                <Text style={[
+                  styles.footerText,
+                  { fontSize: isLandscape ? 13 : 14 }
+                ]}>Already have an account? </Text>
+                <TouchableOpacity 
+                  onPress={() => navigation.navigate("Login")}
+                  disabled={loading || isGoogleLoading}
                 >
                   <Text style={[
-                    styles.confirmButtonText,
-                    { fontSize: isLandscape ? 14 : 16 }
-                  ]}>Confirm</Text>
+                    styles.linkText,
+                    { fontSize: isLandscape ? 13 : 14 }
+                  ]}>Sign In</Text>
                 </TouchableOpacity>
               </View>
             </View>
           </View>
-        </Modal>
 
-        <Toast />
-      </ScrollView>
-    </KeyboardAvoidingView>
+          {/* Email Verification Modal */}
+          <EmailVerificationModal
+            visible={showEmailVerification}
+            email={formData.email}
+            username={formData.username}
+            onClose={() => setShowEmailVerification(false)}
+            onVerify={handleEmailVerification}
+            onResend={handleResendVerification}
+            loading={emailVerificationLoading}
+            resendLoading={resendLoading}
+          />
+
+          <Toast />
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </LinearGradient>
+    </SafeAreaView>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  // Existing styles remain the same
-  passwordToggle: {
-    padding: 8,
-    position: "absolute",
-    right: 10,
-  },
-  modalOverlay: {
+  safeArea: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  modalContent: {
-    backgroundColor: "white",
-    borderRadius: 12,
-    padding: 22,
-    width: "90%",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontFamily: "Inter-Bold",
-    color: "#6A009C",
-    marginBottom: 15,
-    textAlign: "center",
-  },
-  modalText: {
-    fontSize: 16,
-    fontFamily: "Inter-Regular",
-    color: "#2C3E50",
-    marginBottom: 20,
-    textAlign: "center",
-    lineHeight: 22,
-  },
-  modalButtons: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    width: "100%",
-  },
-  modalButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    flex: 1,
-    marginHorizontal: 5,
-  },
-  cancelButton: {
-    backgroundColor: "#F1F1F1",
-  },
-  cancelButtonText: {
-    color: "#333",
-    fontSize: 16,
-    fontFamily: "Inter-Medium",
-    textAlign: "center",
-  },
-  confirmButton: {
-    backgroundColor: "#A32EDA",
-  },
-  confirmButtonText: {
-    color: "white",
-    fontSize: 16,
-    fontFamily: "Inter-Medium",
-    textAlign: "center",
-  },
-  buttonDisabled: {
-    opacity: 0.6,
   },
   container: {
     flex: 1,
-    backgroundColor: "#F1D3FF",
   },
   scrollContainer: {
     flexGrow: 1,
@@ -603,145 +594,131 @@ const styles = StyleSheet.create({
     alignItems: "center",
     width: "100%",
   },
-  appName: {
-    fontSize: 28,
-    fontFamily: "Inter-Bold",
-    color: "#6A009C",
-    textAlign: "center",
-    marginBottom: 10,
-  },
-  title: {
-    fontSize: 15,
-    fontFamily: "Inter-Regular",
-    color: "#2C3E50",
+  headerSection: {
+    alignItems: "center",
     marginBottom: 20,
+  },
+  welcomeTitle: {
+    fontSize: 32,
+    fontWeight: "800",
+    color: OnboardingColors.primary.main,
     textAlign: "center",
+    marginBottom: 8,
+  },
+  welcomeSubtitle: {
+    fontSize: 16,
+    color: OnboardingColors.text.secondary,
+    textAlign: "center",
+    fontWeight: "400",
+  },
+  formSection: {
+    width: "100%",
+    maxWidth: 400,
   },
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F5F6F8",
-    borderRadius: 10,
-    marginBottom: 15,
-    paddingHorizontal: 10,
-    position: "relative",
-    width: "100%",
-    maxWidth: 400,
+    backgroundColor: OnboardingColors.input.background,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: OnboardingColors.input.border,
+    paddingHorizontal: 16,
+    shadowColor: OnboardingColors.shadow.light,
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   inputIcon: {
-    marginRight: 10,
+    marginRight: 12,
   },
   input: {
     flex: 1,
-    padding: 15,
-    fontSize: 15,
-    color: "#2C3E50",
-    fontFamily: "Inter-Regular",
+    fontSize: 16,
+    color: OnboardingColors.text.primary,
+    fontWeight: "500",
+  },
+  passwordToggle: {
+    padding: 8,
+    marginLeft: 8,
   },
   signUpButton: {
-    backgroundColor: "#A32EDA",
-    paddingVertical: 15,
-    borderRadius: 10,
-    marginTop: 20,
-    marginBottom: 20,
-    width: "100%",
-    maxWidth: 400,
+    backgroundColor: OnboardingColors.primary.main,
+    borderRadius: 16,
+    shadowColor: OnboardingColors.shadow.purple,
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   buttonText: {
-    color: "#FFFFFF",
+    color: OnboardingColors.text.white,
     fontSize: 16,
-    fontFamily: "Inter-Bold",
+    fontWeight: "700",
     textAlign: "center",
   },
-  orContainer: {
+  divider: {
     flexDirection: "row",
     alignItems: "center",
-    marginVertical: 20,
     width: "100%",
-    maxWidth: 400,
   },
-  orLine: {
+  dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: "#E0E0E0",
+    backgroundColor: OnboardingColors.input.border,
   },
-  orText: {
-    marginHorizontal: 10,
-    color: "#7F8C8D",
-    fontSize: 14,
-    fontFamily: "Inter-Regular",
+  dividerText: {
+    marginHorizontal: 16,
+    color: OnboardingColors.text.light,
+    fontSize: 13,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   googleButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#fff",
-    paddingVertical: 12,
-    borderRadius: 10,
-    marginBottom: 20,
+    backgroundColor: OnboardingColors.button.google,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#E0E0E0",
-    width: "100%",
-    maxWidth: 400,
+    borderColor: OnboardingColors.button.googleBorder,
+    shadowColor: OnboardingColors.shadow.light,
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   googleLogo: {
-    width: 24,
-    height: 24,
+    resizeMode: "contain",
   },
   googleButtonText: {
-    marginLeft: 10,
-    color: "#333333",
-    fontSize: 18,
-    fontFamily: "Inter-Bold",
+    color: OnboardingColors.text.primary,
+    fontSize: 15,
+    fontWeight: "600",
   },
   footer: {
     flexDirection: "row",
     justifyContent: "center",
-    marginTop: 20,
-    width: "100%",
-    maxWidth: 400,
+    alignItems: "center",
   },
   footerText: {
-    color: "#7F8C8D",
-    fontSize: 15,
+    color: OnboardingColors.text.secondary,
+    fontSize: 14,
+    fontWeight: "400",
   },
   linkText: {
-    color: "#AD00FF",
-    fontSize: 15,
-    fontFamily: "Inter-Bold",
-  },
-  toast: {
-    position: "absolute",
-    top: 50,
-    left: 20,
-    right: 20,
-    backgroundColor: "#333",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 8,
-    zIndex: 1000,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    elevation: 5,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-  },
-  successToast: {
-    backgroundColor: "#60A760",
-  },
-  errorToast: {
-    backgroundColor: "#E74C3C",
-  },
-  toastIcon: {
-    marginRight: 8,
-  },
-  toastText: {
-    color: "white",
+    color: OnboardingColors.primary.main,
     fontSize: 14,
-    fontFamily: "Inter-Medium",
-    textAlign: "center",
+    fontWeight: "700",
   },
 });

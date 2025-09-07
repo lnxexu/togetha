@@ -1,4 +1,30 @@
 
+class CSRFExemptAPIMiddleware:
+    """
+    Middleware to exempt API endpoints from CSRF checks
+    """
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        # Exempt API endpoints from CSRF
+        api_paths = [
+            '/users/',
+            '/api/',
+            '/login/',
+            '/signup/',
+            '/api-token-auth/',
+            '/test_token/',
+            '/validate_token/',
+        ]
+        
+        if any(request.path.startswith(path) for path in api_paths):
+            setattr(request, '_dont_enforce_csrf_checks', True)
+        
+        response = self.get_response(request)
+        return response
+
+
 class DebugAuthMiddleware:
     """
     Middleware to debug authentication issues
@@ -41,15 +67,20 @@ class DebugAuthMiddleware:
                 except Exception as e:
                     print(f"Error processing token: {str(e)}")
         else:
-            print("No authorization header found in request")
-            # Only log headers in debug mode to avoid security issues
-            print(f"Available headers: {request.META.keys()}")
+            # Only log for endpoints that typically require authentication
+            auth_required_paths = ['/users/profile/', '/users/progress/', '/users/session/']
+            if any(request.path.startswith(path) for path in auth_required_paths):
+                print("No authorization header found for authenticated endpoint")
         
         response = self.get_response(request)
         
-        if response.status_code >= 400:
+        if response.status_code >= 400 and auth_header:
             print(f"User authenticated: {request.user.is_authenticated}")
         
-        # Log response status
-        print(f"Response status: {response.status_code}")
+        # Only log response status for errors
+        if response.status_code >= 400:
+            print(f"Response status: {response.status_code}")
+            if response.status_code >= 500:
+                print(f"Server error on path: {request.path}")
+        
         return response

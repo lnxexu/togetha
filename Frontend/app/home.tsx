@@ -24,6 +24,9 @@ import { API_URL, API_ENDPOINTS } from "../constants/ApiConfig";
 import AuthService from "./onboarding/service/AuthService";
 // taskService for managing tasks
 import taskService from "./task-management/services/taskService";
+import SkeletonLoader from "./components/SkeletonLoader";
+import { notesCountUtils } from "./utils/NotesCountUtils";
+import { folderCacheUtils } from "./utils/FolderCacheUtils";
 
 const { width } = Dimensions.get("window");
 
@@ -156,6 +159,8 @@ export default function Home() {
     const unsubscribe = navigation.addListener("focus", () => {
       // Force refresh all data when screen is focused
       refreshAllData();
+      // Also refresh notes count specifically
+      refreshNotesCount();
     });
 
     const refreshAllData = async () => {
@@ -312,34 +317,21 @@ export default function Home() {
         setLoadingQuickAccess(true);
 
         // Try to get cached count first for immediate display
-        const cachedCount = await AsyncStorage.getItem("notesCount");
-        if (cachedCount) {
-          setNotesCount(parseInt(cachedCount));
-        }
+        const cachedCount = await notesCountUtils.getCachedCount();
+        setNotesCount(cachedCount);
 
-        const token = await AsyncStorage.getItem("authToken");
-        if (!token) {
-          navigation.navigate("Login");
-          return;
-        }
-
-        const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTES}`, {
-          headers: {
-            Authorization: `Token ${token}`,
-            "Cache-Control": "no-cache",
-          },
+        // Subscribe to notes count changes
+        const unsubscribe = notesCountUtils.subscribe((newCount) => {
+          setNotesCount(newCount);
         });
 
-        if (response.ok) {
-          const notes = await response.json();
-          const count = notes.length;
-          setNotesCount(count);
+        // Fetch fresh count from server
+        await notesCountUtils.refreshCount();
 
-          // Cache the count for faster loading next time
-          await AsyncStorage.setItem("notesCount", count.toString());
-        }
+        // Return cleanup function
+        return unsubscribe;
       } catch (error) {
-        console.error("Error fetching notes count:", error);
+        console.error("Error setting up notes count:", error);
       } finally {
         setLoadingQuickAccess(false);
       }
@@ -347,6 +339,15 @@ export default function Home() {
 
     fetchNotesCount();
   }, []);
+
+  // Function to refresh notes count - can be called when returning from notes screen
+  const refreshNotesCount = async () => {
+    try {
+      await notesCountUtils.refreshCount();
+    } catch (error) {
+      console.error("Error refreshing notes count:", error);
+    }
+  };
 
   const handleTaskAction = async (action: string, taskId: string) => {
   try {
@@ -560,7 +561,7 @@ export default function Home() {
         const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
         try {
-          // Fetch notes to organize by folders
+          // Fetch actual folders from the database
           const response = await fetch(
             `${API_URL}${API_ENDPOINTS.NOTE_FOLDERS}`,
             {
@@ -575,62 +576,44 @@ export default function Home() {
           clearTimeout(timeoutId);
 
           if (!response.ok) {
-            throw new Error("Failed to fetch notes for folders");
+            throw new Error("Failed to fetch folders");
           }
 
-          const notes = await response.json();
+          const folders = await response.json();
 
-          // Organize notes by folders/categories
-          const folderMap = new Map();
-
-          // Add unorganized notes folder first
-          folderMap.set("Unorganized", {
-            id: "unorganized",
-            name: "Unorganized",
-            color: "#94A3B8", // Gray color for unorganized
-            notes: [],
-            count: 0,
-          });
-
-          // Process notes and categorize them
-          notes.forEach((note: any) => {
-            if (note.tags && note.tags.length > 0) {
-              // Use the first tag as the folder
-              const folderTag = note.tags[0];
-              const folderName =
-                typeof folderTag === "object" ? folderTag.name : folderTag;
-
-              if (!folderMap.has(folderName)) {
-                folderMap.set(folderName, {
-                  id: folderName.toLowerCase().replace(/\s+/g, "-"),
-                  name: folderName,
-                  color: getFolderColor(folderName),
-                  notes: [],
-                  count: 0,
-                });
-              }
-
-              const folder = folderMap.get(folderName);
-              folder.notes.push(note);
-              folder.count++;
-            } else {
-              // Add to unorganized folder
-              const unorganizedFolder = folderMap.get("Unorganized");
-              unorganizedFolder.notes.push(note);
-              unorganizedFolder.count++;
+          // Fetch notes to get accurate count per folder
+          const notesResponse = await fetch(
+            `${API_URL}${API_ENDPOINTS.NOTES}`,
+            {
+              headers: {
+                Authorization: `Token ${token}`,
+                "Cache-Control": "no-cache",
+              },
+              signal: controller.signal,
             }
-          });
+          );
 
-          // Convert map to array and sort by most recent activity
-          const foldersArray = Array.from(folderMap.values())
-            .filter((folder) => folder.count > 0) // Only show folders with notes
-            .sort((a, b) => {
-              // Sort unorganized first, then by count
-              if (a.name === "Unorganized") return -1;
-              if (b.name === "Unorganized") return 1;
-              return b.count - a.count;
-            })
-            .slice(0, 5); // Get top 5 folders
+          let notesCounts: Record<string, number> = {};
+
+          if (notesResponse.ok) {
+            const notes = await notesResponse.json();
+            // Count notes per folder
+            notesCounts = notes.reduce((counts: Record<string, number>, note: any) => {
+              const folderId = note.folder ? note.folder.toString() : null;
+              if (folderId) {
+                counts[folderId] = (counts[folderId] || 0) + 1;
+              }
+              return counts;
+            }, {});
+          }
+
+          // Transform folders data to match the expected format with accurate counts
+          const foldersArray = folders.map((folder: any) => ({
+            id: folder.id,
+            name: folder.name,
+            color: getFolderColor(folder.name),
+            count: notesCounts[folder.id.toString()] || 0,
+          }));
 
           setNotesFolders(foldersArray);
 
@@ -654,13 +637,22 @@ export default function Home() {
       }
     };
 
+    // Initial fetch
     fetchNotesFolders();
+
+    // Subscribe to cache invalidation events
+    const unsubscribe = folderCacheUtils.subscribe(() => {
+      fetchNotesFolders();
+    });
 
     // Set up a refresh interval for folders
     const refreshInterval = setInterval(fetchNotesFolders, 60000); // Refresh every minute
 
     // Clean up on component unmount
-    return () => clearInterval(refreshInterval);
+    return () => {
+      clearInterval(refreshInterval);
+      unsubscribe();
+    };
   }, []);
 
   // Helper function to get folder color based on folder name
@@ -803,12 +795,15 @@ export default function Home() {
                     "todayTasksCount",
                   ]);
 
-                  // Re-run all the fetch useEffects
+                  // Re-run all the fetch useEffects and refresh notes count
                   const token = await AsyncStorage.getItem("authToken");
                   if (!token) {
                     navigation.navigate("Login");
                     return;
                   }
+
+                  // Explicitly refresh notes count
+                  await notesCountUtils.refreshCount();
 
                   // The useEffects will run automatically
                   setLoading(false);
@@ -824,9 +819,7 @@ export default function Home() {
                 <Text style={styles.sectionTitle}>Quick Overview</Text>
               </View>
               {loadingQuickAccess ? (
-                <View style={styles.loaderContainer}>
-                  <ActivityIndicator size="large" color="#6A009C" />
-                </View>
+                <SkeletonLoader type="dashboard" />
               ) : (
                 <View style={styles.quickCardsGrid}>
                   {/* Quick Stats */}
@@ -890,16 +883,14 @@ export default function Home() {
                 <Text style={styles.sectionTitle}>Today's Focus</Text>
                 <TouchableOpacity
                   onPress={() =>
-                    navigation.navigate("AllItemsView", { viewType: "tasks" })
+                    navigation.navigate("AllItemsView", { viewType: "urgent-tasks" })
                   }
                 >
                   <Text style={styles.seeAllText}>See All</Text>
                 </TouchableOpacity>
               </View>
               {loadingTasks ? (
-                <View style={styles.loaderContainer}>
-                  <ActivityIndicator size="large" color="#6A009C" />
-                </View>
+                <SkeletonLoader type="tasks" count={3} />
               ) : tasksError ? (
                 <View style={styles.errorContainer}>
                   <Text style={styles.errorText}>{tasksError}</Text>
@@ -1111,9 +1102,7 @@ export default function Home() {
                 </TouchableOpacity>
               </View>
               {loadingFolders ? (
-                <View style={styles.loaderContainer}>
-                  <ActivityIndicator size="large" color="#6A009C" />
-                </View>
+                <SkeletonLoader type="notes" count={3} />
               ) : foldersError ? (
                 <View style={styles.errorContainer}>
                   <Text style={styles.errorText}>{foldersError}</Text>
@@ -1130,48 +1119,63 @@ export default function Home() {
                   </TouchableOpacity>
                 </View>
               ) : (
-                <View style={styles.foldersContainer}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.foldersHorizontalContainer}
+                >
                   {notesFolders.map((folder, index) => (
                     <TouchableOpacity
                       key={folder.id}
                       style={[
-                        styles.folderCard,
+                        styles.folderCardHorizontal,
                         { backgroundColor: `${folder.color}15` },
+                        index === 0 && styles.firstFolderCard,
                       ]}
                       activeOpacity={0.8}
-                      onPress={() => navigation.navigate("Notes")}
+                      onPress={() => navigation.navigate("Notes", { 
+                        folderId: folder.id.toString(), 
+                        folderName: folder.name 
+                      })}
                     >
-                      <View style={styles.folderContent}>
-                        <View
-                          style={[
-                            styles.folderIcon,
-                            { backgroundColor: `${folder.color}30` },
-                          ]}
-                        >
-                          <MaterialIcons
-                            name="folder"
-                            size={24}
-                            color={folder.color}
-                          />
-                        </View>
-                        <View style={styles.folderInfo}>
-                          <Text style={styles.folderTitle} numberOfLines={1}>
-                            {folder.name}
-                          </Text>
-                          <Text style={styles.folderCount}>
-                            {folder.count}{" "}
-                            {folder.count === 1 ? "note" : "notes"}
-                          </Text>
-                        </View>
-                      </View>
-                      <MaterialIcons
-                        name="chevron-right"
-                        size={20}
-                        color={folder.color}
+                      {/* Colored left border accent */}
+                      <View
+                        style={[
+                          styles.folderBorderAccent,
+                          { backgroundColor: folder.color },
+                        ]}
                       />
+                      <View
+                        style={[
+                          styles.folderIconHorizontal,
+                          { backgroundColor: `${folder.color}25` },
+                        ]}
+                      >
+                        <MaterialIcons
+                          name="folder"
+                          size={28}
+                          color={folder.color}
+                        />
+                      </View>
+                      <View style={styles.folderInfoHorizontal}>
+                        <Text style={styles.folderTitleHorizontal} numberOfLines={1}>
+                          {folder.name}
+                        </Text>
+                        <Text style={styles.folderCountHorizontal}>
+                          {folder.count}{" "}
+                          {folder.count === 1 ? "note" : "notes"}
+                        </Text>
+                      </View>
+                      <View style={styles.folderArrowContainer}>
+                        <MaterialIcons
+                          name="arrow-forward-ios"
+                          size={16}
+                          color={folder.color}
+                        />
+                      </View>
                     </TouchableOpacity>
                   ))}
-                </View>
+                </ScrollView>
               )}
             </View>
 
@@ -1707,6 +1711,11 @@ const styles = StyleSheet.create({
   foldersContainer: {
     paddingHorizontal: 24,
   },
+  foldersGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
   folderCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
@@ -1718,7 +1727,6 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 5,
     borderWidth: 1,
-    borderColor: "rgba(226, 232, 240, 0.3)",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -1765,6 +1773,80 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 5,
     zIndex: 1000,
+  },
+  // Horizontal Folders Styles
+  foldersHorizontalContainer: {
+    paddingLeft: 24,
+    paddingRight: 12,
+    paddingBottom: 4,
+  },
+  folderCardHorizontal: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 18,
+    marginRight: 12,
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 8,
+    borderWidth: 2,
+    borderColor: "rgba(139, 92, 246, 0.15)",
+    width: 160,
+    minHeight: 120,
+    position: "relative",
+    overflow: "hidden",
+  },
+  firstFolderCard: {
+    marginLeft: 0,
+  },
+  folderIconHorizontal: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 12,
+    alignSelf: "center",
+  },
+  folderInfoHorizontal: {
+    flex: 1,
+    alignItems: "center",
+  },
+  folderTitleHorizontal: {
+    fontSize: 14,
+    fontFamily: "Inter-Bold",
+    color: "#1E293B",
+    marginBottom: 4,
+    lineHeight: 18,
+    textAlign: "center",
+  },
+  folderCountHorizontal: {
+    fontSize: 12,
+    color: "#64748B",
+    fontFamily: "Inter-Medium",
+    textAlign: "center",
+  },
+  folderArrowContainer: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.8)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  folderBorderAccent: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    borderTopLeftRadius: 20,
+    borderBottomLeftRadius: 20,
+    zIndex: 1,
   },
 });
 function fetchTasks() {

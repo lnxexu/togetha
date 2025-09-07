@@ -22,11 +22,11 @@ app.autodiscover_tasks(['task_manager', 'scheduler', 'notifications'])
 app.conf.beat_schedule = {
     'check-due-tasks-every-hour': {
         'task': 'scheduler.tasks.check_due_tasks',
-        'schedule': crontab(minute=22),  # Run every hour at minute 0
+        'schedule': crontab(minute=0),  # Run every hour at minute 0
     },
     'check-due-tasks-midnight': {
         'task': 'scheduler.tasks.check_due_tasks',
-        'schedule': crontab(hour=0, minute=10),  # Run daily at 12 AM
+        'schedule': crontab(hour=0, minute=0),  # Run daily at 12 AM
     },
     'check-due-tasks-morning': {
         'task': 'scheduler.tasks.check_due_tasks',
@@ -38,7 +38,7 @@ app.conf.beat_schedule = {
     },
     'check-due-tasks-evening': {
         'task': 'scheduler.tasks.check_due_tasks',
-        'schedule': crontab(hour=21, minute=0),  # Run daily at 6 PM
+        'schedule': crontab(hour=18, minute=0),  # Run daily at 6 PM
     },
     'check-upcoming-task-reminders': {
         'task': 'scheduler.tasks.check_upcoming_task_reminders',

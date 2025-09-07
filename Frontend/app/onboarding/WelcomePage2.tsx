@@ -5,19 +5,30 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LearningSVG from '../../assets/illustrations/undraw_ideas_vn7a (1).svg';
+import { OnboardingColors } from '../../constants/Colors';
+import { getSafeAreaConfig } from './utils/SafeAreaUtils';
 
 const WelcomePage2: React.FC = () => {
   const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const isLandscape = width > height;
+  const safeAreaConfig = getSafeAreaConfig(insets, height, isLandscape);
 
   return (
-    <View style={[styles.slide, { 
-      width, 
-      minHeight: height, 
-      padding: isLandscape ? 10 : 20,
-      maxWidth: isLandscape ? '100%' : width
-    }]}>
+    <LinearGradient
+      colors={['#FAF5FF', '#F3E8FF'] as const}
+      style={[styles.slide, { 
+        width, 
+        minHeight: safeAreaConfig.minHeight, 
+        paddingTop: isLandscape ? 10 : 20,
+        paddingBottom: safeAreaConfig.paddingBottom,
+        paddingHorizontal: isLandscape ? 10 : 20,
+        maxWidth: isLandscape ? '100%' : width
+      }]}
+    >
       <View style={[styles.contentContainer, { 
         flex: 1,
         maxWidth: isLandscape ? '100%' : width * 0.9
@@ -42,9 +53,9 @@ const WelcomePage2: React.FC = () => {
           maxWidth: isLandscape ? '100%' : width * 0.85,
           marginBottom: isLandscape ? 10 : 40,
           paddingHorizontal: isLandscape ? 20 : 20
-        }]}>Get a clear to do of your task.</Text>
+        }]}>Create, organize, and prioritize your tasks with ease. Stay on top of your goals and never miss important deadlines.</Text>
       </View>
-    </View>
+    </LinearGradient>
   );
 };
 
@@ -53,7 +64,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F1D3FF',
   },
   contentContainer: {
     flex: 1,
@@ -62,11 +72,20 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   topTitle: {
-    color: '#6A009C',
-    fontFamily: 'Lexend',
+    color: OnboardingColors.primary.main,
+    fontWeight: '800',
+    letterSpacing: 1,
   },
   welcomeImage: {
-    borderRadius: 10,
+    borderRadius: 20,
+    shadowColor: OnboardingColors.shadow.purple,
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
   },
   imageContainer: {
     width: '100%',
@@ -74,14 +93,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   title: {
-    fontFamily: 'Inter-Bold',
+    fontWeight: '700',
     textAlign: 'center',
-    color: '#A600F4',
+    color: OnboardingColors.primary.main,
+    letterSpacing: 0.5,
   },
   subtitle: {
-    fontFamily: 'Inter-Medium',
+    fontWeight: '500',
     textAlign: 'center',
-    color: '#000000',
+    color: OnboardingColors.text.secondary,
+    lineHeight: 24,
   },
 });
 

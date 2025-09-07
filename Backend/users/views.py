@@ -1,4 +1,10 @@
 import uuid
+import random
+import string
+from datetime import datetime, timedelta
+from django.utils import timezone
+from django.core.mail import send_mail
+from django.conf import settings
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -13,6 +19,9 @@ from django.http import JsonResponse
 from django.middleware.csrf import get_token
 from rest_framework.decorators import api_view, permission_classes, parser_classes
 from rest_framework.permissions import AllowAny
+from django.contrib.auth.models import User
+from django.contrib.auth.hashers import make_password
+from django.db import models
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
@@ -189,3 +198,182 @@ def manage_session(request):
         return Response({'message': 'Session(s) ended successfully'})
         
     return Response({"error": "Invalid action"}, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def forgot_password(request):
+    """
+    Send password reset code to user's email
+    """
+    from .models import PasswordResetCode
+    
+    try:
+        email = request.data.get('email', '').strip().lower()
+        
+        if not email:
+            return Response(
+                {'error': 'Email is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check if user exists with this email
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            # For security, don't reveal if email exists or not
+            return Response(
+                {'message': 'If this email is registered, you will receive a reset code shortly.'}, 
+                status=status.HTTP_200_OK
+            )
+        
+        # Generate 6-digit code
+        code = ''.join(random.choices(string.digits, k=6))
+        
+        # Set expiration time (15 minutes from now)
+        expires_at = timezone.now() + timedelta(minutes=15)
+        
+        # Delete any existing codes for this email
+        PasswordResetCode.objects.filter(email=email).delete()
+        
+        # Create new reset code
+        reset_code = PasswordResetCode.objects.create(
+            email=email,
+            code=code,
+            expires_at=expires_at
+        )
+        
+        # Send email with the code
+        try:
+            subject = 'Password Reset Code - Togetha'
+            message = f"""Hi there,
+
+You requested a password reset for your Togetha account.
+
+Your verification code is: {code}
+
+This code will expire in 15 minutes.
+
+For your security:
+- Do not share this code with anyone
+- This code can only be used once
+- If you didn't request this password reset, please ignore this email
+
+If you continue to receive these emails without requesting them, please contact our security team immediately at security@togetha.com.
+
+Best regards,
+Togetha Security Team
+
+---
+Account: {email}
+Time: {timezone.now().strftime('%Y-%m-%d %H:%M:%S UTC')}
+            """
+            
+            send_mail(
+                subject,
+                message,
+                settings.DEFAULT_FROM_EMAIL,
+                [email],
+                fail_silently=False,
+            )
+            
+        except Exception as e:
+            # Log the error but don't expose it to the user
+            print(f"Error sending password reset email: {e}")
+            return Response(
+                {'error': 'Failed to send reset code. Please try again later.'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
+        return Response(
+            {'message': 'Password reset code sent to your email.'}, 
+            status=status.HTTP_200_OK
+        )
+        
+    except Exception as e:
+        print(f"Forgot password error: {e}")
+        return Response(
+            {'error': 'An error occurred. Please try again later.'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def verify_reset_code(request):
+    """
+    Verify reset code and update password
+    """
+    from .models import PasswordResetCode
+    
+    try:
+        email = request.data.get('email', '').strip().lower()
+        verification_code = request.data.get('verification_code', '').strip()
+        new_password = request.data.get('new_password', '').strip()
+        
+        if not email or not verification_code or not new_password:
+            return Response(
+                {'error': 'Email, verification code, and new password are required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if len(new_password) < 8:
+            return Response(
+                {'error': 'Password must be at least 8 characters long'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Find the reset code
+        try:
+            reset_code = PasswordResetCode.objects.get(
+                email=email,
+                code=verification_code
+            )
+        except PasswordResetCode.DoesNotExist:
+            return Response(
+                {'error': 'Invalid verification code'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check if code is valid (not used and not expired)
+        if not reset_code.is_valid():
+            return Response(
+                {'error': 'Verification code has expired or already been used'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get the user
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'User not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Update the password
+        user.password = make_password(new_password)
+        user.save()
+        
+        # Mark the reset code as used
+        reset_code.is_used = True
+        reset_code.save()
+        
+        # Delete any other reset codes for this email
+        PasswordResetCode.objects.filter(email=email).exclude(id=reset_code.id).delete()
+        
+        # Invalidate all existing tokens/sessions for security
+        Token.objects.filter(user=user).delete()
+        UserSession.objects.filter(user=user).update(is_active=False)
+        
+        return Response(
+            {'message': 'Password reset successful. Please login with your new password.'}, 
+            status=status.HTTP_200_OK
+        )
+        
+    except Exception as e:
+        print(f"Verify reset code error: {e}")
+        return Response(
+            {'error': 'An error occurred. Please try again later.'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )

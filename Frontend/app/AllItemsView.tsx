@@ -20,12 +20,13 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { RootStackParamList } from "./navigation/AppNavigator";
 import Navbar from "./NavBar";
 import { API_URL, API_ENDPOINTS } from "../constants/ApiConfig";
+import SkeletonLoader from "./components/SkeletonLoader";
 
 const { width } = Dimensions.get("window");
 
 
 type RouteParams = {
-    viewType: "tasks" | "activity";
+    viewType: "tasks" | "activity" | "notes" | "urgent-tasks";
 };
 
 // Define the items types
@@ -37,8 +38,9 @@ type Task = {
     priority: string;
     status: string;
     due_datetime?: string;
+    isOverdue?: boolean;
+    isDueSoon?: boolean;
     type?: 'task';
-
 };
 
 type Activity = {
@@ -50,8 +52,19 @@ type Activity = {
     updatedAt: Date;
 };
 
-// Create a unified ListItem type that can represent both Task and Activity
-type ListItem = Task | Activity;
+type Note = {
+    id: string;
+    title: string;
+    content: string;
+    folder?: string;
+    createdAt: Date;
+    updatedAt: Date;
+    type: "text" | "image" | "drawing" | "document";
+    tags?: string[];
+};
+
+// Create a unified ListItem type that can represent both Task, Activity, and Note
+type ListItem = Task | Activity | Note;
 
 // Type guard functions to check which type an item is
 function isTask(item: ListItem): item is Task {
@@ -60,6 +73,10 @@ function isTask(item: ListItem): item is Task {
 
 function isActivity(item: ListItem): item is Activity {
     return !!(item as Activity).type && (item as Activity).updatedAt !== undefined;
+}
+
+function isNote(item: ListItem): item is Note {
+    return !!(item as Note).content && (item as Note).createdAt !== undefined;
 }
 
 export default function AllItemsView() {
@@ -117,6 +134,88 @@ export default function AllItemsView() {
                     }));
 
                 setItems(transformedTasks);
+            } else if (viewType === "urgent-tasks") {
+                const response = await fetch(`${API_URL}/task_manager/tasks/`, {
+                    headers: {
+                        "Authorization": `Token ${token}`,
+                        "Cache-Control": "no-cache",
+                    },
+                });
+
+                if (!response.ok) {
+                    throw new Error("Failed to fetch urgent tasks");
+                }
+
+                const tasks = await response.json();
+                const now = new Date();
+                const threeDaysFromNow = new Date();
+                threeDaysFromNow.setDate(now.getDate() + 3);
+
+                // Filter for overdue and upcoming tasks
+                const urgentTasks = tasks
+                    .filter((task: any) => !task.completed && task.due_datetime)
+                    .map((task: any) => {
+                        const dueDate = new Date(task.due_datetime);
+                        const isOverdue = dueDate < now;
+                        const isDueSoon = dueDate >= now && dueDate <= threeDaysFromNow;
+                        
+                        return {
+                            ...task,
+                            isOverdue,
+                            isDueSoon,
+                            dueDate
+                        };
+                    })
+                    .filter((task: any) => task.isOverdue || task.isDueSoon)
+                    .sort((a: any, b: any) => {
+                        // Sort overdue tasks first, then by due date
+                        if (a.isOverdue && !b.isOverdue) return -1;
+                        if (!a.isOverdue && b.isOverdue) return 1;
+                        return a.dueDate.getTime() - b.dueDate.getTime();
+                    })
+                    .map((task: any) => ({
+                        id: task.id,
+                        title: task.title || task.text,
+                        category: task.category || "General",
+                        time: new Date(task.due_datetime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                        priority: mapPriority(task.priority),
+                        status: mapStatus(task.status),
+                        due_datetime: task.due_datetime,
+                        isOverdue: task.isOverdue,
+                        isDueSoon: task.isDueSoon,
+                        type: 'task' as const,
+                    }));
+
+                setItems(urgentTasks);
+            } else if (viewType === "notes") {
+                const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTES}`, {
+                    headers: {
+                        "Authorization": `Token ${token}`,
+                        "Cache-Control": "no-cache",
+                    },
+                });
+
+                if (!response.ok) {
+                    throw new Error("Failed to fetch notes");
+                }
+
+                const notes = await response.json();
+
+                // Transform notes data to match our UI structure
+                const transformedNotes = notes
+                    .sort((a: any, b: any) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+                    .map((note: any) => ({
+                        id: note.id,
+                        title: note.title || "Untitled Note",
+                        content: note.content || "",
+                        folder: note.folder || "Unorganized",
+                        createdAt: new Date(note.created_at),
+                        updatedAt: new Date(note.updated_at),
+                        type: note.type || "text",
+                        tags: note.tags || [],
+                    }));
+
+                setItems(transformedNotes);
             } else {
                 // Fetch notes and tasks for recent activity
                 const [notesResponse, tasksResponse] = await Promise.all([
@@ -267,16 +366,35 @@ export default function AllItemsView() {
 
     const renderTaskItem = (item: Task) => (
         <TouchableOpacity
-            style={styles.taskCard}
+            style={[
+                styles.taskCard,
+                item.isOverdue && styles.overdueCard,
+                item.isDueSoon && styles.dueSoonCard
+            ]}
             activeOpacity={0.8}
             onPress={() => navigation.navigate("TaskDetails", { taskId: item.id })}
         >
-            <View style={[styles.borderLeft, { backgroundColor: getPriorityColor(item.priority) }]} />
+            <View style={[
+                styles.borderLeft, 
+                { backgroundColor: item.isOverdue ? "#EF4444" : item.isDueSoon ? "#F59E0B" : getPriorityColor(item.priority) }
+            ]} />
             <View style={styles.taskHeader}>
                 <View style={styles.taskInfo}>
-                    <Text style={styles.taskTitle} numberOfLines={1}>
-                        {item.title}
-                    </Text>
+                    <View style={styles.taskTitleRow}>
+                        <Text style={styles.taskTitle} numberOfLines={1}>
+                            {item.title}
+                        </Text>
+                        {item.isOverdue && (
+                            <View style={styles.overdueLabel}>
+                                <Text style={styles.overdueLabelText}>OVERDUE</Text>
+                            </View>
+                        )}
+                        {item.isDueSoon && !item.isOverdue && (
+                            <View style={styles.dueSoonLabel}>
+                                <Text style={styles.dueSoonLabelText}>DUE SOON</Text>
+                            </View>
+                        )}
+                    </View>
                     <Text style={styles.taskSubject}>{item.category}</Text>
                 </View>
                 <View
@@ -292,7 +410,11 @@ export default function AllItemsView() {
             <View style={styles.taskBody}>
                 <Text style={styles.taskTime}>{item.time}</Text>
                 {item.due_datetime && (
-                    <Text style={styles.taskDueDate}>
+                    <Text style={[
+                        styles.taskDueDate,
+                        item.isOverdue && styles.overdueDateText,
+                        item.isDueSoon && styles.dueSoonDateText
+                    ]}>
                         Due: {new Date(item.due_datetime).toLocaleDateString()}
                     </Text>
                 )}
@@ -372,10 +494,44 @@ export default function AllItemsView() {
         </TouchableOpacity>
     );
 
+    const renderNoteItem = (item: Note) => (
+        <TouchableOpacity
+            style={styles.noteCard}
+            activeOpacity={0.8}
+            onPress={() => navigation.navigate("NoteEditor", { noteId: item.id })}
+        >
+            <View style={styles.noteCardContent}>
+                <View style={styles.noteIcon}>
+                    <MaterialIcons
+                        name={item.type === 'drawing' ? 'draw' : item.type === 'document' ? 'description' : 'note'}
+                        size={24}
+                        color="#3B82F6"
+                    />
+                </View>
+                <View style={styles.noteContent}>
+                    <Text style={styles.noteTitle} numberOfLines={2}>
+                        {item.title}
+                    </Text>
+                    <Text style={styles.notePreview} numberOfLines={2}>
+                        {item.content.replace(/<[^>]*>/g, '').substring(0, 100)}...
+                    </Text>
+                    <View style={styles.noteDetailsRow}>
+                        <Text style={styles.noteFolder}>{item.folder || 'Unorganized'}</Text>
+                        <Text style={styles.noteDate}>
+                            {new Date(item.updatedAt).toLocaleDateString()}
+                        </Text>
+                    </View>
+                </View>
+            </View>
+        </TouchableOpacity>
+    );
+
     // Use type guard to render the correct item type
     const renderListItem = ({ item }: { item: ListItem }) => {
         if (isTask(item)) {
             return renderTaskItem(item);
+        } else if (isNote(item)) {
+            return renderNoteItem(item);
         } else {
             return renderActivityItem(item);
         }
@@ -394,12 +550,19 @@ export default function AllItemsView() {
                     <MaterialIcons name="arrow-back" size={24} color="#6A009C" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>
-                    {viewType === "tasks" ? "All Priority Tasks" : "All Recent Activity"}
+                    {viewType === "tasks" ? "All Priority Tasks" : 
+                     viewType === "urgent-tasks" ? "Urgent & Overdue Tasks" :
+                     viewType === "notes" ? "All Notes" : 
+                     "All Recent Activity"}
                 </Text>
-                {viewType === "tasks" && (
+                {(viewType === "tasks" || viewType === "notes" || viewType === "urgent-tasks") && (
                     <TouchableOpacity
                         style={styles.addButton}
-                        onPress={() => navigation.navigate("AddTask", { quadrant: 'urgent-important' })}
+                        onPress={() => 
+                            (viewType === "tasks" || viewType === "urgent-tasks")
+                                ? navigation.navigate("AddTask", { quadrant: 'urgent-important' })
+                                : navigation.navigate("Notes")
+                        }
                     >
                         <MaterialIcons name="add" size={24} color="#6A009C" />
                     </TouchableOpacity>
@@ -408,9 +571,10 @@ export default function AllItemsView() {
             </View>
 
             {loading && !refreshing ? (
-                <View style={styles.loaderContainer}>
-                    <ActivityIndicator size="large" color="#6A009C" />
-                </View>
+                <SkeletonLoader 
+                    type={viewType === "tasks" || viewType === "urgent-tasks" ? "tasks" : viewType === "notes" ? "notes" : "list"} 
+                    count={6} 
+                />
             ) : error ? (
                 <View style={styles.errorContainer}>
                     <Text style={styles.errorText}>{error}</Text>
@@ -711,5 +875,117 @@ const styles = StyleSheet.create({
         color: "#64748B",
         fontFamily: "Inter-Regular",
         marginTop: 4,
+    },
+    // Note styles
+    noteCard: {
+        backgroundColor: "#FFFFFF",
+        borderRadius: 16,
+        marginBottom: 16,
+        padding: 16,
+        shadowColor: "#1E293B",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.06,
+        shadowRadius: 8,
+        elevation: 3,
+    },
+    noteCardContent: {
+        flexDirection: "row",
+        alignItems: "flex-start",
+    },
+    noteIcon: {
+        width: 48,
+        height: 48,
+        borderRadius: 16,
+        backgroundColor: "#EFF6FF",
+        justifyContent: "center",
+        alignItems: "center",
+        marginRight: 16,
+    },
+    noteContent: {
+        flex: 1,
+    },
+    noteTitle: {
+        fontSize: 16,
+        fontFamily: "Inter-Bold",
+        color: "#1E293B",
+        marginBottom: 8,
+        lineHeight: 22,
+    },
+    notePreview: {
+        fontSize: 14,
+        color: "#64748B",
+        fontFamily: "Inter-Regular",
+        marginBottom: 12,
+        lineHeight: 20,
+    },
+    noteDetailsRow: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+    },
+    noteFolder: {
+        fontSize: 12,
+        color: "#3B82F6",
+        fontFamily: "Inter-Medium",
+        backgroundColor: "#EFF6FF",
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 8,
+    },
+    noteDate: {
+        fontSize: 12,
+        color: "#64748B",
+        fontFamily: "Inter-Regular",
+    },
+    // Overdue and Due Soon styles
+    overdueCard: {
+        borderColor: "#EF4444",
+        borderWidth: 2,
+        backgroundColor: "#FEF2F2",
+    },
+    dueSoonCard: {
+        borderColor: "#F59E0B",
+        borderWidth: 2,
+        backgroundColor: "#FFFBEB",
+    },
+    taskTitleRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        marginBottom: 8,
+        flexWrap: "wrap",
+    },
+    overdueLabel: {
+        backgroundColor: "#EF4444",
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 12,
+        marginLeft: 8,
+    },
+    overdueLabelText: {
+        fontSize: 10,
+        color: "#FFFFFF",
+        fontFamily: "Inter-Bold",
+        textTransform: "uppercase",
+    },
+    dueSoonLabel: {
+        backgroundColor: "#F59E0B",
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 12,
+        marginLeft: 8,
+    },
+    dueSoonLabelText: {
+        fontSize: 10,
+        color: "#FFFFFF",
+        fontFamily: "Inter-Bold",
+        textTransform: "uppercase",
+    },
+    overdueDateText: {
+        color: "#EF4444",
+        fontFamily: "Inter-Bold",
+    },
+    dueSoonDateText: {
+        color: "#F59E0B",
+        fontFamily: "Inter-Bold",
     },
 });

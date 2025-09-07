@@ -338,43 +338,123 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
     }
   };
 
-  // Generate document URL for WebView with platform-specific handling
+  // Helper functions for document type styling
+  const getDocumentTypeColor = () => {
+    switch (actualDocumentType) {
+      case 'pdf': return '#EF4444';
+      case 'word':
+      case 'doc':
+      case 'docx': return '#2563EB';
+      case 'image': return '#059669';
+      case 'txt': return '#7C2D12';
+      default: return '#6B7280';
+    }
+  };
+
+  const getDocumentTypeIcon = () => {
+    switch (actualDocumentType) {
+      case 'pdf': return 'picture-as-pdf';
+      case 'word':
+      case 'doc':
+      case 'docx': return 'description';
+      case 'image': return 'image';
+      case 'txt': return 'text-snippet';
+      default: return 'insert-drive-file';
+    }
+  };
+
+  // Handle annotation tap for PDF viewer
+  const handleAnnotationTap = (x: number, y: number, page: number) => {
+    if (!isAnnotating) return;
+
+    if (selectedTool === 'note') {
+      // For note annotations, create a temporary annotation and show modal
+      setCurrentAnnotation({
+        type: 'note',
+        x: x,
+        y: y,
+        width: 100,
+        height: 50,
+        color: selectedColor,
+        page: page,
+      });
+      setShowNoteModal(true);
+    } else if (selectedTool === 'highlight') {
+      // Create a highlight annotation
+      const annotation: Omit<Annotation, 'id' | 'created_at'> = {
+        type: 'highlight',
+        x: x - 25, // Center the highlight around tap point
+        y: y - 10,
+        width: 50,
+        height: 20,
+        color: selectedColor,
+        page: page,
+      };
+      saveAnnotation(annotation);
+    } else if (selectedTool === 'underline' || selectedTool === 'strikethrough') {
+      // Create line annotations
+      const annotation: Omit<Annotation, 'id' | 'created_at'> = {
+        type: selectedTool,
+        x: x - 25,
+        y: y,
+        width: 50,
+        height: 2,
+        color: selectedColor,
+        page: page,
+      };
+      saveAnnotation(annotation);
+    }
+  };
+
+  // Generate document URL for enhanced viewing with PDF.js support
   const getDocumentUrl = () => {
     console.log('Getting document URL for:', { actualDocumentType, useAlternativeViewer, Platform: Platform.OS });
     
     if (actualDocumentType === 'pdf') {
-      // For PDFs, try different approaches based on platform and environment
+      // For PDFs, use enhanced PDF.js viewer
       if (useAlternativeViewer) {
-        // Alternative viewer: Try direct PDF access first
-        console.log('Using alternative viewer - direct PDF access:', documentUri);
-        return documentUri;
+        // Alternative: Try Google Docs viewer as fallback
+        const encodedUri = encodeURIComponent(documentUri);
+        const googleDocsUrl = `https://docs.google.com/viewer?url=${encodedUri}&embedded=true`;
+        console.log('Using Google Docs PDF viewer:', googleDocsUrl);
+        return googleDocsUrl;
       } else {
-        // Primary viewer logic
-        if (Platform.OS === 'android') {
-          // Android: Direct PDF access works better than external viewers for local files
-          console.log('Android - using direct PDF access:', documentUri);
-          return documentUri;
-        } else if (Platform.OS === 'ios') {
-          // iOS: Direct PDF access works well on Safari WebView
-          console.log('iOS - using direct PDF access:', documentUri);
-          return documentUri;
-        } else {
-          // Web: Try backend proxy first, then fallback to direct
-          const proxyUrl = `${API_URL}${API_ENDPOINTS.SERVE_DOCUMENT(noteId)}`;
-          console.log('Web - trying backend proxy:', proxyUrl);
-          // For now, let's try direct access as the proxy might have issues
-          return documentUri;
-        }
+        // Primary: Use PDF.js viewer with enhanced controls
+        const encodedUri = encodeURIComponent(documentUri);
+        const pdfJsUrl = `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodedUri}`;
+        console.log('Using PDF.js viewer:', pdfJsUrl);
+        return pdfJsUrl;
       }
     } else if (actualDocumentType === 'image') {
-      // For images, return the direct URI for better display
-      console.log('Image - using direct access:', documentUri);
+      // For images, display directly
+      console.log('Using direct image URL:', documentUri);
       return documentUri;
+    } else if (actualDocumentType === 'word' || actualDocumentType === 'doc' || actualDocumentType === 'docx') {
+      // For Word documents, use Office Online viewer
+      const encodedUri = encodeURIComponent(documentUri);
+      if (useAlternativeViewer) {
+        // Alternative: Google Docs viewer
+        const googleDocsUrl = `https://docs.google.com/viewer?url=${encodedUri}&embedded=true`;
+        console.log('Using Google Docs for Word document:', googleDocsUrl);
+        return googleDocsUrl;
+      } else {
+        // Primary: Office Online viewer
+        const officeUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodedUri}`;
+        console.log('Using Office Online viewer:', officeUrl);
+        return officeUrl;
+      }
+    } else {
+      // For other document types, try generic viewers
+      const encodedUri = encodeURIComponent(documentUri);
+      if (useAlternativeViewer) {
+        console.log('Using direct access for other document:', documentUri);
+        return documentUri;
+      } else {
+        const googleDocsUrl = `https://docs.google.com/viewer?url=${encodedUri}&embedded=true`;
+        console.log('Using Google Docs for other document:', googleDocsUrl);
+        return googleDocsUrl;
+      }
     }
-    
-    // For other document types, use direct access
-    console.log('Other document type - using direct access:', documentUri);
-    return documentUri;
   };
 
   // Open document in external browser with platform-specific handling
@@ -506,49 +586,44 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
         </Text>
         
         <View style={styles.headerActions}>
+          {/* Document Type Badge */}
+          <View style={[styles.documentTypeBadge, { backgroundColor: getDocumentTypeColor() }]}>
+            <MaterialIcons 
+              name={getDocumentTypeIcon()} 
+              size={14} 
+              color="#FFFFFF" 
+            />
+            <Text style={styles.documentTypeText}>
+              {actualDocumentType.toUpperCase()}
+            </Text>
+          </View>
+          
           <Text style={styles.pageInfo}>
             Page {currentPage}/{totalPages}
           </Text>
           
-          <TouchableOpacity
-            style={styles.switchViewerButton}
-            onPress={() => {
-              setUseAlternativeViewer(!useAlternativeViewer);
-              setIsLoading(true);
-              setHasError(false);
-              // Force WebView to reload with new URL
-              setTimeout(() => {
-                webViewRef.current?.reload();
-              }, 100);
-            }}
-          >
-            <MaterialIcons name="swap-horiz" size={16} color="#6366F1" />
-            <Text style={styles.switchViewerText}>
-              {useAlternativeViewer ? 'Primary' : 'Alt'}
-            </Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={styles.debugButton}
-            onPress={() => {
-              const currentUrl = getDocumentUrl();
-              Alert.alert(
-                'Debug Info',
-                `Document URI: ${documentUri}\n\nWebView URL: ${currentUrl}\n\nDocument Type: ${actualDocumentType}\n\nPlatform: ${Platform.OS}\n\nAlternative Viewer: ${useAlternativeViewer}`,
-                [
-                  { text: 'OK', style: 'default' },
-                  { 
-                    text: 'Copy URL', 
-                    onPress: () => {
-                      console.log('URL copied to console:', currentUrl);
-                    }
-                  }
-                ]
-              );
-            }}
-          >
-            <MaterialIcons name="info" size={16} color="#6366F1" />
-          </TouchableOpacity>
+          {(actualDocumentType === 'pdf' || actualDocumentType === 'word' || actualDocumentType === 'doc' || actualDocumentType === 'docx') && (
+            <TouchableOpacity
+              style={styles.switchViewerButton}
+              onPress={() => {
+                setUseAlternativeViewer(!useAlternativeViewer);
+                setIsLoading(true);
+                setHasError(false);
+                // Force WebView to reload with new URL
+                setTimeout(() => {
+                  webViewRef.current?.reload();
+                }, 100);
+              }}
+            >
+              <MaterialIcons name="swap-horiz" size={16} color="#6366F1" />
+              <Text style={styles.switchViewerText}>
+                {actualDocumentType === 'pdf' 
+                  ? (useAlternativeViewer ? 'PDF.js' : 'Google Docs')
+                  : (useAlternativeViewer ? 'Office Online' : 'Google Docs')
+                }
+              </Text>
+            </TouchableOpacity>
+          )}
           
           <TouchableOpacity
             style={styles.externalButton}
@@ -652,25 +727,86 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
               return;
             }
             
-            // Inject JavaScript to get document info for other types
+            // Inject JavaScript to get document info and enable enhanced PDF features
             webViewRef.current?.injectJavaScript(`
               (function() {
                 try {
                   console.log('WebView: Checking document info');
                   console.log('WebView: Current URL:', window.location.href);
                   console.log('WebView: Document title:', document.title);
-                  console.log('WebView: Document body:', document.body ? document.body.innerHTML.substring(0, 200) : 'No body');
                   
-                  // For PDF.js viewer
+                  // Enhanced PDF.js detection and controls
                   if (window.PDFViewerApplication && window.PDFViewerApplication.pdfDocument) {
                     const numPages = window.PDFViewerApplication.pdfDocument.numPages;
                     const currentPage = window.PDFViewerApplication.page;
+                    
+                    // Add custom styling for better mobile experience
+                    const style = document.createElement('style');
+                    style.textContent = \`
+                      #viewer { 
+                        background-color: #f5f5f5 !important; 
+                      }
+                      .page { 
+                        margin: 10px auto !important; 
+                        box-shadow: 0 4px 8px rgba(0,0,0,0.1) !important; 
+                        border-radius: 8px !important;
+                      }
+                      #toolbarContainer {
+                        background-color: #ffffff !important;
+                        border-bottom: 1px solid #e5e7eb !important;
+                      }
+                      .toolbar {
+                        background-color: transparent !important;
+                      }
+                      #viewerContainer {
+                        overflow: auto !important;
+                        background-color: #f8fafc !important;
+                      }
+                    \`;
+                    document.head.appendChild(style);
+                    
+                    // Send page info
                     window.ReactNativeWebView.postMessage(JSON.stringify({
                       type: 'documentInfo',
                       totalPages: numPages,
-                      currentPage: currentPage
+                      currentPage: currentPage,
+                      documentType: 'pdf'
                     }));
-                    console.log('WebView: PDF.js detected, pages:', numPages);
+                    
+                    // Listen for page changes
+                    if (window.PDFViewerApplication.eventBus) {
+                      window.PDFViewerApplication.eventBus.on('pagechanging', function(evt) {
+                        window.ReactNativeWebView.postMessage(JSON.stringify({
+                          type: 'pageChanged',
+                          currentPage: evt.pageNumber,
+                          totalPages: numPages
+                        }));
+                      });
+                    }
+                    
+                    console.log('WebView: Enhanced PDF.js detected, pages:', numPages);
+                  }
+                  // For Google Docs viewer
+                  else if (window.location.href.includes('docs.google.com')) {
+                    // Try to detect pages in Google Docs viewer
+                    setTimeout(() => {
+                      const pages = document.querySelectorAll('img[src*="page"]').length;
+                      window.ReactNativeWebView.postMessage(JSON.stringify({
+                        type: 'documentInfo',
+                        totalPages: pages || 1,
+                        currentPage: 1,
+                        documentType: 'google_docs'
+                      }));
+                    }, 2000);
+                  }
+                  // For Office Online viewer
+                  else if (window.location.href.includes('officeapps.live.com')) {
+                    window.ReactNativeWebView.postMessage(JSON.stringify({
+                      type: 'documentInfo',
+                      totalPages: 1,
+                      currentPage: 1,
+                      documentType: 'office'
+                    }));
                   }
                   // For other viewers, try to get page info
                   else if (document.querySelector('.page')) {
@@ -681,24 +817,6 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
                       currentPage: 1
                     }));
                     console.log('WebView: Pages detected:', pages);
-                  }
-                  // Check for error messages
-                  else if (document.body && document.body.textContent) {
-                    const content = document.body.textContent.toLowerCase();
-                    if (content.includes('error') || content.includes('not found') || content.includes('preview not available')) {
-                      window.ReactNativeWebView.postMessage(JSON.stringify({
-                        type: 'error',
-                        message: document.body.textContent.substring(0, 500)
-                      }));
-                      console.log('WebView: Error detected in content');
-                    } else {
-                      window.ReactNativeWebView.postMessage(JSON.stringify({
-                        type: 'documentInfo',
-                        totalPages: 1,
-                        currentPage: 1
-                      }));
-                      console.log('WebView: Default document info set');
-                    }
                   }
                   // Default fallback
                   else {
@@ -728,6 +846,9 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
                 setTotalPages(data.totalPages || 1);
                 setCurrentPage(data.currentPage || 1);
                 console.log('Document info updated:', data);
+              } else if (data.type === 'pageChanged') {
+                setCurrentPage(data.currentPage || 1);
+                console.log('Page changed to:', data.currentPage);
               } else if (data.type === 'error') {
                 console.warn('WebView reported error:', data.message);
                 // Set error state if the error seems critical
@@ -763,14 +884,14 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
             setHasError(true);
             
             // Try alternative viewer if not already tried
-            if (!useAlternativeViewer) {
+            if (!useAlternativeViewer && actualDocumentType === 'pdf') {
               Alert.alert(
-                'Document Viewer Error',
-                'The document failed to load with the current viewer. Would you like to try an alternative viewer?',
+                'PDF Viewer Error',
+                'The PDF failed to load with PDF.js. Would you like to try Google Docs viewer instead?',
                 [
                   { text: 'Cancel', style: 'cancel' },
                   { 
-                    text: 'Try Alternative Viewer', 
+                    text: 'Try Google Docs', 
                     onPress: () => {
                       setUseAlternativeViewer(true);
                       setHasError(false);
@@ -851,7 +972,17 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
           style={[styles.navButton, currentPage === 1 && styles.navButtonDisabled]}
           onPress={() => {
             if (currentPage > 1) {
-              setCurrentPage(currentPage - 1);
+              const newPage = currentPage - 1;
+              setCurrentPage(newPage);
+              
+              // Send command to PDF.js viewer to change page
+              if (actualDocumentType === 'pdf' && webViewRef.current) {
+                webViewRef.current.injectJavaScript(`
+                  if (window.PDFViewerApplication && window.PDFViewerApplication.pdfViewer) {
+                    window.PDFViewerApplication.pdfViewer.currentPageNumber = ${newPage};
+                  }
+                `);
+              }
             }
           }}
           disabled={currentPage === 1}
@@ -863,15 +994,33 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
           />
         </TouchableOpacity>
 
-        <Text style={styles.pageText}>
-          {currentPage} / {totalPages}
-        </Text>
+        <View style={styles.pageInfoContainer}>
+          <Text style={styles.pageText}>
+            {currentPage} / {totalPages}
+          </Text>
+          {actualDocumentType === 'pdf' && !useAlternativeViewer && (
+            <Text style={styles.viewerTypeText}>PDF.js</Text>
+          )}
+          {actualDocumentType === 'pdf' && useAlternativeViewer && (
+            <Text style={styles.viewerTypeText}>Google Docs</Text>
+          )}
+        </View>
 
         <TouchableOpacity
           style={[styles.navButton, currentPage === totalPages && styles.navButtonDisabled]}
           onPress={() => {
             if (currentPage < totalPages) {
-              setCurrentPage(currentPage + 1);
+              const newPage = currentPage + 1;
+              setCurrentPage(newPage);
+              
+              // Send command to PDF.js viewer to change page
+              if (actualDocumentType === 'pdf' && webViewRef.current) {
+                webViewRef.current.injectJavaScript(`
+                  if (window.PDFViewerApplication && window.PDFViewerApplication.pdfViewer) {
+                    window.PDFViewerApplication.pdfViewer.currentPageNumber = ${newPage};
+                  }
+                `);
+              }
             }
           }}
           disabled={currentPage === totalPages}
@@ -965,6 +1114,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+  },
+  documentTypeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+  documentTypeText: {
+    fontSize: 10,
+    fontFamily: 'Inter-Bold',
+    color: '#FFFFFF',
   },
   pageInfo: {
     fontSize: 12,
@@ -1081,6 +1243,20 @@ const styles = StyleSheet.create({
     borderTopColor: '#E5E7EB',
     gap: 20,
   },
+  pageInfoContainer: {
+    alignItems: 'center',
+  },
+  pageText: {
+    fontSize: 16,
+    fontFamily: 'Inter-Medium',
+    color: '#1F2937',
+  },
+  viewerTypeText: {
+    fontSize: 10,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
+    marginTop: 2,
+  },
   navButton: {
     width: 44,
     height: 44,
@@ -1091,13 +1267,6 @@ const styles = StyleSheet.create({
   },
   navButtonDisabled: {
     backgroundColor: '#F3F4F6',
-  },
-  pageText: {
-    fontSize: 16,
-    fontFamily: 'Inter-Medium',
-    color: '#374151',
-    minWidth: 80,
-    textAlign: 'center',
   },
   modalContainer: {
     flex: 1,

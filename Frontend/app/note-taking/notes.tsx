@@ -1,5 +1,5 @@
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useRoute, RouteProp } from "@react-navigation/native";
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Alert,
@@ -40,13 +40,17 @@ import {
   showErrorToast,
   showWarningToast,
 } from "../utils/ToastUtils";
+import SkeletonLoader from "../components/SkeletonLoader";
+import { folderCacheUtils } from "../utils/FolderCacheUtils";
 
 const { width } = Dimensions.get("window");
 
 type NotesScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
+type NotesScreenRouteProp = RouteProp<RootStackParamList, 'Notes'>;
 
 interface NotesScreenProps {
   navigation: NotesScreenNavigationProp;
+  route: NotesScreenRouteProp;
 }
 
 interface TagObject {
@@ -163,7 +167,9 @@ const DRAWING_TEMPLATES = [
   { id: "notes", name: "Note Taking", icon: "note-add" },
 ];
 
-export default function NotesScreen({ navigation }: NotesScreenProps) {
+export default function NotesScreen({ navigation, route }: NotesScreenProps) {
+  // Get folder parameters from navigation
+  const { folderId, folderName } = route?.params || {};
   const [notes, setNotes] = useState<Note[]>(INITIAL_NOTES);
   const [folders, setFolders] = useState<Folder[]>(DUMMY_FOLDERS);
   const [searchQuery, setSearchQuery] = useState("");
@@ -430,11 +436,22 @@ export default function NotesScreen({ navigation }: NotesScreenProps) {
     fetchNotes(false);
   }, [selectedFilterFolder]); 
 
+  // Handle folder navigation from home screen
+  useEffect(() => {
+    if (folderId) {
+      // Set the filter to show notes from the specific folder
+      setSelectedFilterFolder(folderId);
+    }
+  }, [folderId]);
 
   useFocusEffect(
     useCallback(() => {
       fetchNotes(true);
       fetchFolders();
+
+      // Invalidate folder cache when returning to notes screen
+      // This ensures home screen gets updated counts when notes are modified
+      folderCacheUtils.invalidateCache();
 
       return () => {
         // Clean up if needed when screen goes out of focus
@@ -844,6 +861,9 @@ const isDrawingNote = React.useCallback((note: Note): boolean => {
                 // If successful, update local state
                 setNotes((prev) => prev.filter((note) => note.id !== noteId));
 
+                // Invalidate folder cache to update counts in home screen
+                await folderCacheUtils.invalidateCache();
+
                 // Show success toast
                 showSuccessToast("Note deleted successfully");
               } catch (error) {
@@ -1066,8 +1086,12 @@ const isDrawingNote = React.useCallback((note: Note): boolean => {
       if (response.ok) {
         const result = await response.json();
         showSuccessToast('Document imported successfully!');
+        
         // Refresh the notes list to show the new document
         fetchNotes(true);
+        
+        // Invalidate folder cache to update counts in home screen
+        await folderCacheUtils.invalidateCache();
         
         // Open the document in DocumentViewer for annotation instead of NoteEditor
         const documentType = documentInfo.mimeType?.includes('pdf') ? 'pdf' : 
@@ -1170,6 +1194,9 @@ const isDrawingNote = React.useCallback((note: Note): boolean => {
       setSelectedNotes([]);
       setIsSelectMode(false);
 
+      // Invalidate folder cache to update counts in home screen
+      await folderCacheUtils.invalidateCache();
+
       showSuccessToast("Notes assigned to folder successfully");
     } catch (error) {
       console.error("Error assigning notes to folder:", error);
@@ -1234,6 +1261,9 @@ const isDrawingNote = React.useCallback((note: Note): boolean => {
                 setNotes((prevNotes) =>
                   prevNotes.filter((note) => !selectedNotes.includes(note.id))
                 );
+
+                // Invalidate folder cache to update counts in home screen
+                await folderCacheUtils.invalidateCache();
 
                 // Exit select mode and clear selection
                 setSelectedNotes([]);
@@ -1578,15 +1608,26 @@ const renderUnorganizedFolder = () => (
 
   // Pre-memoized data for notes view to avoid conditional hook rendering
   const notesViewData = useMemo(() => {
+    // First apply existing folder filter logic
+    let folderFilteredNotes = filteredNotes;
+    
     if (selectedFilterFolder === "unorganized") {
-      return filteredNotes.filter((note) => !note.folderId);
+      folderFilteredNotes = filteredNotes.filter((note) => !note.folderId);
     } else if (selectedFilterFolder) {
-      return filteredNotes.filter(
+      folderFilteredNotes = filteredNotes.filter(
         (note) => note.folderId === selectedFilterFolder
       );
     }
-    return filteredNotes;
-  }, [filteredNotes, selectedFilterFolder]);
+    
+    // Then apply route-based folder filtering (from home screen navigation)
+    if (folderId) {
+      folderFilteredNotes = folderFilteredNotes.filter(
+        (note) => note.folderId === folderId
+      );
+    }
+    
+    return folderFilteredNotes;
+  }, [filteredNotes, selectedFilterFolder, folderId]);
 
   // No separator component needed for grid view
 
@@ -2728,7 +2769,9 @@ const renderUnorganizedFolder = () => (
       >
         <View style={styles.headerTopRow}>
           <View style={styles.headerTitleSection}>
-            <Text style={styles.headerTitle}>All Notes</Text>
+            <Text style={styles.headerTitle}>
+              {folderName ? `${folderName} Notes` : "All Notes"}
+            </Text>
           </View>
           <View style={styles.headerActions}>
             <TouchableOpacity
@@ -2770,11 +2813,15 @@ const renderUnorganizedFolder = () => (
                 placeholderTextColor="#9CA3AF"
                 autoFocus={true}
                 returnKeyType="search"
+                accessibilityLabel="Search notes"
+                accessibilityHint="Type to search through your notes"
               />
               {searchQuery.length > 0 && (
                 <TouchableOpacity
                   style={styles.clearSearchButton}
                   onPress={() => setSearchQuery("")}
+                  accessibilityLabel="Clear search"
+                  accessibilityHint="Clear the search input"
                 >
                   <MaterialIcons name="clear" size={18} color="#9CA3AF" />
                 </TouchableOpacity>
@@ -3024,35 +3071,43 @@ const renderUnorganizedFolder = () => (
 
       {/* Content Container - holds the notes list and other content */}
       <View style={styles.contentContainer}>
-        <FlatList
-          data={notesViewData}
-          renderItem={renderNoteItem}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.notesList}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              colors={["#6A009C"]}
-            />
-          }
-          ListEmptyComponent={NotesEmptyListComponent}
-          numColumns={2}
-          columnWrapperStyle={styles.notesGridRow}
-          initialNumToRender={8}
-          maxToRenderPerBatch={10}
-          windowSize={10}
-          getItemLayout={(_, index) => {
-            const length = 220;
-            const offset = Math.floor(index / 2) * length;
-            return {
-              length,
-              offset,
-              index,
-            };
-          }}
-        />
+        {isLoading && notes.length === 0 ? (
+          <SkeletonLoader type="notes" count={6} />
+        ) : (
+          <FlatList
+            data={notesViewData}
+            renderItem={renderNoteItem}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.notesList}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={["#8B5CF6", "#6366F1"]}
+                tintColor="#8B5CF6"
+                title="Pull to refresh"
+                titleColor="#6B7280"
+                progressBackgroundColor="#FFFFFF"
+              />
+            }
+            ListEmptyComponent={NotesEmptyListComponent}
+            numColumns={2}
+            columnWrapperStyle={styles.notesGridRow}
+            initialNumToRender={8}
+            maxToRenderPerBatch={10}
+            windowSize={10}
+            getItemLayout={(_, index) => {
+              const length = 220;
+              const offset = Math.floor(index / 2) * length;
+              return {
+                length,
+                offset,
+                index,
+              };
+            }}
+          />
+        )}
       </View>
 
       {/* Global overlay for dropdown - positioned absolutely over everything */}
@@ -3293,27 +3348,32 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    borderRadius: 20,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
     shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
   },
   searchIcon: {
-    marginRight: 12,
+    marginRight: 14,
   },
   searchInput: {
     flex: 1,
     fontSize: 16,
     fontFamily: "Inter-Regular",
     color: "#1F2937",
+    paddingVertical: 0, // Remove default padding
   },
   clearSearchButton: {
-    padding: 4,
-    marginLeft: 8,
+    padding: 6,
+    marginLeft: 10,
+    borderRadius: 12,
+    backgroundColor: "#F8FAFC",
   },
   folderSectionInHeader: {
     marginTop: 16,
@@ -3420,25 +3480,27 @@ const styles = StyleSheet.create({
   },
   gridNoteItem: {
     width: (width - 40) / 2, // Adjust width to account for padding
-    marginBottom: 8,
+    marginBottom: 12,
     overflow: "visible", // Allow dropdown to show above other items
-    height: 220, // Fixed height for consistent grid
+    height: 230, // Fixed height for consistent grid
   },
   gridNoteContent: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 12,
+    borderRadius: 20,
+    padding: 16,
     shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 4,
     overflow: "visible", // Allow dropdown to show above other items
     zIndex: 1, // Lower zIndex than the dropdown
     position: "relative", // Ensure proper stacking context
     height: "100%", // Fill the gridNoteItem height
     display: "flex",
     flexDirection: "column",
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
   },
   // Preview containers for notes
   previewImageContainer: {
@@ -3740,16 +3802,14 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 8,
   },
-
   textFab: {
     backgroundColor: "#9C27B0",
   },
   drawingFab: {
     backgroundColor: "#2563EB",
-    bottom: 170, // Position above the text FAB
+    bottom: 170, 
     right: 24,
   },
-  // Modal Styles
   modalContainer: {
     flex: 1,
     justifyContent: "flex-end",
@@ -3761,45 +3821,49 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     backgroundColor: "#FFFFFF",
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
     paddingBottom: Platform.OS === "ios" ? 34 : 24,
     minHeight: Dimensions.get("window").height * 0.5,
     maxHeight: Dimensions.get("window").height * 0.9,
     shadowColor: "#000000",
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-    elevation: 20,
+    shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 25,
+    elevation: 25,
+    paddingTop: 8,
   },
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 24,
-    paddingTop: 24,
+    paddingTop: 20,
     paddingBottom: 20,
     borderBottomWidth: 1,
     borderBottomColor: "#F1F5F9",
     position: "relative",
   },
   modalTitle: {
-    fontSize: 20,
-    fontFamily: "Lexend",
+    fontSize: 22,
+    fontFamily: "Inter-Bold",
     color: "#1E293B",
-    letterSpacing: -0.2,
+    letterSpacing: -0.3,
     flex: 1,
     textAlign: "center",
   },
   modalCloseButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: "#F8FAFC",
     justifyContent: "center",
     alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
+    shadowColor: "#64748B",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   modalBody: {
     flex: 1,
@@ -4314,79 +4378,93 @@ const styles = StyleSheet.create({
     color: "#6B7280",
   },
 
-  // Folder options modal styles
+  // Folder options modal styles - Enhanced
   folderOptionsModalContent: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 20,
-    padding: 20,
+    borderRadius: 24,
+    padding: 24,
     margin: 20,
     marginTop: "auto",
     marginBottom: "auto",
     shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 10,
+    shadowOffset: { width: 0, height: 15 },
+    shadowOpacity: 0.3,
+    shadowRadius: 25,
+    elevation: 15,
   },
 
   folderOptionsTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontFamily: "Inter-Bold",
     color: "#1F2937",
     textAlign: "center",
-    marginBottom: 20,
+    marginBottom: 24,
+    letterSpacing: -0.2,
   },
 
   folderOptionItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    borderRadius: 12,
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+    borderRadius: 16,
     marginBottom: 8,
+    backgroundColor: "#F9FAFB",
+    shadowColor: "#64748B",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
 
   folderOptionText: {
     fontSize: 16,
     fontFamily: "Inter-Medium",
     color: "#374151",
-    marginLeft: 12,
+    marginLeft: 16,
+    flex: 1,
   },
 
   cancelOption: {
     backgroundColor: "#F3F4F6",
-    marginTop: 8,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
   },
 
-  // Delete confirmation modal styles
+  // Delete confirmation modal styles - Enhanced
   deleteConfirmModalContent: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 20,
-    padding: 24,
+    borderRadius: 24,
+    padding: 28,
     margin: 20,
     alignItems: "center",
     shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 10,
+    shadowOffset: { width: 0, height: 15 },
+    shadowOpacity: 0.3,
+    shadowRadius: 25,
+    elevation: 15,
   },
 
   deleteConfirmIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
     backgroundColor: "#FEF2F2",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 20,
+    marginBottom: 24,
+    borderWidth: 3,
+    borderColor: "#FECACA",
   },
 
   deleteConfirmTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontFamily: "Inter-Bold",
     color: "#1F2937",
-    marginBottom: 12,
+    marginBottom: 16,
+    textAlign: "center",
+    letterSpacing: -0.3,
   },
 
   deleteConfirmMessage: {
@@ -4395,29 +4473,41 @@ const styles = StyleSheet.create({
     color: "#6B7280",
     textAlign: "center",
     lineHeight: 24,
-    marginBottom: 24,
+    marginBottom: 32,
   },
 
   deleteConfirmButtons: {
     flexDirection: "row",
-    gap: 12,
+    gap: 16,
     width: "100%",
   },
 
   deleteConfirmCancelButton: {
     flex: 1,
-    backgroundColor: "#F3F4F6",
-    borderRadius: 12,
-    paddingVertical: 14,
+    backgroundColor: "#F9FAFB",
+    borderRadius: 16,
+    paddingVertical: 16,
     alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    shadowColor: "#64748B",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
 
   deleteConfirmDeleteButton: {
     flex: 1,
     backgroundColor: "#EF4444",
-    borderRadius: 12,
-    paddingVertical: 14,
+    borderRadius: 16,
+    paddingVertical: 16,
     alignItems: "center",
+    shadowColor: "#EF4444",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
   },
 
   deleteConfirmCancelText: {
@@ -4432,7 +4522,7 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
   },
 
-  // Add Options Menu Styles
+  // Add Options Menu Styles - Enhanced
   addOptionsContainer: {
     position: "absolute",
     top: 0,
@@ -4454,30 +4544,30 @@ const styles = StyleSheet.create({
 
   addOptionsMenu: {
     position: "absolute",
-    bottom: 170,
-    right: 24,
+    bottom: 180,
+    right: 28,
     backgroundColor: "#FFFFFF",
-    borderRadius: 12,
+    borderRadius: 20,
     shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-    width: 160,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 15,
+    elevation: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 6,
+    width: 180,
     zIndex: 5000,
   },
 
   addOptionsPointer: {
     position: "absolute",
-    bottom: -10,
-    right: 20,
+    bottom: -12,
+    right: 24,
     width: 0,
     height: 0,
-    borderLeftWidth: 10,
-    borderRightWidth: 10,
-    borderTopWidth: 10,
+    borderLeftWidth: 12,
+    borderRightWidth: 12,
+    borderTopWidth: 12,
     borderLeftColor: "transparent",
     borderRightColor: "transparent",
     borderTopColor: "#FFFFFF",
@@ -4487,11 +4577,11 @@ const styles = StyleSheet.create({
   addOptionButton: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    borderRadius: 12,
     marginVertical: 2,
-    marginHorizontal: 4,
+    marginHorizontal: 6,
   },
 
   drawingOptionButton: {
@@ -4507,101 +4597,107 @@ const styles = StyleSheet.create({
   },
 
   addOptionText: {
-    fontSize: 14,
+    fontSize: 15,
     fontFamily: "Inter-Medium",
-    marginLeft: 12,
+    marginLeft: 14,
     flex: 1,
   },
 
   mainAddFab: {
-    backgroundColor: "#6366F1",
+    backgroundColor: "#8B5CF6",
     bottom: 100,
     right: 24,
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
   },
 
   fabButtonRotated: {
     transform: [{ rotate: "45deg" }],
   },
 
-  // Drawing Setup Modal Styles
+  // Drawing Setup Modal Styles - Enhanced
   drawingModalSection: {
-    marginBottom: 32,
+    marginBottom: 36,
   },
 
   drawingModalSectionLabel: {
-    fontSize: 18,
-    fontFamily: "Inter-SemiBold",
+    fontSize: 20,
+    fontFamily: "Inter-Bold",
     color: "#1F2937",
-    marginBottom: 16,
+    marginBottom: 18,
     paddingLeft: 4,
+    letterSpacing: -0.2,
   },
 
   drawingModalSubLabel: {
     fontSize: 16,
     fontFamily: "Inter-Medium",
     color: "#374151",
-    marginBottom: 12,
+    marginBottom: 14,
     paddingLeft: 4,
   },
 
   drawingModalTextInput: {
     backgroundColor: "#F9FAFB",
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    borderRadius: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
     fontSize: 16,
     fontFamily: "Inter-Regular",
     color: "#1F2937",
     borderWidth: 2,
     borderColor: "#E5E7EB",
     shadowColor: "#64748B",
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    shadowRadius: 4,
+    elevation: 2,
   },
 
   orientationSubSection: {
-    marginTop: 20,
+    marginTop: 24,
   },
 
   sizeGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 12,
-    marginBottom: 16,
+    gap: 14,
+    marginBottom: 18,
   },
 
   sizeOption: {
     flex: 1,
     minWidth: "45%",
     backgroundColor: "#F8FAFC",
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 16,
+    padding: 18,
     alignItems: "center",
     borderWidth: 2,
     borderColor: "#E5E7EB",
     shadowColor: "#64748B",
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    shadowRadius: 4,
+    elevation: 2,
   },
 
   selectedSizeOption: {
     backgroundColor: "#8B5CF6",
     borderColor: "#8B5CF6",
     shadowColor: "#8B5CF6",
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 4,
   },
 
   sizeOptionName: {
-    fontSize: 14,
+    fontSize: 15,
     fontFamily: "Inter-Medium",
     color: "#374151",
-    marginBottom: 4,
+    marginBottom: 6,
   },
 
   sizeOptionDimensions: {
@@ -4615,26 +4711,26 @@ const styles = StyleSheet.create({
   },
 
   orientationContainer: {
-    marginTop: 16,
+    marginTop: 20,
   },
 
   orientationLabel: {
     fontSize: 14,
     fontFamily: "Inter-Regular",
     color: "#374151",
-    marginBottom: 8,
+    marginBottom: 10,
   },
 
   orientationToggle: {
     flexDirection: "row",
     backgroundColor: "#F1F5F9",
-    borderRadius: 12,
-    padding: 4,
+    borderRadius: 16,
+    padding: 6,
     shadowColor: "#64748B",
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    shadowRadius: 4,
+    elevation: 2,
   },
 
   orientationButton: {
@@ -4642,14 +4738,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    borderRadius: 12,
     gap: 8,
   },
 
   selectedOrientationButton: {
     backgroundColor: "#8B5CF6",
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 2,
   },
 
   orientationButtonText: {
@@ -4671,7 +4772,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "#FAFAFA",
-    borderRadius: 8,
+    borderRadius: 12,
   },
 
   selectedOrientationButtonText: {
@@ -4682,55 +4783,55 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "flex-start",
-    gap: 8,
+    gap: 12,
   },
 
   templateOption: {
-    marginRight: 12,
-    borderRadius: 12,
+    marginRight: 16,
+    borderRadius: 16,
     borderWidth: 2,
     borderColor: "transparent",
-    padding: 12,
+    padding: 14,
     backgroundColor: "transparent",
     alignItems: "center",
-    width: 120,
+    width: 130,
     shadowColor: "#64748B",
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   selectedTemplateOption: {
     borderColor: "#8B5CF6",
     backgroundColor: "#F5F3FF",
     shadowColor: "#8B5CF6",
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 4,
   },
   templatePreviewWrapper: {
     width: 100,
     height: 60,
-    borderRadius: 8,
+    borderRadius: 12,
     overflow: "hidden",
     backgroundColor: "#fff",
     borderWidth: 1,
     borderColor: "#e5e7eb",
-    marginBottom: 8,
+    marginBottom: 12,
     shadowColor: "#64748B",
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   templateIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: "#E5E7EB",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 8,
+    marginBottom: 12,
   },
 
   selectedTemplateIcon: {
@@ -4738,10 +4839,10 @@ const styles = StyleSheet.create({
   },
 
   templateName: {
-    fontSize: 11,
+    fontSize: 12,
     color: "#374151",
     textAlign: "center",
-    marginTop: 2,
+    marginTop: 4,
     fontFamily: "Inter-Regular",
     width: 100,
   },

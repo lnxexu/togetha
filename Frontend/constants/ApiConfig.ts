@@ -91,6 +91,10 @@ export const API_ENDPOINTS = {
     SIGNUP: '/signup/',
     TEST_TOKEN: '/test_token/',
     LOGOUT: '/logout_user/',
+    GOOGLE_AUTH: '/users/google-auth/',
+    VERIFY_TOKEN: '/users/verify-token/',
+    FORGOT_PASSWORD: '/users/forgot-password/',
+    VERIFY_RESET_CODE: '/users/verify-reset-code/',
 
     // User profile endpoints
     GET_USER_INFO: "/get_user_info/",

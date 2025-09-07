@@ -74,15 +74,7 @@ This project consists of a React Native frontend (using Expo) and a Django backe
 
 2. Install required packages:
    ```bash
-   pip install django
-   pip install djangorestframework
-   pip install django-cors-headers
-   pip install celery
-   pip install redis
-   pip install django-celery-beat
-   pip install django-celery-results
-   pip install pillow
-   pip install python-decouple
+   pip install -r requirements.txt
    ```
 
 3. Navigate to server directory:

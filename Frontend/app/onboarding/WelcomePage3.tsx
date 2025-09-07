@@ -6,7 +6,11 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import PersonalizeSVG from '../../assets/illustrations/undraw_education_3vwh.svg';
+import { OnboardingColors } from '../../constants/Colors';
+import { getSafeAreaConfig } from './utils/SafeAreaUtils';
 
 interface WelcomePage3Props {
   onGetStartedPress: () => void;
@@ -14,15 +18,22 @@ interface WelcomePage3Props {
 
 const WelcomePage3: React.FC<WelcomePage3Props> = ({ onGetStartedPress }) => {
   const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const isLandscape = width > height;
+  const safeAreaConfig = getSafeAreaConfig(insets, height, isLandscape);
 
   return (
-    <View style={[styles.slide, { 
-      width, 
-      minHeight: height, 
-      padding: isLandscape ? 10 : 20,
-      maxWidth: isLandscape ? '100%' : width
-    }]}>
+    <LinearGradient
+      colors={['#FAF5FF', '#F3E8FF'] as const}
+      style={[styles.slide, { 
+        width, 
+        minHeight: safeAreaConfig.minHeight, 
+        paddingTop: isLandscape ? 10 : 20,
+        paddingBottom: safeAreaConfig.paddingBottom,
+        paddingHorizontal: isLandscape ? 10 : 20,
+        maxWidth: isLandscape ? '100%' : width
+      }]}
+    >
       <View style={[styles.contentContainer, { 
         flex: 1,
         maxWidth: isLandscape ? '100%' : width * 0.9
@@ -47,10 +58,10 @@ const WelcomePage3: React.FC<WelcomePage3Props> = ({ onGetStartedPress }) => {
           maxWidth: isLandscape ? '100%' : width * 0.85,
           marginBottom: isLandscape ? 10 : 40,
           paddingHorizontal: isLandscape ? 20 : 20
-        }]}>Help us understand your path better.</Text>
+        }]}>Join thousands of students and professionals who stay organized and achieve their goals with Togetha.</Text>
         <TouchableOpacity
           style={[styles.getStartedButton, { 
-            paddingVertical: isLandscape ? width * 0.008 : width * 0.03, 
+            paddingVertical: isLandscape ? width * 0.01 : width * 0.03, 
             paddingHorizontal: isLandscape ? width * 0.03 : width * 0.08, 
             borderRadius: isLandscape ? width * 0.02 : width * 0.07,
             marginTop: isLandscape ? 3 : 10
@@ -60,7 +71,7 @@ const WelcomePage3: React.FC<WelcomePage3Props> = ({ onGetStartedPress }) => {
           <Text style={[styles.getStartedButtonText, { fontSize: isLandscape ? width * 0.018 : width * 0.045 }]}>Get Started</Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </LinearGradient>
   );
 };
 
@@ -69,7 +80,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F1D3FF',
   },
   contentContainer: {
     flex: 1,
@@ -78,11 +88,20 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   topTitle: {
-    color: '#6A009C',
-    fontFamily: 'Lexend',
+    color: OnboardingColors.primary.main,
+    fontWeight: '800',
+    letterSpacing: 1,
   },
   welcomeImage: {
-    borderRadius: 10,
+    borderRadius: 20,
+    shadowColor: OnboardingColors.shadow.purple,
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
   },
   imageContainer: {
     width: '100%',
@@ -90,28 +109,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   title: {
-    fontFamily: 'Inter-Bold',
+    fontWeight: '700',
     textAlign: 'center',
-    color: '#A600F4',
+    color: OnboardingColors.primary.main,
+    letterSpacing: 0.5,
   },
   subtitle: {
-    fontFamily: 'Inter-Medium',
+    fontWeight: '500',
     textAlign: 'center',
-    color: '#000000',
+    color: OnboardingColors.text.secondary,
+    lineHeight: 24,
   },
   getStartedButton: {
-    backgroundColor: '#A32EDA',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 5,
-    elevation: 5,
+    backgroundColor: OnboardingColors.primary.main,
+    shadowColor: OnboardingColors.shadow.purple,
+    shadowOffset: { 
+      width: 0, 
+      height: 6 
+    },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 8,
     alignSelf: 'center',
   },
   getStartedButtonText: {
-    color: '#fff',
-    fontFamily: 'Inter-Medium',
+    color: OnboardingColors.text.white,
+    fontWeight: '700',
     textAlign: 'center',
+    letterSpacing: 0.5,
   },
 });
 

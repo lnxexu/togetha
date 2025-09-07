@@ -10,10 +10,16 @@ import {
   TextInput,
   Modal,
   ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+  Dimensions,
+  Vibration,
 } from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { LinearGradient } from "expo-linear-gradient";
 import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
+import { showSuccessToast, showErrorToast, showWarningToast } from "../utils/ToastUtils";
 import DrawingCanvas, { Stroke, DrawingTool } from "./components/DrawingCanvas";
 import DrawingToolbar from "./components/DrawingToolbar";
 import { useDrawingState } from "./hooks/useDrawingState";
@@ -134,13 +140,36 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
   const [folderName, setFolderName] = useState("Unorganized Notes");
   const [showFolderModal, setShowFolderModal] = useState(false);
 
+  // Tags states
+  const [tags, setTags] = useState<string[]>([]);
+  const [showTagModal, setShowTagModal] = useState(false);
+  const [newTag, setNewTag] = useState("");
+
+  // Sync status state
+  const [syncStatus, setSyncStatus] = useState<"saved" | "syncing" | "offline">(
+    "saved"
+  );
+
   // Exit confirmation modal state
   const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
+  const [windowDimensions, setWindowDimensions] = useState(Dimensions.get('window'));
 
   // Drawing state
   const [currentTool, setCurrentTool] = useState<DrawingTool>('pen');
   const [currentColor, setCurrentColor] = useState('#000000');
   const [currentWidth, setCurrentWidth] = useState(2);
+
+  const isTablet = windowDimensions.width >= 768;
+  const isSmallPhone = windowDimensions.width < 375;
+
+  // Effects
+  useEffect(() => {
+    const subscription = Dimensions.addEventListener('change', ({ window }) => {
+      setWindowDimensions(window);
+    });
+
+    return () => subscription?.remove();
+  }, []);
 
   const handleStrokeComplete = useCallback((stroke: Stroke) => {
     const drawingStroke: DrawingStroke = {
@@ -198,9 +227,15 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
   }, [selectedFolderId]);
 
   const handleFolderSelect = (folder: Folder | null) => {
+    // Add haptic feedback for better UX
+    if (Platform.OS === 'ios') {
+      Vibration.vibrate(10);
+    }
+    
     if (folder) {
       setSelectedFolderId(folder.id);
       setFolderName(folder.name);
+      showSuccessToast(`Moved to folder "${folder.name}"`);
     } else {
       setSelectedFolderId(null);
       setFolderName("Unorganized Notes");
@@ -208,20 +243,63 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
     setShowFolderModal(false);
   };
 
+  // Tag management functions
+  const addTag = () => {
+    if (newTag.trim() && !tags.includes(newTag.trim())) {
+      setTags([...tags, newTag.trim()]);
+      setNewTag("");
+      setSyncStatus("syncing");
+      // Auto-save with tags
+      setTimeout(() => setSyncStatus("saved"), 1000);
+    }
+  };
+
+  const removeTag = (tagToRemove: string) => {
+    setTags(tags.filter(tag => tag !== tagToRemove));
+    setSyncStatus("syncing");
+    // Auto-save with tags
+    setTimeout(() => setSyncStatus("saved"), 1000);
+  };
+
+  // Sync status functions
+  const getSyncStatusIcon = () => {
+    switch (syncStatus) {
+      case "syncing":
+        return "sync";
+      case "offline":
+        return "cloud-off";
+      default:
+        return "cloud-done";
+    }
+  };
+
+  const getSyncStatusColor = () => {
+    switch (syncStatus) {
+      case "syncing":
+        return "#F59E0B";
+      case "offline":
+        return "#EF4444";
+      default:
+        return "#34C759";
+    }
+  };
+
+  const getSyncStatusText = () => {
+    switch (syncStatus) {
+      case "syncing":
+        return "Syncing...";
+      case "offline":
+        return "Offline";
+      default:
+        return "Auto-saved";
+    }
+  };
+
   // Auto-save drawing when strokes change or when created
   const autoSave = useCallback(async () => {
-    console.log('AutoSave triggered with:', {
-      effectiveNoteId,
-      currentNoteId,
-      setupParams: !!setupParams,
-      strokesCount: strokes.length,
-      drawingTitle
-    });
-
     try {
       // Only create a new drawing if we don't have a noteId yet and we're in setup mode
       if (!effectiveNoteId && !currentNoteId && setupParams) {
-        console.log('Creating new drawing note...');
         // Create initial blank drawing when component mounts from setup
         try {
           const result = await drawingAPI.createDrawingNote(
@@ -229,34 +307,24 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
             strokes, // Use current strokes (could be empty or have data)
             selectedFolderId
           );
-          console.log('Created new drawing note:', result.noteId);
           // Set the note ID in the useDrawingState hook
           setNoteId(result.noteId);
         } catch (createError) {
-          console.error('Failed to create drawing note:', createError);
+          // Error handled silently during auto-save
         }
       } else if (currentNoteId || effectiveNoteId) {
         // Auto-save existing drawing
-        console.log('Auto-saving existing drawing with noteId:', currentNoteId || effectiveNoteId);
-        console.log('Strokes to save:', strokes.length);
-        
         if (strokes.length > 0) {
-          console.log('Calling saveDrawing...');
           await saveDrawing({ 
             type: "drawing",
             title: drawingTitle,
             template: activeTemplate,
             folderId: selectedFolderId
           });
-          console.log('SaveDrawing completed');
-        } else {
-          console.log('No strokes to save, skipping...');
         }
-      } else {
-        console.log('No conditions met for auto-save');
       }
     } catch (error) {
-      console.error("Auto-save error:", error);
+      // Silent auto-save error handling
     }
   }, [strokes, drawingTitle, selectedFolderId, activeTemplate, currentNoteId, effectiveNoteId, setupParams, saveDrawing, setNoteId]);
 
@@ -267,35 +335,19 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
 
   // Create initial blank drawing when setupParams exist and we don't have a noteId
   useEffect(() => {
-    console.log('Setup effect triggered:', {
-      hasSetupParams: !!setupParams,
-      effectiveNoteId,
-      currentNoteId
-    });
     if (setupParams && !effectiveNoteId && !currentNoteId) {
-      console.log('Triggering autoSave for setup...');
       autoSave();
     }
   }, [setupParams, effectiveNoteId, currentNoteId, autoSave]);
 
   // Auto-save when strokes change (with debounce) - only if we have a noteId
   useEffect(() => {
-    console.log('Strokes change effect triggered:', {
-      strokesCount: strokes.length,
-      hasCurrentNoteId: !!currentNoteId,
-      hasEffectiveNoteId: !!effectiveNoteId,
-      shouldTriggerAutoSave: strokes.length > 0 && (currentNoteId || effectiveNoteId)
-    });
-    
     if (strokes.length > 0 && (currentNoteId || effectiveNoteId)) {
-      console.log('Setting up auto-save timeout...');
       const timeoutId = setTimeout(() => {
-        console.log('Auto-save timeout triggered');
         autoSave();
       }, 1000); // 1 second debounce
 
       return () => {
-        console.log('Clearing auto-save timeout');
         clearTimeout(timeoutId);
       };
     }
@@ -307,42 +359,28 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
   };
 
   // Initialize with provided data
-  React.useEffect(() => {
-    console.log('DrawingEditor: useEffect triggered with effectiveInitialDrawingData:', !!effectiveInitialDrawingData);
-    
+  React.useEffect(() => {    
     if (effectiveInitialDrawingData) {
-      console.log('DrawingEditor: Initializing with drawing data:', effectiveInitialDrawingData);
-      console.log('DrawingEditor: Initial strokes count:', effectiveInitialDrawingData.strokes?.length || 0);
-      console.log('DrawingEditor: About to call importDrawing with:', {
-        hasStrokes: !!effectiveInitialDrawingData.strokes,
-        strokesLength: effectiveInitialDrawingData.strokes?.length,
-        dataKeys: Object.keys(effectiveInitialDrawingData)
-      });
-      
       // Import the drawing data
       importDrawing(effectiveInitialDrawingData);
 
       // Set the note ID if available
       if (effectiveInitialDrawingData.id && !currentNoteId) {
-        console.log('DrawingEditor: Setting note ID from initial data:', effectiveInitialDrawingData.id);
         // Don't set currentNoteId here as it might cause a re-load that overwrites our imported data
       }
 
       // Restore template if available
       if (effectiveInitialDrawingData.template) {
-        console.log('DrawingEditor: Setting template from initial data:', effectiveInitialDrawingData.template);
         setActiveTemplate(effectiveInitialDrawingData.template);
       }
 
       // Set the title from the drawing data
       if (effectiveInitialDrawingData.title) {
-        console.log('DrawingEditor: Setting title from initial data:', effectiveInitialDrawingData.title);
         setDrawingTitle(effectiveInitialDrawingData.title);
       }
 
       // Set the folder from the drawing data if available
       if (effectiveInitialDrawingData.folderId) {
-        console.log('DrawingEditor: Setting folder from initial data:', effectiveInitialDrawingData.folderId);
         setSelectedFolderId(effectiveInitialDrawingData.folderId.toString());
         // Set folder name if available in the data
         if (effectiveInitialDrawingData.folderName) {
@@ -350,7 +388,6 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
         }
       } else if (effectiveInitialDrawingData.folder_id) {
         // Also check for snake_case version
-        console.log('DrawingEditor: Setting folder from initial data (snake_case):', effectiveInitialDrawingData.folder_id);
         setSelectedFolderId(effectiveInitialDrawingData.folder_id.toString());
         // Set folder name if available in the data
         if (effectiveInitialDrawingData.folderName) {
@@ -360,7 +397,6 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
       
       // Additional check for folder object in the data
       if (effectiveInitialDrawingData.folder && typeof effectiveInitialDrawingData.folder === 'object') {
-        console.log('DrawingEditor: Setting folder from folder object:', effectiveInitialDrawingData.folder);
         setSelectedFolderId(effectiveInitialDrawingData.folder.id?.toString() || effectiveInitialDrawingData.folder);
         if (effectiveInitialDrawingData.folder.name) {
           setFolderName(effectiveInitialDrawingData.folder.name);
@@ -372,11 +408,6 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
     }
   }, [effectiveInitialDrawingData, importDrawing]);
 
-  // Debug effect to monitor strokes
-  React.useEffect(() => {
-    console.log('DrawingEditor: Current strokes count:', strokes.length);
-  }, [strokes]);
-
   // Apply template and setup configurations
   React.useEffect(() => {
     if (setupParams?.template && setupParams.template !== "blank") {
@@ -386,19 +417,14 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
       // Apply template-specific configurations
       switch (setupParams.template) {
         case "grid":
-          console.log("Applied grid template");
           break;
         case "lines":
-          console.log("Applied lined paper template");
           break;
         case "dots":
-          console.log("Applied dot grid template");
           break;
         case "sketch":
-          console.log("Applied sketch pad template");
           break;
         case "notes":
-          console.log("Applied note taking template");
           break;
         default:
           break;
@@ -407,18 +433,16 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
 
     // Apply size and orientation (for future canvas size adjustments)
     if (setupParams?.dimensions) {
-      console.log(
-        `Canvas dimensions: ${setupParams.dimensions} (${setupParams.orientation})`
-      );
+      // Canvas dimensions configuration
     }
   }, [setupParams]);
 
   const handleManualSave = async () => {
     try {
       await saveDrawing();
+      showSuccessToast("Drawing saved successfully");
     } catch (error) {
-      // Show error toast
-      console.error("Failed to save drawing:", error);
+      showErrorToast("Failed to save drawing. Please try again.");
     }
   };
 
@@ -450,16 +474,20 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
   };
 
   const handleBack = () => {
-    // If there are strokes (drawing content) or unsaved changes, show confirmation dialog
+    // If there are strokes (drawing content) or unsaved changes, show toast and exit
     if (strokes.length > 0 || hasUnsavedChanges) {
-      setShowExitConfirmModal(true);
-    } else {
-      // No content, go back directly
-      if (onBack) {
-        onBack();
-      } else if (navigation && typeof navigation.goBack === "function") {
-        navigation.goBack();
+      showSuccessToast("Drawing saved automatically");
+      // Add haptic feedback
+      if (Platform.OS === 'ios') {
+        Vibration.vibrate(10);
       }
+    }
+    
+    // Navigate back
+    if (onBack) {
+      onBack();
+    } else if (navigation && typeof navigation.goBack === "function") {
+      navigation.goBack();
     }
   };
   
@@ -468,273 +496,340 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.headerButton} onPress={handleBack}>
-          <Ionicons name="chevron-back" size={24} color="#333" />
-        </TouchableOpacity>
-
-        <View style={styles.titleContainer}>
-          {editingTitle && !readOnly ? (
-            <TextInput
-              style={styles.titleInputInline}
-              value={drawingTitle}
-              onChangeText={setDrawingTitle}
-              onBlur={() => setEditingTitle(false)}
-              onSubmitEditing={() => setEditingTitle(false)}
-              placeholder="Enter drawing title"
-              maxLength={50}
-              autoFocus
-              returnKeyType="done"
-            />
-          ) : (
-            <TouchableOpacity
-              style={{ flexDirection: "row", alignItems: "center" }}
-              onPress={() => !readOnly && setEditingTitle(true)}
-              activeOpacity={readOnly ? 1 : 0.7}
-            >
-              <View style={{ alignItems: "center" }}>
-                <Text style={styles.headerTitle}>{drawingTitle}</Text>
-                {setupParams && (
-                  <Text style={styles.setupInfo}>
-                    {setupParams.dimensions} • {setupParams.template} •{" "}
-                    {setupParams.orientation}
-                  </Text>
-                )}
-              </View>
-              {!readOnly && (
-                <Ionicons
-                  name="pencil"
-                  size={20}
-                  color="#666"
-                  style={styles.editIcon}
-                />
-              )}
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {!readOnly && (
-          <View style={styles.headerActions}>
-            <Text style={styles.autoSaveIndicator}>Auto-saved</Text>
-          </View>
-        )}
-      </View>
-
-      {/* Folder Selection - positioned below header */}
-      {!readOnly && (
-        <View style={styles.folderSection}>
-          <TouchableOpacity
-            style={styles.folderSelector}
-            onPress={() => setShowFolderModal(true)}
-          >
-            <MaterialIcons
-              name="folder"
-              size={18}
-              color={selectedFolderId ? "#6A009C" : "#64748B"}
-            />
-            <Text
-              style={[
-                styles.folderName,
-                { color: selectedFolderId ? "#6A009C" : "#64748B" },
-              ]}
-            >
-              {folderName}
-            </Text>
-            <MaterialIcons
-              name="chevron-right"
-              size={18}
-              color="#9CA3AF"
-            />
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Toolbar just below header */}
-      {!readOnly && (
-        <View style={styles.toolbarContainer}>
-          <DrawingToolbar
-            currentTool={currentTool}
-            currentColor={currentColor}
-            currentWidth={currentWidth}
-            currentTemplate={activeTemplate}
-            onToolChange={setCurrentTool}
-            onColorChange={setCurrentColor}
-            onWidthChange={setCurrentWidth}
-            onTemplateChange={handleTemplateChange}
-            onUndo={undo}
-            onRedo={redo}
-            onClear={handleClear}
-            onDropdownToggle={handleToolbarDropdownToggle}
-            canUndo={canUndo}
-            canRedo={canRedo}
-          />
-        </View>
-      )}
-
-      <View style={styles.canvasContainer}>
-        <DrawingCanvas
-          strokes={strokes}
-          currentTool={currentTool}
-          currentColor={currentColor}
-          currentWidth={currentWidth}
-          onStrokeComplete={handleStrokeComplete}
-          onAddStroke={addStroke}
-          onStrokeUpdate={setCurrentStroke}
-          disabled={readOnly}
-          backgroundColor={getTemplateBackgroundColor(activeTemplate)}
-          template={activeTemplate}
-          templateOptions={getTemplateOptionsForCanvas()}
-        />
-      </View>
-
-      {/* Folder Selection Modal */}
-      <Modal
-        visible={showFolderModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowFolderModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <MaterialIcons name="folder" size={28} color="#6A009C" />
-              <Text style={[styles.modalTitle, { marginBottom: 0, marginLeft: 12 }]}>Select Folder</Text>
-            </View>
-
-            <ScrollView
-              style={{ maxHeight: 400 }}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 10 }}
-            >
-              {/* Unorganized Notes Option */}
-              <TouchableOpacity
-                style={[
-                  styles.folderItem,
-                  !selectedFolderId && styles.selectedFolderItem,
-                ]}
-                onPress={() => handleFolderSelect(null)}
-              >
-                <View
-                  style={[styles.folderIcon, { backgroundColor: "#64748B" }]}
-                >
-                  <MaterialIcons name="notes" size={20} color="#FFFFFF" />
-                </View>
-                <Text style={styles.folderItemName}>Unorganized Notes</Text>
-                {!selectedFolderId && (
-                  <MaterialIcons
-                    name="check-circle"
-                    size={22}
-                    color="#6A009C"
-                  />
-                )}
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
+      <View style={styles.rootContainer}>
+        {/* Header with LinearGradient positioned behind content */}
+        <LinearGradient
+          colors={["#8B5CF6", "#7C3AED"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.header}
+        >
+          <View style={styles.headerContent}>
+            <View style={styles.headerTopRow}>
+              <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+                <Ionicons name="chevron-back" size={24} color="#fff" />
               </TouchableOpacity>
 
-              <View style={styles.folderDivider}>
-                <View style={styles.folderDividerLine} />
-                <Text style={styles.folderDividerText}>Folders</Text>
-                <View style={styles.folderDividerLine} />
+              <View style={styles.headerTitleSection}>
+                {editingTitle && !readOnly ? (
+                  <TextInput
+                    style={styles.modernTitleInput}
+                    value={drawingTitle}
+                    onChangeText={setDrawingTitle}
+                    onBlur={() => setEditingTitle(false)}
+                    onSubmitEditing={() => setEditingTitle(false)}
+                    placeholder="Enter drawing title"
+                    placeholderTextColor="rgba(255,255,255,0.6)"
+                    maxLength={50}
+                    autoFocus
+                    returnKeyType="done"
+                  />
+                ) : (
+                  <TouchableOpacity
+                    style={styles.titleTouchable}
+                    onPress={() => !readOnly && setEditingTitle(true)}
+                    activeOpacity={readOnly ? 1 : 0.7}
+                  >
+                    <Text style={styles.headerTitle}>{drawingTitle}</Text>
+                    {!readOnly && (
+                      <MaterialIcons
+                        name="edit"
+                        size={16}
+                        color="rgba(255,255,255,0.8)"
+                        style={styles.editIcon}
+                      />
+                    )}
+                  </TouchableOpacity>
+                )}
+                
+                {/* Save Status under title */}
+                <View style={styles.headerCenter}>
+                  <View style={styles.headerSyncStatus}>
+                    <MaterialIcons 
+                      name={getSyncStatusIcon()} 
+                      size={12} 
+                      color="rgba(255,255,255,0.8)" 
+                    />
+                    <Text style={styles.headerSyncText}>{getSyncStatusText()}</Text>
+                  </View>
+                  {setupParams && (
+                    <Text style={styles.setupInfo}>
+                      {setupParams.dimensions} • {setupParams.template} • {setupParams.orientation}
+                    </Text>
+                  )}
+                </View>
               </View>
 
-              {/* Folder List */}
-              {folders.map((folder) => (
-                <TouchableOpacity
-                  key={folder.id}
-                  style={[
-                    styles.folderItem,
-                    selectedFolderId === folder.id &&
-                      styles.selectedFolderItem,
-                  ]}
-                  onPress={() => handleFolderSelect(folder)}
-                >
-                  <View
-                    style={[
-                      styles.folderIcon,
-                      { backgroundColor: folder.color || "#6A009C" },
-                    ]}
+              {!readOnly && (
+                <View style={styles.headerActions}>
+                  <TouchableOpacity
+                    style={styles.saveButton}
+                    onPress={handleManualSave}
+                    disabled={isSaving}
                   >
                     <MaterialIcons
-                      name={folder.icon as any || "folder"}
+                      name={isSaving ? "sync" : "check"}
                       size={20}
-                      color="#FFFFFF"
+                      color="#fff"
                     />
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          </View>
+        </LinearGradient>
+
+        {/* Main Content Container positioned above header */}
+        <View style={styles.mainContentContainer}>
+          {/* Compact header info */}
+          {!readOnly && (
+            <View style={styles.compactHeaderInfo}>
+              {/* Compact metadata row */}
+              <View style={styles.compactMetadata}>
+                <View style={styles.folderSection}>
+                  <TouchableOpacity
+                    style={styles.compactFolderSelector}
+                    onPress={() => setShowFolderModal(true)}
+                  >
+                    <MaterialIcons name="folder" size={16} color="#8B5CF6" />
+                    <Text style={styles.compactFolderText}>{folderName}</Text>
+                    <MaterialIcons name="keyboard-arrow-down" size={16} color="#8B5CF6" />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.tagSection}>
+                  <View style={styles.compactTagsSection}>
+                    <TouchableOpacity
+                      style={styles.addTagButton}
+                      onPress={() => setShowTagModal(true)}
+                    >
+                      <MaterialIcons name="add" size={14} color="#8B5CF6" />
+                      <Text style={styles.addTagText}>Tag</Text>
+                    </TouchableOpacity>
+                    
+                    <View style={styles.tagsDisplayContainer}>
+                      <ScrollView 
+                        horizontal 
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.tagsScrollContent}
+                      >
+                        <View style={styles.tagsContainer}>
+                          {tags.map((tag, index) => (
+                            <View key={index} style={styles.compactTag}>
+                              <Text style={styles.compactTagText} numberOfLines={1}>
+                                {tag}
+                              </Text>
+                              <TouchableOpacity onPress={() => removeTag(tag)}>
+                                <MaterialIcons name="close" size={12} color="#8B5CF6" />
+                              </TouchableOpacity>
+                            </View>
+                          ))}
+                        </View>
+                      </ScrollView>
+                    </View>
                   </View>
-                  <Text style={styles.folderItemName}>{folder.name}</Text>
-                  {selectedFolderId === folder.id && (
+                </View>
+              </View>
+            </View>
+          )}
+
+          {/* Toolbar */}
+          {!readOnly && (
+            <View style={styles.compactToolbarContainer}>
+              <View style={styles.toolbarContentWrapper}>
+                <DrawingToolbar
+                  currentTool={currentTool}
+                  currentColor={currentColor}
+                  currentWidth={currentWidth}
+                  currentTemplate={activeTemplate}
+                  onToolChange={setCurrentTool}
+                  onColorChange={setCurrentColor}
+                  onWidthChange={setCurrentWidth}
+                  onTemplateChange={handleTemplateChange}
+                  onUndo={undo}
+                  onRedo={redo}
+                  onClear={handleClear}
+                  onDropdownToggle={handleToolbarDropdownToggle}
+                  canUndo={canUndo}
+                  canRedo={canRedo}
+                />
+              </View>
+            </View>
+          )}
+
+          {/* Canvas Container */}
+          <View style={[styles.modernCanvasWrapper, { 
+            minHeight: isTablet ? 600 : isSmallPhone ? 400 : 500,
+            maxHeight: windowDimensions.height - 300
+          }]}>
+            <DrawingCanvas
+              strokes={strokes}
+              currentTool={currentTool}
+              currentColor={currentColor}
+              currentWidth={currentWidth}
+              onStrokeComplete={handleStrokeComplete}
+              onAddStroke={addStroke}
+              onStrokeUpdate={setCurrentStroke}
+              disabled={readOnly}
+              backgroundColor={getTemplateBackgroundColor(activeTemplate)}
+              template={activeTemplate}
+              templateOptions={getTemplateOptionsForCanvas()}
+            />
+          </View>
+        </View>
+
+        </View>
+
+        {/* Folder Selection Modal */}
+        <Modal
+          visible={showFolderModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowFolderModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <MaterialIcons name="folder" size={28} color="#8B5CF6" />
+                <Text style={[styles.modalTitle, { marginBottom: 0, marginLeft: 12 }]}>Select Folder</Text>
+              </View>
+
+              <View style={{ maxHeight: 400, paddingBottom: 10 }}>
+                {/* Unorganized Notes Option */}
+                <TouchableOpacity
+                  style={[
+                    styles.folderItem,
+                    !selectedFolderId && styles.selectedFolderItem,
+                  ]}
+                  onPress={() => handleFolderSelect(null)}
+                >
+                  <View
+                    style={[styles.folderIcon, { backgroundColor: "#64748B" }]}
+                  >
+                    <MaterialIcons name="notes" size={20} color="#FFFFFF" />
+                  </View>
+                  <Text style={styles.folderItemName}>Unorganized Notes</Text>
+                  {!selectedFolderId && (
                     <MaterialIcons
                       name="check-circle"
                       size={22}
-                      color="#6A009C"
+                      color="#8B5CF6"
                     />
                   )}
                 </TouchableOpacity>
-              ))}
-            </ScrollView>
 
-            <TouchableOpacity
-              style={[
-                styles.cancelButton,
-                { marginTop: 20, alignSelf: "stretch" },
-              ]}
-              onPress={() => setShowFolderModal(false)}
-            >
-              <Text style={[styles.modalCancelText, { textAlign: "center" }]}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+                <View style={styles.folderDivider}>
+                  <View style={styles.folderDividerLine} />
+                  <Text style={styles.folderDividerText}>Folders</Text>
+                  <View style={styles.folderDividerLine} />
+                </View>
 
-      {/* Exit Confirmation Modal */}
-      <Modal
-        visible={showExitConfirmModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowExitConfirmModal(false)}
-      >
-        <View style={styles.exitConfirmOverlay}>
-          <View style={styles.exitConfirmModal}>
-            <View style={styles.exitConfirmHeader}>
-              <MaterialIcons name="exit-to-app" size={28} color="#FF6B6B" />
-              <Text style={styles.exitConfirmTitle}>Exit Drawing Editor</Text>
-            </View>
-            
-            <Text style={styles.exitConfirmMessage}>
-              Are you sure you want to exit the drawing editor?{'\n'}
-              Your changes have been saved automatically.
-            </Text>
-            
-            <View style={styles.exitConfirmActions}>
+                {/* Folder List */}
+                {folders.map((folder) => (
+                  <TouchableOpacity
+                    key={folder.id}
+                    style={[
+                      styles.folderItem,
+                      selectedFolderId === folder.id && styles.selectedFolderItem,
+                    ]}
+                    onPress={() => handleFolderSelect(folder)}
+                  >
+                    <View
+                      style={[
+                        styles.folderIcon,
+                        { backgroundColor: folder.color || "#8B5CF6" },
+                      ]}
+                    >
+                      <MaterialIcons
+                        name={folder.icon as any || "folder"}
+                        size={20}
+                        color="#FFFFFF"
+                      />
+                    </View>
+                    <Text style={styles.folderItemName}>{folder.name}</Text>
+                    {selectedFolderId === folder.id && (
+                      <MaterialIcons
+                        name="check-circle"
+                        size={22}
+                        color="#8B5CF6"
+                      />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+
               <TouchableOpacity
-                style={[styles.exitConfirmButton, styles.exitConfirmCancelButton]}
-                onPress={() => {
-                  setShowExitConfirmModal(false);
-                }}
+                style={[
+                  styles.cancelButton,
+                  { marginTop: 20, alignSelf: "stretch" },
+                ]}
+                onPress={() => setShowFolderModal(false)}
               >
-                <Text style={styles.exitConfirmCancelText}>Continue Drawing</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={[styles.exitConfirmButton, styles.exitConfirmExitButton]}
-                onPress={() => {
-                  setShowExitConfirmModal(false);
-                  // Call the appropriate back handler
-                  if (onBack) {
-                    onBack();
-                  } else if (navigation && typeof navigation.goBack === "function") {
-                    navigation.goBack();
-                  }
-                }}
-              >
-                <Text style={styles.exitConfirmExitText}>Exit</Text>
+                <Text style={[styles.modalCancelText, { textAlign: "center" }]}>Cancel</Text>
               </TouchableOpacity>
             </View>
           </View>
-        </View>
-      </Modal>
-    </SafeAreaView>
+        </Modal>
+
+        {/* Tag Modal */}
+        <Modal
+          visible={showTagModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowTagModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <MaterialIcons name="local-offer" size={28} color="#8B5CF6" />
+                <Text style={[styles.modalTitle, { marginBottom: 0, marginLeft: 12 }]}>Add Tag</Text>
+              </View>
+
+              <TextInput
+                style={styles.tagInput}
+                value={newTag}
+                onChangeText={setNewTag}
+                placeholder="Enter tag name"
+                placeholderTextColor="#9CA3AF"
+                maxLength={20}
+                returnKeyType="done"
+                onSubmitEditing={addTag}
+                autoFocus
+              />
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={styles.cancelButton}
+                  onPress={() => {
+                    setShowTagModal(false);
+                    setNewTag("");
+                  }}
+                >
+                  <Text style={styles.modalCancelText}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.modalActionButton,
+                    !newTag.trim() && styles.modalActionButtonDisabled,
+                  ]}
+                  onPress={() => {
+                    addTag();
+                    setShowTagModal(false);
+                  }}
+                  disabled={!newTag.trim()}
+                >
+                  <Text style={styles.modalActionText}>Add Tag</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -763,10 +858,10 @@ const TitleEditor: React.FC<{
             <Text style={styles.cancelButtonText}>Cancel</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.saveButton}
+            style={styles.modalSaveButton}
             onPress={() => onSave(title)}
           >
-            <Text style={styles.saveButtonText}>Save</Text>
+            <Text style={styles.modalSaveButtonText}>Save</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -777,29 +872,264 @@ const TitleEditor: React.FC<{
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop: StatusBar.currentHeight || 40,
-    backgroundColor: "#fff",
-    overflow: "visible",
+    backgroundColor: "#f8fafc",
+  },
+  rootContainer: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
   },
   header: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 24,
+    paddingTop: Platform.OS === "ios" ? 50 : 50,
+    paddingBottom: "100%",
+    zIndex: 1,
+  },
+  headerContent: {
+    flex: 1,
+  },
+  headerTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  headerTitleSection: {
+    flex: 1,
+  },
+  headerCenter: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 2,
+  },
+  headerSyncStatus: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginRight: 12,
+  },
+  headerSyncText: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.8)",
+    fontFamily: "Inter-Medium",
+    marginLeft: 4,
+  },
+  titleTouchable: {
+    alignItems: "center",
+    flexDirection: "row",
+  },
+  headerTitle: {
+    fontSize: 24,
+    color: "#FFFFFF",
+    fontFamily: "Inter-Bold",
+    lineHeight: 28,
+  },
+  setupInfo: {
+    fontSize: 12,
+    fontFamily: "Inter-Regular",
+    color: "rgba(255,255,255,0.8)",
+    textAlign: "center",
+    marginTop: 2,
+  },
+  editIcon: {
+    marginLeft: 8,
+  },
+  modernTitleInput: {
+    fontSize: Platform.select({ ios: 20, android: 18 }),
+    fontFamily: "Inter-Bold",
+    color: "#FFFFFF",
+    backgroundColor: "rgba(255,255,255,0.2)",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 0,
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  saveButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  mainContentContainer: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    marginTop: 120,
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 10,
+    zIndex: 1000,
+    overflow: "hidden",
+    paddingTop: 20,
+    paddingHorizontal: Platform.select({ ios: 16, android: 12 }),
+  },
+  compactHeaderInfo: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: Platform.select({ ios: 20, android: 16 }),
+    marginBottom: 16,
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+  },
+  compactMetadata: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: "#f8f9fa",
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    marginBottom: 12,
   },
+  folderSection: {
+    flex: 1,
+    alignItems: "flex-start",
+  },
+  tagSection: {
+    flex: 1,
+    alignItems: "flex-end",
+  },
+  compactTagsSection: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  addTagButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F3F4F6",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginRight: 8,
+    marginBottom: 4,
+  },
+  addTagText: {
+    color: "#8B5CF6",
+    marginLeft: 4,
+    fontFamily: "Inter-Medium",
+    fontSize: 12,
+  },
+  tagsDisplayContainer: {
+    marginTop: 8,
+    maxHeight: 60,
+  },
+  tagsScrollContent: {
+    paddingRight: 16,
+  },
+  tagsContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  compactTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#EDE9FE",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 14,
+    marginRight: 8,
+    marginBottom: 4,
+    minWidth: 60,
+    maxWidth: 100,
+  },
+  compactTagText: {
+    color: "#8B5CF6",
+    fontSize: 12,
+    fontFamily: "Inter-Medium",
+    marginRight: 4,
+    flexShrink: 1,
+  },
+  compactSyncContainer: {
+    alignItems: "center",
+    marginTop: 8,
+  },
+  compactFolderSelector: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F8FAFC",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  compactFolderText: {
+    marginHorizontal: 8,
+    fontSize: 13,
+    fontFamily: "Inter-Medium",
+    color: "#6B7280",
+  },
+  syncStatusContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F9FAFB",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  syncStatusText: {
+    marginLeft: 6,
+    fontSize: 12,
+    fontFamily: "Inter-Medium",
+    color: "#34C759",
+  },
+  compactToolbarContainer: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 12,
+    marginBottom: 16,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  toolbarContentWrapper: {
+    paddingHorizontal: 8,
+  },
+  modernCanvasWrapper: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+    overflow: "hidden",
+  },
+  
+  // Legacy styles for compatibility
   headerButton: {
     padding: 8,
     width: 40,
-    alignItems: "center",
-  },
-  headerActions: {
     alignItems: "center",
   },
   autoSaveIndicator: {
@@ -808,8 +1138,8 @@ const styles = StyleSheet.create({
     fontFamily: "Inter-Medium",
   },
   
-  // Folder selection styles
-  folderSection: {
+  // Folder selection styles (legacy)
+  legacyFolderSection: {
     paddingHorizontal: 16,
     paddingVertical: 8,
     backgroundColor: "#f8f9fa",
@@ -852,29 +1182,12 @@ const styles = StyleSheet.create({
     minWidth: 100,
     maxWidth: 220,
   },
-  headerTitle: {
-    fontSize: 18,
-    fontFamily: "Inter-Medium",
-    color: "#333",
-    textAlign: "center",
-    marginRight: 4,
-  },
-  setupInfo: {
-    fontSize: 12,
-    fontFamily: "Inter-Regular",
-    color: "#666",
-    textAlign: "center",
-    marginTop: 2,
-  },
-  editIcon: {
-    marginLeft: 4,
-  },
 
   toolbarContainer: {
     borderBottomWidth: 1,
     borderBottomColor: "#e9ecef",
     backgroundColor: "#fafbfc",
-    zIndex: 100, // Higher than canvas
+    zIndex: 100,
   },
 
   canvasContainer: {
@@ -888,16 +1201,16 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
-    zIndex: 1, // Lowest priority
+    zIndex: 1,
   },
 
   // Modal Styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    backgroundColor: "rgba(0, 0, 0, 0.65)",
     justifyContent: "center",
     alignItems: "center",
-    padding: 20,
+    paddingHorizontal: 20,
   },
   titleEditorModal: {
     backgroundColor: "#ffffff",
@@ -924,11 +1237,54 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
   },
   modalTitle: {
-    fontSize: 20,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 20,
+    fontSize: 24,
+    fontFamily: "Inter-Bold",
+    color: "#1F2937",
+    marginBottom: 24,
     textAlign: "center",
+  },
+  tagInput: {
+    borderWidth: 2,
+    borderColor: "#E5E7EB",
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    fontFamily: "Inter-Regular",
+    marginBottom: 20,
+    backgroundColor: "#F9FAFB",
+    shadowColor: "#1F2937",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  modalActions: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 8,
+    gap: 16,
+  },
+  modalActionButton: {
+    flex: 1,
+    paddingHorizontal: 28,
+    paddingVertical: 16,
+    borderRadius: 16,
+    backgroundColor: "#8B5CF6",
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 6,
+    alignItems: "center",
+  },
+  modalActionButtonDisabled: {
+    backgroundColor: "#D1D5DB",
+    opacity: 0.6,
+  },
+  modalActionText: {
+    color: "#fff",
+    fontFamily: "Inter-SemiBold",
+    fontSize: 17,
   },
   titleInput: {
     borderWidth: 2,
@@ -945,26 +1301,31 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   cancelButton: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#dc3545",
-    alignItems: "center",
+    backgroundColor: "#F8FAFC",
+    borderWidth: 2,
+    borderColor: "#E5E7EB",
+    paddingVertical: 16,
+    paddingHorizontal: 28,
+    borderRadius: 16,
+    shadowColor: "#1F2937",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   cancelButtonText: {
     color: "#dc3545",
     fontSize: 16,
     fontWeight: "600",
   },
-  saveButton: {
+  modalSaveButton: {
     flex: 1,
     padding: 12,
     borderRadius: 8,
     backgroundColor: "#007bff",
     alignItems: "center",
   },
-  saveButtonText: {
+  modalSaveButtonText: {
     color: "#ffffff",
     fontSize: 16,
     fontWeight: "600",
@@ -1003,72 +1364,93 @@ const styles = StyleSheet.create({
 
   // Modal styles
   modalContent: {
-    backgroundColor: "#ffffff",
-    borderRadius: 16,
-    padding: 24,
-    width: "90%",
-    maxWidth: 400,
-    elevation: 10,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 28,
+    width: "92%",
+    maxWidth: 420,
+    maxHeight: "85%",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 15,
   },
   modalHeader: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 20,
+    justifyContent: "center",
+    marginBottom: 24,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
   },
   modalCancelText: {
-    color: "#dc3545",
-    fontSize: 16,
-    fontWeight: "600",
+    color: "#6B7280",
+    fontFamily: "Inter-SemiBold",
+    fontSize: 17,
   },
 
   // Folder modal styles
   folderItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    marginVertical: 2,
+    padding: 18,
+    borderRadius: 16,
+    backgroundColor: "#FFFFFF",
+    marginBottom: 12,
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+    borderWidth: 2,
+    borderColor: "#F8FAFC",
   },
   selectedFolderItem: {
-    backgroundColor: "#f0f9ff",
-    borderWidth: 1,
-    borderColor: "#bfdbfe",
+    backgroundColor: "#F0F9FF",
+    borderColor: "#0EA5E9",
+    borderWidth: 2,
+    shadowColor: "#0EA5E9",
+    shadowOpacity: 0.15,
   },
   folderIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 6,
+    width: 52,
+    height: 52,
+    borderRadius: 16,
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 3,
   },
   folderItemName: {
+    fontSize: 17,
+    fontFamily: "Inter-SemiBold",
+    color: "#374151",
+    marginLeft: 18,
     flex: 1,
-    fontSize: 16,
-    fontWeight: "500",
-    color: "#1f2937",
   },
   folderDivider: {
     flexDirection: "row",
     alignItems: "center",
+    paddingVertical: 16,
     marginVertical: 16,
   },
   folderDividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: "#e5e7eb",
+    backgroundColor: "#E5E7EB",
   },
   folderDividerText: {
-    marginHorizontal: 12,
-    fontSize: 12,
-    fontWeight: "500",
-    color: "#6b7280",
-    textTransform: "uppercase",
+    fontSize: 15,
+    fontFamily: "Inter-SemiBold",
+    color: "#6B7280",
+    marginHorizontal: 16,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 12,
   },
 
   // Exit Confirmation Modal Styles

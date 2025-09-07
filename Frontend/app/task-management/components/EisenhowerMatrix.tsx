@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
+  Animated,
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { Task } from "../types/Task";

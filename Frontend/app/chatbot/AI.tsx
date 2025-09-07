@@ -21,6 +21,8 @@ import {
 } from "react-native";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getEnhancedSafeAreaConfig, getStatusBarConfig } from '../utils/SafeAreaUtils';
 
 type ChatBotNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -47,6 +49,11 @@ interface ChatBotProps {
 }
 
 const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
+  // Safe area configuration
+  const insets = useSafeAreaInsets();
+  const safeAreaConfig = getEnhancedSafeAreaConfig(insets, 800, false, 'main'); // Assuming portrait, main screen type
+  const statusBarConfig = getStatusBarConfig('main');
+  
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "1",
@@ -147,7 +154,118 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
     }
   };
 
+  // Ollama API configuration
+  const OLLAMA_URL = "http://localhost:11434/api/chat";
+
+  // Message transformation utilities
+  const transformToOllamaFormat = (messages: Message[]) => {
+    return messages.map(msg => ({
+      role: (msg.isUser ? 'user' : 'assistant') as 'user' | 'assistant',
+      content: msg.text
+    }));
+  };
+
+  // Ollama API call function (following TanStack Query pattern)
+  const fetchOllamaMessage = async (ollamaMessages: { role: 'user' | 'assistant'; content: string }[]): Promise<string> => {
+    try {
+      const response = await fetch(OLLAMA_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: "llama3.2",
+          messages: ollamaMessages,
+          stream: false,
+        }),
+      });
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error('Model "llama3.2" not found. Make sure it\'s installed in Ollama');
+        }
+        throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      return data.message?.content || "I couldn't generate a response. Please try again.";
+    } catch (error) {
+      if (error instanceof Error) {
+        if (error.message.includes('Failed to fetch') || error.message.includes('ECONNREFUSED')) {
+          throw new Error('Cannot connect to Ollama. Make sure Ollama is running on localhost:11434');
+        }
+        if (error.message.includes('404')) {
+          throw new Error('Model "llama3.2" not found. Make sure it\'s installed in Ollama');
+        }
+      }
+      throw error;
+    }
+  };
+
   const handleSendMessage = async () => {
+    if (inputText.trim() === "") return;
+
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      text: inputText,
+      isUser: true,
+      timestamp: new Date(),
+    };
+
+    // Update messages with user message
+    const updatedMessages = [...messages, userMessage];
+    setMessages(updatedMessages);
+    const currentInput = inputText;
+    setInputText("");
+    setIsLoading(true);
+    setIsStreaming(false);
+    setStreamingMessage("");
+
+    try {
+      // Transform messages to Ollama format
+      const ollamaMessages = transformToOllamaFormat(updatedMessages);
+
+      // Call Ollama API (following the TanStack Query pattern)
+      const aiReply = await fetchOllamaMessage(ollamaMessages);
+
+      // Create AI response message
+      const aiResponse: Message = {
+        id: (Date.now() + 1).toString(),
+        text: aiReply,
+        isUser: false,
+        timestamp: new Date(),
+      };
+
+      // Update messages with AI response
+      setMessages([...updatedMessages, aiResponse]);
+      setIsLoading(false);
+
+    } catch (error) {
+      console.error('Chat Error:', error);
+      setIsLoading(false);
+      setIsStreaming(false);
+      setStreamingMessage("");
+      
+      // Enhanced error handling based on TanStack Query example
+      let errorMessage = "Error communicating with Ollama.";
+      
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      
+      // Fallback response on error
+      const errorResponse: Message = {
+        id: (Date.now() + 1).toString(),
+        text: errorMessage,
+        isUser: false,
+        timestamp: new Date(),
+      };
+      setMessages([...updatedMessages, errorResponse]);
+    }
+  };
+
+  // Optional: Streaming version (currently not used but available for future enhancement)
+  const handleSendMessageStreaming = async () => {
     if (inputText.trim() === "") return;
 
     const userMessage: Message = {
@@ -160,85 +278,103 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
     setMessages((prev) => [...prev, userMessage]);
     const currentInput = inputText;
     setInputText("");
-    setIsLoading(true);
-    setIsStreaming(false);
+    setIsLoading(false);
+    setIsStreaming(true);
     setStreamingMessage("");
 
+    // Create placeholder message for streaming
+    const streamingMessageId = (Date.now() + 1).toString();
+    const placeholderMessage: Message = {
+      id: streamingMessageId,
+      text: "",
+      isUser: false,
+      timestamp: new Date(),
+    };
+    
+    setMessages((prev) => [...prev, placeholderMessage]);
+
     try {
-      // Check if Ollama is available
-      const isOllamaAvailable = await chatbotServices.isOllamaAvailable();
+      const OLLAMA_URL = "http://localhost:11434/api/chat";
       
-      if (isOllamaAvailable) {
-        // Convert messages to Ollama format
-        const ollamaMessages = messages.map(msg => ({
-          role: (msg.isUser ? 'user' : 'assistant') as 'user' | 'assistant',
-          content: msg.text
-        }));
-        
-        // Add current user message
-        ollamaMessages.push({
-          role: 'user' as const,
-          content: currentInput
-        });
+      const ollamaMessages = messages.map(msg => ({
+        role: (msg.isUser ? 'user' : 'assistant') as 'user' | 'assistant',
+        content: msg.text
+      }));
+      
+      ollamaMessages.push({
+        role: 'user' as const,
+        content: currentInput
+      });
 
-        setIsLoading(false);
-        setIsStreaming(true);
+      const response = await fetch(OLLAMA_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: "llama3.2",
+          messages: ollamaMessages,
+          stream: true,
+        }),
+      });
 
-        // Create a placeholder message for streaming
-        const streamingMessageId = (Date.now() + 1).toString();
-        const placeholderMessage: Message = {
-          id: streamingMessageId,
-          text: "",
-          isUser: false,
-          timestamp: new Date(),
-        };
-        
-        setMessages((prev) => [...prev, placeholderMessage]);
-
-        // Stream response from Ollama
-        let fullResponse = "";
-        await chatbotServices.streamChatMessage(
-          ollamaMessages,
-          'llama3',
-          (chunk: string) => {
-            fullResponse += chunk;
-            setStreamingMessage(fullResponse);
-            
-            // Update the message in real-time
-            setMessages((prev) => 
-              prev.map(msg => 
-                msg.id === streamingMessageId 
-                  ? { ...msg, text: fullResponse }
-                  : msg
-              )
-            );
-          }
-        );
-
-        setIsStreaming(false);
-        setStreamingMessage("");
-        
-      } else {
-        // Fallback to simulated response if Ollama is not available
-        setIsLoading(false);
-        const aiResponse: Message = {
-          id: (Date.now() + 1).toString(),
-          text: "I understand your question and I'm here to help! As your AI tutoring assistant, I can help you with explanations, summaries, practice questions, and more. What specific topic would you like to explore? (Note: Ollama backend is currently unavailable, using fallback response)",
-          isUser: false,
-          timestamp: new Date(),
-        };
-        setMessages((prev) => [...prev, aiResponse]);
+      if (!response.ok) {
+        throw new Error(`Streaming failed: ${response.status}`);
       }
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('No response body');
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let fullResponse = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.trim()) {
+            try {
+              const json = JSON.parse(line);
+              if (json.message?.content) {
+                fullResponse += json.message.content;
+                setStreamingMessage(fullResponse);
+                
+                setMessages((prev) =>
+                  prev.map(msg =>
+                    msg.id === streamingMessageId
+                      ? { ...msg, text: fullResponse }
+                      : msg
+                  )
+                );
+              }
+              if (json.done) break;
+            } catch (parseError) {
+              console.warn('Failed to parse streaming response:', line);
+            }
+          }
+        }
+      }
+
+      setIsStreaming(false);
+      setStreamingMessage("");
+
     } catch (error) {
-      console.error('Chat Error:', error);
-      setIsLoading(false);
+      console.error('Streaming Error:', error);
       setIsStreaming(false);
       setStreamingMessage("");
       
-      // Fallback response on error
+      // Remove placeholder and add error message
+      setMessages((prev) => prev.filter(msg => msg.id !== streamingMessageId));
+      
       const errorResponse: Message = {
         id: (Date.now() + 1).toString(),
-        text: "I apologize, but I'm having trouble connecting to the AI service right now. Please try again in a moment.",
+        text: "Failed to stream response from Ollama. Please try again.",
         isUser: false,
         timestamp: new Date(),
       };
@@ -490,16 +626,16 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f8f9fa" />
-
-      {/* Header */}
-      <LinearGradient
-        colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={styles.header}
-      >
+    <>
+      <StatusBar {...statusBarConfig} />
+      <SafeAreaView style={[styles.container, { paddingTop: safeAreaConfig.paddingTop }]}>
+        {/* Header */}
+        <LinearGradient
+          colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={[styles.header, { paddingTop: safeAreaConfig.contentPaddingTop }]}
+        >
         <TouchableOpacity style={styles.backButton} onPress={handleGoBack}>
           <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
         </TouchableOpacity>
@@ -796,7 +932,8 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
           </View>
         </SafeAreaView>
       </Modal>
-    </SafeAreaView>
+      </SafeAreaView>
+    </>
   );
 };
 
@@ -817,6 +954,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 16,
     paddingTop: Platform.OS === "ios" ? 50 : 35,
+    paddingBottom: 20,
     borderBottomLeftRadius: 25,
     borderBottomRightRadius: 25,
     shadowColor: "#1E293B",
@@ -824,7 +962,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 5,
-    zIndex: 1000,
+    zIndex: 2000, // Higher than navbar
   },
   backButton: {
     marginRight: 12,
@@ -866,7 +1004,8 @@ const styles = StyleSheet.create({
   messagesContainer: {
     flex: 1,
     padding: 16,
-    paddingTop: 90, // Space for the overlay header
+    paddingTop: 120, // Space for the overlay header with safe area
+    paddingBottom: 20,
   },
   messageBubble: {
     padding: 16,

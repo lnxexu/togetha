@@ -16,6 +16,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Vibration,
 } from "react-native";
 import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
 import { LinearGradient } from "expo-linear-gradient";
@@ -85,16 +86,28 @@ const RinaButton: React.FC<RinaPopupProps> = ({
 }) => {
   if (!visible || !selectedText.trim()) return null;
 
-  // Calculate position to avoid overflow
-  const buttonWidth = 120;
-  const buttonHeight = 40;
+  // Calculate position to appear close to selected word
+  const buttonWidth = 100;
+  const buttonHeight = 35;
   const windowWidth = Dimensions.get("window").width;
-  let left = position.x - buttonWidth / 2;
-  let top = position.y - buttonHeight - 10;
-  if (left < 8) left = 8;
-  if (left + buttonWidth > windowWidth - 8)
-    left = windowWidth - buttonWidth - 8;
-  if (top < 40) top = position.y + 24;
+  const windowHeight = Dimensions.get("window").height;
+  
+  // Position the button slightly above and to the right of the selection
+  let left = position.x + 10; // 10px to the right of selection
+  let top = position.y - buttonHeight - 5; // 5px above the selection
+  
+  // Boundary checks
+  if (left + buttonWidth > windowWidth - 16) {
+    left = position.x - buttonWidth - 10; // Place to the left instead
+  }
+  if (left < 16) left = 16;
+  
+  if (top < 100) { // Avoid header area
+    top = position.y + 25; // Place below selection instead
+  }
+  if (top + buttonHeight > windowHeight - 100) {
+    top = windowHeight - buttonHeight - 100;
+  }
 
   return (
     <View
@@ -112,9 +125,9 @@ const RinaButton: React.FC<RinaPopupProps> = ({
       >
         <MaterialIcons
           name="psychology"
-          size={18}
+          size={16}
           color="#fff"
-          style={{ marginRight: 6 }}
+          style={{ marginRight: 4 }}
         />
         <Text style={styles.rinaButtonText}>Ask RINA</Text>
       </TouchableOpacity>
@@ -129,6 +142,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   // State
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [title, setTitle] = useState(route.params?.initialNote?.title || "");
+  const [editingTitle, setEditingTitle] = useState(false);
   const [content, setContent] = useState(
     route.params?.initialNote?.content || ""
   );
@@ -162,6 +176,11 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   const [showFolderModal, setShowFolderModal] = useState(false);
   const [folderName, setFolderName] = useState<string>("Unorganized Notes");
   const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
+  const [showWordMeaningModal, setShowWordMeaningModal] = useState(false);
+  const [selectedWord, setSelectedWord] = useState("");
+  const [wordMeaning, setWordMeaning] = useState("");
+  const [isLoadingMeaning, setIsLoadingMeaning] = useState(false);
+  const [windowDimensions, setWindowDimensions] = useState(Dimensions.get('window'));
 
   // Update the useEffect hook that fetches folders to better handle the initial folder name
   useEffect(() => {
@@ -207,12 +226,19 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
         }
       }
     } catch (error) {
-      console.error("Error fetching folders:", error);
       showErrorToast("Failed to load folders. Please try again.");
     }
   };
 
   // Effects
+  useEffect(() => {
+    const subscription = Dimensions.addEventListener('change', ({ window }) => {
+      setWindowDimensions(window);
+    });
+
+    return () => subscription?.remove();
+  }, []);
+
   useEffect(() => {
     const keyboardDidShowListener = Keyboard.addListener(
       "keyboardDidShow",
@@ -235,43 +261,71 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     };
   }, []);
 
-  // Enhanced auto-save logic (similar to DrawingEditor)
+  // Auto-save logic similar to DrawingEditor - debounced after 1 second
   useEffect(() => {
-    const autoSaveInterval = setInterval(() => {
-      if (title.trim() || content.trim()) {
-        console.log('NewNoteEditor: Auto-save timer triggered');
-        handleAutoSave();
-      }
-    }, 30000); // Keep 30 seconds for text content
-
-    return () => {
-      clearInterval(autoSaveInterval);
-    };
-  }, [title, content]);
-
-  // Real-time auto-save with debounce (similar to DrawingEditor)
-  useEffect(() => {
-    console.log('NewNoteEditor: Content change detected:', {
-      titleLength: title.length,
-      contentLength: content.length,
-      hasContent: !!(title.trim() || content.trim())
-    });
-    
-    if (title.trim() || content.trim()) {
-      console.log('NewNoteEditor: Setting up auto-save timeout...');
+    if (title.trim() || content.trim() || formattedContent.trim()) {
+      setSyncStatus("syncing");
+      
       const timeoutId = setTimeout(() => {
-        console.log('NewNoteEditor: Debounced auto-save triggered');
         handleAutoSave();
-      }, 2000); // 2 second debounce for real-time saving
+      }, 1000); // 1 second auto-save like drawing editor
 
       return () => {
-        console.log('NewNoteEditor: Clearing auto-save timeout');
         clearTimeout(timeoutId);
       };
     }
   }, [title, content, formattedContent, selectedFolderId, tags]);
 
   // Helper functions
+  const getWordMeaning = async (word: string) => {
+    setIsLoadingMeaning(true);
+    try {
+      // You can integrate with the existing chatbot service here
+      // For now, using a mock implementation
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Mock response - replace with actual API call
+      const mockMeanings: { [key: string]: string } = {
+        "hello": "A greeting; an expression or gesture of greeting — used interjectionally in greeting, in answering the telephone, or to express surprise.",
+        "world": "The earth with its inhabitants and all things upon it; the universe; a particular group of living things.",
+        "example": "A thing characteristic of its kind or illustrating a general rule; a person or thing regarded in terms of their fitness to be imitated.",
+        "technology": "The application of scientific knowledge for practical purposes, especially in industry.",
+        "innovation": "The action or process of innovating; a new method, idea, product, etc.",
+        "collaborate": "To work jointly on an activity, especially to produce or create something.",
+      };
+      
+      const meaning = mockMeanings[word.toLowerCase()] || 
+        `${word}: A word or term that may have various meanings depending on context. This is a placeholder definition - integrate with a real dictionary API for accurate meanings.`;
+      
+      setWordMeaning(meaning);
+      
+      // TODO: Replace with actual RINA/Dictionary API integration
+      // Example of how you might integrate with existing chatbot service:
+      /*
+      const prompt = `Define the word "${word}" in a concise and clear way. Provide the meaning, pronunciation if relevant, and a simple example of usage.`;
+      const response = await chatbotService.sendMessage(prompt);
+      setWordMeaning(response);
+      */
+      
+    } catch (error) {
+      setWordMeaning("Sorry, couldn't fetch the meaning of this word. Please try again.");
+    } finally {
+      setIsLoadingMeaning(false);
+    }
+  };
+
+  const handleLongPressWord = (word: string) => {
+    const cleanWord = word.replace(/[^\w]/g, '').toLowerCase();
+    if (cleanWord.length > 0) {
+      setSelectedWord(cleanWord);
+      setShowWordMeaningModal(true);
+      getWordMeaning(cleanWord);
+    }
+  };
+
+  const isTablet = windowDimensions.width >= 768;
+  const isSmallPhone = windowDimensions.width < 375;
+
   const basicColors = [
     { name: "black", hex: "#000000" },
     { name: "white", hex: "#FFFFFF" },
@@ -288,6 +342,11 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   ];
 
   const handleFolderSelect = (folder: any | null) => {
+    // Add haptic feedback for better UX
+    if (Platform.OS === 'ios') {
+      Vibration.vibrate(10);
+    }
+    
     if (folder) {
       setSelectedFolderId(folder.id.toString());
       setFolderName(folder.name);
@@ -336,7 +395,6 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     try {
       await storage.setItem(`note-${noteData.id}`, JSON.stringify(noteData));
     } catch (e) {
-      console.error("Failed to save note to storage", e);
       showErrorToast("Failed to save note locally");
       throw e;
     }
@@ -365,8 +423,6 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
 
       const method = isNewNote ? "POST" : "PUT";
 
-      console.log(`Sending ${method} request to ${url}`);
-
       const response = await fetch(url, {
         method: method,
         headers: {
@@ -377,16 +433,10 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
       });
 
       if (!response.ok) {
-        console.error(
-          "Server response not OK:",
-          response.status,
-          response.statusText
-        );
         throw new Error("Failed to sync note");
       }
 
       const savedNote = await response.json();
-      console.log("Note saved successfully:", savedNote);
 
       // If it was a new note, return the server note with its ID
       if (isNewNote) {
@@ -395,7 +445,6 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
 
       return null; // No need to return for existing notes
     } catch (error) {
-      console.error("Error syncing note:", error);
       showErrorToast("Failed to sync note to cloud");
       throw error;
     }
@@ -403,7 +452,11 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
 
   // Event handlers
   const handleAutoSave = async () => {
-    setSyncStatus("syncing");
+    if (!title.trim() && !content.trim() && !formattedContent.trim()) {
+      setSyncStatus("saved");
+      return;
+    }
+
     try {
       const currentNote = getCurrentNoteData();
       await saveToLocalStorage(currentNote);
@@ -416,28 +469,22 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
 
         // If we got a new ID from the server (for newly created notes)
         if (savedNote && savedNote.id && savedNote.id !== currentNote.id) {
-          // We can't update noteId directly since it's coming from useState
-          // But we can save the new note with the server ID
           await saveToLocalStorage({
             ...currentNote,
             id: savedNote.id,
           });
-
-          // For the next time we save, we'll use this ID instead
-          // Note: this is not perfect as the component won't rerender with the new ID
-          // A better approach would be to use navigation.replace to reload the editor with the new ID
         }
 
         setSyncStatus("saved");
-        showSuccessToast("Note auto-saved successfully");
+        // Only show toast when leaving the editor, not during auto-save
+        // showSuccessToast("Note auto-saved successfully");
       } else {
         setSyncStatus("offline");
-        showWarningToast("Auto-saved offline. Will sync when connected.");
+        // showWarningToast("Auto-saved offline. Will sync when connected.");
       }
     } catch (error) {
-      console.error("Auto-save failed:", error);
       setSyncStatus("offline");
-      showErrorToast("Auto-save failed. Please check your connection.");
+      // showErrorToast("Auto-save failed. Please check your connection.");
     }
   };
 
@@ -457,7 +504,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
 
       if (isOnline) {
         const savedNote = await syncToCloud(noteData);
-        console.log("Note saved to cloud successfully");
+        // Note saved to cloud successfully
 
         // If this was a new note and we received a server ID
         if (savedNote && savedNote.id && savedNote.id !== noteData.id) {
@@ -484,7 +531,6 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
       // Don't automatically navigate back - let the user continue editing
       // navigation.goBack();
     } catch (error) {
-      console.error("Error saving note:", error);
       showErrorToast("Failed to save note. Please try again.");
     } finally {
       // Add a slight delay before enabling the save button again
@@ -495,15 +541,15 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     }
   };
 
-  // Text selection handler
+  // Text selection handler - now only stores selection, doesn't show popup
   const handleTextSelection = (
     text: string,
     position: { x: number; y: number }
   ) => {
     if (text.trim()) {
-      console.log("Text selected:", text); // Debug log
       setSelectedText(text);
       setSelectionPosition(position);
+      // Don't show popup automatically - only show "Ask Rina" floating button
       setShowRinaPopup(true);
 
       // Auto-hide the button after 8 seconds
@@ -514,25 +560,25 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   };
 
   const handleAskRina = (text: string) => {
-    Alert.alert(
-      "Ask RINA",
-      `You selected: "${text}"\n\nThis would open RINA chat with the selected text.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Ask RINA",
-          onPress: () => {
-            // Here you would navigate to RINA chat or open a modal
-            console.log("Opening RINA with text:", text);
-            showSuccessToast("RINA chat opened successfully");
-          },
-        },
-      ]
-    );
+    // Show word meaning modal instead of alert
+    const cleanWord = text.replace(/[^\w]/g, '').toLowerCase();
+    if (cleanWord.length > 0) {
+      setSelectedWord(cleanWord);
+      setShowWordMeaningModal(true);
+      getWordMeaning(cleanWord);
+      // Add haptic feedback
+      if (Platform.OS === 'ios') {
+        Vibration.vibrate(10);
+      }
+    }
   };
 
   const addTag = () => {
     if (newTag.trim() && !tags.includes(newTag.trim())) {
+      // Add haptic feedback
+      if (Platform.OS === 'ios') {
+        Vibration.vibrate(10);
+      }
       setTags((prev) => [...prev, newTag.trim()]);
       setNewTag("");
       showSuccessToast(`Tag "${newTag.trim()}" added successfully`);
@@ -588,19 +634,51 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
               <TouchableOpacity
                 style={styles.backButton}
                 onPress={() => {
-                  // If content has changed, show confirmation dialog before exiting
+                  // If content has changed, show toast and exit
                   if (title.trim() || content.trim()) {
-                    setShowExitConfirmModal(true);
-                  } else {
-                    navigation.goBack();
+                    showSuccessToast("Note saved automatically");
+                    // Add haptic feedback
+                    if (Platform.OS === 'ios') {
+                      Vibration.vibrate(10);
+                    }
                   }
+                  navigation.goBack();
                 }}
               >
                 <Ionicons name="chevron-back" size={24} color="#fff" />
               </TouchableOpacity>
 
               <View style={styles.headerTitleSection}>
-                <Text style={styles.headerTitle}>Note Editor</Text>
+                {editingTitle ? (
+                  <TextInput
+                    style={styles.modernTitleInput}
+                    value={title}
+                    onChangeText={setTitle}
+                    onBlur={() => setEditingTitle(false)}
+                    onSubmitEditing={() => setEditingTitle(false)}
+                    placeholder="Enter note title"
+                    placeholderTextColor="rgba(255,255,255,0.6)"
+                    maxLength={50}
+                    autoFocus
+                    returnKeyType="done"
+                  />
+                ) : (
+                  <TouchableOpacity
+                    style={styles.titleTouchable}
+                    onPress={() => setEditingTitle(true)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.headerTitle}>{title || "Untitled Note"}</Text>
+                    <MaterialIcons
+                      name="edit"
+                      size={16}
+                      color="rgba(255,255,255,0.8)"
+                      style={styles.editIcon}
+                    />
+                  </TouchableOpacity>
+                )}
+                
+                {/* Save Status under title */}
                 <View style={styles.headerCenter}>
                   <MaterialIcons
                     name={getSyncStatusIcon()}
@@ -625,6 +703,10 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
                     style={styles.keyboardDismissButton}
                     onPress={() => {
                       Keyboard.dismiss();
+                      // Add haptic feedback
+                      if (Platform.OS === 'ios') {
+                        Vibration.vibrate(10);
+                      }
                     }}
                   >
                     <MaterialIcons
@@ -666,222 +748,300 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
           <ScrollView
             style={styles.content}
             keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
             contentContainerStyle={{
-              paddingBottom: keyboardHeight > 0 ? keyboardHeight + 120 : 120, // Increased to account for toolbar
+              paddingBottom: keyboardHeight > 0 ? keyboardHeight + 40 : 40,
+              flexGrow: 1,
             }}
           >
-            <TextInput
-              style={styles.titleInput}
-              placeholder="Note Title"
-              placeholderTextColor="#A3A3A3"
-              value={title}
-              onChangeText={setTitle}
-              maxLength={100}
-            />
-
-            {/* Tags */}
-            <View style={styles.tagsSection}>
-              <TouchableOpacity
-                style={styles.addTagButton}
-                onPress={() => setShowTagModal(true)}
-              >
-                <MaterialIcons name="add" size={16} color="#007AFF" />
-                <Text style={styles.addTagText}>Add Tag</Text>
-              </TouchableOpacity>
-
-              <View style={styles.tagsContainer}>
-                {tags.map((tag, index) => (
-                  <View key={index} style={styles.tag}>
-                    <Text style={styles.tagText}>{tag}</Text>
-                    <TouchableOpacity onPress={() => removeTag(tag)}>
-                      <MaterialIcons name="close" size={14} color="#666" />
-                    </TouchableOpacity>
-                  </View>
-                ))}
-              </View>
-
-              <View style={styles.folderSection}>
-                <TouchableOpacity
-                  style={styles.folderSelector}
-                  onPress={() => setShowFolderModal(true)}
-                >
-                  <MaterialIcons
-                    name="folder"
-                    size={18}
-                    color={selectedFolderId ? "#6A009C" : "#64748B"}
-                  />
-                  <Text
-                    style={[
-                      styles.folderName,
-                      { color: selectedFolderId ? "#6A009C" : "#64748B" },
-                    ]}
+            {/* Modern Compact Header */}
+            <View style={styles.compactHeaderInfo}>
+              {/* Folder and Add Tag Row */}
+              <View style={styles.compactMetadata}>
+                <View style={styles.folderSection}>
+                  <TouchableOpacity
+                    style={styles.compactFolderSelector}
+                    onPress={() => setShowFolderModal(true)}
                   >
-                    {folderName}
-                  </Text>
-                  <MaterialIcons
-                    name="chevron-right"
-                    size={18}
-                    color="#9CA3AF"
-                  />
-                </TouchableOpacity>
+                    <MaterialIcons name="folder" size={16} color="#8B5CF6" />
+                    <Text style={styles.compactFolderText}>{folderName}</Text>
+                    <MaterialIcons name="keyboard-arrow-down" size={16} color="#8B5CF6" />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.tagSection}>
+                  <TouchableOpacity
+                    style={styles.addTagButton}
+                    onPress={() => setShowTagModal(true)}
+                  >
+                    <MaterialIcons name="add" size={14} color="#8B5CF6" />
+                    <Text style={styles.addTagText}>Tag</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
+
+              {/* Tags Display Row - Separate row to prevent congestion */}
+              {tags.length > 0 && (
+                <View style={styles.tagsDisplayContainer}>
+                  <ScrollView 
+                    horizontal 
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.tagsScrollContent}
+                  >
+                    {tags.map((tag, index) => (
+                      <View key={index} style={styles.compactTag}>
+                        <Text style={styles.compactTagText}>{tag}</Text>
+                        <TouchableOpacity onPress={() => removeTag(tag)}>
+                          <MaterialIcons name="close" size={12} color="#8B5CF6" />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
             </View>
 
-            {/* Rich Text Toolbar - Positioned below folder selection */}
-            <View style={styles.richTextToolbarContainer}>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.richTextToolbarContent}
-              >
+            {/* Compact Rich Text Toolbar */}
+            <View style={styles.compactToolbarContainer}>
+              <View style={styles.toolbarContentWrapper}>
                 <RichToolbar
-                  style={styles.richTextToolbar}
+                  style={styles.compactRichTextToolbar}
                   editor={richTextRef}
-                  selectedIconTint="#007AFF"
-                  disabledIconTint="#666"
+                  selectedIconTint="#8B5CF6"
+                  disabledIconTint="#9CA3AF"
                   actions={[
                     "bold",
                     "italic",
                     "underline",
-                    "strikethrough",
-                    "heading1",
-                    "heading2",
-                    "heading3",
-                    "heading4",
-                    "heading5",
-                    "heading6",
-                    "blockquote",
-                    "code",
-                    "line",
                     "unorderedList",
                     "orderedList",
                     "alignLeft",
                     "alignCenter",
                     "alignRight",
-                    "alignFull",
                     "undo",
                     "redo",
-                    "insertLink",
-                    "insertImage",
                     "foreColor",
                     "hiliteColor",
-                    "removeFormat",
                   ]}
                   iconMap={{
-                    bold: () => <MaterialIcons name="format-bold" size={20} />,
-                    italic: () => <MaterialIcons name="format-italic" size={20} />,
-                    underline: () => (
-                      <MaterialIcons name="format-underlined" size={20} />
-                    ),
-                    strikethrough: () => (
-                      <MaterialIcons name="strikethrough-s" size={20} />
-                    ),
-                    heading1: () => <Text style={styles.headingText}>H1</Text>,
-                    heading2: () => <Text style={styles.headingText}>H2</Text>,
-                    heading3: () => <Text style={styles.headingText}>H3</Text>,
-                    heading4: () => <Text style={styles.headingText}>H4</Text>,
-                    heading5: () => <Text style={styles.headingText}>H5</Text>,
-                    heading6: () => <Text style={styles.headingText}>H6</Text>,
-                    blockquote: () => <MaterialIcons name="format-quote" size={20} />,
-                    code: () => <MaterialIcons name="code" size={20} />,
-                    line: () => <MaterialIcons name="horizontal-rule" size={20} />,
-                    unorderedList: () => (
-                      <MaterialIcons name="format-list-bulleted" size={20} />
-                    ),
-                    orderedList: () => (
-                      <MaterialIcons name="format-list-numbered" size={20} />
-                    ),
-                    alignLeft: () => (
-                      <MaterialIcons name="format-align-left" size={20} />
-                    ),
-                    alignCenter: () => (
-                      <MaterialIcons name="format-align-center" size={20} />
-                    ),
-                    alignRight: () => (
-                      <MaterialIcons name="format-align-right" size={20} />
-                    ),
-                    alignFull: () => (
-                      <MaterialIcons name="format-align-justify" size={20} />
-                    ),
-                    undo: () => <MaterialIcons name="undo" size={20} />,
-                    redo: () => <MaterialIcons name="redo" size={20} />,
-                    insertLink: () => <MaterialIcons name="link" size={20} />,
-                    insertImage: () => <MaterialIcons name="image" size={20} />,
+                    bold: () => <MaterialIcons name="format-bold" size={18} color="#6B7280" />,
+                    italic: () => <MaterialIcons name="format-italic" size={18} color="#6B7280" />,
+                    underline: () => <MaterialIcons name="format-underlined" size={18} color="#6B7280" />,
+                    unorderedList: () => <MaterialIcons name="format-list-bulleted" size={18} color="#6B7280" />,
+                    orderedList: () => <MaterialIcons name="format-list-numbered" size={18} color="#6B7280" />,
+                    alignLeft: () => <MaterialIcons name="format-align-left" size={18} color="#6B7280" />,
+                    alignCenter: () => <MaterialIcons name="format-align-center" size={18} color="#6B7280" />,
+                    alignRight: () => <MaterialIcons name="format-align-right" size={18} color="#6B7280" />,
+                    undo: () => <MaterialIcons name="undo" size={18} color="#6B7280" />,
+                    redo: () => <MaterialIcons name="redo" size={18} color="#6B7280" />,
                     foreColor: () => (
                       <TouchableOpacity onPress={() => openColorPicker("text")}>
-                        <MaterialIcons name="format-color-text" size={20} />
+                        <MaterialIcons name="format-color-text" size={18} color="#6B7280" />
                       </TouchableOpacity>
                     ),
                     hiliteColor: () => (
                       <TouchableOpacity onPress={() => openColorPicker("background")}>
-                        <MaterialIcons name="format-color-fill" size={20} />
+                        <MaterialIcons name="format-color-fill" size={18} color="#6B7280" />
                       </TouchableOpacity>
                     ),
                   }}
                 />
-              </ScrollView>
+              </View>
             </View>
 
-            {/* Rich Text Editor */}
-            <View style={styles.editorWrapper}>
+            {/* Enhanced Rich Text Editor with more space */}
+            <View style={[styles.modernEditorWrapper, { 
+              minHeight: isTablet ? 600 : isSmallPhone ? 400 : 500,
+              maxHeight: windowDimensions.height - 350 // Prevent uncontrolled resizing
+            }]}>
               <RichEditor
                 ref={richTextRef}
-                style={styles.customRichTextInput}
+                style={[styles.modernRichTextInput, { 
+                  minHeight: isTablet ? 600 : isSmallPhone ? 400 : 500,
+                  maxHeight: windowDimensions.height - 350
+                }]}
                 initialContentHTML={
                   route.params?.initialNote?.formatted_content || content
                 }
                 onChange={(html: string) => {
-                  // Update both content (plain text) and formattedContent (HTML)
-                  setContent(html.replace(/<[^>]*>/g, "")); // Strip HTML for plain text version
-                  setFormattedContent(html); // Store the full HTML for rich content
-                  console.log(
-                    "Editor content changed, formatted content:",
-                    html.substring(0, 50) + (html.length > 50 ? "..." : "")
-                  );
+                  setContent(html.replace(/<[^>]*>/g, ""));
+                  setFormattedContent(html);
                 }}
-                placeholder="Start typing your notes here..."
+                placeholder="Start writing your note here..."
                 editorInitializedCallback={() => {
-                  console.log(
-                    "Rich editor initialized - text selection enabled"
-                  );
-                  // Log initial content for debugging
-                  if (route.params?.initialNote?.formatted_content) {
-                    console.log(
-                      "Initializing with formatted content:",
-                      route.params.initialNote.formatted_content.substring(
-                        0,
-                        50
-                      ) +
-                        (route.params.initialNote.formatted_content.length > 50
-                          ? "..."
-                          : "")
-                    );
-                  }
-                }}
-                onCursorPosition={(scrollY: number) => {
-                  // This helps track cursor movement
+                  // Rich editor initialized
                 }}
                 onMessage={(message: any) => {
-                  // Handle messages from the editor
-                  if (message.type === "selection" && message.text) {
-                    const text = message.text.trim();
-                    if (text.length > 0) {
-                      handleTextSelection(text, {
-                        x: message.x || 100,
-                        y: message.y || 100,
-                      });
+                  try {
+                    const data = typeof message === 'string' ? JSON.parse(message) : message;
+                    
+                    if (data.type === "selection" && data.text) {
+                      const text = data.text.trim();
+                      if (text.length > 0) {
+                        handleTextSelection(text, {
+                          x: data.x || 100,
+                          y: data.y || 100,
+                        });
+                      }
+                    } else if (data.type === "longpress" && data.word) {
+                      const word = data.word.trim();
+                      if (word.length > 0) {
+                        // Add haptic feedback
+                        if (Platform.OS === 'ios') {
+                          Vibration.vibrate([10, 100, 10]);
+                        }
+                        
+                        // Only store selected word and show Ask Rina button, don't show word meaning modal
+                        setSelectedText(word);
+                        setSelectionPosition({
+                          x: data.x || 100,
+                          y: data.y || 100,
+                        });
+                        setShowRinaPopup(true);
+
+                        // Auto-hide the button after 8 seconds
+                        setTimeout(() => {
+                          setShowRinaPopup(false);
+                        }, 8000);
+                      }
+                    }
+                  } catch (error) {
+                    // Fallback to original message handling
+                    if (message.type === "selection" && message.text) {
+                      const text = message.text.trim();
+                      if (text.length > 0) {
+                        handleTextSelection(text, {
+                          x: message.x || 100,
+                          y: message.y || 100,
+                        });
+                      }
                     }
                   }
                 }}
                 onSelectionChange={(data: any) => {
-                  // Handle text selection from the rich editor
                   if (data && data.selection && data.selection.length > 0) {
                     const selectedText = data.selection;
-                    // Get approximate position - you might need to adjust this based on your needs
                     const position = { x: 150, y: 300 };
-                    handleTextSelection(selectedText, position);
+                    // Only store selection, don't show popup automatically
+                    setSelectedText(selectedText);
+                    setSelectionPosition(position);
+                    setShowRinaPopup(true);
+
+                    // Auto-hide the button after 8 seconds
+                    setTimeout(() => {
+                      setShowRinaPopup(false);
+                    }, 8000);
                   }
                 }}
+                // Enhanced text interaction handling
+                onCursorPositionChange={(data: any) => {
+                  // Handle cursor position changes if needed
+                }}
+                onFocus={() => {
+                  // Editor focused
+                }}
+                onBlur={() => {
+                  // Editor lost focus
+                }}
+                // Custom script injection for better text selection handling
+                injectedJavaScript={`
+                  // Enhanced text selection and long press handling
+                  document.addEventListener('selectionchange', function() {
+                    const selection = window.getSelection();
+                    if (selection && selection.toString().trim()) {
+                      const selectedText = selection.toString().trim();
+                      const range = selection.getRangeAt(0);
+                      const rect = range.getBoundingClientRect();
+                      window.ReactNativeWebView.postMessage(JSON.stringify({
+                        type: 'selection',
+                        text: selectedText,
+                        x: rect.left + rect.width / 2,
+                        y: rect.top
+                      }));
+                    }
+                  });
+                  
+                  // Enhanced long press detection for mobile
+                  let pressTimer;
+                  let touchStarted = false;
+                  
+                  document.addEventListener('touchstart', function(e) {
+                    touchStarted = true;
+                    pressTimer = window.setTimeout(function() {
+                      if (touchStarted) {
+                        const touch = e.touches[0];
+                        const word = getWordAtPosition(touch.target, touch.clientX, touch.clientY);
+                        if (word) {
+                          window.ReactNativeWebView.postMessage(JSON.stringify({
+                            type: 'longpress',
+                            word: word,
+                            x: touch.clientX,
+                            y: touch.clientY
+                          }));
+                        }
+                      }
+                    }, 500);
+                  });
+                  
+                  document.addEventListener('touchend', function(e) {
+                    touchStarted = false;
+                    clearTimeout(pressTimer);
+                  });
+                  
+                  document.addEventListener('touchmove', function(e) {
+                    touchStarted = false;
+                    clearTimeout(pressTimer);
+                  });
+                  
+                  // Fallback for desktop
+                  document.addEventListener('mousedown', function(e) {
+                    pressTimer = window.setTimeout(function() {
+                      const word = getWordAtPosition(e.target, e.clientX, e.clientY);
+                      if (word) {
+                        window.ReactNativeWebView.postMessage(JSON.stringify({
+                          type: 'longpress',
+                          word: word,
+                          x: e.clientX,
+                          y: e.clientY
+                        }));
+                      }
+                    }, 500);
+                  });
+                  
+                  document.addEventListener('mouseup', function(e) {
+                    clearTimeout(pressTimer);
+                  });
+                  
+                  function getWordAtPosition(element, x, y) {
+                    if (document.caretRangeFromPoint) {
+                      const range = document.caretRangeFromPoint(x, y);
+                      if (range) {
+                        const textNode = range.startContainer;
+                        if (textNode.nodeType === Node.TEXT_NODE) {
+                          const text = textNode.textContent;
+                          const offset = range.startOffset;
+                          
+                          // Find word boundaries
+                          let start = offset;
+                          let end = offset;
+                          
+                          while (start > 0 && /\\w/.test(text[start - 1])) {
+                            start--;
+                          }
+                          
+                          while (end < text.length && /\\w/.test(text[end])) {
+                            end++;
+                          }
+                          
+                          return text.substring(start, end);
+                        }
+                      }
+                    }
+                    return null;
+                  }
+                  
+                  true; // Return true to indicate script executed successfully
+                `}
               />
             </View>
           </ScrollView>
@@ -894,11 +1054,11 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
               style={styles.optionItem}
               onPress={() => setShowMoreOptions(false)}
             >
-              <MaterialIcons name="keyboard-voice" size={20} color="#666" />
+              <MaterialIcons name="keyboard-voice" size={20} color="#8B5CF6" />
               <Text style={styles.optionText}>Voice Recording</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.optionItem}>
-              <MaterialIcons name="psychology" size={20} color="#9C27B0" />
+              <MaterialIcons name="psychology" size={20} color="#8B5CF6" />
               <Text style={styles.optionText}>AI Suggest</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -919,9 +1079,13 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
                     { x: 150, y: 200 }
                   );
                 }
+                // Add haptic feedback
+                if (Platform.OS === 'ios') {
+                  Vibration.vibrate(10);
+                }
               }}
             >
-              <MaterialIcons name="psychology" size={20} color="#7C3AED" />
+              <MaterialIcons name="psychology" size={20} color="#8B5CF6" />
               <Text style={styles.optionText}>Demo RINA Selection</Text>
             </TouchableOpacity>
           </View>
@@ -946,7 +1110,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
               <View style={styles.modalHeader}>
-                <MaterialIcons name="folder" size={28} color="#6A009C" />
+                <MaterialIcons name="folder" size={28} color="#8B5CF6" />
                 <Text style={[styles.modalTitle, { marginBottom: 0, marginLeft: 12 }]}>Select Folder</Text>
               </View>
 
@@ -971,7 +1135,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
                     <MaterialIcons
                       name="check-circle"
                       size={22}
-                      color="#6A009C"
+                      color="#8B5CF6"
                     />
                   )}
                 </TouchableOpacity>
@@ -1010,7 +1174,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
                       <MaterialIcons
                         name="check-circle"
                         size={22}
-                        color="#6A009C"
+                        color="#8B5CF6"
                       />
                     )}
                   </TouchableOpacity>
@@ -1033,7 +1197,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
         <Modal
           visible={showColorPicker}
           transparent={true}
-          animationType="slide"
+          animationType="fade"
           onRequestClose={() => setShowColorPicker(false)}
         >
           <View style={styles.colorPickerModal}>
@@ -1075,7 +1239,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
           </View>
         </Modal>
 
-        <Modal visible={showTagModal} transparent animationType="slide">
+        <Modal visible={showTagModal} transparent animationType="fade">
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
               <Text style={styles.modalTitle}>Add Tag</Text>
@@ -1110,43 +1274,75 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
           </View>
         </Modal>
 
-        {/* Exit Confirmation Modal */}
+        {/* Word Meaning Modal */}
         <Modal
-          visible={showExitConfirmModal}
+          visible={showWordMeaningModal}
           transparent
           animationType="fade"
-          onRequestClose={() => setShowExitConfirmModal(false)}
+          onRequestClose={() => setShowWordMeaningModal(false)}
         >
-          <View style={styles.exitConfirmOverlay}>
-            <View style={styles.exitConfirmModal}>
-              <View style={styles.exitConfirmHeader}>
-                <MaterialIcons name="exit-to-app" size={28} color="#FF6B6B" />
-                <Text style={styles.exitConfirmTitle}>Exit Editor</Text>
+          <View style={styles.wordMeaningOverlay}>
+            <View style={[styles.wordMeaningModal, { 
+              width: isTablet ? '60%' : '90%',
+              maxWidth: isTablet ? 500 : 350
+            }]}>
+              <View style={styles.wordMeaningHeader}>
+                <MaterialIcons name="psychology" size={28} color="#8B5CF6" />
+                <Text style={styles.wordMeaningTitle}>RINA Dictionary</Text>
+                <TouchableOpacity
+                  style={styles.wordMeaningCloseButton}
+                  onPress={() => setShowWordMeaningModal(false)}
+                >
+                  <MaterialIcons name="close" size={24} color="#6B7280" />
+                </TouchableOpacity>
               </View>
               
-              <Text style={styles.exitConfirmMessage}>
-                Are you sure you want to exit the editor?{'\n'}
-                Your changes have been saved automatically.
-              </Text>
+              <View style={styles.wordMeaningContent}>
+                <Text style={styles.wordMeaningWord}>{selectedWord}</Text>
+                
+                {isLoadingMeaning ? (
+                  <View style={styles.wordMeaningLoading}>
+                    <MaterialIcons name="sync" size={24} color="#8B5CF6" />
+                    <Text style={styles.wordMeaningLoadingText}>Looking up meaning...</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.wordMeaningText}>{wordMeaning}</Text>
+                )}
+              </View>
               
-              <View style={styles.exitConfirmActions}>
+              <View style={styles.wordMeaningActions}>
                 <TouchableOpacity
-                  style={[styles.exitConfirmButton, styles.exitConfirmCancelButton]}
+                  style={styles.wordMeaningActionButton}
                   onPress={() => {
-                    setShowExitConfirmModal(false);
+                    // Add to clipboard functionality - you can import Clipboard from @react-native-clipboard/clipboard
+                    // Clipboard.setString(wordMeaning);
+                    showSuccessToast("Meaning copied to clipboard");
+                    // Add haptic feedback
+                    if (Platform.OS === 'ios') {
+                      Vibration.vibrate(10);
+                    }
                   }}
                 >
-                  <Text style={styles.exitConfirmCancelText}>Continue Editing</Text>
+                  <MaterialIcons name="content-copy" size={18} color="#8B5CF6" />
+                  <Text style={styles.wordMeaningActionText}>Copy</Text>
                 </TouchableOpacity>
                 
                 <TouchableOpacity
-                  style={[styles.exitConfirmButton, styles.exitConfirmExitButton]}
+                  style={styles.wordMeaningActionButton}
                   onPress={() => {
-                    setShowExitConfirmModal(false);
-                    navigation.goBack();
+                    // Insert meaning into note
+                    const meaningText = `\n\n**${selectedWord}**: ${wordMeaning}\n\n`;
+                    richTextRef.current?.insertHTML(meaningText);
+                    setShowWordMeaningModal(false);
+                    showSuccessToast("Meaning added to note");
+                    // Add haptic feedback
+                    if (Platform.OS === 'ios') {
+                      Vibration.vibrate(10);
+                    }
                   }}
                 >
-                  <Text style={styles.exitConfirmExitText}>Exit</Text>
+                  <MaterialIcons name="note-add" size={18} color="#8B5CF6" />
+                  <Text style={styles.wordMeaningActionText}>Add to Note</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1214,6 +1410,13 @@ const styles = StyleSheet.create({
   headerTitleSection: {
     flex: 1,
   },
+  titleTouchable: {
+    alignItems: "center",
+    flexDirection: "row",
+  },
+  editIcon: {
+    marginLeft: 8,
+  },
   headerTitle: {
     fontSize: 24,
     color: "#FFFFFF",
@@ -1232,9 +1435,182 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingTop: 30,
-    paddingHorizontal: 16,
-    paddingBottom: 100,
+    paddingTop: 20,
+    paddingHorizontal: Platform.select({ ios: 16, android: 12 }),
+    paddingBottom: 20,
+  },
+  
+  // Modern compact styles
+  compactHeaderInfo: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: Platform.select({ ios: 20, android: 16 }),
+    marginBottom: 16,
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+  },
+  modernTitleInput: {
+    fontSize: Platform.select({ ios: 20, android: 18 }),
+    fontFamily: "Inter-Bold",
+    color: "#FFFFFF",
+    backgroundColor: "rgba(255,255,255,0.2)",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 0,
+  },
+  compactMetadata: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  folderSection: {
+    flex: 1,
+    alignItems: "flex-start",
+  },
+  tagSection: {
+    flex: 1,
+    alignItems: "flex-end",
+  },
+  tagsDisplayContainer: {
+    marginTop: 8,
+    maxHeight: 60,
+  },
+  tagsScrollContent: {
+    paddingRight: 16,
+  },
+  equalSpaceSection: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    flexWrap: "wrap",
+    justifyContent: "center",
+  },
+  leftMetadataSection: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    flexWrap: "wrap",
+  },
+  compactFolderSelector: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F8FAFC",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  compactFolderText: {
+    marginHorizontal: 8,
+    fontSize: 13,
+    fontFamily: "Inter-Medium",
+    color: "#6B7280",
+  },
+  syncStatusContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F9FAFB",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  syncStatusText: {
+    marginLeft: 6,
+    fontSize: 12,
+    fontFamily: "Inter-Medium",
+  },
+  compactTagsSection: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  addTagButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F3F4F6",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginRight: 8,
+    marginBottom: 4,
+  },
+  addTagText: {
+    color: "#8B5CF6",
+    marginLeft: 4,
+    fontFamily: "Inter-Medium",
+    fontSize: 12,
+  },
+  tagsContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  compactTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#EDE9FE",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 14,
+    marginRight: 8,
+    marginBottom: 4,
+    minWidth: 60, // Minimum width for readability
+    maxWidth: 100, // Prevent tags from taking too much space
+  },
+  compactTagText: {
+    color: "#8B5CF6",
+    fontSize: 12,
+    fontFamily: "Inter-Medium",
+    marginRight: 4,
+    flexShrink: 1,
+  },
+  compactToolbarContainer: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 12,
+    marginBottom: 16,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  toolbarContentWrapper: {
+    paddingHorizontal: 8,
+  },
+  compactRichTextToolbar: {
+    backgroundColor: "transparent",
+    borderRadius: 0,
+    shadowColor: "transparent",
+    elevation: 0,
+    borderWidth: 0,
+    minHeight: 40,
+  },
+  modernEditorWrapper: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+    overflow: "hidden",
+  },
+  modernRichTextInput: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+    fontSize: Platform.select({ ios: 16, android: 15 }),
+    color: "#1F2937",
+    fontFamily: "Inter-Regular",
+    padding: Platform.select({ ios: 20, android: 16 }),
+    lineHeight: Platform.select({ ios: 24, android: 22 }),
+    borderWidth: 0,
   },
   voiceButton: {
     padding: 10,
@@ -1305,14 +1681,6 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
 
-  titleInput: {
-    fontSize: 24,
-    fontFamily: "Inter-Bold",
-    marginBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
-    paddingBottom: 8,
-  },
   metadataSection: {
     flexDirection: "row",
     marginBottom: 16,
@@ -1332,21 +1700,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: "Inter-Regular",
   },
-  tagsSection: {
-    marginBottom: 16,
-  },
-  addTagButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  addTagText: {
-    color: "#007AFF",
-    marginLeft: 4,
-    fontFamily: "Inter-Medium",
-    fontSize: 14,
-  },
-  folderSection: {
+  folderModalSection: {
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
     paddingBottom: 16,
@@ -1370,79 +1724,62 @@ const styles = StyleSheet.create({
   folderItem: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 16,
-    borderRadius: 12,
+    padding: 18,
+    borderRadius: 16,
     backgroundColor: "#FFFFFF",
-    marginBottom: 10,
+    marginBottom: 12,
     shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: "#F1F5F9",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+    borderWidth: 2,
+    borderColor: "#F8FAFC",
   },
   selectedFolderItem: {
     backgroundColor: "#F0F9FF",
     borderColor: "#0EA5E9",
     borderWidth: 2,
+    shadowColor: "#0EA5E9",
+    shadowOpacity: 0.15,
   },
   folderIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
+    width: 52,
+    height: 52,
+    borderRadius: 16,
     justifyContent: "center",
     alignItems: "center",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowRadius: 6,
+    elevation: 3,
   },
   folderItemName: {
-    fontSize: 16,
+    fontSize: 17,
     fontFamily: "Inter-SemiBold",
     color: "#374151",
-    marginLeft: 16,
+    marginLeft: 18,
     flex: 1,
   },
   folderDivider: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 12,
-    marginVertical: 12,
+    paddingVertical: 16,
+    marginVertical: 16,
   },
   folderDividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: "#E2E8F0",
+    backgroundColor: "#E5E7EB",
   },
   folderDividerText: {
-    fontSize: 14,
+    fontSize: 15,
     fontFamily: "Inter-SemiBold",
-    color: "#64748B",
-    marginHorizontal: 12,
+    color: "#6B7280",
+    marginHorizontal: 16,
     backgroundColor: "#FFFFFF",
-    paddingHorizontal: 8,
-  },
-  tagsContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-  },
-  tag: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#e3f2fd",
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    marginRight: 8,
-    marginBottom: 8,
-  },
-  tagText: {
-    color: "#1976d2",
-    fontSize: 12,
-    marginRight: 6,
   },
   sectionTitle: {
     fontSize: 16,
@@ -1498,36 +1835,39 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    backgroundColor: "rgba(0, 0, 0, 0.65)",
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 20,
   },
   modalContent: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 24,
-    width: "90%",
-    maxWidth: 400,
-    maxHeight: "80%",
+    borderRadius: 20,
+    padding: 28,
+    width: "92%",
+    maxWidth: 420,
+    maxHeight: "85%",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    elevation: 10,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 15,
   },
   modalTitle: {
-    fontSize: 22,
+    fontSize: 24,
     fontFamily: "Inter-Bold",
     color: "#1F2937",
-    marginBottom: 20,
+    marginBottom: 24,
     textAlign: "center",
   },
   modalHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 20,
+    marginBottom: 24,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
   },
   modalItem: {
     paddingVertical: 12,
@@ -1555,41 +1895,61 @@ const styles = StyleSheet.create({
     fontFamily: "Inter-Medium",
   },
   tagInput: {
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    padding: 12,
+    borderWidth: 2,
+    borderColor: "#E5E7EB",
+    borderRadius: 12,
+    padding: 16,
     fontSize: 16,
     fontFamily: "Inter-Regular",
-    marginBottom: 16,
+    marginBottom: 20,
+    backgroundColor: "#F9FAFB",
+    shadowColor: "#1F2937",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
   },
   modalActions: {
     flexDirection: "row",
-    justifyContent: "space-around",
+    justifyContent: "space-between",
+    marginTop: 8,
+    gap: 16,
   },
   modalActionButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: "#007AFF",
+    flex: 1,
+    paddingHorizontal: 28,
+    paddingVertical: 16,
+    borderRadius: 16,
+    backgroundColor: "#8B5CF6",
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 6,
+    alignItems: "center",
   },
   cancelButton: {
     backgroundColor: "#F8FAFC",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: "#E5E7EB",
+    paddingVertical: 16,
+    paddingHorizontal: 28,
+    borderRadius: 16,
+    shadowColor: "#1F2937",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   modalActionText: {
     color: "#fff",
     fontFamily: "Inter-SemiBold",
-    fontSize: 16,
+    fontSize: 17,
   },
   modalCancelText: {
-    color: "#64748B",
+    color: "#6B7280",
     fontFamily: "Inter-SemiBold",
-    fontSize: 16,
+    fontSize: 17,
   },
   // Rich Text Toolbar Styles (similar to Drawing Toolbar)
   richTextToolbarContainer: {
@@ -1739,26 +2099,26 @@ const styles = StyleSheet.create({
   rinaFloatingButton: {
     position: "absolute",
     zIndex: 9999,
-    backgroundColor: "#7C3AED",
-    borderRadius: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
+    backgroundColor: "#8B5CF6",
+    borderRadius: 18,
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 6,
   },
   rinaButtonContainer: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
   },
   rinaButtonText: {
     color: "#fff",
     fontWeight: "bold",
-    fontSize: 14,
+    fontSize: 12,
   },
   colorPickerModal: {
     flex: 1,
@@ -1922,6 +2282,101 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: "Inter-Medium",
     color: "#FFFFFF",
+  },
+  
+  // Word Meaning Modal Styles
+  wordMeaningOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 20,
+  },
+  wordMeaningModal: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 24,
+    maxHeight: "70%",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  wordMeaningHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
+  },
+  wordMeaningTitle: {
+    fontSize: 20,
+    fontFamily: "Inter-Bold",
+    color: "#1F2937",
+    flex: 1,
+    marginLeft: 12,
+  },
+  wordMeaningCloseButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#F3F4F6",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  wordMeaningContent: {
+    marginBottom: 20,
+  },
+  wordMeaningWord: {
+    fontSize: 24,
+    fontFamily: "Inter-Bold",
+    color: "#8B5CF6",
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  wordMeaningLoading: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+  },
+  wordMeaningLoadingText: {
+    fontSize: 16,
+    fontFamily: "Inter-Medium",
+    color: "#6B7280",
+    marginLeft: 12,
+  },
+  wordMeaningText: {
+    fontSize: 16,
+    fontFamily: "Inter-Regular",
+    color: "#374151",
+    lineHeight: 24,
+    textAlign: "justify",
+  },
+  wordMeaningActions: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  wordMeaningActionButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: "#F8FAFC",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  wordMeaningActionText: {
+    fontSize: 14,
+    fontFamily: "Inter-Medium",
+    color: "#8B5CF6",
+    marginLeft: 8,
   },
 });
 

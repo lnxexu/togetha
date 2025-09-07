@@ -126,6 +126,8 @@ const styles = StyleSheet.create({
     right: 0,
     alignItems: "center",
     paddingHorizontal: 16,
+    zIndex: 1000, // Ensure navbar is always on top
+    elevation: 10, // Android elevation
   },
   navbar: {
     flexDirection: "row",
@@ -139,17 +141,17 @@ const styles = StyleSheet.create({
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 4, // Increased shadow for better visibility
     },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowOpacity: 0.15, // Slightly more opacity
+    shadowRadius: 8, // Increased radius
+    elevation: 8, // Increased elevation for Android
     borderWidth: 1,
     borderColor: "#f0f0f0",
   },
   navItem: {
     alignItems: "center",
-    width: 60, 
+    width: 60,
   },
   navText: {
     fontSize: 11,

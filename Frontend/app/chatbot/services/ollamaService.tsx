@@ -1,5 +1,8 @@
 import { OLLAMA_API_URL, API_ENDPOINTS } from '@/constants/ApiConfig';
 
+const OLLAMA_URL = "http://localhost:11434/api/chat";
+const OLLAMA_BASE_URL = "http://localhost:11434";
+
 export interface OllamaModel {
   name: string;
   modified_at: string;
@@ -19,6 +22,7 @@ export interface OllamaModelInfo {
   modelfile: string;
   parameters: string;
   template: string;
+  
   details: {
     format: string;
     family: string;
@@ -69,7 +73,7 @@ export interface ChatRequest {
 }
 
 class OllamaService {
-  private baseUrl = OLLAMA_API_URL;
+  private baseUrl = OLLAMA_BASE_URL;
 
   // Health check - verify Ollama is running
   async healthCheck(): Promise<boolean> {
@@ -162,7 +166,7 @@ class OllamaService {
   // Chat with model (non-streaming)
   async chat(request: ChatRequest): Promise<string> {
     try {
-      const response = await fetch(`${this.baseUrl}${API_ENDPOINTS.OLLAMA_CHAT}`, {
+      const response = await fetch(OLLAMA_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -227,7 +231,7 @@ class OllamaService {
     onError?: (error: Error) => void
   ): Promise<void> {
     try {
-      const response = await fetch(`${this.baseUrl}${API_ENDPOINTS.OLLAMA_CHAT}`, {
+      const response = await fetch(OLLAMA_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
