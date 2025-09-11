@@ -43,7 +43,6 @@ This project consists of a React Native frontend (using Expo) and a Django backe
 - Redis (for Celery broker)
 
 ### Virtual Environment Setup
-
 1. Open Command Prompt as Administrator
 2. Navigate to the project directory:
    ```bash
@@ -130,46 +129,40 @@ sudo apt update
 sudo apt install redis-server
 sudo systemctl start redis-server
 ```
-
 ### Celery Configuration
 
 The project already includes Celery configuration in `Backend/server/celery.py`. The key settings are:
-
 ```python
 # Backend/server/celery.py
 from celery import Celery
 import os
-
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'server.settings')
 
 app = Celery('server')
-app.config_from_object('django.conf:settings', namespace='CELERY')
 app.autodiscover_tasks()
 ```
 
 ### Starting Celery Services
 
 You need to run **3 separate terminals** for the complete backend:
-
 #### Terminal 1: Django Server
 ```bash
-venv\Scripts\Activate
 cd Backend
-python manage.py runserver 0.0.0.0:8000
+venv\Scripts\Activate
+python manage.py runserver
 ```
 
 #### Terminal 2: Celery Worker
 ```bash
 cd Backend
 venv\Scripts\Activate
-cd Backend
 celery -A server worker --loglevel=info --pool=solo
 ```
 
 #### Terminal 3: Celery Beat (Scheduler)
 ```bash
-venv\Scripts\Activate
 cd Backend
+venv\Scripts\Activate
 celery -A server beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
 ```
 
@@ -300,3 +293,150 @@ If you encounter issues:
 5. Monitor Celery worker logs
 
 Happy coding! 🚀
+
+
+
+
+
+
+
+--------------------------------------------------------------------------------------------------
+
+
+
+# Togetha PDF Annotation App – Setup Guide
+
+## Overview
+This app uses the **Expo Bare Workflow** to support native PDF viewing and annotation.  
+Development is focused on **Android**, but the setup is compatible with both Android and iOS.
+
+---
+
+## Prerequisites
+Make sure the following are installed and configured:
+
+- **Node.js**: v16 or higher  
+- **Java**: JDK 17  
+- **Android SDK**: API level 24+  
+- **Android Studio**: Latest version  
+
+### Environment Variables
+Set these in your system:
+
+```powershell
+# Windows (PowerShell)
+$env:JAVA_HOME = "C:\Program Files\Java\jdk-17"
+$env:ANDROID_HOME = "C:\Users\[USERNAME]\AppData\Local\Android\Sdk"
+```
+
+```bash
+# macOS/Linux (Bash)
+export JAVA_HOME="/path/to/java-17"
+export ANDROID_HOME="/path/to/android-sdk"
+```
+
+### Installation
+1. Clone Repository & Install Dependencies
+
+```bash
+git clone [repository-url]
+cd Togetha/Frontend
+npm install
+```
+
+2. Generate Android Folder (if missing)
+
+```bash
+npx expo prebuild --platform android
+```
+
+3. Clean Android Build
+
+```bash
+cd android && ./gradlew clean
+cd ..
+```
+
+4. Run App on Android
+
+```bash
+npx expo run:android
+```
+
+## Running on Android Emulator
+
+1. **Create Emulator**
+   - Open Android Studio → Tools → AVD Manager
+   - Create device (e.g., Pixel 6)
+   - API Level 30+ (Android 11+)
+
+2. **Start Emulator**
+
+```bash
+emulator -list-avds
+emulator -avd [AVD_NAME]
+```
+
+3. **Launch App**
+
+```bash
+cd Frontend
+npx expo run:android
+```
+
+## Running on Physical Device
+
+1. **Enable Developer Options**
+   - Go to Settings → About Phone → Tap "Build Number" 7 times
+   - Enable USB Debugging in Developer Options
+
+2. **Connect Device**
+
+```bash
+adb devices
+# Your device should be listed
+```
+
+3. **Run App**
+
+```bash
+cd Frontend
+npx expo run:android --device
+```
+
+4. **(Optional) Wireless Debugging (Android 11+)**
+
+```bash
+adb pair [IP_ADDRESS]:[PORT]
+adb connect [IP_ADDRESS]:[PORT]
+```
+
+## Dependencies
+These key libraries are required for PDF rendering and annotation:
+
+```json
+{
+  "react-native-pdf": "^6.7.3",
+  "pdf-lib": "^1.17.1",
+  "react-native-svg": "^13.4.0",
+  "expo-file-system": "~15.4.5",
+  "expo-document-picker": "~11.5.4",
+  "expo-sharing": "~11.5.0"
+}
+```
+
+## Quick Troubleshooting
+
+```bash
+# Clean builds
+cd android && ./gradlew clean
+cd .. && npx expo run:android
+
+# Reset Metro bundler
+npx expo start --clear
+
+# Reset ADB if device not detected
+adb kill-server
+adb start-server
+adb devices
+```
