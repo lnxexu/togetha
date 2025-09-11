@@ -15,6 +15,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
+  Animated,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import Navbar from "./NavBar";
@@ -27,6 +28,7 @@ import taskService from "./task-management/services/taskService";
 import SkeletonLoader from "./components/SkeletonLoader";
 import { notesCountUtils } from "./utils/NotesCountUtils";
 import { folderCacheUtils } from "./utils/FolderCacheUtils";
+import { WelcomeAnimationUtils } from "./utils/WelcomeAnimationUtils";
 
 const { width } = Dimensions.get("window");
 
@@ -102,6 +104,12 @@ export default function Home() {
   const [notesCount, setNotesCount] = useState(0);
   const [notesFolders, setNotesFolders] = useState<any[]>([]);
 
+  // Animation state
+  const [fadeAnim] = useState(new Animated.Value(0));
+  const [slideAnim] = useState(new Animated.Value(30));
+  const [headerSlideAnim] = useState(new Animated.Value(-100));
+  const [contentFadeAnim] = useState(new Animated.Value(0));
+
   // Loading states
   const [loadingTasks, setLoadingTasks] = useState(true);
   const [loadingQuickAccess, setLoadingQuickAccess] = useState(true);
@@ -127,6 +135,31 @@ export default function Home() {
       return "Good Evening";
     }
   };
+
+  // Entry animation effect
+  useEffect(() => {
+    // Check if we're coming from login for special animation
+    const fromLogin = WelcomeAnimationUtils.isFromLogin();
+    
+    if (fromLogin) {
+      // Start entrance animations when component mounts from login
+      const welcomeAnimation = WelcomeAnimationUtils.createWelcomeAnimation(
+        fadeAnim,
+        slideAnim,
+        headerSlideAnim,
+        contentFadeAnim,
+        fromLogin
+      );
+      
+      welcomeAnimation.start();
+    } else {
+      // No animations from other pages - set values immediately
+      fadeAnim.setValue(1);
+      slideAnim.setValue(0);
+      headerSlideAnim.setValue(0);
+      contentFadeAnim.setValue(1);
+    }
+  }, []);
 
   useEffect(() => {
     // Close task options menu when user touches outside
@@ -728,53 +761,63 @@ export default function Home() {
       {/* Container for both header and content */}
       <View style={styles.container}>
         {/* Header positioned behind content */}
-        <LinearGradient
-          colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.header}
-        >
-          <View style={styles.headerContent}>
-            <View style={styles.headerLeftSection}>
-              <TouchableOpacity
-                style={styles.profilePicture}
-                onPress={() => navigation.navigate("EditProfile")}
-                activeOpacity={0.7}
-              >
-                <View style={styles.profilePlaceholder}>
-                  <Text style={styles.profileInitial}>
-                    {username.charAt(0).toUpperCase()}
-                  </Text>
+        <Animated.View style={[
+          {
+            transform: [{ translateY: headerSlideAnim }],
+          }
+        ]}>
+          <LinearGradient
+            colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.header}
+          >
+            <View style={styles.headerContent}>
+              <View style={styles.headerLeftSection}>
+                <TouchableOpacity
+                  style={styles.profilePicture}
+                  onPress={() => navigation.navigate("EditProfile")}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.profilePlaceholder}>
+                    <Text style={styles.profileInitial}>
+                      {username.charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.headerGreeting}>
+                  <Text style={styles.welcomeText}>{getGreeting()},</Text>
+                  <Text style={styles.nameText}>{username}! 👋</Text>
                 </View>
-              </TouchableOpacity>
-
-              <View style={styles.headerGreeting}>
-                <Text style={styles.welcomeText}>{getGreeting()},</Text>
-                <Text style={styles.nameText}>{username}! 👋</Text>
               </View>
+
+              <TouchableOpacity
+                style={styles.notificationIcon}
+                onPress={() => navigation.navigate("Notifications")}
+              >
+                <Ionicons
+                  name="notifications"
+                  size={22}
+                  color="#fcfcfcff"
+                  elevation={10}
+                  shadowColor="#2c2c2cff"
+                  shadowOffset={{ width: 0, height: 2 }}
+                  shadowOpacity={0.8}
+                  shadowRadius={8}
+                />
+                <View style={styles.notificationDot} />
+              </TouchableOpacity>
             </View>
-
-            <TouchableOpacity
-              style={styles.notificationIcon}
-              onPress={() => navigation.navigate("Notifications")}
-            >
-              <Ionicons
-                name="notifications"
-                size={22}
-                color="#fcfcfcff"
-                elevation={10}
-                shadowColor="#2c2c2cff"
-                shadowOffset={{ width: 0, height: 2 }}
-                shadowOpacity={0.8}
-                shadowRadius={8}
-              />
-              <View style={styles.notificationDot} />
-            </TouchableOpacity>
-          </View>
-        </LinearGradient>
-
-        {/* Main Content Container positioned above header */}
-        <View style={styles.mainContentContainer}>
+          </LinearGradient>
+        </Animated.View>        {/* Main Content Container positioned above header */}
+        <Animated.View style={[
+          styles.mainContentContainer,
+          {
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }],
+          }
+        ]}>
           <ScrollView
             style={styles.content}
             showsVerticalScrollIndicator={false}
@@ -814,7 +857,13 @@ export default function Home() {
             }
           >
             {/* Quick Stats & Actions */}
-            <View style={styles.section}>
+            <Animated.View style={[
+              styles.section,
+              {
+                opacity: contentFadeAnim,
+                transform: [{ translateY: slideAnim }],
+              }
+            ]}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>Quick Overview</Text>
               </View>
@@ -875,10 +924,16 @@ export default function Home() {
                   </TouchableOpacity>
                 </View>
               )}
-            </View>
+            </Animated.View>
 
             {/* Priority Tasks */}
-            <View style={styles.section}>
+            <Animated.View style={[
+              styles.section,
+              {
+                opacity: contentFadeAnim,
+                transform: [{ translateY: slideAnim }],
+              }
+            ]}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>Today's Focus</Text>
                 <TouchableOpacity
@@ -1091,10 +1146,16 @@ export default function Home() {
                   ))}
                 </ScrollView>
               )}
-            </View>
+            </Animated.View>
 
             {/* Notes Folders */}
-            <View style={styles.section}>
+            <Animated.View style={[
+              styles.section,
+              {
+                opacity: contentFadeAnim,
+                transform: [{ translateY: slideAnim }],
+              }
+            ]}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>Notes Folders</Text>
                 <TouchableOpacity onPress={() => navigation.navigate("Notes")}>
@@ -1177,12 +1238,12 @@ export default function Home() {
                   ))}
                 </ScrollView>
               )}
-            </View>
+            </Animated.View>
 
             {/* Bottom spacing for navbar */}
             <View style={{ height: 100 }} />
           </ScrollView>
-        </View>
+        </Animated.View>
 
         {/* Navigation Bar - positioned to overlay content */}
         <View style={styles.navbarContainer}>
