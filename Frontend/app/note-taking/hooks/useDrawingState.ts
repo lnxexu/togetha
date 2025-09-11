@@ -198,6 +198,98 @@ export const useDrawingState = ({
     setHasUnsavedChanges(true);
   }, [saveToHistory]);
 
+  const eraseStrokes = useCallback((eraserStroke: DrawingStroke) => {
+    setStrokes(prev => {
+      const eraseThreshold = (eraserStroke.width || 20) / 2;
+      const eraserPoints: { x: number; y: number }[] = [];
+      
+      // Convert eraser flat points array to point objects
+      for (let i = 0; i < eraserStroke.points.length; i += 2) {
+        eraserPoints.push({
+          x: eraserStroke.points[i],
+          y: eraserStroke.points[i + 1]
+        });
+      }
+      
+      const modifiedStrokes = prev.reduce((result: DrawingStroke[], stroke) => {
+        if (stroke.points.length === 0) return result;
+        
+        // Convert stroke flat points array to point objects for comparison
+        const strokePoints: { x: number; y: number }[] = [];
+        for (let i = 0; i < stroke.points.length; i += 2) {
+          strokePoints.push({
+            x: stroke.points[i],
+            y: stroke.points[i + 1]
+          });
+        }
+        
+        // Find points that survive the eraser
+        const survivingPointIndices: number[] = [];
+        strokePoints.forEach((strokePoint, index) => {
+          const shouldErase = eraserPoints.some(eraserPoint => {
+            const distance = Math.sqrt(
+              Math.pow(strokePoint.x - eraserPoint.x, 2) + 
+              Math.pow(strokePoint.y - eraserPoint.y, 2)
+            );
+            return distance < eraseThreshold;
+          });
+          
+          if (!shouldErase) {
+            survivingPointIndices.push(index);
+          }
+        });
+        
+        if (survivingPointIndices.length > 1) {
+          // Group consecutive surviving points into segments
+          const segments: number[][] = [];
+          let currentSegment: number[] = [];
+          
+          survivingPointIndices.forEach(index => {
+            if (currentSegment.length === 0 || index === currentSegment[currentSegment.length - 1] + 1) {
+              // Continue current segment
+              currentSegment.push(index);
+            } else {
+              // Start new segment
+              if (currentSegment.length > 1) {
+                segments.push([...currentSegment]);
+              }
+              currentSegment = [index];
+            }
+          });
+          
+          // Add the last segment
+          if (currentSegment.length > 1) {
+            segments.push(currentSegment);
+          }
+          
+          // Create new strokes for each segment
+          segments.forEach((segment, segmentIndex) => {
+            if (segment.length > 1) {
+              const newPoints: number[] = [];
+              segment.forEach(pointIndex => {
+                newPoints.push(stroke.points[pointIndex * 2]);     // x
+                newPoints.push(stroke.points[pointIndex * 2 + 1]); // y
+              });
+              
+              result.push({
+                ...stroke,
+                id: stroke.id + '_seg_' + segmentIndex + '_' + Date.now(),
+                points: newPoints,
+              });
+            }
+          });
+        }
+        
+        return result;
+      }, []);
+      
+      // Save to history after erasing
+      setTimeout(() => saveToHistory(modifiedStrokes), 0);
+      return modifiedStrokes;
+    });
+    setHasUnsavedChanges(true);
+  }, [saveToHistory]);
+
   const undo = useCallback(() => {
     if (historyStep > 0) {
       const newStep = historyStep - 1;
@@ -362,6 +454,7 @@ export const useDrawingState = ({
     error,
     currentNoteId,
     addStroke,
+    eraseStrokes,
     clearDrawing,
     saveDrawing,
     loadDrawing,

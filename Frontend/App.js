@@ -17,7 +17,7 @@ export default function App() {
     "Inter-Medium": require("./assets/fonts/Inter_24pt-Medium.ttf"),
     "Inter-Regular": require("./assets/fonts/Inter_24pt-Regular.ttf"),
     "Inter-Bold": require("./assets/fonts/Inter_24pt-SemiBold.ttf"),
-    Lexend: require("./assets/fonts/Lexend-SemiBold.ttf"),
+    "Lexend": require("./assets/fonts/Lexend-SemiBold.ttf"),
   });
 
   // Remove this line - it's causing the error

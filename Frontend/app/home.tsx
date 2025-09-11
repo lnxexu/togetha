@@ -756,7 +756,7 @@ export default function Home() {
 
   return (
     <View style={styles.rootContainer}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+      <StatusBar barStyle="light-content" backgroundColor="#7C3AED" />
 
       {/* Container for both header and content */}
       <View style={styles.container}>

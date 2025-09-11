@@ -245,6 +245,20 @@ class TaskService {
     return this.formatTaskDates(response);
   }
 
+  async markTaskIncomplete(id: string): Promise<Task> {
+    const apiUpdates = {
+      completed: false,
+      completed_at: null,
+    };
+
+    const response = await this.apiRequest<any>(
+      API_ENDPOINTS.TASK_DETAIL(id),
+      "PATCH",
+      apiUpdates
+    );
+    return this.formatTaskDates(response);
+  }
+
   async getTasksByPriority(priority: string): Promise<Task[]> {
     try {
       const allTasks = await this.getAllTasks();

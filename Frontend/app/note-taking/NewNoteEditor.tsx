@@ -17,6 +17,7 @@ import {
   TouchableOpacity,
   View,
   Vibration,
+  Animated,
 } from "react-native";
 import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
 import { LinearGradient } from "expo-linear-gradient";
@@ -182,6 +183,10 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   const [isLoadingMeaning, setIsLoadingMeaning] = useState(false);
   const [windowDimensions, setWindowDimensions] = useState(Dimensions.get('window'));
 
+  // Animation states
+  const fadeAnim = useState(new Animated.Value(0))[0];
+  const slideAnim = useState(new Animated.Value(-50))[0];
+
   // Update the useEffect hook that fetches folders to better handle the initial folder name
   useEffect(() => {
     fetchFolders();
@@ -190,6 +195,20 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     if (route.params?.initialNote?.folderId) {
       setSelectedFolderId(route.params.initialNote.folderId);
     }
+
+    // Animate entrance
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+    ]).start();
   }, []);
 
   // Modify the fetchFolders function to ensure the folder name is updated
@@ -621,7 +640,15 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
-      <View style={styles.rootContainer}>
+      <Animated.View 
+        style={[
+          styles.rootContainer,
+          {
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }],
+          },
+        ]}
+      >
         {/* Header with LinearGradient positioned behind content */}
         <LinearGradient
           colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
@@ -1348,7 +1375,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
             </View>
           </View>
         </Modal>
-      </View>
+      </Animated.View>
     </KeyboardAvoidingView>
   );
 };
@@ -1398,15 +1425,12 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 12,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    backgroundColor: "rgba(255,255,255,0.2)",
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 2,
   },
+
   headerTitleSection: {
     flex: 1,
   },
@@ -1637,7 +1661,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
     shadowRadius: 8,
-    elevation: 2,
   },
   keyboardDismissButton: {
     width: 44,
@@ -1661,7 +1684,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
     shadowRadius: 8,
-    elevation: 2,
   },
   editorContainer: {
      flex: 1,
@@ -1952,54 +1974,7 @@ const styles = StyleSheet.create({
     fontSize: 17,
   },
   // Rich Text Toolbar Styles (similar to Drawing Toolbar)
-  richTextToolbarContainer: {
-    width: '100%',
-    backgroundColor: "#fafbfc",
-    borderTopWidth: 1,
-    borderTopColor: "#e9ecef",
-    overflow: 'visible',
-    zIndex: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-  },
-  richTextToolbarScrollView: {
-    width: '100%',
-    minWidth: 360,
-    backgroundColor: "#fafbfc",
-    borderRadius: 0,
-    borderWidth: 0,
-    shadowColor: "transparent",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0,
-    shadowRadius: 0,
-    elevation: 0,
-    overflow: 'visible',
-    zIndex: 1,
-  },
-  richTextToolbarContent: {
-    flexDirection: 'row',
-    flexGrow: 1,
-    alignItems: "center",
-    justifyContent: "flex-start",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 8,
-  },
-  richTextToolbar: {
-    backgroundColor: "#F8FAFC",
-    borderRadius: 0,
-    shadowColor: "transparent",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0,
-    shadowRadius: 0,
-    elevation: 0,
-    borderWidth: 0,
-    paddingHorizontal: 0,
-    paddingVertical: 0,
-    flexDirection: "row",
-    alignItems: "center",
-  },
+
   headingText: {
     fontSize: 14,
     fontWeight: "bold",

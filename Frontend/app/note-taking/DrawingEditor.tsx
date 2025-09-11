@@ -14,6 +14,7 @@ import {
   Platform,
   Dimensions,
   Vibration,
+  Animated,
 } from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -111,6 +112,7 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
     hasUnsavedChanges,
     currentNoteId,
     addStroke,
+    eraseStrokes,
     clearDrawing,
     saveDrawing,
     undoLastStroke,
@@ -154,6 +156,10 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
   const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
   const [windowDimensions, setWindowDimensions] = useState(Dimensions.get('window'));
 
+  // Animation states
+  const fadeAnim = useState(new Animated.Value(0))[0];
+  const slideAnim = useState(new Animated.Value(-50))[0];
+
   // Drawing state
   const [currentTool, setCurrentTool] = useState<DrawingTool>('pen');
   const [currentColor, setCurrentColor] = useState('#000000');
@@ -167,6 +173,20 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
     const subscription = Dimensions.addEventListener('change', ({ window }) => {
       setWindowDimensions(window);
     });
+
+    // Animate entrance
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+    ]).start();
 
     return () => subscription?.remove();
   }, []);
@@ -182,8 +202,14 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
       opacity: stroke.opacity || 1,
     };
     
-    addStroke(drawingStroke);
-  }, [addStroke]);
+    if (stroke.tool === 'eraser') {
+      // Use eraser functionality to remove intersecting strokes
+      eraseStrokes(drawingStroke);
+    } else {
+      // Regular stroke, add to canvas
+      addStroke(drawingStroke);
+    }
+  }, [addStroke, eraseStrokes]);
 
   // Fetch folders for folder selection
   const fetchFolders = useCallback(async () => {
@@ -500,7 +526,15 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
-      <View style={styles.rootContainer}>
+      <Animated.View 
+        style={[
+          styles.rootContainer,
+          {
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }],
+          },
+        ]}
+      >
         {/* Header with LinearGradient positioned behind content */}
         <LinearGradient
           colors={["#8B5CF6", "#7C3AED"]}
@@ -682,7 +716,7 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
           </View>
         </View>
 
-        </View>
+        </Animated.View>
 
         {/* Folder Selection Modal */}
         <Modal
@@ -906,7 +940,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
     shadowRadius: 8,
-    elevation: 2,
   },
   headerTitleSection: {
     flex: 1,
@@ -972,7 +1005,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
     shadowRadius: 8,
-    elevation: 2,
   },
   mainContentContainer: {
     flex: 1,

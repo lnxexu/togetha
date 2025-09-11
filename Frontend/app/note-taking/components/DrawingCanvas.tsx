@@ -12,7 +12,7 @@ export interface Point {
   timestamp?: number;
 }
 
-export type DrawingTool = 'pen' | 'highlighter' | 'eraser' | 'brush' | 'pencil' | 'marker' | 'calligraphy';
+export type DrawingTool = 'pen' | 'highlighter' | 'eraser' | 'brush' | 'pencil' | 'calligraphy';
 
 export interface Stroke {
   id: string;
@@ -172,23 +172,62 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   const eraseIntersectingStrokes = (existingStrokes: Stroke[], eraserStroke: Stroke): Stroke[] => {
     if (!eraserStroke.points.length) return existingStrokes;
     
+    const eraseThreshold = eraserStroke.width / 2;
+    
     return existingStrokes.reduce((result, stroke) => {
       if (stroke.points.length === 0) return result;
       
-      const remainingPoints = stroke.points.filter(strokePoint => {
+      // Find points that are NOT intersecting with the eraser
+      const survivingPoints = stroke.points.filter(strokePoint => {
         return !eraserStroke.points.some(eraserPoint => {
           const distance = Math.sqrt(
             Math.pow(strokePoint.x - eraserPoint.x, 2) + 
             Math.pow(strokePoint.y - eraserPoint.y, 2)
           );
-          return distance < (eraserStroke.width / 2);
+          return distance < eraseThreshold;
         });
       });
       
-      if (remainingPoints.length > 0) {
-        result.push({
-          ...stroke,
-          points: remainingPoints
+      // If we have enough surviving points, create segments
+      if (survivingPoints.length > 1) {
+        // Group consecutive surviving points into segments
+        const segments: Point[][] = [];
+        let currentSegment: Point[] = [];
+        let lastValidIndex = -2;
+        
+        survivingPoints.forEach(point => {
+          const originalIndex = stroke.points.findIndex(p => 
+            p.x === point.x && p.y === point.y && p.timestamp === point.timestamp
+          );
+          
+          if (originalIndex === lastValidIndex + 1 || currentSegment.length === 0) {
+            // Continue current segment
+            currentSegment.push(point);
+          } else {
+            // Start new segment
+            if (currentSegment.length > 1) {
+              segments.push([...currentSegment]);
+            }
+            currentSegment = [point];
+          }
+          
+          lastValidIndex = originalIndex;
+        });
+        
+        // Add the last segment
+        if (currentSegment.length > 1) {
+          segments.push(currentSegment);
+        }
+        
+        // Create new strokes for each segment
+        segments.forEach((segment, index) => {
+          if (segment.length > 1) {
+            result.push({
+              ...stroke,
+              id: stroke.id + '_segment_' + index + '_' + Date.now(),
+              points: segment,
+            });
+          }
         });
       }
       
@@ -328,24 +367,30 @@ const handleTouchEnd = useCallback(() => {
         fillOpacity = 0.2;
         break;
       case 'brush':
-        strokeWidth = stroke.width * 1.5;
+        strokeWidth = stroke.width * 1.8;
+        strokeOpacity = 0.9;
         strokeLinecap = 'round';
         break;
       case 'pencil':
         strokeWidth = stroke.width * 0.8;
         strokeOpacity = 0.8;
-        break;
-      case 'marker':
-        strokeWidth = stroke.width * 1.2;
-        strokeOpacity = 0.9;
+        strokeLinecap = 'round';
         break;
       case 'calligraphy':
         strokeWidth = stroke.width * 1.8;
         strokeLinecap = 'square';
         break;
+      case 'eraser':
+        // Eraser strokes are temporary and should appear as dashed lines
+        strokeWidth = stroke.width;
+        strokeOpacity = 0.5;
+        strokeDasharray = '5,5';
+        break;
       case 'pen':
       default:
         strokeWidth = stroke.width;
+        strokeOpacity = 1.0;
+        strokeLinecap = 'round';
         break;
     }
     

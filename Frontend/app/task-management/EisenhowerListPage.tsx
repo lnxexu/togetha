@@ -394,9 +394,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   title: {
-    fontSize: 24,
+    fontSize: 22,
     color: "#FFFFFF",
-    fontFamily: "Inter-Bold",
+    fontFamily: "Lexend",
     lineHeight: 28,
   },
   subtitle: {

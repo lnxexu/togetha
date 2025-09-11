@@ -12,15 +12,7 @@ import * as ImagePicker from 'expo-image-picker';
 import TemplatePreview from './TemplatePreview';
 import { TemplateType } from './TemplateOverlay';
 import { TEMPLATE_CONFIGS, getTemplateConfig } from '../utils/templateConfig';
-
-export type DrawingTool =
-  | "pen"
-  | "highlighter"
-  | "eraser"
-  | "brush"
-  | "pencil"
-  | "marker"
-  | "calligraphy";
+import { DrawingTool } from './DrawingCanvas';
 
 interface DrawingToolbarProps {
   currentTool: DrawingTool;
@@ -74,10 +66,9 @@ const TOOLS = [
   { name: "pen", icon: "create-outline", label: "Pen" },
   { name: "pencil", icon: "pencil-outline", label: "Pencil" },
   { name: "brush", icon: "brush-outline", label: "Brush" },
-  { name: "marker", icon: "color-filter-outline", label: "Marker" },
   { name: "highlighter", icon: "color-fill-outline", label: "Highlighter" },
   { name: "calligraphy", icon: "text-outline", label: "Calligraphy" },
-  { name: "eraser", icon: "ellipse-outline", label: "Eraser" },
+  { name: "eraser", icon: "remove-outline", label: "Eraser" },
 ] as const;
 
 // Get template list from configuration

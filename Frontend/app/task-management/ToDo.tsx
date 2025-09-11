@@ -1,14 +1,15 @@
 import React, { useState, useCallback } from "react";
-import { MaterialIcons, Ionicons } from "@expo/vector-icons";
+import { MaterialIcons, Ionicons, Entypo } from "@expo/vector-icons";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import Navbar from "../NavBar";
 import EisenhowerMatrix from "./components/EisenhowerMatrix";
 import TaskListView from "./components/TaskListView";
-import { Task } from "./types/Task";
+import { Task, TaskCategory } from "./types/Task";
 import { LinearGradient } from "expo-linear-gradient";
 import  taskService  from "./services/taskService";
+import { categoryService } from "./services/categoryService";
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getEnhancedSafeAreaConfig, getStatusBarConfig, getSafeAreaContainerStyle } from '../utils/SafeAreaUtils';
 import EnhancedLoadingScreen from '../components/EnhancedLoadingScreen';
@@ -44,6 +45,7 @@ const ToDo: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const [viewMode, setViewMode] = useState<"matrix" | "list">("matrix");
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [categories, setCategories] = useState<TaskCategory[]>([]);
   const [selectedFilter, setSelectedFilter] = useState<
     "all" | "pending" | "completed" | "overdue"
   >("all");
@@ -62,13 +64,13 @@ const ToDo: React.FC = () => {
   const [animatedValue] = useState(new Animated.Value(0));
   const [showQuickFilters, setShowQuickFilters] = useState(false);
   
-  // Search functionality states
-  const [searchQuery, setSearchQuery] = useState("");
-  const [showSearchBar, setShowSearchBar] = useState(false);
-  
   // Selected date tasks modal state
   const [showDateTasksModal, setShowDateTasksModal] = useState(false);
   const [dateTasksModalDate, setDateTasksModalDate] = useState<Date | null>(null);
+  
+  // More vert menu state
+  const [showMoreVertMenu, setShowMoreVertMenu] = useState(false);
+  
   // Dropdown options
   const statusOptions = [
     { value: "all", label: "All Tasks" },
@@ -87,14 +89,6 @@ const ToDo: React.FC = () => {
   ) => {
     setSelectedStatus(status);
     setSelectedFilter(status);
-  };
-
-  // Search functionality
-  const toggleSearch = () => {
-    setShowSearchBar(!showSearchBar);
-    if (showSearchBar) {
-      setSearchQuery(""); // Clear search when closing
-    }
   };
 
   // Enhanced date task handlers
@@ -202,8 +196,19 @@ const ToDo: React.FC = () => {
   useFocusEffect(
     useCallback(() => {
       loadTasks();
+      loadCategories();
     }, [])
   );
+
+  // Load categories function
+  const loadCategories = async () => {
+    try {
+      const availableCategories = await categoryService.getCategories();
+      setCategories(availableCategories);
+    } catch (error) {
+      console.error('Error loading categories:', error);
+    }
+  };
 
   // Initialize animation when modal opens
   React.useEffect(() => {
@@ -295,26 +300,10 @@ const ToDo: React.FC = () => {
       // Filter by category/subject
       if (selectedCategory === "all") return true;
       return task.category === selectedCategory;
-    })
-    .filter((task) => {
-      // Filter by search query
-      if (searchQuery === "") return true;
-      
-      const searchLower = searchQuery.toLowerCase();
-      const titleMatch = task.title.toLowerCase().includes(searchLower);
-      const descriptionMatch = task.description?.toLowerCase().includes(searchLower) || false;
-      const categoryMatch = task.category_name?.toLowerCase().includes(searchLower) || false;
-      
-      return titleMatch || descriptionMatch || categoryMatch;
     });
 
-  const categories = [
-    ...new Set(
-      tasks
-        .map((task) => task.category)
-        .filter((category): category is string => Boolean(category))
-    ),
-  ];
+  // Get category names for filtering (derived from categories state)
+  const categoryNames = categories.map(cat => cat.name);
 
   const isDateSelected = (date: Date) => {
     return date.toDateString() === selectedDate.toDateString();
@@ -339,9 +328,78 @@ const ToDo: React.FC = () => {
     return today.getDate().toString();
   };
 
+  // More vert menu handlers
+  const handleMoreVertPress = () => {
+    setShowMoreVertMenu(!showMoreVertMenu);
+  };
+
+  const handleMarkAllCompleted = async () => {
+    Alert.alert(
+      "Mark All Completed",
+      "Are you sure you want to mark all pending tasks as completed?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Mark All Completed",
+          style: "default",
+          onPress: async () => {
+            try {
+              const pendingTasks = tasks.filter(task => !task.completed);
+              for (const task of pendingTasks) {
+                await taskService.markTaskComplete(task.id);
+              }
+              await loadTasks();
+              setShowMoreVertMenu(false);
+              Alert.alert("Success", "All tasks marked as completed!");
+            } catch (error) {
+              Alert.alert("Error", "Failed to update tasks");
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeleteAllCompleted = async () => {
+    Alert.alert(
+      "Delete All Completed",
+      "Are you sure you want to delete all completed tasks? This action cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete All",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const completedTasks = tasks.filter(task => task.completed);
+              for (const task of completedTasks) {
+                await taskService.deleteTask(task.id);
+              }
+              await loadTasks();
+              setShowMoreVertMenu(false);
+              Alert.alert("Success", "All completed tasks deleted!");
+            } catch (error) {
+              Alert.alert("Error", "Failed to delete tasks");
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleRefreshTasks = async () => {
+    setShowMoreVertMenu(false);
+    await loadTasks();
+  };
+
+  const handleExportTasks = () => {
+    setShowMoreVertMenu(false);
+    navigation.navigate("CompletedTasks" as any);
+  };
+
   return (
     <>
-      <StatusBar {...statusBarConfig} />
+      <StatusBar barStyle="light-content" backgroundColor="#7C3AED" />
       <SafeAreaView style={[styles.container, safeAreaStyle]}>
         {/* Header */}
         <LinearGradient
@@ -355,16 +413,6 @@ const ToDo: React.FC = () => {
             <Text style={styles.title}>Tasks</Text>
           </View>
           <View style={styles.headerActions}>
-            <TouchableOpacity
-              style={styles.searchButton}
-              onPress={toggleSearch}
-            >
-              <Ionicons
-                name={showSearchBar ? "close" : "search"}
-                size={24}
-                color="#ffffff"
-              />
-            </TouchableOpacity>
             <TouchableOpacity
               style={styles.calendarButton}
               onPress={() => setShowCalendarModal(true)}
@@ -398,31 +446,24 @@ const ToDo: React.FC = () => {
                 shadowRadius={8}
               />
             </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.moreVertButton}
+              onPress={handleMoreVertPress}
+            >
+              <Entypo
+                name="dots-three-vertical"
+                size={20}
+                color="#ffffffff"
+                elevation={10}
+                shadowColor="#2c2c2cff"
+                shadowOffset={{ width: 0, height: 2 }}
+                shadowOpacity={0.8}
+                shadowRadius={8}
+              />
+            </TouchableOpacity>
           </View>
         </View>
         
-        {/* Search Bar */}
-        {showSearchBar && (
-          <View style={styles.searchBarContainer}>
-            <View style={styles.searchInputContainer}>
-              <Ionicons name="search" size={20} color="#999" />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search tasks..."
-                placeholderTextColor="#999"
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                autoFocus={showSearchBar}
-              />
-              {searchQuery.length > 0 && (
-                <TouchableOpacity onPress={() => setSearchQuery("")}>
-                  <Ionicons name="close-circle" size={20} color="#999" />
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-        )}
-
         {/* Enhanced Calendar Modal with Google Calendar features */}
         <Modal
           visible={showCalendarModal}
@@ -683,6 +724,65 @@ const ToDo: React.FC = () => {
           </View>
         </Modal>
 
+        {/* More Vert Menu Modal */}
+        <Modal
+          visible={showMoreVertMenu}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setShowMoreVertMenu(false)}
+        >
+          <TouchableOpacity
+            style={styles.moreVertOverlay}
+            activeOpacity={1}
+            onPress={() => setShowMoreVertMenu(false)}
+          >
+            <View style={styles.moreVertMenuContainer}>
+              <TouchableOpacity
+                style={styles.moreVertMenuItem}
+                onPress={handleMarkAllCompleted}
+              >
+                <MaterialIcons name="check-circle" size={20} color="#10B981" />
+                <Text style={styles.moreVertMenuText}>Mark All Completed</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={styles.moreVertMenuItem}
+                onPress={handleDeleteAllCompleted}
+              >
+                <MaterialIcons name="delete-sweep" size={20} color="#EF4444" />
+                <Text style={styles.moreVertMenuText}>Delete All Completed</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={styles.moreVertMenuItem}
+                onPress={handleRefreshTasks}
+              >
+                <MaterialIcons name="refresh" size={20} color="#6366F1" />
+                <Text style={styles.moreVertMenuText}>Refresh Tasks</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={styles.moreVertMenuItem}
+                onPress={handleExportTasks}
+              >
+                <MaterialIcons name="visibility" size={20} color="#8B5CF6" />
+                <Text style={styles.moreVertMenuText}>View All Completed</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.moreVertMenuItem, styles.moreVertMenuItemLast]}
+                onPress={() => {
+                  setShowMoreVertMenu(false);
+                  navigation.navigate("TaskSettings" as any);
+                }}
+              >
+                <MaterialIcons name="settings" size={20} color="#64748B" />
+                <Text style={styles.moreVertMenuText}>Task Settings</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+
         {/* Dropdown Backdrop - Only show in list view */}
         {viewMode === "list" && false && (
           <TouchableOpacity
@@ -779,6 +879,8 @@ const ToDo: React.FC = () => {
         </View>
       </View>
 
+
+
       {/* Enhanced Content Section with better navigation */}
       <View
         style={[
@@ -795,11 +897,14 @@ const ToDo: React.FC = () => {
           /* Content Views */
           viewMode === "matrix" ? (
             <EisenhowerMatrix
-              tasks={tasks}
+              tasks={filteredTasks}
               onTaskPress={handleTaskPress}
               onAddTask={handleAddTask}
               onDeleteTask={handleDeleteTask}
               onMarkComplete={handleMarkComplete}
+              categories={categories}
+              selectedCategory={selectedCategory}
+              onCategoryChange={setSelectedCategory}
             />
           ) : (
             <TaskListView
@@ -823,7 +928,7 @@ const ToDo: React.FC = () => {
         ]}
         onPress={() => handleAddTask()}
       >
-        <MaterialIcons name="add" size={28} color="#ffffffff" />
+        <MaterialIcons name="add" size={32} color="#FFFFFF" />
         <View style={styles.fabRipple} />
       </TouchableOpacity>
 
@@ -836,292 +941,322 @@ const ToDo: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#ffffffff",
+    backgroundColor: "#F8FAFC",
   },
   header: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     paddingTop: Platform.OS === "ios" ? 50 : 35,
-    paddingBottom: 35, // Make this a bit larger for overlap
-    borderBottomLeftRadius: 25,
-    borderBottomRightRadius: 25,
-    shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 10,
+    paddingBottom: 40,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 24,
+    elevation: 15,
     zIndex: 1000,
     overflow: "visible",
   },
   headerTopRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start",
+    alignItems: "center",
+    marginBottom: 4,
   },
   headerTitleSection: {
     flex: 1,
   },
   title: {
-    fontSize: 32,
-    color: "#ffffffff",
+    fontSize: 34,
+    color: "#FFFFFF",
     fontFamily: "Lexend",
-    marginBottom: 4,
+    letterSpacing: -0.5,
   },
   headerActions: {
     flexDirection: "row",
-    gap: 8,
+    gap: 12,
+    alignItems: "center",
   },
   calendarButton: {
     width: 44,
     height: 44,
-    borderRadius: 12,
+    borderRadius: 22,
     justifyContent: "center",
     alignItems: "center",
-
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
     position: "relative",
-  },
-  calendarButtonText: {
-    fontSize: 16,
-    color: "#6A009C",
-    fontFamily: "Inter-Bold",
   },
   currentDateIndicator: {
     position: "absolute",
-    bottom: 6,
+    top: 6,
     right: 6,
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: "#ffffffff",
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#FFD700",
+    borderWidth: 1,
+    borderColor: "#FFFFFF",
   },
   viewToggleButton: {
     width: 44,
     height: 44,
-    borderRadius: 12,
+    borderRadius: 22,
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 20,
   },
   calendarModal: {
-    backgroundColor: "#fff",
-    borderRadius: 20,
-    padding: 24,
-    maxWidth: 400,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    padding: 28,
+    maxWidth: 420,
     width: "95%",
-    maxHeight: "80%",
+    maxHeight: "85%",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 10,
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.3,
+    shadowRadius: 40,
+    elevation: 20,
   },
   calendarModalHeader: {
-    marginBottom: 20,
+    marginBottom: 24,
   },
   calendarControls: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 20,
   },
   calendarNavButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: "#f8f9fa",
+    padding: 12,
+    borderRadius: 16,
+    backgroundColor: "#F1F5F9",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   monthYearContainer: {
     flex: 1,
     alignItems: "center",
   },
   monthYearText: {
-    fontSize: 18,
+    fontSize: 20,
     fontFamily: "Inter-Bold",
-    color: "#495057",
+    color: "#1E293B",
+    fontWeight: "700",
   },
   todayHint: {
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: "Inter-Regular",
-    color: "#6c757d",
-    marginTop: 2,
+    color: "#64748B",
+    marginTop: 4,
+    opacity: 0.8,
   },
   viewModeToggle: {
     flexDirection: "row",
-    backgroundColor: "#f8f9fa",
-    borderRadius: 8,
-    padding: 2,
+    backgroundColor: "#F1F5F9",
+    borderRadius: 12,
+    padding: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   viewModeButton: {
     flex: 1,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
     alignItems: "center",
   },
   activeViewModeButton: {
-    backgroundColor: "#AD00FF",
+    backgroundColor: "#8B5CF6",
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   viewModeText: {
     fontSize: 14,
     fontFamily: "Inter-Medium",
-    color: "#6c757d",
+    color: "#64748B",
+    fontWeight: "500",
   },
   activeViewModeText: {
-    color: "#fff",
+    color: "#FFFFFF",
+    fontWeight: "600",
   },
   taskIndicators: {
     position: "absolute",
-    bottom: 2,
+    bottom: 3,
     left: 0,
     right: 0,
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    gap: 2,
+    gap: 3,
   },
   taskDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
   },
   overdueDot: {
-    backgroundColor: "#e74c3c",
+    backgroundColor: "#EF4444",
+    shadowColor: "#EF4444",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+    elevation: 1,
   },
   completedDot: {
-    backgroundColor: "#27ae60",
+    backgroundColor: "#10B981",
+    shadowColor: "#10B981",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+    elevation: 1,
   },
   taskCount: {
-    fontSize: 8,
-    color: "#6c757d",
+    fontSize: 9,
+    color: "#64748B",
     fontFamily: "Inter-Medium",
+    fontWeight: "500",
   },
   tasksPreview: {
-    marginTop: 16,
-    paddingTop: 16,
+    marginTop: 20,
+    paddingTop: 20,
     borderTopWidth: 1,
-    borderTopColor: "#e9ecef",
+    borderTopColor: "#E2E8F0",
   },
   tasksPreviewTitle: {
-    fontSize: 14,
+    fontSize: 15,
     fontFamily: "Inter-SemiBold",
-    color: "#495057",
-    marginBottom: 12,
+    color: "#334155",
+    marginBottom: 16,
+    fontWeight: "600",
   },
   taskPreviewCard: {
-    backgroundColor: "#f8f9fa",
-    borderRadius: 8,
-    padding: 8,
-    marginRight: 8,
-    minWidth: 120,
+    backgroundColor: "#F8FAFC",
+    borderRadius: 12,
+    padding: 12,
+    marginRight: 12,
+    minWidth: 140,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   taskPreviewTitle: {
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: "Inter-Medium",
-    color: "#495057",
-    marginBottom: 4,
+    color: "#334155",
+    marginBottom: 6,
+    fontWeight: "500",
   },
   taskPreviewStatus: {
-    fontSize: 10,
+    fontSize: 11,
     fontFamily: "Inter-Regular",
-    color: "#6c757d",
+    color: "#64748B",
   },
   completedStatus: {
-    color: "#27ae60",
+    color: "#10B981",
+    fontWeight: "500",
   },
   overdueStatus: {
-    color: "#e74c3c",
-  },
-  calendarHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  monthNavButton: {
-    padding: 8,
-    borderRadius: 8,
+    color: "#EF4444",
+    fontWeight: "500",
   },
   calendarGrid: {
-    gap: 8,
+    gap: 12,
   },
   dayHeadersRow: {
     flexDirection: "row",
     justifyContent: "space-around",
-    marginBottom: 8,
+    marginBottom: 12,
+    paddingHorizontal: 4,
   },
   dayHeader: {
-    fontSize: 12,
-    color: "#6c757d",
+    fontSize: 13,
+    color: "#64748B",
     fontFamily: "Inter-Medium",
     textAlign: "center",
     flex: 1,
+    fontWeight: "600",
   },
   daysContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
-    gap: 0, // Remove gap to prevent wrapping issues
+    gap: 2,
+    paddingHorizontal: 2,
   },
   calendarDay: {
-    width: "14.28%", // Exactly 1/7 of the container width
+    width: "13.5%",
     aspectRatio: 1,
     justifyContent: "center",
     alignItems: "center",
-    borderRadius: 8,
-    margin: 0,
-    padding: 0,
-    backgroundColor: "transparent", // No background color for normal days
-    shadowColor: "#000",
+    borderRadius: 12,
+    margin: 1,
+    backgroundColor: "transparent",
+    position: "relative",
   },
   inactiveDay: {
-    opacity: 0.3,
+    opacity: 0.4,
   },
   todayCalendarDay: {
-    backgroundColor: "#AD00FF",
-    borderRadius: 8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 2,
+    backgroundColor: "#8B5CF6",
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   selectedCalendarDay: {
-    backgroundColor: "#6A009C",
-    borderRadius: 8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 2,
+    backgroundColor: "#6366F1",
+    shadowColor: "#6366F1",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   calendarDayText: {
-    fontSize: 14,
-    color: "#495057",
+    fontSize: 15,
+    color: "#334155",
     fontFamily: "Inter-Medium",
     textAlign: "center",
     fontWeight: "600",
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    backgroundColor: "transparent", // No background color for normal days
   },
   inactiveDayText: {
-    color: "#adb5bd",
+    color: "#CBD5E1",
   },
   todayDayText: {
-    color: "#fff",
+    color: "#FFFFFF",
     fontFamily: "Inter-Bold",
+    fontWeight: "700",
   },
   selectedDayText: {
-    color: "#fff",
+    color: "#FFFFFF",
     fontFamily: "Inter-Bold",
+    fontWeight: "700",
   },
   dropdownContainer: {
     marginTop: 20,
@@ -1174,7 +1309,7 @@ const styles = StyleSheet.create({
   },
   dashboardCardWrapper: {
     position: "absolute",
-    top: Platform.OS === "ios" ? 110 : 95, // Just below the header, adjust as needed
+    top: Platform.OS === "ios" ? 120 : 105,
     left: 0,
     right: 0,
     alignItems: "center",
@@ -1182,131 +1317,122 @@ const styles = StyleSheet.create({
     elevation: 20,
   },
   dashboardCardContainer: {
-    backgroundColor: "#fff",
-    borderRadius: 20,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
     padding: 10,
-    marginHorizontal: 24,
-    shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    elevation: 10,
+    marginHorizontal: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 24,
+    elevation: 15,
     width: "90%",
+    borderWidth: 1,
+    borderColor: "rgba(148, 163, 184, 0.1)",
   },
   dashboardRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    gap: 8,
+    alignItems: "center",
+    gap: 12,
   },
   dashboardCardItem: {
     flex: 1,
     alignItems: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    borderRadius: 16,
   },
   dashboardCardItemWithBorder: {
     borderRightWidth: 1,
-    borderRightColor: "#e0e0e0",
+    borderRightColor: "#F1F5F9",
   },
   activeDashboardCard: {
-    backgroundColor: "#f0e6ff",
-    borderRadius: 8,
-    marginHorizontal: 2,
+    backgroundColor: "#F0F4FF",
+    borderWidth: 1,
+    borderColor: "#8B5CF6",
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   dashboardNumber: {
-    fontSize: 20,
+    fontSize: 24,
     fontFamily: "Inter-Bold",
-    color: "#6A009C",
+    color: "#1E293B",
     marginBottom: 4,
+    fontWeight: "800",
   },
   activeDashboardNumber: {
-    color: "#AD00FF",
-    fontWeight: "bold",
+    color: "#8B5CF6",
+    fontWeight: "800",
   },
   dashboardLabel: {
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: "Inter-Medium",
-    color: "#535151ff",
+    color: "#64748B",
     textAlign: "center",
+    fontWeight: "500",
   },
   activeDashboardLabel: {
-    color: "#AD00FF",
+    color: "#8B5CF6",
     fontWeight: "600",
   },
   dayText: {
-    fontSize: 12,
-    color: "#6c757d",
+    fontSize: 13,
+    color: "#64748B",
     fontFamily: "Inter-Medium",
-    marginBottom: 4,
+    marginBottom: 6,
+    fontWeight: "500",
   },
   dateText: {
-    fontSize: 16,
-    color: "#495057",
+    fontSize: 17,
+    color: "#334155",
     fontFamily: "Inter-SemiBold",
+    fontWeight: "600",
   },
   selectedDateText: {
-    color: "#AD00FF",
+    color: "#8B5CF6",
     fontFamily: "Inter-SemiBold",
-    fontWeight: "bold",
-  },
-  viewToggle: {
-    flexDirection: "row",
-    marginHorizontal: 20,
-    marginBottom: 15,
-    backgroundColor: "#e9ecef",
-    borderRadius: 25,
-    padding: 4,
-  },
-  toggleButton: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 10,
-    borderRadius: 20,
-  },
-  activeToggle: {
-    backgroundColor: "#AD00FF",
-  },
-  toggleText: {
-    marginLeft: 5,
-    fontSize: 14,
-    color: "#AD00FF",
-    fontFamily: "Inter-Medium",
-  },
-  activeToggleText: {
-    color: "#fff",
-  },
-
-  content: {
-    flex: 1,
-    paddingBottom: 120, // Enhanced space for navbar
-  },
-  contentMatrix: {
-    paddingTop: Platform.OS === "ios" ? 190 : 175, // Better spacing for dashboard
-    paddingHorizontal: 20,
-  },
-  contentList: {
-    paddingTop: Platform.OS === "ios" ? 190 : 175,
-    paddingHorizontal: 20,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
+    fontWeight: "700",
   },
   viewToggleContainer: {
     flexDirection: "row",
     alignItems: "center",
   },
   viewToggleText: {
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: "Inter-Medium",
-    color: "#6A009C",
-    marginLeft: 4,
+    color: "#8B5CF6",
+    marginLeft: 6,
+    fontWeight: "500",
   },
-  // List view filter styles
+  
+  content: {
+    flex: 1,
+    paddingBottom: 0, // Removed bottom padding to allow content behind navbar
+  },
+  contentMatrix: {
+    paddingTop: Platform.OS === "ios" ? 200 : 185,
+    paddingHorizontal: 20,
+    paddingBottom: 0, // Removed bottom padding
+  },
+  contentList: {
+    paddingTop: Platform.OS === "ios" ? 200 : 185,
+    paddingHorizontal: 20,
+    paddingBottom: 0, // Removed bottom padding
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+    backgroundColor: "#F8FAFC",
+  },
+  // Modern Filter and Dropdown Styles
   listViewFilters: {
-    marginBottom: 15,
+    marginBottom: 20,
   },
   dropdownBackdrop: {
     position: "absolute",
@@ -1318,13 +1444,13 @@ const styles = StyleSheet.create({
   },
   dropdownFiltersContainer: {
     paddingHorizontal: 20,
-    marginBottom: 10,
+    marginBottom: 16,
     zIndex: 1000,
   },
   dropdownFiltersRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    gap: 12,
+    gap: 16,
   },
   filterDropdown: {
     flex: 1,
@@ -1332,140 +1458,89 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: "#fff",
-    borderRadius: 8,
+    paddingVertical: 14,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#e9ecef",
+    borderColor: "#E2E8F0",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
   },
-  // Landscape-specific styles
-  landscapeLayout: {
-    flexDirection: "column", // Changed to column for stacked layout
-    marginTop: 20,
-    gap: 12, // Reduced gap for better spacing
-  },
-  dropdownContainerLandscape: {
-    width: "100%", // Full width instead of flex
-    marginTop: 0,
-    marginBottom: 0,
-  },
-  dropdownRowLandscape: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 8, // Smaller gap for landscape
-  },
-  dropdownColumnLandscape: {
-    flexDirection: "column",
-    gap: 8,
-  },
-  dropdownLandscape: {
-    flex: 1, // Equal width for all dropdowns
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 10, // Reduced padding for better fit
-    paddingVertical: 12,
-    backgroundColor: "#fff",
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#e9ecef",
-    elevation: 2,
-  },
-  calendarContainerLandscape: {
-    width: "100%", // Full width instead of flex
-    marginBottom: 0,
-  },
-  calendarScrollContentLandscape: {
-    paddingHorizontal: 2,
-    alignItems: "center",
-  },
-  dateItemLandscape: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    marginHorizontal: 2,
-    minWidth: 50,
-  },
-  dayTextLandscape: {
-    fontSize: 10,
-    marginBottom: 2,
-  },
-  dateTextLandscape: {
-    fontSize: 14,
-  },
-  // Dropdown functionality styles
+  
+  // Modern Dropdown Functionality
   dropdownWrapper: {
     flex: 1,
     position: "relative",
     zIndex: 1000,
-    marginHorizontal: 2,
+    marginHorizontal: 4,
   },
   dropdownMenu: {
     position: "absolute",
     top: "100%",
     left: 0,
     right: 0,
-    backgroundColor: "#ffffff",
-    borderRadius: 8,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#e9ecef",
+    borderColor: "#E2E8F0",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.15,
-    shadowRadius: 12,
+    shadowRadius: 24,
     elevation: 15,
     zIndex: 2000,
-    maxHeight: 200,
-    marginTop: 4,
+    maxHeight: 220,
+    marginTop: 8,
   },
   dropdownMenuItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#f8f9fa",
+    borderBottomColor: "#F8FAFC",
   },
   selectedDropdownItem: {
-    backgroundColor: "#f0e6ff",
+    backgroundColor: "#F0F4FF",
   },
   dropdownMenuText: {
-    fontSize: 14,
-    color: "#495057",
+    fontSize: 15,
+    color: "#334155",
     fontFamily: "Inter-Medium",
     flex: 1,
+    fontWeight: "500",
   },
   selectedDropdownText: {
-    color: "#AD00FF",
+    color: "#8B5CF6",
     fontFamily: "Inter-SemiBold",
     fontWeight: "600",
   },
   addTaskButton: {
     position: "absolute",
     right: 24,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "#6366F1",
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "#8B5CF6",
     justifyContent: "center",
     alignItems: "center",
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.24,
-    shadowRadius: 16,
-    elevation: 12,
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.3,
+    shadowRadius: 24,
+    elevation: 15,
     zIndex: 1000,
+    bottom: Platform.OS === "ios" ? 115 : 110,
   },
   fabRipple: {
     position: "absolute",
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "rgba(255,255,255,0.1)",
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "rgba(255,255,255,0.15)",
   },
   // Dashboard styles
 
@@ -1473,168 +1548,216 @@ const styles = StyleSheet.create({
   statusButtons: {
     flexDirection: "row",
     paddingHorizontal: 0,
-    paddingVertical: 16,
-    gap: 8,
+    paddingVertical: 20,
+    gap: 12,
   },
   statusButton: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 14,
     paddingHorizontal: 0,
-    borderRadius: 8,
-    backgroundColor: "#fff",
+    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "#e9ecef",
+    borderColor: "#E2E8F0",
     alignItems: "center",
-    shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 1,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
   },
   activeStatusButton: {
-    backgroundColor: "#6A009C",
-    borderColor: "#6A009C",
+    backgroundColor: "#8B5CF6",
+    borderColor: "#8B5CF6",
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 6,
   },
   statusButtonText: {
-    fontSize: 14,
+    fontSize: 15,
     fontFamily: "Inter-Medium",
-    color: "#495057",
+    color: "#334155",
+    fontWeight: "500",
   },
   activeStatusButtonText: {
-    color: "#fff",
+    color: "#FFFFFF",
     fontFamily: "Inter-SemiBold",
-  },
-  
-  // Search functionality styles
-  searchButton: {
-    marginRight: 12,
-    padding: 8,
-    borderRadius: 20,
-  },
-  searchBarContainer: {
-    paddingHorizontal: 20,
-    paddingBottom: 15,
-  },
-  searchInputContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.9)",
-    borderRadius: 25,
-    paddingHorizontal: 15,
-    paddingVertical: 12,
-    gap: 10,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-    fontFamily: "Inter-Regular",
-    color: "#333",
+    fontWeight: "600",
   },
   
   // Date Tasks Modal styles
   dateTasksModalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
     justifyContent: "flex-end",
   },
   dateTasksModalContent: {
-    backgroundColor: "#fff",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: "80%",
-    paddingTop: 20,
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    maxHeight: "85%",
+    paddingTop: 24,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 24,
+    elevation: 15,
   },
   dateTasksModalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingBottom: 15,
+    paddingHorizontal: 24,
+    paddingBottom: 20,
     borderBottomWidth: 1,
-    borderBottomColor: "#f0f0f0",
+    borderBottomColor: "#F1F5F9",
   },
   dateTasksModalTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontFamily: "Inter-SemiBold",
-    color: "#333",
+    color: "#1E293B",
+    fontWeight: "600",
   },
   dateTasksModalCloseButton: {
-    padding: 8,
+    padding: 12,
+    borderRadius: 20,
+    backgroundColor: "#F8FAFC",
   },
   dateTaskItem: {
-    backgroundColor: "#fff",
-    marginHorizontal: 20,
-    marginVertical: 6,
-    padding: 16,
-    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+    marginHorizontal: 24,
+    marginVertical: 8,
+    padding: 20,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#f0f0f0",
+    borderColor: "#F1F5F9",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowRadius: 12,
+    elevation: 4,
   },
   dateTaskItemHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 8,
+    marginBottom: 12,
   },
   dateTaskItemTitle: {
     flex: 1,
-    fontSize: 16,
+    fontSize: 17,
     fontFamily: "Inter-SemiBold",
-    color: "#333",
-    marginRight: 12,
+    color: "#1E293B",
+    marginRight: 16,
+    fontWeight: "600",
+    lineHeight: 24,
   },
   dateTaskItemStatus: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    backgroundColor: "#f0f0f0",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: "#F8FAFC",
   },
   dateTaskStatusCompleted: {
-    backgroundColor: "#d4edda",
+    backgroundColor: "#DCFCE7",
   },
   dateTaskStatusOverdue: {
-    backgroundColor: "#f8d7da",
+    backgroundColor: "#FEE2E2",
   },
   dateTaskItemStatusText: {
     fontSize: 12,
     fontFamily: "Inter-Medium",
-    color: "#666",
+    color: "#64748B",
+    fontWeight: "500",
   },
   dateTaskItemDescription: {
-    fontSize: 14,
+    fontSize: 15,
     fontFamily: "Inter-Regular",
-    color: "#666",
-    marginBottom: 8,
-    lineHeight: 20,
+    color: "#64748B",
+    marginBottom: 12,
+    lineHeight: 22,
   },
   dateTaskItemFooter: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#F8FAFC",
   },
   dateTaskItemCategory: {
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: "Inter-Medium",
     color: "#8B5CF6",
+    fontWeight: "500",
   },
   dateTaskItemTime: {
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: "Inter-Regular",
-    color: "#999",
+    color: "#94A3B8",
   },
   dateTasksEmptyState: {
-    padding: 40,
+    padding: 48,
     alignItems: "center",
   },
   dateTasksEmptyText: {
-    fontSize: 16,
+    fontSize: 17,
     fontFamily: "Inter-Regular",
-    color: "#999",
+    color: "#94A3B8",
+    textAlign: "center",
+  },
+  
+  // More Vert Button styles
+  moreVertButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
+  },
+  
+  // More Vert Menu styles
+  moreVertOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
+    justifyContent: "flex-start",
+    alignItems: "flex-end",
+    paddingTop: Platform.OS === "ios" ? 120 : 100,
+    paddingRight: 20,
+  },
+  moreVertMenuContainer: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    paddingVertical: 8,
+    minWidth: 200,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    elevation: 12,
+    borderWidth: 1,
+    borderColor: "rgba(148, 163, 184, 0.1)",
+  },
+  moreVertMenuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F8FAFC",
+  },
+  moreVertMenuItemLast: {
+    borderBottomWidth: 0,
+  },
+  moreVertMenuText: {
+    fontSize: 15,
+    fontFamily: "Inter-Medium",
+    color: "#334155",
+    marginLeft: 12,
+    fontWeight: "500",
   },
 });
 

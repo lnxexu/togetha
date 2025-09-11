@@ -367,8 +367,8 @@ const styles = StyleSheet.create({
   brandTitle: {
     color: OnboardingColors.primary.main,
     fontFamily: 'Lexend',
-    fontWeight: '700',
-    letterSpacing: 2,
+    
+    letterSpacing: 1,
     textAlign: 'center',
   },
   centerWrapper: {

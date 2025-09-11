@@ -1,9 +1,11 @@
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React from 'react';
 import {
     Alert,
+    Dimensions,
     FlatList,
     Platform,
     StyleSheet,
@@ -30,29 +32,29 @@ const quadrants: Record<string, QuadrantData> = {
   'urgent-important': {
     title: 'Urgent & Important',
     subtitle: 'DO FIRST',
-    color: '#F87171',
-    borderColor: '#EF4444',
+    color: '#FF6B6B',
+    borderColor: '#FF5252',
     priority: 'urgent-important',
   },
   'not-urgent-important': {
     title: 'Not Urgent & Important',
     subtitle: 'SCHEDULE',
-    color: '#34D399',
-    borderColor: '#10B981',
+    color: '#4ECDC4',
+    borderColor: '#26A69A',
     priority: 'not-urgent-important',
   },
   'urgent-not-important': {
     title: 'Urgent & Not Important',
     subtitle: 'DELEGATE',
-    color: '#FBBF24',
-    borderColor: '#F59E0B',
+    color: '#FFE066',
+    borderColor: '#FFC107',
     priority: 'urgent-not-important',
   },
   'not-urgent-not-important': {
     title: 'Not Urgent & Not Important',
     subtitle: 'ELIMINATE',
-    color: '#9CA3AF',
-    borderColor: '#6B7280',
+    color: '#A8A8A8',
+    borderColor: '#757575',
     priority: 'not-urgent-not-important',
   },
 };
@@ -107,78 +109,111 @@ const EisenhowerListPage: React.FC = () => {
         onPress={() => handleTaskPress(task.id)}
         onLongPress={() => handleTaskLongPress(task)}
       >
-        <View style={styles.taskContent}>
-          <View style={styles.taskHeader}>
-            <View style={styles.taskTextSection}>
-              <Text style={[
-                styles.taskTitle,
-                task.completed && styles.completedTaskTitle
-              ]} numberOfLines={2}>
-                {task.title}
-              </Text>
-              {task.description && (
-                <Text style={styles.taskDescription} numberOfLines={2}>
-                  {task.description}
-                </Text>
-              )}
-              {task.due_datetime && (
-                <Text style={[styles.taskDate, task.overdue && styles.overdueText]}>
-                  Due: {new Date(task.due_datetime).toLocaleDateString()}
-                </Text>
-              )}
+        <LinearGradient
+          colors={task.completed ? ['#F8F9FA', '#F8F9FA'] : ['#FFFFFF', '#FAFBFC']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={styles.taskGradient}
+        >
+          <View style={styles.taskContent}>
+            <View style={styles.taskHeader}>
+              <View style={styles.taskTextSection}>
+                <View style={styles.titleRow}>
+                  <View style={[styles.priorityDot, { backgroundColor: quadrantData.color }]} />
+                  <Text style={[
+                    styles.taskTitle,
+                    task.completed && styles.completedTaskTitle
+                  ]} numberOfLines={2}>
+                    {task.title}
+                  </Text>
+                </View>
+                {task.description && (
+                  <Text style={styles.taskDescription} numberOfLines={2}>
+                    {task.description}
+                  </Text>
+                )}
+                {task.due_datetime && (
+                  <View style={styles.dateContainer}>
+                    <MaterialIcons name="schedule" size={14} color={task.overdue ? '#FF5252' : '#64748B'} />
+                    <Text style={[styles.taskDate, task.overdue && styles.overdueText]}>
+                      {new Date(task.due_datetime).toLocaleDateString()}
+                    </Text>
+                  </View>
+                )}
+                {task.category && (
+                  <View style={styles.categoryContainer}>
+                    <Text style={[styles.categoryText, { color: quadrantData.borderColor }]}>
+                      {task.category}
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <TouchableOpacity
+                style={[styles.statusButton, { backgroundColor: task.completed ? '#E8F5E8' : '#F5F5F5' }]}
+                onPress={() => { if (onMarkComplete) onMarkComplete(task.id); }}
+              >
+                <MaterialIcons
+                  name={task.completed ? 'check-circle' : 'radio-button-unchecked'}
+                  size={28}
+                  color={task.completed ? '#4CAF50' : '#BDBDBD'}
+                />
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              style={styles.statusButton}
-              onPress={() => { if (onMarkComplete) onMarkComplete(task.id); }}
-            >
-              <MaterialIcons
-                name={task.completed ? 'check-circle' : 'radio-button-unchecked'}
-                size={24}
-                color={task.completed ? '#27ae60' : '#bdc3c7'}
-              />
-            </TouchableOpacity>
           </View>
-          
-          
-        </View>
+        </LinearGradient>
       </TouchableOpacity>
     );
   };
 
   const renderEmptyState = () => (
     <View style={styles.emptyContainer}>
-      <MaterialIcons name="task-alt" size={64} color="#bdc3c7" />
+      <View style={[styles.emptyIconContainer, { backgroundColor: `${quadrantData.color}15` }]}>
+        <MaterialIcons name="task-alt" size={64} color={quadrantData.color} />
+      </View>
       <Text style={styles.emptyTitle}>No tasks in this quadrant</Text>
       <Text style={styles.emptyDescription}>
-        Tasks added to this priority level will appear here
+        Tasks added to "{quadrantData.subtitle}" priority will appear here
       </Text>
+      <TouchableOpacity 
+        style={[styles.addTaskButton, { backgroundColor: quadrantData.borderColor }]}
+        onPress={() => navigation.navigate('AddTask', { quadrant: quadrant as "urgent-important" | "not-urgent-important" | "urgent-not-important" | "not-urgent-not-important" })}
+      >
+        <MaterialIcons name="add" size={20} color="#FFFFFF" />
+        <Text style={styles.addTaskButtonText}>Add Task</Text>
+      </TouchableOpacity>
     </View>
   );
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
+      {/* Header with Gradient */}
+      <LinearGradient
+        colors={['#A855F7', '#8B5CF6', '#7C3AED']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.header}
+      >
         <View style={styles.headerTopRow}>
           <TouchableOpacity 
             style={styles.backButton}
             onPress={handleBackPress}
           >
-          <Ionicons name="chevron-back" size={24} color="#6A009C" />
+            <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
           </TouchableOpacity>
           <View style={styles.headerTitleSection}>
             <Text style={styles.title}>{quadrantData.title}</Text>
             <Text style={styles.subtitle}>{quadrantData.subtitle}</Text>
           </View>
-          <View style={styles.taskCountContainer}>
+          <View style={[styles.taskCountContainer, { backgroundColor: quadrantData.borderColor }]}>
             <Text style={styles.taskCountText}>{quadrantTasks.length}</Text>
           </View>
         </View>
         
         <View style={[styles.priorityBadge, { backgroundColor: quadrantData.color }]}>
+          <MaterialIcons name="flag" size={16} color="#FFFFFF" style={styles.flagIcon} />
           <Text style={styles.priorityText}>{quadrantData.subtitle}</Text>
         </View>
-      </View>
+      </LinearGradient>
 
       {/* Content */}
       <View style={styles.content}>
@@ -370,6 +405,59 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: 12,
+  },
+  taskGradient: {
+    padding: 1,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 12,
+  },
+  priorityDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  dateContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  dateText: {
+    fontSize: 12,
+    color: '#95a5a6',
+    marginLeft: 4,
+  },
+  flagIcon: {
+    marginLeft: 4,
+  },
+  emptyIconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  addTaskButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  addTaskButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 8,
   },
   emptyContainer: {
     flex: 1,

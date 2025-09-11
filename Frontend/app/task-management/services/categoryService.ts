@@ -8,26 +8,49 @@ const DEFAULT_CATEGORIES: TaskCategory[] = [
   {
     id: '1',
     name: 'Work',
-    color: '#3498db',
+    color: '#3B82F6',
     created_at: new Date(),
-    
   },
   {
     id: '2',
     name: 'Personal',
-    color: '#e74c3c',
+    color: '#10B981',
     created_at: new Date(),
   },
   {
     id: '3',
-    name: 'Health',
-    color: '#2ecc71',
+    name: 'Health & Fitness',
+    color: '#F59E0B',
     created_at: new Date(),
   },
   {
     id: '4',
     name: 'Learning',
-    color: '#f39c12',
+    color: '#8B5CF6',
+    created_at: new Date(),
+  },
+  {
+    id: '5',
+    name: 'Finance',
+    color: '#EF4444',
+    created_at: new Date(),
+  },
+  {
+    id: '6',
+    name: 'Home & Family',
+    color: '#F97316',
+    created_at: new Date(),
+  },
+  {
+    id: '7',
+    name: 'Shopping',
+    color: '#EC4899',
+    created_at: new Date(),
+  },
+  {
+    id: '8',
+    name: 'Travel',
+    color: '#06B6D4',
     created_at: new Date(),
   },
 ];

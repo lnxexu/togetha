@@ -634,7 +634,10 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
           colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
-          style={[styles.header, { paddingTop: safeAreaConfig.contentPaddingTop }]}
+          style={[styles.header, { 
+            paddingTop: safeAreaConfig.paddingTop,
+            paddingBottom: 20,
+          }]}
         >
         <TouchableOpacity style={styles.backButton} onPress={handleGoBack}>
           <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
@@ -661,8 +664,9 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
         keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
       >
         {/* Messages */}
-        <ScrollView style={styles.messagesContainer}>
-        {/* Welcome Message */}
+        <ScrollView style={[styles.messagesContainer, { 
+          paddingTop: safeAreaConfig.paddingTop + 80 // Space for the header + safe area
+        }]}>
         {messages.length === 1 && (
           <View style={styles.welcomeContainer}>
             <View style={styles.welcomeHeader}>
@@ -953,8 +957,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     padding: 16,
-    paddingTop: Platform.OS === "ios" ? 50 : 35,
-    paddingBottom: 20,
     borderBottomLeftRadius: 25,
     borderBottomRightRadius: 25,
     shadowColor: "#1E293B",
@@ -1004,7 +1006,6 @@ const styles = StyleSheet.create({
   messagesContainer: {
     flex: 1,
     padding: 16,
-    paddingTop: 120, // Space for the overlay header with safe area
     paddingBottom: 20,
   },
   messageBubble: {

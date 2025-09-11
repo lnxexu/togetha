@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -7,9 +7,11 @@ import {
   ScrollView,
   Alert,
   Animated,
+  useWindowDimensions,
+  FlatList,
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
-import { Task } from "../types/Task";
+import { Task, TaskCategory } from "../types/Task";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../../navigation/AppNavigator";
@@ -22,6 +24,9 @@ interface EisenhowerMatrixProps {
   onAddTask: (quadrant: string) => void;
   onDeleteTask: (taskId: string) => void;
   onMarkComplete: (taskId: string) => void;
+  categories: TaskCategory[];
+  selectedCategory: string;
+  onCategoryChange: (category: string) => void;
 }
 
 type QuadrantData = {
@@ -80,8 +85,24 @@ const EisenhowerMatrix: React.FC<EisenhowerMatrixProps> = ({
   onAddTask,
   onDeleteTask,
   onMarkComplete,
+  categories,
+  selectedCategory,
+  onCategoryChange,
 }) => {
   const navigation = useNavigation<NavigationProp>();
+  const { width, height } = useWindowDimensions();
+  
+  // State for category filter dropdown
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  
+  // Determine if we should show mobile or tablet/landscape layout
+  const isLandscape = width > height;
+  const isTablet = width >= 768; // iPad mini width
+  const isMobile = !isTablet && !isLandscape;
+  
+  // State for mobile quadrant navigation
+  const [currentQuadrantIndex, setCurrentQuadrantIndex] = useState(0);
+  const quadrantKeys = Object.keys(quadrants);
 
   const showMatrixHelp = () => {
     Alert.alert(
@@ -95,9 +116,19 @@ const EisenhowerMatrix: React.FC<EisenhowerMatrixProps> = ({
     );
   };
   const getTasksByQuadrant = (priority: string) => {
-    return tasks.filter(
+    // Filter by quadrant priority
+    let filteredTasks = tasks.filter(
       (task) => task.priority === priority && !task.completed
     );
+    
+    // Also filter by selected category
+    if (selectedCategory !== "all") {
+      filteredTasks = filteredTasks.filter(
+        (task) => task.category === selectedCategory
+      );
+    }
+    
+    return filteredTasks;
   };
 
   const handleTaskLongPress = (task: Task) => {
@@ -117,7 +148,7 @@ const EisenhowerMatrix: React.FC<EisenhowerMatrixProps> = ({
     ]);
   };
 
-  const renderQuadrant = (quadrantKey: string) => {
+  const renderQuadrant = (quadrantKey: string, isMobileView: boolean = false) => {
     const quadrant = quadrants[quadrantKey];
     const quadrantTasks = getTasksByQuadrant(quadrant.priority);
 
@@ -125,7 +156,7 @@ const EisenhowerMatrix: React.FC<EisenhowerMatrixProps> = ({
       <View
         key={quadrantKey}
         style={[
-          styles.quadrant,
+          isMobileView ? styles.mobileQuadrant : styles.quadrant,
           {
             backgroundColor: quadrant.color,
             borderLeftColor: quadrant.borderColor,
@@ -140,7 +171,7 @@ const EisenhowerMatrix: React.FC<EisenhowerMatrixProps> = ({
             { backgroundColor: quadrant.borderColor },
           ]}
         >
-          <MaterialIcons name={quadrant.icon} size={18} color="#ffffff" />
+          <MaterialIcons name={quadrant.icon} size={20} color="#ffffff" />
           <Text style={styles.quadrantTitle}>{quadrant.title}</Text>
           <TouchableOpacity
             style={styles.seeAllButton}
@@ -225,14 +256,55 @@ const EisenhowerMatrix: React.FC<EisenhowerMatrixProps> = ({
     );
   };
 
-  return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-      <View style={styles.helpButtonContainer}>
-        <TouchableOpacity style={styles.helpButton} onPress={showMatrixHelp}>
-          <MaterialIcons name="help-outline" size={16} color="#666" />
-          <Text style={styles.helpButtonText}>What's this?</Text>
-        </TouchableOpacity>
+
+
+  const renderMobileMatrix = () => {
+    return (
+      <View style={styles.mobileContainer}>
+        <FlatList
+          data={quadrantKeys}
+          horizontal
+          pagingEnabled={true}
+          showsHorizontalScrollIndicator={false}
+          snapToInterval={width}
+          snapToAlignment="center"
+          decelerationRate="fast"
+          bounces={false}
+          onMomentumScrollEnd={(event) => {
+            const index = Math.round(event.nativeEvent.contentOffset.x / width);
+            setCurrentQuadrantIndex(index);
+          }}
+          getItemLayout={(data, index) => ({
+            length: width,
+            offset: width * index,
+            index,
+          })}
+          keyExtractor={(item) => item}
+          renderItem={({ item }) => (
+            <View style={[styles.mobileQuadrantWrapper, { width }]} testID="mobile-quadrant-wrapper">
+              {renderQuadrant(item, true)}
+            </View>
+          )}
+          contentContainerStyle={styles.mobileMatrixContent}
+          testID="mobile-quadrant-list"
+        />
+        <View style={styles.mobileIndicatorContainer} testID="mobile-indicators">
+          {quadrantKeys.map((_, index) => (
+            <View
+              key={index}
+              style={[
+                styles.mobileIndicator,
+                index === currentQuadrantIndex && styles.activeMobileIndicator,
+              ]}
+            />
+          ))}
+        </View>
       </View>
+    );
+  };
+
+  const renderTabletMatrix = () => {
+    return (
       <View style={styles.matrix}>
         <View style={styles.matrixRow}>
           {renderQuadrant("urgent-important")}
@@ -243,6 +315,119 @@ const EisenhowerMatrix: React.FC<EisenhowerMatrixProps> = ({
           {renderQuadrant("not-urgent-not-important")}
         </View>
       </View>
+    );
+  };
+
+  return (
+    <ScrollView 
+      style={styles.container} 
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={styles.scrollContent}
+    >
+      <View style={styles.topControlsContainer}>
+        <View style={styles.helpButtonContainer}>
+          <TouchableOpacity style={styles.helpButton} onPress={showMatrixHelp}>
+            <MaterialIcons name="help-outline" size={16} color="#666" />
+            <Text style={styles.helpButtonText}>What's this?</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Category Filter Section */}
+        <View style={styles.categoryFilterContainer}>
+          <Text style={styles.categoryFilterLabel}>Filter:</Text>
+          <TouchableOpacity
+            style={styles.categoryFilterDropdown}
+            onPress={() => setShowCategoryDropdown(!showCategoryDropdown)}
+          >
+            <View style={styles.categoryFilterButton}>
+              <View style={styles.categoryFilterContent}>
+                {selectedCategory === "all" ? (
+                  <Text style={styles.categoryFilterText}>All</Text>
+                ) : (
+                  <>
+                    <View 
+                      style={[
+                        styles.categoryFilterColorIndicator, 
+                        { 
+                          backgroundColor: categories.find(cat => cat.name === selectedCategory)?.color || '#6c757d' 
+                        }
+                      ]} 
+                    />
+                    <Text style={styles.categoryFilterText}>
+                      {categories.find(cat => cat.name === selectedCategory)?.name || selectedCategory}
+                    </Text>
+                  </>
+                )}
+              </View>
+              <MaterialIcons
+                name={showCategoryDropdown ? "keyboard-arrow-up" : "keyboard-arrow-down"}
+                size={20}
+                color="#6c757d"
+              />
+            </View>
+          </TouchableOpacity>
+
+          {/* Category Dropdown Options */}
+          {showCategoryDropdown && (
+            <View style={styles.categoryFilterOptions}>
+              <TouchableOpacity
+                style={[
+                  styles.categoryFilterOption,
+                  selectedCategory === "all" && styles.selectedCategoryFilterOption,
+                ]}
+                onPress={() => {
+                  onCategoryChange("all");
+                  setShowCategoryDropdown(false);
+                }}
+              >
+                <Text style={[
+                  styles.categoryFilterOptionText,
+                  selectedCategory === "all" && styles.selectedCategoryFilterOptionText,
+                ]}>
+                  All Categories
+                </Text>
+                {selectedCategory === "all" && (
+                  <MaterialIcons name="check" size={16} color="#8B5CF6" />
+                )}
+              </TouchableOpacity>
+              
+              {categories.map((category) => (
+                <TouchableOpacity
+                  key={category.id}
+                  style={[
+                    styles.categoryFilterOption,
+                    selectedCategory === category.name && styles.selectedCategoryFilterOption,
+                  ]}
+                  onPress={() => {
+                    onCategoryChange(category.name);
+                    setShowCategoryDropdown(false);
+                  }}
+                >
+                  <View style={styles.categoryFilterOptionContent}>
+                    <View 
+                      style={[
+                        styles.categoryFilterColorIndicator, 
+                        { backgroundColor: category.color || '#6c757d' }
+                      ]} 
+                    />
+                    <Text style={[
+                      styles.categoryFilterOptionText,
+                      selectedCategory === category.name && styles.selectedCategoryFilterOptionText,
+                    ]}>
+                      {category.name}
+                    </Text>
+                  </View>
+                  {selectedCategory === category.name && (
+                    <MaterialIcons name="check" size={16} color="#8B5CF6" />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
+      </View>
+      
+      {isMobile ? renderMobileMatrix() : renderTabletMatrix()}
     </ScrollView>
   );
 };
@@ -250,6 +435,17 @@ const EisenhowerMatrix: React.FC<EisenhowerMatrixProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 100, // Add padding to allow content to be visible behind navbar
+  },
+  topControlsContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 20,
+    marginBottom: 12,
   },
   helpButtonContainer: {
     flexDirection: "row",
@@ -271,37 +467,173 @@ const styles = StyleSheet.create({
     marginLeft: 4,
     fontFamily: "Inter-Regular",
   },
+  // Category Filter Styles
+  categoryFilterContainer: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingLeft: 16,
+  },
+  categoryFilterLabel: {
+    fontSize: 14,
+    fontFamily: "Inter-Medium",
+    color: "#64748B",
+    marginRight: 8,
+  },
+  categoryFilterDropdown: {
+    flex: 1,
+  },
+  categoryFilterButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F8FAFC",
+    borderRadius: 8,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  categoryFilterContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  categoryFilterColorIndicator: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  categoryFilterText: {
+    fontSize: 14,
+    fontFamily: "Inter-Medium",
+    color: "#374151",
+    flex: 1,
+  },
+  categoryFilterOptions: {
+    position: "absolute",
+    top: "100%",
+    left: 0,
+    right: 0,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
+    zIndex: 1000,
+    marginTop: 4,
+    overflow: "hidden",
+    maxHeight: 200,
+  },
+  categoryFilterOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+  selectedCategoryFilterOption: {
+    backgroundColor: "#F0F9FF",
+  },
+  categoryFilterOptionContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  categoryFilterOptionText: {
+    fontSize: 14,
+    fontFamily: "Inter-Medium",
+    color: "#374151",
+  },
+  selectedCategoryFilterOptionText: {
+    color: "#8B5CF6",
+  },
   matrix: {
     flex: 1,
+    paddingHorizontal: 5, // Added padding for better spacing
   },
   matrixRow: {
     flexDirection: "row",
     flex: 1,
-    marginBottom: 10,
+    marginBottom: 5, // Reduced margin for tighter layout
+    justifyContent: "space-between", // Better space distribution
   },
   quadrant: {
     flex: 1,
-    marginHorizontal: 5,
+    marginHorizontal: 3, // Reduced margin for more space allocation
     backgroundColor: "#fff",
     borderRadius: 12,
     borderWidth: 0,
-    minHeight: 250,
+    minHeight: 300, // Increased height
+    maxWidth: '48%', // Ensure consistent width allocation
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 3.84,
     elevation: 5,
   },
+  // Mobile-specific styles
+  mobileContainer: {
+    flex: 1,
+  },
+  mobileQuadrant: {
+    flex: 1,
+    marginHorizontal: 8, // Minimal margin for maximum width
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    borderWidth: 0,
+    minHeight: 500, // Increased height
+    width: '85%', // Explicitly set width to use most of the available space
+    alignSelf: 'center', // Center the quadrant
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  mobileQuadrantWrapper: {
+    paddingHorizontal: 0, // No horizontal padding for maximum quadrant width
+    paddingVertical: 10,
+    justifyContent: "center",
+    alignItems: "center",
+    flex: 1, // Take full height
+  },
+  mobileMatrixContent: {
+    flexGrow: 1, // Changed from alignItems to flexGrow
+  },
+  mobileIndicatorContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 16,
+    gap: 8,
+  },
+  mobileIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#E2E8F0",
+  },
+  activeMobileIndicator: {
+    backgroundColor: "#8B5CF6",
+    width: 24,
+  },
   quadrantHeader: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 12,
+    padding: 14, // Increased padding
     borderTopLeftRadius: 10,
     borderTopRightRadius: 10,
   },
   quadrantTitle: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 15, // Increased font size
     fontFamily: "Inter-Medium",
     color: "#fff",
     marginLeft: 8,
@@ -347,7 +679,7 @@ const styles = StyleSheet.create({
   },
   taskList: {
     flex: 1,
-    padding: 8,
+    padding: 12, // Increased padding for better utilization of larger width
   },
   emptyQuadrant: {
     flex: 1,
@@ -365,21 +697,21 @@ const styles = StyleSheet.create({
   taskRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 8,
-    paddingHorizontal: 4,
+    marginBottom: 10, // Increased margin for better spacing
+    paddingHorizontal: 6, // Increased padding
   },
   checkbox: {
-    marginRight: 8,
+    marginRight: 10, // Increased margin
     paddingVertical: 2,
   },
   taskTextContainer: {
     flex: 1,
   },
   taskText: {
-    fontSize: 12,
+    fontSize: 14, // Increased font size for larger width
     fontWeight: "400",
     color: "#333333",
-    lineHeight: 16,
+    lineHeight: 20, // Increased line height
     fontFamily: "Inter-Regular",
   },
   overdueTaskText: {

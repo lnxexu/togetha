@@ -22,7 +22,6 @@ import Logs from '../logs/logs';
 //note-taking components
 import ImportPDFPage from '../note-taking/ImportPDFPage';
 import NewNoteEditor from '../note-taking/NewNoteEditor';
-import DrawingNoteEditor from '../note-taking/DrawingNoteEditor';
 // eslint-disable-next-line import/no-named-as-default
 import DrawingEditor from '../note-taking/DrawingEditor';
 
@@ -30,6 +29,7 @@ import DrawingEditor from '../note-taking/DrawingEditor';
 import AddTask from '../task-management/AddTask';
 import TaskDetails from '../task-management/TaskDetails';
 import EisenhowerListPage from '../task-management/EisenhowerListPage';
+import CompletedTasks from '../task-management/CompletedTasks';
 
 //profile components
 import Profile from '../profile/Profile';
@@ -78,6 +78,7 @@ export type RootStackParamList = {
   AllItemsView: {
     viewType: 'tasks' | 'activity' | 'notes' | 'urgent-tasks';
   };
+  CompletedTasks: undefined;
   EisenhowerList: {
     tasks: any[];
     quadrant: string;
@@ -338,16 +339,12 @@ const AppNavigator: React.FC = () => {
         <Stack.Screen name="NoteEditor" component={NewNoteEditor} />
         <Stack.Screen name="PDFs" component={ImportPDFPage} />
         <Stack.Screen name="DrawingEditor" component={DrawingEditor} />
-        <Stack.Screen 
-          name="DrawingNoteEditor" 
-        >
-          {(props) => <DrawingNoteEditor noteId={''} {...props} />}
-        </Stack.Screen>
 
         {/* Task Management components */}
         <Stack.Screen name="TaskDetails" component={TaskDetails} />
         <Stack.Screen name="AddTask" component={AddTask} />
         <Stack.Screen name="editTaskId" component={AddTask} />
+        <Stack.Screen name="CompletedTasks" component={CompletedTasks} />
         <Stack.Screen name="EisenhowerList" component={EisenhowerListPage} />
         <Stack.Screen name="AllItemsView" component={AllItemsView}/>
         

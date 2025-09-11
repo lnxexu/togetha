@@ -9,14 +9,14 @@ import {
   ScrollView,
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
-import { Task } from "../types/Task";
+import { Task, TaskCategory } from "../types/Task";
 
 interface TaskListViewProps {
   tasks: Task[];
   onTaskPress: (taskId: string) => void;
   onDeleteTask: (taskId: string) => void;
   onMarkComplete: (taskId: string) => void;
-  categories: string[];
+  categories: TaskCategory[];
   selectedCategory: string;
   onCategoryChange: (category: string) => void;
 }
@@ -88,12 +88,22 @@ const TaskListView: React.FC<TaskListViewProps> = ({
   onCategoryChange,
 }) => {
   const [selectedQuadrant, setSelectedQuadrant] = useState<string>("urgent-important");
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
 
   const getFilteredTasks = () => {
-    if (selectedQuadrant === "all") {
-      return tasks;
+    let filteredTasks = tasks;
+    
+    // Filter by quadrant
+    if (selectedQuadrant !== "all") {
+      filteredTasks = filteredTasks.filter((task) => task.priority === selectedQuadrant);
     }
-    return tasks.filter((task) => task.priority === selectedQuadrant);
+    
+    // Filter by category
+    if (selectedCategory !== "all") {
+      filteredTasks = filteredTasks.filter((task) => task.category === selectedCategory);
+    }
+    
+    return filteredTasks;
   };
 
   const handleTaskLongPress = (task: Task) => {
@@ -282,7 +292,102 @@ const TaskListView: React.FC<TaskListViewProps> = ({
 
   return (
     <View style={styles.container}>
-      <View style={styles.filtersSection}>{renderQuadrantFilters()}</View>
+      <View style={styles.filtersSection}>
+        {/* Category Filter Section */}
+        <View style={styles.categoryFilterContainer}>
+          <Text style={styles.categoryFilterLabel}>Filter by Category:</Text>
+          <TouchableOpacity
+            style={styles.categoryFilterDropdown}
+            onPress={() => setShowCategoryDropdown(!showCategoryDropdown)}
+          >
+            <View style={styles.categoryFilterButton}>
+              <View style={styles.categoryFilterContent}>
+                {selectedCategory === "all" ? (
+                  <Text style={styles.categoryFilterText}>All Categories</Text>
+                ) : (
+                  <>
+                    <View 
+                      style={[
+                        styles.categoryFilterColorIndicator, 
+                        { 
+                          backgroundColor: categories.find(cat => cat.name === selectedCategory)?.color || '#6c757d' 
+                        }
+                      ]} 
+                    />
+                    <Text style={styles.categoryFilterText}>
+                      {categories.find(cat => cat.name === selectedCategory)?.name || selectedCategory}
+                    </Text>
+                  </>
+                )}
+              </View>
+              <MaterialIcons
+                name={showCategoryDropdown ? "keyboard-arrow-up" : "keyboard-arrow-down"}
+                size={20}
+                color="#6c757d"
+              />
+            </View>
+          </TouchableOpacity>
+
+          {/* Category Dropdown Options */}
+          {showCategoryDropdown && (
+            <View style={styles.categoryFilterOptions}>
+              <TouchableOpacity
+                style={[
+                  styles.categoryFilterOption,
+                  selectedCategory === "all" && styles.selectedCategoryFilterOption,
+                ]}
+                onPress={() => {
+                  onCategoryChange("all");
+                  setShowCategoryDropdown(false);
+                }}
+              >
+                <Text style={[
+                  styles.categoryFilterOptionText,
+                  selectedCategory === "all" && styles.selectedCategoryFilterOptionText,
+                ]}>
+                  All Categories
+                </Text>
+                {selectedCategory === "all" && (
+                  <MaterialIcons name="check" size={16} color="#8B5CF6" />
+                )}
+              </TouchableOpacity>
+              
+              {categories.map((category) => (
+                <TouchableOpacity
+                  key={category.id}
+                  style={[
+                    styles.categoryFilterOption,
+                    selectedCategory === category.name && styles.selectedCategoryFilterOption,
+                  ]}
+                  onPress={() => {
+                    onCategoryChange(category.name);
+                    setShowCategoryDropdown(false);
+                  }}
+                >
+                  <View style={styles.categoryFilterOptionContent}>
+                    <View 
+                      style={[
+                        styles.categoryFilterColorIndicator, 
+                        { backgroundColor: category.color || '#6c757d' }
+                      ]} 
+                    />
+                    <Text style={[
+                      styles.categoryFilterOptionText,
+                      selectedCategory === category.name && styles.selectedCategoryFilterOptionText,
+                    ]}>
+                      {category.name}
+                    </Text>
+                  </View>
+                  {selectedCategory === category.name && (
+                    <MaterialIcons name="check" size={16} color="#8B5CF6" />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
+        {renderQuadrantFilters()}
+      </View>
       <View style={styles.tasksSection}>{renderAllTasks()}</View>
     </View>
   );
@@ -294,6 +399,96 @@ const styles = StyleSheet.create({
   },
   filtersSection: {
     marginBottom: 16,
+  },
+  // Category Filter Styles
+  categoryFilterContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+    backgroundColor: "#FFFFFF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+  categoryFilterLabel: {
+    fontSize: 14,
+    fontFamily: "Inter-Medium",
+    color: "#64748B",
+    marginRight: 12,
+  },
+  categoryFilterDropdown: {
+    flex: 1,
+  },
+  categoryFilterButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F8FAFC",
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  categoryFilterContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  categoryFilterColorIndicator: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  categoryFilterText: {
+    fontSize: 14,
+    fontFamily: "Inter-Medium",
+    color: "#374151",
+    flex: 1,
+  },
+  categoryFilterOptions: {
+    position: "absolute",
+    top: "100%",
+    left: 0,
+    right: 0,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
+    zIndex: 1000,
+    marginTop: 4,
+    overflow: "hidden",
+    maxHeight: 200,
+  },
+  categoryFilterOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+  selectedCategoryFilterOption: {
+    backgroundColor: "#F0F9FF",
+  },
+  categoryFilterOptionContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  categoryFilterOptionText: {
+    fontSize: 14,
+    fontFamily: "Inter-Medium",
+    color: "#374151",
+  },
+  selectedCategoryFilterOptionText: {
+    color: "#8B5CF6",
   },
   tasksSection: {
     flex: 1,

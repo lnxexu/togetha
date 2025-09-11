@@ -18,7 +18,7 @@ import {
   View,
   useWindowDimensions,
   TouchableWithoutFeedback,
-  RefreshControl
+  RefreshControl,
 } from "react-native";
 import {
   MaterialIcons,
@@ -32,6 +32,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import DrawingPreview from "./components/DrawingPreview";
 import { DocumentPreviewModal } from "./components/DocumentPreviewModal";
 import { DocumentViewer } from "./components/DocumentViewer";
+import PDFAnnotationViewer from "./components/PDFAnnotationViewer";
 import { LinearGradient } from "expo-linear-gradient";
 import { TemplateOverlay, TemplateType } from "./components/TemplateOverlay";
 import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
@@ -42,11 +43,12 @@ import {
 } from "../utils/ToastUtils";
 import SkeletonLoader from "../components/SkeletonLoader";
 import { folderCacheUtils } from "../utils/FolderCacheUtils";
+import { getLocalPDFPath, isRemoteURL } from "./utils/pdfUtils";
 
 const { width } = Dimensions.get("window");
 
 type NotesScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
-type NotesScreenRouteProp = RouteProp<RootStackParamList, 'Notes'>;
+type NotesScreenRouteProp = RouteProp<RootStackParamList, "Notes">;
 
 interface NotesScreenProps {
   navigation: NotesScreenNavigationProp;
@@ -77,9 +79,10 @@ interface Note {
   document_url?: string; // Full URL to the document file
   document_annotations?: any; // JSON field for annotations
   // Enhanced drawing_data field to handle your specific stroke array format
-  drawing_data?: 
-    | string  // JSON string containing stroke array or drawing object
-    | {  // Direct array of stroke objects (your format)
+  drawing_data?:
+    | string // JSON string containing stroke array or drawing object
+    | {
+        // Direct array of stroke objects (your format)
         id: string;
         points: number[];
         color: string;
@@ -88,7 +91,8 @@ interface Note {
         timestamp: number;
         opacity: number;
       }[]
-    | {  // Object containing strokes or other drawing data
+    | {
+        // Object containing strokes or other drawing data
         strokes?: {
           id: string;
           points: number[];
@@ -178,12 +182,15 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
   const [showCreateFolderModal, setShowCreateFolderModal] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [selectedFolderColor, setSelectedFolderColor] = useState("#667EEA");
-  const [showOptionsDropdown, setShowOptionsDropdown] = useState(false);
+  const [showMoreVertMenu, setShowMoreVertMenu] = useState(false);
   const [showSearchBar, setShowSearchBar] = useState(false);
   const [activeNoteOptions, setActiveNoteOptions] = useState<string | null>(
     null
   );
-  const [dropdownPosition, setDropdownPosition] = useState<{x: number, y: number} | null>(null);
+  const [dropdownPosition, setDropdownPosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
 
   const [isLoading, setIsLoading] = useState(false);
 
@@ -218,21 +225,23 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
   >(null);
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
   const [folderToDelete, setFolderToDelete] = useState<string | null>(null);
-  const [showDocumentPreviewModal, setShowDocumentPreviewModal] = useState(false);
+  const [showDocumentPreviewModal, setShowDocumentPreviewModal] =
+    useState(false);
   const [showAddOptionsMenu, setShowAddOptionsMenu] = useState(false);
   const [showDrawingSetupModal, setShowDrawingSetupModal] = useState(false);
   const [drawingTitle, setDrawingTitle] = useState("");
   const [selectedSize, setSelectedSize] = useState("medium");
   const [selectedOrientation, setSelectedOrientation] = useState("landscape");
   const [selectedTemplate, setSelectedTemplate] = useState("blank");
-  
+
   // Document viewer state
   const [showDocumentViewer, setShowDocumentViewer] = useState(false);
+  const [showPDFViewer, setShowPDFViewer] = useState(false);
   const [currentDocument, setCurrentDocument] = useState<{
     uri: string;
     name: string;
     noteId: string;
-    type: 'pdf' | 'word' | 'document' | 'image' | 'txt';
+    type: "pdf" | "word" | "document" | "image" | "txt";
   } | null>(null);
 
   // Memoize HTML tag styles for grid view (now the only view)
@@ -390,28 +399,28 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
   };
 
   const calculateFolderCounts = useCallback(() => {
-  const counts: Record<string, number> = {};
+    const counts: Record<string, number> = {};
 
-  // Initialize counts for all folders to zero
-  folders.forEach((folder) => {
-    counts[folder.id] = 0;
-  });
+    // Initialize counts for all folders to zero
+    folders.forEach((folder) => {
+      counts[folder.id] = 0;
+    });
 
-  // Count notes for each folder (including both text and drawing notes)
-  notes.forEach((note) => {
-    if (note.folderId && counts.hasOwnProperty(note.folderId)) {
-      counts[note.folderId]++;
-    }
-  });
+    // Count notes for each folder (including both text and drawing notes)
+    notes.forEach((note) => {
+      if (note.folderId && counts.hasOwnProperty(note.folderId)) {
+        counts[note.folderId]++;
+      }
+    });
 
-  // Also count unorganized notes (notes without folderId)
-  const unorganizedCount = notes.filter(note => !note.folderId).length;
-  counts['unorganized'] = unorganizedCount;
+    // Also count unorganized notes (notes without folderId)
+    const unorganizedCount = notes.filter((note) => !note.folderId).length;
+    counts["unorganized"] = unorganizedCount;
 
-  console.log('Calculated folder counts:', counts); // ✅ Add logging to debug
+    console.log("Calculated folder counts:", counts); // ✅ Add logging to debug
 
-  setFolderCounts(counts);
-}, [notes, folders]);
+    setFolderCounts(counts);
+  }, [notes, folders]);
 
   useEffect(() => {
     calculateFolderCounts();
@@ -422,19 +431,18 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
     fetchFolders();
 
     const refreshInterval = setInterval(() => {
-     
       if (AppState.currentState === "active") {
       }
     }, 30000);
 
     return () => {
-      clearInterval(refreshInterval); 
+      clearInterval(refreshInterval);
     };
   }, []);
 
   useEffect(() => {
     fetchNotes(false);
-  }, [selectedFilterFolder]); 
+  }, [selectedFilterFolder]);
 
   // Handle folder navigation from home screen
   useEffect(() => {
@@ -520,60 +528,63 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
     }
   };
 
-const isDrawingNote = React.useCallback((note: Note): boolean => {
-  // Primary check: if type is explicitly set to drawing
-  if (note.type === 'drawing') {
-    return true;
-  }
+  const isDrawingNote = React.useCallback((note: Note): boolean => {
+    // Primary check: if type is explicitly set to drawing
+    if (note.type === "drawing") {
+      return true;
+    }
 
-  // Secondary check: if drawing_data exists and has content
-  if (!note.drawing_data) {
-    return false;
-  }
+    // Secondary check: if drawing_data exists and has content
+    if (!note.drawing_data) {
+      return false;
+    }
 
-  try {
-    let parsedData = note.drawing_data;
+    try {
+      let parsedData = note.drawing_data;
 
-    // If it's a string, parse it
-    if (typeof note.drawing_data === "string") {
-      try {
-        parsedData = JSON.parse(note.drawing_data);
-      } catch (parseError) {
-        console.warn('Failed to parse drawing_data JSON:', parseError);
-        return false;
+      // If it's a string, parse it
+      if (typeof note.drawing_data === "string") {
+        try {
+          parsedData = JSON.parse(note.drawing_data);
+        } catch (parseError) {
+          console.warn("Failed to parse drawing_data JSON:", parseError);
+          return false;
+        }
       }
+
+      // Now check the parsed data structure
+      if (Array.isArray(parsedData)) {
+        // Direct array of strokes (your database format)
+        return (
+          parsedData.length > 0 &&
+          parsedData.every(
+            (stroke) =>
+              stroke &&
+              typeof stroke === "object" &&
+              stroke.id &&
+              stroke.points &&
+              Array.isArray(stroke.points) &&
+              stroke.points.length > 0 &&
+              typeof stroke.tool === "string"
+          )
+        );
+      }
+
+      // Object with strokes array or other drawing indicators
+      if (typeof parsedData === "object" && parsedData !== null) {
+        return !!(
+          (parsedData.strokes && Array.isArray(parsedData.strokes)) ||
+          (parsedData.type && parsedData.type === "drawing") ||
+          parsedData.drawing
+        );
+      }
+
+      return false;
+    } catch (error) {
+      console.warn("Error in isDrawingNote:", error);
+      return false;
     }
-
-    // Now check the parsed data structure
-    if (Array.isArray(parsedData)) {
-      // Direct array of strokes (your database format)
-      return parsedData.length > 0 && parsedData.every(stroke => 
-        stroke && 
-        typeof stroke === 'object' && 
-        stroke.id && 
-        stroke.points && 
-        Array.isArray(stroke.points) &&
-        stroke.points.length > 0 &&
-        typeof stroke.tool === 'string'
-      );
-    }
-
-    // Object with strokes array or other drawing indicators
-    if (typeof parsedData === 'object' && parsedData !== null) {
-      return !!(
-        (parsedData.strokes && Array.isArray(parsedData.strokes)) ||
-        (parsedData.type && parsedData.type === 'drawing') ||
-        parsedData.drawing
-      );
-    }
-
-    return false;
-  } catch (error) {
-    console.warn('Error in isDrawingNote:', error);
-    return false;
-  }
-}, []);
-
+  }, []);
 
   const fetchNotes = React.useCallback(
     async (showLoading = true) => {
@@ -670,68 +681,71 @@ const isDrawingNote = React.useCallback((note: Note): boolean => {
     setDropdownPosition(null);
   }, []);
 
-  const handleDuplicateDrawing = useCallback(async (note: Note) => {
-    if (!isDrawingNote(note)) {
-      showErrorToast("Only drawings can be duplicated");
-      return;
-    }
-
-    try {
-      setIsLoading(true);
-      setActiveNoteOptions(null);
-      setDropdownPosition(null);
-
-      const token = await AsyncStorage.getItem("authToken");
-      if (!token) {
-        navigation.navigate("Login");
+  const handleDuplicateDrawing = useCallback(
+    async (note: Note) => {
+      if (!isDrawingNote(note)) {
+        showErrorToast("Only drawings can be duplicated");
         return;
       }
 
-      // Create duplicate with same drawing data but new title
-      const duplicateTitle = `${note.title} - Copy`;
-      const duplicateNote = {
-        title: duplicateTitle,
-        content: note.content,
-        formatted_content: note.formatted_content,
-        type: note.type,
-        template: note.template,
-        drawing_data: note.drawing_data, // Copy the drawing data
-        folderId: note.folderId, // Keep same folder
-      };
+      try {
+        setIsLoading(true);
+        setActiveNoteOptions(null);
+        setDropdownPosition(null);
 
-      const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTES}`, {
-        method: "POST",
-        headers: {
-          Authorization: `Token ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(duplicateNote),
-      });
+        const token = await AsyncStorage.getItem("authToken");
+        if (!token) {
+          navigation.navigate("Login");
+          return;
+        }
 
-      if (!response.ok) {
-        throw new Error("Failed to duplicate drawing");
+        // Create duplicate with same drawing data but new title
+        const duplicateTitle = `${note.title} - Copy`;
+        const duplicateNote = {
+          title: duplicateTitle,
+          content: note.content,
+          formatted_content: note.formatted_content,
+          type: note.type,
+          template: note.template,
+          drawing_data: note.drawing_data, // Copy the drawing data
+          folderId: note.folderId, // Keep same folder
+        };
+
+        const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTES}`, {
+          method: "POST",
+          headers: {
+            Authorization: `Token ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(duplicateNote),
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to duplicate drawing");
+        }
+
+        const newNote = await response.json();
+
+        // Add the new note to the state
+        setNotes((prev) => [
+          {
+            ...newNote,
+            createdAt: new Date(newNote.created_at),
+            updatedAt: new Date(newNote.updated_at),
+          },
+          ...prev,
+        ]);
+
+        showSuccessToast("Drawing duplicated successfully");
+      } catch (error) {
+        console.error("Error duplicating drawing:", error);
+        showErrorToast("Failed to duplicate drawing");
+      } finally {
+        setIsLoading(false);
       }
-
-      const newNote = await response.json();
-      
-      // Add the new note to the state
-      setNotes(prev => [
-        {
-          ...newNote,
-          createdAt: new Date(newNote.created_at),
-          updatedAt: new Date(newNote.updated_at),
-        },
-        ...prev
-      ]);
-
-      showSuccessToast("Drawing duplicated successfully");
-    } catch (error) {
-      console.error("Error duplicating drawing:", error);
-      showErrorToast("Failed to duplicate drawing");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [navigation, setIsLoading, setNotes]);
+    },
+    [navigation, setIsLoading, setNotes]
+  );
 
   const handleRemoveFromFolder = useCallback(
     async (noteId: string) => {
@@ -869,7 +883,10 @@ const isDrawingNote = React.useCallback((note: Note): boolean => {
               } catch (error) {
                 console.error("Error deleting note:", error);
                 showErrorToast("Failed to delete note");
-                Alert.alert("Error", "Failed to delete note. Please try again.");
+                Alert.alert(
+                  "Error",
+                  "Failed to delete note. Please try again."
+                );
               } finally {
                 setIsLoading(false); // Hide loading indicator
               }
@@ -881,155 +898,197 @@ const isDrawingNote = React.useCallback((note: Note): boolean => {
     [setActiveNoteOptions, setIsLoading, setNotes, navigation]
   );
 
- const handleNotePress = useCallback((note: Note) => {
-  // Close any open options when navigating
-  setActiveNoteOptions(null);
-  setDropdownPosition(null);
+  const handleNotePress = useCallback(
+    async (note: Note) => {
+      // Close any open options when navigating
+      setActiveNoteOptions(null);
+      setDropdownPosition(null);
 
-  // Check if it's a document type note
-  if (note.type === 'document') {
-    // Open document in DocumentViewer for annotation
-    const documentType = note.title?.toLowerCase().includes('.pdf') ? 'pdf' : 
-                        note.title?.toLowerCase().includes('.doc') ? 'word' : 
-                        'document';
-    
-    // Get document URL from note data - prioritize document_url over document_file
-    const documentUrl = note.document_url || note.document_file;
-    
-    if (documentUrl) {
-      setCurrentDocument({
-        uri: documentUrl,
-        name: note.title || 'Untitled Document',
-        noteId: note.id,
-        type: documentType,
-      });
-      setShowDocumentViewer(true);
-      return;
-    } else {
-      console.warn('Document note found but no document URL available:', note);
-      // Fall through to regular note editor as fallback
-    }
-  }
+      // Check if it's a document type note
+      if (note.type === "document") {
+        // Open document in appropriate viewer for annotation
+        const documentType = note.title?.toLowerCase().includes(".pdf")
+          ? "pdf"
+          : note.title?.toLowerCase().includes(".doc")
+          ? "word"
+          : "document";
 
-  // Use the enhanced drawing detection
-  const isDrawing = isDrawingNote(note);
+        // Get document URL from note data - prioritize document_url over document_file
+        const documentUrl = note.document_url || note.document_file;
 
-  if (isDrawing) {
-    // Parse drawing data properly - handle the stroke array format
-    let parsedDrawingData = null;
-    let strokesArray = [];
+        if (documentUrl) {
+          let finalDocumentUri = documentUrl;
 
-    try {
-      if (typeof note.drawing_data === "string") {
-        // Parse the JSON string - this is the actual format from the database
-        const parsed = JSON.parse(note.drawing_data);
-        if (Array.isArray(parsed)) {
-          // Direct array of strokes (this is your actual format)
-          strokesArray = parsed;
-          parsedDrawingData = {
-            strokes: parsed,
-            template: note.template || "blank",
-            type: "drawing"
-          };
+          // For PDF files, download to local storage if it's a remote URL
+          if (documentType === "pdf" && isRemoteURL(documentUrl)) {
+            try {
+              console.log(
+                "PDF is remote URL, downloading to local storage:",
+                documentUrl
+              );
+              finalDocumentUri = await getLocalPDFPath(documentUrl);
+              console.log("PDF downloaded to local path:", finalDocumentUri);
+            } catch (error) {
+              console.error("Failed to download PDF to local storage:", error);
+              // Fall back to original URL - PDFAnnotationViewer will handle the error
+              finalDocumentUri = documentUrl;
+            }
+          }
+
+          setCurrentDocument({
+            uri: finalDocumentUri,
+            name: note.title || "Untitled Document",
+            noteId: note.id,
+            type: documentType,
+          });
+
+          // Use PDFAnnotationViewer for PDF files, DocumentViewer for others
+          if (documentType === "pdf") {
+            setShowPDFViewer(true);
+          } else {
+            setShowDocumentViewer(true);
+          }
+          return;
         } else {
-          parsedDrawingData = parsed;
-          strokesArray = parsed.strokes || [];
+          console.warn(
+            "Document note found but no document URL available:",
+            note
+          );
+          // Fall through to regular note editor as fallback
         }
-      } else if (Array.isArray(note.drawing_data)) {
-        // Direct array of strokes
-        strokesArray = note.drawing_data;
-        parsedDrawingData = {
-          strokes: note.drawing_data,
-          template: note.template || "blank",
-          type: "drawing"
-        };
-      } else if (note.drawing_data && typeof note.drawing_data === "object") {
-        // Object with strokes array
-        parsedDrawingData = note.drawing_data;
-        strokesArray = parsedDrawingData.strokes || [];
       }
 
-      console.log("Parsed drawing data successfully:", {
-        originalType: typeof note.drawing_data,
-        isString: typeof note.drawing_data === "string",
-        parsedStrokesCount: strokesArray.length,
-        firstStrokeSample: strokesArray[0],
-      });
+      // Use the enhanced drawing detection
+      const isDrawing = isDrawingNote(note);
 
-    } catch (error) {
-      console.error("Failed to parse drawing data:", error);
-      console.error("Raw drawing_data:", note.drawing_data);
-      // Fallback to empty drawing data
-      parsedDrawingData = { strokes: [], template: "blank", type: "drawing" };
-      strokesArray = [];
-    }
+      if (isDrawing) {
+        // Parse drawing data properly - handle the stroke array format
+        let parsedDrawingData = null;
+        let strokesArray = [];
 
-    // Prepare drawing data for editor - ensure proper format for importDrawing
-    const drawingData = {
-      id: note.id,
-      title: note.title || "Untitled Drawing",
-      strokes: strokesArray,
-      template: parsedDrawingData?.template || note.template || "blank",
-      drawing_data: parsedDrawingData,
-      createdAt: note.createdAt?.toISOString(),
-      updatedAt: note.updatedAt?.toISOString(),
-      // Also include the strokes at root level for importDrawing compatibility
-      ...parsedDrawingData,
-    };
+        try {
+          if (typeof note.drawing_data === "string") {
+            // Parse the JSON string - this is the actual format from the database
+            const parsed = JSON.parse(note.drawing_data);
+            if (Array.isArray(parsed)) {
+              // Direct array of strokes (this is your actual format)
+              strokesArray = parsed;
+              parsedDrawingData = {
+                strokes: parsed,
+                template: note.template || "blank",
+                type: "drawing",
+              };
+            } else {
+              parsedDrawingData = parsed;
+              strokesArray = parsed.strokes || [];
+            }
+          } else if (Array.isArray(note.drawing_data)) {
+            // Direct array of strokes
+            strokesArray = note.drawing_data;
+            parsedDrawingData = {
+              strokes: note.drawing_data,
+              template: note.template || "blank",
+              type: "drawing",
+            };
+          } else if (
+            note.drawing_data &&
+            typeof note.drawing_data === "object"
+          ) {
+            // Object with strokes array
+            parsedDrawingData = note.drawing_data;
+            strokesArray = parsedDrawingData.strokes || [];
+          }
 
-    console.log("Opening drawing note with data:", {
-      noteId: note.id,
-      title: drawingData.title,
-      strokeCount: strokesArray.length,
-      hasValidStrokes: strokesArray.length > 0,
-      template: drawingData.template
-    });
+          console.log("Parsed drawing data successfully:", {
+            originalType: typeof note.drawing_data,
+            isString: typeof note.drawing_data === "string",
+            parsedStrokesCount: strokesArray.length,
+            firstStrokeSample: strokesArray[0],
+          });
+        } catch (error) {
+          console.error("Failed to parse drawing data:", error);
+          console.error("Raw drawing_data:", note.drawing_data);
+          // Fallback to empty drawing data
+          parsedDrawingData = {
+            strokes: [],
+            template: "blank",
+            type: "drawing",
+          };
+          strokesArray = [];
+        }
 
-    navigation.navigate("DrawingEditor", {
-      noteId: note.id,
-      initialDrawingData: {
-        ...drawingData,
-        folderId: note.folderId,
-        folder_id: note.folderId, // Also provide snake_case version
-        folderName: note.folder, // Include folder name
-        folder: note.folder, // Include folder field as well
-      },
-      readOnly: false,
-    });
-  } else {
+        // Prepare drawing data for editor - ensure proper format for importDrawing
+        const drawingData = {
+          id: note.id,
+          title: note.title || "Untitled Drawing",
+          strokes: strokesArray,
+          template: parsedDrawingData?.template || note.template || "blank",
+          drawing_data: parsedDrawingData,
+          createdAt: note.createdAt?.toISOString(),
+          updatedAt: note.updatedAt?.toISOString(),
+          // Also include the strokes at root level for importDrawing compatibility
+          ...parsedDrawingData,
+        };
 
-    // Convert tag objects to strings for the editor if needed
-    const processedTags = note.tags?.map((tag) =>
-      typeof tag === "object" && tag !== null && "name" in tag
-        ? tag.name
-        : tag
-    );
+        console.log("Opening drawing note with data:", {
+          noteId: note.id,
+          title: drawingData.title,
+          strokeCount: strokesArray.length,
+          hasValidStrokes: strokesArray.length > 0,
+          template: drawingData.template,
+        });
 
-    // Prepare note data for editor
-    const noteForEditor = {
-      title: note.title,
-      content: note.content,
-      formatted_content: note.formatted_content || note.content,
-      tags: processedTags || [],
-      folderId: note.folderId,
-      createdAt: note.createdAt?.toISOString(),
-      updatedAt: note.updatedAt?.toISOString(),
-    };
+        navigation.navigate("DrawingEditor", {
+          noteId: note.id,
+          initialDrawingData: {
+            ...drawingData,
+            folderId: note.folderId,
+            folder_id: note.folderId, // Also provide snake_case version
+            folderName: note.folder, // Include folder name
+            folder: note.folder, // Include folder field as well
+          },
+          readOnly: false,
+        });
+      } else {
+        // Convert tag objects to strings for the editor if needed
+        const processedTags = note.tags?.map((tag) =>
+          typeof tag === "object" && tag !== null && "name" in tag
+            ? tag.name
+            : tag
+        );
 
-    console.log("Opening text note with data:", {
-      noteId: note.id,
-      title: noteForEditor.title,
-      hasContent: !!noteForEditor.content,
-      hasFormattedContent: !!noteForEditor.formatted_content
-    });
+        // Prepare note data for editor
+        const noteForEditor = {
+          title: note.title,
+          content: note.content,
+          formatted_content: note.formatted_content || note.content,
+          tags: processedTags || [],
+          folderId: note.folderId,
+          createdAt: note.createdAt?.toISOString(),
+          updatedAt: note.updatedAt?.toISOString(),
+        };
 
-    navigation.navigate("NoteEditor", {
-      noteId: note.id,
-      initialNote: noteForEditor,
-    });
-  }
-}, [setActiveNoteOptions, isDrawingNote, navigation]);
+        console.log("Opening text note with data:", {
+          noteId: note.id,
+          title: noteForEditor.title,
+          hasContent: !!noteForEditor.content,
+          hasFormattedContent: !!noteForEditor.formatted_content,
+        });
 
+        navigation.navigate("NoteEditor", {
+          noteId: note.id,
+          initialNote: noteForEditor,
+        });
+      }
+    },
+    [
+      setActiveNoteOptions,
+      isDrawingNote,
+      navigation,
+      getLocalPDFPath,
+      isRemoteURL,
+    ]
+  );
 
   const handleCreateNote = useCallback(() => {
     const initialNoteData = {
@@ -1064,59 +1123,95 @@ const isDrawingNote = React.useCallback((note: Note): boolean => {
       }
 
       const formData = new FormData();
-      formData.append('title', documentInfo.name);
-      formData.append('content', `Imported document: ${documentInfo.name}`);
-      formData.append('type', 'document');
-      
+      formData.append("title", documentInfo.name);
+      formData.append("content", `Imported document: ${documentInfo.name}`);
+      formData.append("type", "document");
+
       // Add document file as attachment
-      formData.append('document', {
+      formData.append("document", {
         uri: documentInfo.uri,
-        type: documentInfo.mimeType || 'application/octet-stream',
+        type: documentInfo.mimeType || "application/octet-stream",
         name: documentInfo.name,
       } as any);
 
-      const response = await fetch(`${API_URL}${API_ENDPOINTS.DOCUMENT_UPLOAD}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Token ${token}`,
-        },
-        body: formData,
-      });
+      const response = await fetch(
+        `${API_URL}${API_ENDPOINTS.DOCUMENT_UPLOAD}`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Token ${token}`,
+          },
+          body: formData,
+        }
+      );
 
       if (response.ok) {
         const result = await response.json();
-        showSuccessToast('Document imported successfully!');
-        
+        showSuccessToast("Document imported successfully!");
+
         // Refresh the notes list to show the new document
         fetchNotes(true);
-        
+
         // Invalidate folder cache to update counts in home screen
         await folderCacheUtils.invalidateCache();
-        
+
         // Open the document in DocumentViewer for annotation instead of NoteEditor
-        const documentType = documentInfo.mimeType?.includes('pdf') ? 'pdf' : 
-                           documentInfo.mimeType?.includes('word') || documentInfo.mimeType?.includes('document') ? 'word' : 
-                           documentInfo.mimeType?.includes('image') || documentInfo.name?.match(/\.(jpg|jpeg|png|gif|bmp|webp|svg)$/i) ? 'image' :
-                           documentInfo.name?.match(/\.txt$/i) ? 'txt' :
-                           'document';
-        
+        const documentType = documentInfo.mimeType?.includes("pdf")
+          ? "pdf"
+          : documentInfo.mimeType?.includes("word") ||
+            documentInfo.mimeType?.includes("document")
+          ? "word"
+          : documentInfo.mimeType?.includes("image") ||
+            documentInfo.name?.match(/\.(jpg|jpeg|png|gif|bmp|webp|svg)$/i)
+          ? "image"
+          : documentInfo.name?.match(/\.txt$/i)
+          ? "txt"
+          : "document";
+
+        const documentUrl =
+          result.document_url || result.document_file || documentInfo.uri;
+        let finalDocumentUri = documentUrl;
+
+        // For PDF files, download to local storage if it's a remote URL
+        if (documentType === "pdf" && isRemoteURL(documentUrl)) {
+          try {
+            console.log(
+              "PDF is remote URL, downloading to local storage:",
+              documentUrl
+            );
+            finalDocumentUri = await getLocalPDFPath(documentUrl);
+            console.log("PDF downloaded to local path:", finalDocumentUri);
+          } catch (error) {
+            console.error("Failed to download PDF to local storage:", error);
+            // Fall back to original URL - PDFAnnotationViewer will handle the error
+            finalDocumentUri = documentUrl;
+          }
+        }
+
         setCurrentDocument({
-          uri: result.document_url || result.document_file || documentInfo.uri,
+          uri: finalDocumentUri,
           name: result.title || documentInfo.name,
           noteId: result.id,
           type: documentType,
         });
-        setShowDocumentViewer(true);
+
+        // Use PDFAnnotationViewer for PDF files, DocumentViewer for others
+        if (documentType === "pdf") {
+          setShowPDFViewer(true);
+        } else {
+          setShowDocumentViewer(true);
+        }
       } else {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to import document');
+        throw new Error(errorData.error || "Failed to import document");
       }
     } catch (error) {
-      console.error('Error importing document:', error);
+      console.error("Error importing document:", error);
       showErrorToast(
         typeof error === "object" && error !== null && "message" in error
-          ? (error as { message?: string }).message || 'Failed to import document. Please try again.'
-          : 'Failed to import document. Please try again.'
+          ? (error as { message?: string }).message ||
+              "Failed to import document. Please try again."
+          : "Failed to import document. Please try again."
       );
     }
   };
@@ -1135,7 +1230,7 @@ const isDrawingNote = React.useCallback((note: Note): boolean => {
     const dimensions =
       selectedOrientation === "landscape"
         ? sizeConfig?.landscape
-        : sizeConfig?.portrait
+        : sizeConfig?.portrait;
 
     // Navigate to drawing editor with setup preferences
     navigation.navigate("DrawingEditor", {
@@ -1456,82 +1551,106 @@ const isDrawingNote = React.useCallback((note: Note): boolean => {
   };
 
   const renderFolderCard = (folder: Folder) => (
-  <TouchableOpacity
-    key={folder.id}
-    style={[
-      styles.folderCard,
-      selectedFilterFolder === folder.id && styles.selectedFolderCard,
-    ]}
-    onPress={() => setSelectedFilterFolder(folder.id)}
-    onLongPress={() => handleFolderLongPress(folder.id)}
-  >
-    <View style={styles.folderCardHeader}>
-      <View style={[styles.folderIcon, { backgroundColor: Array.isArray(folder.color) ? folder.color[0] : folder.color }]}>
-        <MaterialIcons 
-          name={folder.icon} 
-          size={20} 
-          color={selectedFilterFolder === folder.id ? "#FFFFFF" : "#FFFFFF"}
+    <TouchableOpacity
+      key={folder.id}
+      style={[
+        styles.folderCard,
+        selectedFilterFolder === folder.id && styles.selectedFolderCard,
+      ]}
+      onPress={() => setSelectedFilterFolder(folder.id)}
+      onLongPress={() => handleFolderLongPress(folder.id)}
+    >
+      <View style={styles.folderCardHeader}>
+        <View
+          style={[
+            styles.folderIcon,
+            {
+              backgroundColor: Array.isArray(folder.color)
+                ? folder.color[0]
+                : folder.color,
+            },
+          ]}
+        >
+          <MaterialIcons
+            name={folder.icon}
+            size={20}
+            color={selectedFilterFolder === folder.id ? "#FFFFFF" : "#FFFFFF"}
+          />
+        </View>
+        <TouchableOpacity
+          style={styles.folderOptionsButton}
+          onPress={() => handleFolderLongPress(folder.id)}
+        >
+          <MaterialIcons name="more-vert" size={16} color="#9CA3AF" />
+        </TouchableOpacity>
+      </View>
+
+      <Text
+        style={[
+          styles.folderName,
+          selectedFilterFolder === folder.id && styles.activeFolderName,
+        ]}
+      >
+        {folder.name}
+      </Text>
+
+      <View style={styles.folderStatsRow}>
+        <Text
+          style={[
+            styles.folderCount,
+            selectedFilterFolder === folder.id && styles.activeFolderName,
+          ]}
+        >
+          {folderCounts[folder.id] || 0} notes
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+
+  // For unorganized folder:
+  const renderUnorganizedFolder = () => (
+    <TouchableOpacity
+      style={[
+        styles.unorganizedFolderCard,
+        selectedFilterFolder === "unorganized" &&
+          styles.selectedUnorganizedFolderCard,
+      ]}
+      onPress={() => setSelectedFilterFolder("unorganized")}
+    >
+      <View
+        style={[
+          styles.unorganizedFolderIcon,
+          selectedFilterFolder === "unorganized" && {
+            backgroundColor: "#FFFFFF",
+          },
+        ]}
+      >
+        <MaterialIcons
+          name="folder-open"
+          size={18}
+          color={selectedFilterFolder === "unorganized" ? "#6A009C" : "#9CA3AF"}
         />
       </View>
-      <TouchableOpacity
-        style={styles.folderOptionsButton}
-        onPress={() => handleFolderLongPress(folder.id)}
+      <Text
+        style={[
+          styles.unorganizedFolderName,
+          selectedFilterFolder === "unorganized" &&
+            styles.activeUnorganizedFolderName,
+        ]}
       >
-        <MaterialIcons name="more-vert" size={16} color="#9CA3AF" />
-      </TouchableOpacity>
-    </View>
-    
-    <Text style={[
-      styles.folderName,
-      selectedFilterFolder === folder.id && styles.activeFolderName,
-    ]}>
-      {folder.name}
-    </Text>
-    
-    <View style={styles.folderStatsRow}>
-      <Text style={[
-        styles.folderCount,
-        selectedFilterFolder === folder.id && styles.activeFolderName,
-      ]}>
-        {folderCounts[folder.id] || 0} notes
+        Unorganized Notes
       </Text>
-    </View>
-  </TouchableOpacity>
-);
-
-// For unorganized folder:
-const renderUnorganizedFolder = () => (
-  <TouchableOpacity
-    style={[
-      styles.unorganizedFolderCard,
-      selectedFilterFolder === 'unorganized' && styles.selectedUnorganizedFolderCard,
-    ]}
-    onPress={() => setSelectedFilterFolder('unorganized')}
-  >
-    <View style={[
-      styles.unorganizedFolderIcon,
-      selectedFilterFolder === 'unorganized' && { backgroundColor: '#FFFFFF' }
-    ]}>
-      <MaterialIcons 
-        name="folder-open" 
-        size={18} 
-        color={selectedFilterFolder === 'unorganized' ? '#6A009C' : '#9CA3AF'} 
-      />
-    </View>
-    <Text style={[
-      styles.unorganizedFolderName,
-      selectedFilterFolder === 'unorganized' && styles.activeUnorganizedFolderName,
-    ]}>
-      Unorganized Notes
-    </Text>
-    <Text style={[
-      styles.unorganizedFolderCount,
-      selectedFilterFolder === 'unorganized' && styles.activeUnorganizedFolderName,
-    ]}>
-      {folderCounts['unorganized'] || 0}
-    </Text>
-  </TouchableOpacity>
-);
+      <Text
+        style={[
+          styles.unorganizedFolderCount,
+          selectedFilterFolder === "unorganized" &&
+            styles.activeUnorganizedFolderName,
+        ]}
+      >
+        {folderCounts["unorganized"] || 0}
+      </Text>
+    </TouchableOpacity>
+  );
   // Add function to handle folder long press
   const handleFolderLongPress = (folderId: string) => {
     setSelectedFolderForOptions(folderId);
@@ -1610,7 +1729,7 @@ const renderUnorganizedFolder = () => (
   const notesViewData = useMemo(() => {
     // First apply existing folder filter logic
     let folderFilteredNotes = filteredNotes;
-    
+
     if (selectedFilterFolder === "unorganized") {
       folderFilteredNotes = filteredNotes.filter((note) => !note.folderId);
     } else if (selectedFilterFolder) {
@@ -1618,14 +1737,14 @@ const renderUnorganizedFolder = () => (
         (note) => note.folderId === selectedFilterFolder
       );
     }
-    
+
     // Then apply route-based folder filtering (from home screen navigation)
     if (folderId) {
       folderFilteredNotes = folderFilteredNotes.filter(
         (note) => note.folderId === folderId
       );
     }
-    
+
     return folderFilteredNotes;
   }, [filteredNotes, selectedFilterFolder, folderId]);
 
@@ -1633,63 +1752,62 @@ const renderUnorganizedFolder = () => (
 
   // Pre-memoized empty list component to avoid conditional hook rendering
   const NotesEmptyListComponent = useMemo(
-    () =>
-      (
-        <View style={styles.emptyState}>
-          <View style={styles.emptyStateIconContainer}>
-            <MaterialIcons name="grid-view" size={36} color="#CBD5E0" />
-            <MaterialIcons name="note-add" size={64} color="#CBD5E0" />
-          </View>
-          <Text style={styles.emptyStateTitle}>
-            {selectedFilterFolder === "unorganized"
-              ? "No unorganized notes"
-              : selectedFilterFolder
-              ? "No notes in this folder"
-              : "No notes found"}
-          </Text>
-          <Text style={styles.emptyStateSubtitle}>
-            {searchQuery
-              ? "Try adjusting your search terms"
-              : isLoading
-              ? "Loading your notes..."
-              : selectedFilterFolder === "unorganized"
-              ? "All your notes are organized in folders"
-              : "Create a note or drawing to get started"}
-          </Text>
-
-          <View style={styles.emptyStateButtons}>
-            <TouchableOpacity
-              style={[styles.createButton, styles.emptyStateNoteButton]}
-              onPress={() => handleCreateNote()}
-            >
-              <MaterialIcons name="note-add" size={20} color="#FFFFFF" />
-              <Text style={styles.createButtonText}>Create Note</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.createButton, styles.emptyStateDrawingButton]}
-              onPress={() => setShowDrawingSetupModal(true)}
-            >
-              <MaterialIcons name="brush" size={20} color="#FFFFFF" />
-              <Text style={styles.createButtonText}>Create Drawing</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.createButton, styles.emptyStateImportButton]}
-              onPress={() => handleImportDocument()}
-            >
-              <MaterialIcons name="upload-file" size={20} color="#FFFFFF" />
-              <Text style={styles.createButtonText}>Import Document</Text>
-            </TouchableOpacity>
-          </View>
-
-          {selectedFilterFolder === "unorganized" && (
-            <Text style={styles.emptyStateHint}>
-              Notes that are not assigned to any folder will appear here
-            </Text>
-          )}
+    () => (
+      <View style={styles.emptyState}>
+        <View style={styles.emptyStateIconContainer}>
+          <MaterialIcons name="grid-view" size={36} color="#CBD5E0" />
+          <MaterialIcons name="note-add" size={64} color="#CBD5E0" />
         </View>
-      ),
+        <Text style={styles.emptyStateTitle}>
+          {selectedFilterFolder === "unorganized"
+            ? "No unorganized notes"
+            : selectedFilterFolder
+            ? "No notes in this folder"
+            : "No notes found"}
+        </Text>
+        <Text style={styles.emptyStateSubtitle}>
+          {searchQuery
+            ? "Try adjusting your search terms"
+            : isLoading
+            ? "Loading your notes..."
+            : selectedFilterFolder === "unorganized"
+            ? "All your notes are organized in folders"
+            : "Create a note or drawing to get started"}
+        </Text>
+
+        <View style={styles.emptyStateButtons}>
+          <TouchableOpacity
+            style={[styles.createButton, styles.emptyStateNoteButton]}
+            onPress={() => handleCreateNote()}
+          >
+            <MaterialIcons name="note-add" size={20} color="#FFFFFF" />
+            <Text style={styles.createButtonText}>Create Note</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.createButton, styles.emptyStateDrawingButton]}
+            onPress={() => setShowDrawingSetupModal(true)}
+          >
+            <MaterialIcons name="brush" size={20} color="#FFFFFF" />
+            <Text style={styles.createButtonText}>Create Drawing</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.createButton, styles.emptyStateImportButton]}
+            onPress={() => handleImportDocument()}
+          >
+            <MaterialIcons name="upload-file" size={20} color="#FFFFFF" />
+            <Text style={styles.createButtonText}>Import Document</Text>
+          </TouchableOpacity>
+        </View>
+
+        {selectedFilterFolder === "unorganized" && (
+          <Text style={styles.emptyStateHint}>
+            Notes that are not assigned to any folder will appear here
+          </Text>
+        )}
+      </View>
+    ),
     [
       searchQuery,
       isLoading,
@@ -1701,479 +1819,577 @@ const renderUnorganizedFolder = () => (
   );
 
   const renderNoteItem = useCallback(
-  ({ item }: { item: Note }) => {
-    // Use the enhanced drawing detection
-    const isDrawing = isDrawingNote(item);
-    
-    // Document detection
-    const isDocument = item.type === 'document' || (item.document_file && item.document_file.trim() !== '');
+    ({ item }: { item: Note }) => {
+      // Use the enhanced drawing detection
+      const isDrawing = isDrawingNote(item);
 
-    // Enhanced stroke count calculation
-    const getStrokeCount = () => {
-      if (!item.drawing_data) return 0;
-      
-      try {
-        let parsedData = item.drawing_data;
+      // Document detection
+      const isDocument =
+        item.type === "document" ||
+        (item.document_file && item.document_file.trim() !== "");
 
-        // Parse if it's a string
-        if (typeof item.drawing_data === "string") {
-          parsedData = JSON.parse(item.drawing_data);
-        }
+      // Enhanced stroke count calculation
+      const getStrokeCount = () => {
+        if (!item.drawing_data) return 0;
 
-        // Count based on data structure
-        if (Array.isArray(parsedData)) {
-          // Direct array of strokes
-          return parsedData.filter(stroke => 
-            stroke && 
-            stroke.points && 
-            Array.isArray(stroke.points) && 
-            stroke.points.length > 0
-          ).length;
-        }
-        
-        if (parsedData && typeof parsedData === "object") {
-          if (parsedData.strokes && Array.isArray(parsedData.strokes)) {
-            return parsedData.strokes.length;
+        try {
+          let parsedData = item.drawing_data;
+
+          // Parse if it's a string
+          if (typeof item.drawing_data === "string") {
+            parsedData = JSON.parse(item.drawing_data);
           }
-          if (parsedData.drawing && Array.isArray(parsedData.drawing)) {
-            return parsedData.drawing.length;
+
+          // Count based on data structure
+          if (Array.isArray(parsedData)) {
+            // Direct array of strokes
+            return parsedData.filter(
+              (stroke) =>
+                stroke &&
+                stroke.points &&
+                Array.isArray(stroke.points) &&
+                stroke.points.length > 0
+            ).length;
           }
+
+          if (parsedData && typeof parsedData === "object") {
+            if (parsedData.strokes && Array.isArray(parsedData.strokes)) {
+              return parsedData.strokes.length;
+            }
+            if (parsedData.drawing && Array.isArray(parsedData.drawing)) {
+              return parsedData.drawing.length;
+            }
+          }
+
+          return 0;
+        } catch (error) {
+          console.warn("Error calculating stroke count:", error);
+          return 0;
         }
-        
-        return 0;
-      } catch (error) {
-        console.warn('Error calculating stroke count:', error);
-        return 0;
-      }
-    };
+      };
 
-    // Enhanced preview content with better visual differentiation
-    const getPreviewContent = () => {
-      if (isDrawing) {
-        const strokeCount = getStrokeCount();
-        
-        return (
-          <View style={styles.previewImageContainer}>
-            <View style={styles.drawingPreview}>
-              {/* Enhanced drawing preview with actual drawing */}
-              <View style={styles.drawingPreviewHeader}>
-                <MaterialIcons
-                  name="brush"
-                  size={28}
-                  color="#8B5CF6"
-                  style={styles.drawingIcon}
-                />
-                <View style={styles.drawingBadge}>
-                  <Text style={styles.drawingBadgeText}>Drawing</Text>
-                </View>
-              </View>
-              
-              {strokeCount > 0 ? (
-                <DrawingPreview
-                  drawingData={item.drawing_data}
-                  width={windowWidth / 2 - 64}
-                  height={120}
-                />
-              ) : (
-                <View style={styles.emptyDrawingContainer}>
-                  <Text style={styles.emptyDrawingText}>Empty Drawing</Text>
-                </View>
-              )}
-              
-              {/* Show stroke count */}
-              <Text style={styles.drawingDataStatus}>
-                {strokeCount > 0 ? `${strokeCount} strokes` : "No strokes"}
-              </Text>
-            </View>
-          </View>
-        );
-      } else if (isDocument) {
-        // Document preview
-        const documentType = item.document_file?.toLowerCase().includes('.pdf') ? 'PDF' :
-                           item.document_file?.toLowerCase().includes('.doc') ? 'Word' : 'Document';
-        const documentIcon = documentType === 'PDF' ? 'picture-as-pdf' : 'description';
-        const documentColor = documentType === 'PDF' ? '#FF5722' : '#1976D2';
-        
-        return (
-          <View style={styles.previewImageContainer}>
-            <View style={styles.documentPreview}>
-              <View style={styles.documentPreviewHeader}>
-                <MaterialIcons
-                  name={documentIcon as any}
-                  size={32}
-                  color={documentColor}
-                  style={styles.documentIcon}
-                />
-                <View style={[styles.documentBadge, { backgroundColor: documentColor }]}>
-                  <Text style={styles.documentBadgeText}>{documentType}</Text>
-                </View>
-              </View>
-              
-              <View style={styles.documentInfo}>
-                <Text style={styles.documentTitle} numberOfLines={2}>
-                  {item.title || 'Untitled Document'}
-                </Text>
-                <Text style={styles.documentDataStatus}>
-                  {item.document_annotations ? `${Object.keys(item.document_annotations).length} annotations` : 'No annotations'}
-                </Text>
-              </View>
+      // Enhanced preview content with better visual differentiation
+      const getPreviewContent = () => {
+        if (isDrawing) {
+          const strokeCount = getStrokeCount();
 
-              <TouchableOpacity
-                style={styles.viewDocumentButton}
-                onPress={() => {
-                  const docType = documentType === 'PDF' ? 'pdf' : 
-                               documentType === 'Word' ? 'word' : 'document';
-                  setCurrentDocument({
-                    uri: item.document_url || item.document_file || '',
-                    name: item.title || 'Untitled Document',
-                    noteId: item.id,
-                    type: docType,
-                  });
-                  setShowDocumentViewer(true);
-                }}
-              >
-                <MaterialIcons name="visibility" size={16} color="#FFFFFF" />
-                <Text style={styles.viewDocumentButtonText}>View Document</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        );
-      } else {
-        // Text note preview (existing logic remains the same)
-        if (item.formatted_content) {
           return (
-            <View style={styles.previewContentContainer}>
-              <RenderHtml
-                contentWidth={windowWidth / 2 - 64}
-                source={{ html: item.formatted_content }}
-                tagsStyles={previewHtmlTagStyles}
-                enableExperimentalMarginCollapsing={true}
-              />
+            <View style={styles.previewImageContainer}>
+              <View style={styles.drawingPreview}>
+                {/* Enhanced drawing preview with actual drawing */}
+                <View style={styles.drawingPreviewHeader}>
+                  <MaterialIcons
+                    name="brush"
+                    size={28}
+                    color="#8B5CF6"
+                    style={styles.drawingIcon}
+                  />
+                  <View style={styles.drawingBadge}>
+                    <Text style={styles.drawingBadgeText}>Drawing</Text>
+                  </View>
+                </View>
+
+                {strokeCount > 0 ? (
+                  <DrawingPreview
+                    drawingData={item.drawing_data}
+                    width={windowWidth / 2 - 64}
+                    height={120}
+                  />
+                ) : (
+                  <View style={styles.emptyDrawingContainer}>
+                    <Text style={styles.emptyDrawingText}>Empty Drawing</Text>
+                  </View>
+                )}
+
+                {/* Show stroke count */}
+                <Text style={styles.drawingDataStatus}>
+                  {strokeCount > 0 ? `${strokeCount} strokes` : "No strokes"}
+                </Text>
+              </View>
             </View>
           );
-        } else if (item.content) {
+        } else if (isDocument) {
+          // Document preview
+          const documentType = item.document_file
+            ?.toLowerCase()
+            .includes(".pdf")
+            ? "PDF"
+            : item.document_file?.toLowerCase().includes(".doc")
+            ? "Word"
+            : "Document";
+          const documentIcon =
+            documentType === "PDF" ? "picture-as-pdf" : "description";
+          const documentColor = documentType === "PDF" ? "#FF5722" : "#1976D2";
+
           return (
-            <View style={styles.previewTextContainer}>
-              <Text style={styles.previewTextContent} numberOfLines={4}>
-                {item.content}
-              </Text>
+            <View style={styles.previewImageContainer}>
+              <View style={styles.documentPreview}>
+                <View style={styles.documentPreviewHeader}>
+                  <MaterialIcons
+                    name={documentIcon as any}
+                    size={32}
+                    color={documentColor}
+                    style={styles.documentIcon}
+                  />
+                  <View
+                    style={[
+                      styles.documentBadge,
+                      { backgroundColor: documentColor },
+                    ]}
+                  >
+                    <Text style={styles.documentBadgeText}>{documentType}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.documentInfo}>
+                  <Text style={styles.documentTitle} numberOfLines={2}>
+                    {item.title || "Untitled Document"}
+                  </Text>
+                  <Text style={styles.documentDataStatus}>
+                    {item.document_annotations
+                      ? `${
+                          Object.keys(item.document_annotations).length
+                        } annotations`
+                      : "No annotations"}
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.viewDocumentButton}
+                  onPress={async () => {
+                    const docType =
+                      documentType === "PDF"
+                        ? "pdf"
+                        : documentType === "Word"
+                        ? "word"
+                        : "document";
+
+                    const documentUrl =
+                      item.document_url || item.document_file || "";
+                    let finalDocumentUri = documentUrl;
+
+                    // For PDF files, download to local storage if it's a remote URL
+                    if (docType === "pdf" && isRemoteURL(documentUrl)) {
+                      try {
+                        console.log(
+                          "PDF is remote URL, downloading to local storage:",
+                          documentUrl
+                        );
+                        finalDocumentUri = await getLocalPDFPath(documentUrl);
+                        console.log(
+                          "PDF downloaded to local path:",
+                          finalDocumentUri
+                        );
+                      } catch (error) {
+                        console.error(
+                          "Failed to download PDF to local storage:",
+                          error
+                        );
+                        // Fall back to original URL - PDFAnnotationViewer will handle the error
+                        finalDocumentUri = documentUrl;
+                      }
+                    }
+
+                    setCurrentDocument({
+                      uri: finalDocumentUri,
+                      name: item.title || "Untitled Document",
+                      noteId: item.id,
+                      type: docType,
+                    });
+
+                    // Use PDFAnnotationViewer for PDF files, DocumentViewer for others
+                    if (docType === "pdf") {
+                      setShowPDFViewer(true);
+                    } else {
+                      setShowDocumentViewer(true);
+                    }
+                  }}
+                >
+                  <MaterialIcons name="visibility" size={16} color="#FFFFFF" />
+                  <Text style={styles.viewDocumentButtonText}>
+                    View Document
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
           );
         } else {
-          return (
-            <View style={styles.previewDocumentContainer}>
-              <View style={styles.documentLines}>
-                <View
-                  style={[styles.documentLine, styles.documentTitleLine]}
+          // Text note preview (existing logic remains the same)
+          if (item.formatted_content) {
+            return (
+              <View style={styles.previewContentContainer}>
+                <RenderHtml
+                  contentWidth={windowWidth / 2 - 64}
+                  source={{ html: item.formatted_content }}
+                  tagsStyles={previewHtmlTagStyles}
+                  enableExperimentalMarginCollapsing={true}
                 />
-                <View style={[styles.documentLine, { width: "90%" }]} />
-                <View style={[styles.documentLine, { width: "75%" }]} />
-                <View style={[styles.documentLine, { width: "85%" }]} />
-                <View style={[styles.documentLine, { width: "65%" }]} />
               </View>
-            </View>
-          );
-        }
-      }
-    };
-
-    return (
-      <TouchableOpacity
-        style={[
-          styles.gridNoteItem,
-          // Enhanced visual differentiation for drawing notes
-          isDrawing && styles.drawingNoteItem,
-          isSelectMode &&
-            selectedNotes.includes(item.id) &&
-            styles.selectedNoteItem,
-        ]}
-        activeOpacity={0.8}
-        onPress={() => {
-          if (isSelectMode) {
-            toggleNoteSelection(item.id);
+            );
+          } else if (item.content) {
+            return (
+              <View style={styles.previewTextContainer}>
+                <Text style={styles.previewTextContent} numberOfLines={4}>
+                  {item.content}
+                </Text>
+              </View>
+            );
           } else {
-            handleNotePress(item);
-          }
-        }}
-        onLongPress={() => {
-          if (!isSelectMode) {
-            setIsSelectMode(true);
-            toggleNoteSelection(item.id);
-          }
-        }}
-      >
-        <View
-          style={[
-            styles.gridNoteContent,
-            isDrawing && styles.drawingNoteContent,
-          ]}
-        >
-          {/* Preview Image Container */}
-          {getPreviewContent()}
-
-          {/* Enhanced Note Header with better type indication */}
-          <View style={styles.noteHeader}>
-            <View style={styles.noteTitleContainer}>
-              <View
-                style={[
-                  styles.gridNoteTypeIcon,
-                  {
-                    backgroundColor: isDrawing ? "#EDE9FE" : "#DBEAFE",
-                  },
-                ]}
-              >
-                <Ionicons
-                  name={isDrawing ? "brush" : "document-text"}
-                  size={16}
-                  color={isDrawing ? "#8B5CF6" : "#3B82F6"}
-                />
-              </View>
-              <View style={styles.noteTitleSection}>
-                <Text
-                  style={[
-                    styles.gridNoteTitle,
-                    isDrawing && styles.drawingNoteTitle,
-                  ]}
-                  numberOfLines={1}
-                  ellipsizeMode="tail"
-                >
-                  {item.title ||
-                    (isDrawing ? "Untitled Drawing" : "Untitled Note")}
-                </Text>
-                {/* Add type indicator text */}
-                <Text
-                  style={[
-                    styles.noteTypeIndicator,
-                    isDrawing && styles.drawingTypeIndicator,
-                  ]}
-                >
-                  {isDrawing ? "Drawing" : "Text Note"}
-                </Text>
-              </View>
-            </View>
-
-            {!isSelectMode && (
-              <TouchableWithoutFeedback
-                onPress={(e) => {
-                  e.stopPropagation();
-                  // Measure the kebab button position
-                  if (activeNoteOptions === item.id) {
-                    setActiveNoteOptions(null);
-                    setDropdownPosition(null);
-                  } else {
-                                        // Get the kebab button's position on screen
-                    e.target.measure((x, y, width, height, pageX, pageY) => {
-                      const screenWidth = Dimensions.get('window').width;
-                      const dropdownWidth = 180; // Fixed dropdown width
-                      
-                      let dropdownX;
-                      // If button is on left half, align dropdown's right edge with button's right edge
-                      if (pageX < screenWidth / 2) {
-                        dropdownX = pageX + width - dropdownWidth;
-                      } else {
-                        // If button is on right half, align dropdown's left edge with button's left edge
-                        dropdownX = pageX;
-                      }
-                      
-                      // Ensure dropdown stays within screen bounds
-                      if (dropdownX < 10) {
-                        dropdownX = 10;
-                      }
-                      if (dropdownX + dropdownWidth > screenWidth - 10) {
-                        dropdownX = screenWidth - dropdownWidth - 10;
-                      }
-                      
-                      setDropdownPosition({
-                        x: dropdownX,
-                        y: pageY + height
-                      });
-                      setActiveNoteOptions(item.id);
-                    });
-                  }
-                }}
-              >
-                <View style={styles.gridNoteOptionsButton}>
-                  <MaterialIcons name="more-vert" size={16} color="#9CA3AF" />
+            return (
+              <View style={styles.previewDocumentContainer}>
+                <View style={styles.documentLines}>
+                  <View
+                    style={[styles.documentLine, styles.documentTitleLine]}
+                  />
+                  <View style={[styles.documentLine, { width: "90%" }]} />
+                  <View style={[styles.documentLine, { width: "75%" }]} />
+                  <View style={[styles.documentLine, { width: "85%" }]} />
+                  <View style={[styles.documentLine, { width: "65%" }]} />
                 </View>
-              </TouchableWithoutFeedback>
-            )}
-          </View>
+              </View>
+            );
+          }
+        }
+      };
 
-          {/* Rest of the existing footer code... */}
-          <View style={styles.noteFooter}>
-            <Text style={styles.noteDate}>
-              {item.updatedAt.toLocaleDateString("en-US", {
-                month: "short",
-                day: "numeric",
-              })}
-            </Text>
+      return (
+        <TouchableOpacity
+          style={[
+            styles.gridNoteItem,
+            // Enhanced visual differentiation for drawing notes
+            isDrawing && styles.drawingNoteItem,
+            isSelectMode &&
+              selectedNotes.includes(item.id) &&
+              styles.selectedNoteItem,
+          ]}
+          activeOpacity={0.8}
+          onPress={() => {
+            if (isSelectMode) {
+              toggleNoteSelection(item.id);
+            } else {
+              handleNotePress(item);
+            }
+          }}
+          onLongPress={() => {
+            if (!isSelectMode) {
+              setIsSelectMode(true);
+              toggleNoteSelection(item.id);
+            }
+          }}
+        >
+          <View
+            style={[
+              styles.gridNoteContent,
+              isDrawing && styles.drawingNoteContent,
+            ]}
+          >
+            {/* Preview Image Container */}
+            {getPreviewContent()}
 
-            <View style={styles.metadataContainer}>
-              {!selectedFilterFolder && item.folderId && (
-                <View style={styles.folderBadge}>
-                  <MaterialIcons name="folder" size={10} color="#6A009C" />
-                  <Text style={styles.folderBadgeText} numberOfLines={1}>
-                    {folders.find((f) => f.id === item.folderId)?.name ||
-                      "Folder"}
+            {/* Enhanced Note Header with better type indication */}
+            <View style={styles.noteHeader}>
+              <View style={styles.noteTitleContainer}>
+                <View
+                  style={[
+                    styles.gridNoteTypeIcon,
+                    {
+                      backgroundColor: isDrawing ? "#EDE9FE" : "#DBEAFE",
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name={isDrawing ? "brush" : "document-text"}
+                    size={16}
+                    color={isDrawing ? "#8B5CF6" : "#3B82F6"}
+                  />
+                </View>
+                <View style={styles.noteTitleSection}>
+                  <Text
+                    style={[
+                      styles.gridNoteTitle,
+                      isDrawing && styles.drawingNoteTitle,
+                    ]}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                  >
+                    {item.title ||
+                      (isDrawing ? "Untitled Drawing" : "Untitled Note")}
+                  </Text>
+                  {/* Add type indicator text */}
+                  <Text
+                    style={[
+                      styles.noteTypeIndicator,
+                      isDrawing && styles.drawingTypeIndicator,
+                    ]}
+                  >
+                    {isDrawing ? "Drawing" : "Text Note"}
                   </Text>
                 </View>
-              )}
+              </View>
 
-              {item.tags && item.tags.length > 0 && (
-                <View style={styles.inlineTagsContainer}>
-                  {item.tags.slice(0, 1).map((tag, idx) => (
-                    <View key={idx} style={styles.gridTag}>
-                      <MaterialIcons
-                        name="local-offer"
-                        size={8}
-                        color="#4B5563"
-                      />
-                      <Text style={styles.gridTagText}>
-                        {typeof tag === "string" ? tag : tag.name}
-                      </Text>
-                    </View>
-                  ))}
-                  {item.tags.length > 1 && (
-                    <View style={styles.gridMoreTagsIndicator}>
-                      <Text style={styles.gridMoreTagsText}>
-                        +{item.tags.length - 1}
-                      </Text>
-                    </View>
-                  )}
-                </View>
+              {!isSelectMode && (
+                <TouchableWithoutFeedback
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    // Measure the kebab button position
+                    if (activeNoteOptions === item.id) {
+                      setActiveNoteOptions(null);
+                      setDropdownPosition(null);
+                    } else {
+                      // Get the kebab button's position on screen
+                      e.target.measure((x, y, width, height, pageX, pageY) => {
+                        const screenWidth = Dimensions.get("window").width;
+                        const dropdownWidth = 180; // Fixed dropdown width
+
+                        let dropdownX;
+                        // If button is on left half, align dropdown's right edge with button's right edge
+                        if (pageX < screenWidth / 2) {
+                          dropdownX = pageX + width - dropdownWidth;
+                        } else {
+                          // If button is on right half, align dropdown's left edge with button's left edge
+                          dropdownX = pageX;
+                        }
+
+                        // Ensure dropdown stays within screen bounds
+                        if (dropdownX < 10) {
+                          dropdownX = 10;
+                        }
+                        if (dropdownX + dropdownWidth > screenWidth - 10) {
+                          dropdownX = screenWidth - dropdownWidth - 10;
+                        }
+
+                        setDropdownPosition({
+                          x: dropdownX,
+                          y: pageY + height,
+                        });
+                        setActiveNoteOptions(item.id);
+                      });
+                    }
+                  }}
+                >
+                  <View style={styles.gridNoteOptionsButton}>
+                    <MaterialIcons name="more-vert" size={16} color="#9CA3AF" />
+                  </View>
+                </TouchableWithoutFeedback>
               )}
             </View>
-          </View>
 
-          {/* Options Dropdown as Modal */}
-          {activeNoteOptions === item.id && dropdownPosition && (
-            <Modal
-              transparent
-              animationType="fade"
-              visible={true}
-              onRequestClose={() => {
-                setActiveNoteOptions(null);
-                setDropdownPosition(null);
-              }}
-            >
-              <TouchableWithoutFeedback onPress={() => {
-                setActiveNoteOptions(null);
-                setDropdownPosition(null);
-              }}>
-                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.1)' }} />
-              </TouchableWithoutFeedback>
-              <View
-                style={[
-                  styles.gridNoteOptionsDropdown,
-                  {
-                    position: "absolute",
-                    left: dropdownPosition.x,
-                    top: dropdownPosition.y,
-                    width: 180, // Fixed width for consistency
-                    zIndex: 9999999,
-                  },
-                ]}
-                pointerEvents="auto"
-              >
-                {/* Add to Folder or Move to Folder option */}
-                {(!item.folderId || selectedFilterFolder !== null) && (
-                  <TouchableOpacity
-                    onPress={() => {
-                      handleAddToFolder(item.id);
-                      console.log("Add to/Move to Folder pressed for note:", item.id);
-                      setActiveNoteOptions(null);
-                      setDropdownPosition(null);
-                    }}
-                  >
-                    <View style={styles.noteOptionItem}>
-                      <Ionicons name="folder-outline" size={20} color="#333" />
-                      <Text style={styles.noteOptionText}>
-                        {!item.folderId ? "Add to Folder" : "Move to Folder"}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
+            {/* Rest of the existing footer code... */}
+            <View style={styles.noteFooter}>
+              <Text style={styles.noteDate}>
+                {item.updatedAt.toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                })}
+              </Text>
+
+              <View style={styles.metadataContainer}>
+                {!selectedFilterFolder && item.folderId && (
+                  <View style={styles.folderBadge}>
+                    <MaterialIcons name="folder" size={10} color="#6A009C" />
+                    <Text style={styles.folderBadgeText} numberOfLines={1}>
+                      {folders.find((f) => f.id === item.folderId)?.name ||
+                        "Folder"}
+                    </Text>
+                  </View>
                 )}
 
-                {/* Remove from Folder option - only show if note is in a folder */}
-                {item.folderId && (
+                {item.tags && item.tags.length > 0 && (
+                  <View style={styles.inlineTagsContainer}>
+                    {item.tags.slice(0, 1).map((tag, idx) => (
+                      <View key={idx} style={styles.gridTag}>
+                        <MaterialIcons
+                          name="local-offer"
+                          size={8}
+                          color="#4B5563"
+                        />
+                        <Text style={styles.gridTagText}>
+                          {typeof tag === "string" ? tag : tag.name}
+                        </Text>
+                      </View>
+                    ))}
+                    {item.tags.length > 1 && (
+                      <View style={styles.gridMoreTagsIndicator}>
+                        <Text style={styles.gridMoreTagsText}>
+                          +{item.tags.length - 1}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+              </View>
+            </View>
+
+            {/* Options Dropdown as Modal */}
+            {activeNoteOptions === item.id && dropdownPosition && (
+              <Modal
+                transparent
+                animationType="fade"
+                visible={true}
+                onRequestClose={() => {
+                  setActiveNoteOptions(null);
+                  setDropdownPosition(null);
+                }}
+              >
+                <TouchableWithoutFeedback
+                  onPress={() => {
+                    setActiveNoteOptions(null);
+                    setDropdownPosition(null);
+                  }}
+                >
+                  <View
+                    style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.1)" }}
+                  />
+                </TouchableWithoutFeedback>
+                <View
+                  style={[
+                    styles.gridNoteOptionsDropdown,
+                    {
+                      position: "absolute",
+                      left: dropdownPosition.x,
+                      top: dropdownPosition.y,
+                      width: 180, // Fixed width for consistency
+                      zIndex: 9999999,
+                    },
+                  ]}
+                  pointerEvents="auto"
+                >
+                  {/* Add to Folder or Move to Folder option */}
+                  {(!item.folderId || selectedFilterFolder !== null) && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        handleAddToFolder(item.id);
+                        console.log(
+                          "Add to/Move to Folder pressed for note:",
+                          item.id
+                        );
+                        setActiveNoteOptions(null);
+                        setDropdownPosition(null);
+                      }}
+                    >
+                      <View style={styles.noteOptionItem}>
+                        <Ionicons
+                          name="folder-outline"
+                          size={20}
+                          color="#333"
+                        />
+                        <Text style={styles.noteOptionText}>
+                          {!item.folderId ? "Add to Folder" : "Move to Folder"}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Remove from Folder option - only show if note is in a folder */}
+                  {item.folderId && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        handleRemoveFromFolder(item.id);
+                        setActiveNoteOptions(null);
+                        setDropdownPosition(null);
+                      }}
+                    >
+                      <View style={styles.noteOptionItem}>
+                        <Ionicons
+                          name="remove-circle-outline"
+                          size={18}
+                          color="#EF4444"
+                        />
+                        <Text style={styles.noteOptionText}>
+                          Remove from Folder
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Duplicate Drawing option - only for drawings */}
+                  {isDrawing && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        handleDuplicateDrawing(item);
+                        setActiveNoteOptions(null);
+                        setDropdownPosition(null);
+                      }}
+                    >
+                      <View style={styles.noteOptionItem}>
+                        <Ionicons
+                          name="copy-outline"
+                          size={20}
+                          color="#6B7280"
+                        />
+                        <Text style={styles.noteOptionText}>
+                          Duplicate Drawing
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Share Note option */}
                   <TouchableOpacity
                     onPress={() => {
-                      handleRemoveFromFolder(item.id);
                       setActiveNoteOptions(null);
                       setDropdownPosition(null);
+                      Alert.alert(
+                        "Share Note",
+                        "Sharing functionality will be available in a future update."
+                      );
                     }}
                   >
                     <View style={styles.noteOptionItem}>
                       <Ionicons
-                        name="remove-circle-outline"
-                        size={18}
-                        color="#EF4444"
+                        name="share-outline"
+                        size={20}
+                        color="#10B981"
                       />
                       <Text style={styles.noteOptionText}>
-                        Remove from Folder
+                        Share {isDrawing ? "Drawing" : "Note"}
                       </Text>
                     </View>
                   </TouchableOpacity>
-                )}
 
-                {/* Duplicate Drawing option - only for drawings */}
-                {isDrawing && (
+                  {/* Delete Note/Drawing option - remove border for last item */}
                   <TouchableOpacity
                     onPress={() => {
-                      handleDuplicateDrawing(item);
+                      handleDeleteNote(item.id);
+                      console.log(
+                        "Delete Note/Drawing pressed for note:",
+                        item.id
+                      );
                       setActiveNoteOptions(null);
                       setDropdownPosition(null);
                     }}
+                    style={[styles.noteOptionItem, { borderBottomWidth: 0 }]}
+                    activeOpacity={0.7}
                   >
-                    <View style={styles.noteOptionItem}>
-                      <Ionicons name="copy-outline" size={20} color="#6B7280" />
-                      <Text style={styles.noteOptionText}>
-                        Duplicate Drawing
-                      </Text>
-                    </View>
+                    <Ionicons name="trash-outline" size={20} color="#EF4444" />
+                    <Text style={[styles.noteOptionText, { color: "#EF4444" }]}>
+                      {isDrawing ? "Delete Drawing" : "Delete Note"}
+                    </Text>
                   </TouchableOpacity>
-                )}
-
-                {/* Delete Note/Drawing option */}
-                <TouchableOpacity
-                  onPress={() => {
-                    handleDeleteNote(item.id);
-                    console.log("Delete Note/Drawing pressed for note:", item.id);
-                    setActiveNoteOptions(null);
-                    setDropdownPosition(null);
-                  }}
-                  style={styles.noteOptionItem}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="trash-outline" size={20} color="#EF4444" />
-                  <Text style={styles.noteOptionText}>
-                    {isDrawing ? "Delete Drawing" : "Delete Note"}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </Modal>
-          )}
-        </View>
-      </TouchableOpacity>
-    );
-  },
-  [
-    isSelectMode,
-    selectedNotes,
-    activeNoteOptions,
-    dropdownPosition,
-    folders,
-    selectedFilterFolder,
-    windowWidth,
-    previewHtmlTagStyles,
-    handleNotePress,
-    toggleNoteSelection,
-    handleAddToFolder,
-    handleRemoveFromFolder,
-    handleDeleteNote,
-    handleDuplicateDrawing,
-  ]
-);
+                </View>
+              </Modal>
+            )}
+          </View>
+        </TouchableOpacity>
+      );
+    },
+    [
+      isSelectMode,
+      selectedNotes,
+      activeNoteOptions,
+      dropdownPosition,
+      folders,
+      selectedFilterFolder,
+      windowWidth,
+      previewHtmlTagStyles,
+      handleNotePress,
+      toggleNoteSelection,
+      handleAddToFolder,
+      handleRemoveFromFolder,
+      handleDeleteNote,
+      handleDuplicateDrawing,
+    ]
+  );
 
   // Folder Options Modal
   const renderFolderOptionsModal = () => (
@@ -2248,8 +2464,8 @@ const renderUnorganizedFolder = () => (
           <Text style={styles.deleteConfirmTitle}>Delete Folder?</Text>
           <Text style={styles.deleteConfirmMessage}>
             Are you sure you want to delete &quot;
-            {folders.find((f) => f.id === folderToDelete)?.name}&quot;? This action
-            cannot be undone.
+            {folders.find((f) => f.id === folderToDelete)?.name}&quot;? This
+            action cannot be undone.
           </Text>
 
           <View style={styles.deleteConfirmButtons}>
@@ -2534,7 +2750,9 @@ const renderUnorganizedFolder = () => (
             >
               {/* Title Setup Section */}
               <View style={styles.drawingModalSection}>
-                <Text style={styles.drawingModalSectionLabel}>Drawing Title</Text>
+                <Text style={styles.drawingModalSectionLabel}>
+                  Drawing Title
+                </Text>
                 <TextInput
                   style={styles.drawingModalTextInput}
                   value={drawingTitle}
@@ -2648,7 +2866,9 @@ const renderUnorganizedFolder = () => (
 
               {/* Templates Section */}
               <View style={styles.drawingModalSection}>
-                <Text style={styles.drawingModalSectionLabel}>Choose Template</Text>
+                <Text style={styles.drawingModalSectionLabel}>
+                  Choose Template
+                </Text>
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
@@ -2785,13 +3005,9 @@ const renderUnorganizedFolder = () => (
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.headerActionButton}
-              onPress={() => setShowOptionsDropdown(!showOptionsDropdown)}
+              onPress={() => setShowMoreVertMenu(!showMoreVertMenu)}
             >
-              <MaterialIcons
-                name="more-vert"
-                size={22}
-                color="#ffffffff"
-              />
+              <MaterialIcons name="more-vert" size={22} color="#ffffffff" />
             </TouchableOpacity>
           </View>
         </View>
@@ -2843,8 +3059,8 @@ const renderUnorganizedFolder = () => (
                 {selectedFilterFolder === "unorganized"
                   ? "Unorganized Notes"
                   : selectedFilterFolder
-                  ? folders.find((f) => f.id === selectedFilterFolder)
-                      ?.name || "Folders"
+                  ? folders.find((f) => f.id === selectedFilterFolder)?.name ||
+                    "Folders"
                   : "Folders"}
               </Text>
             </View>
@@ -2884,15 +3100,9 @@ const renderUnorganizedFolder = () => (
                         activeOpacity={0.8}
                       >
                         <View style={styles.addFolderIcon}>
-                          <MaterialIcons
-                            name="add"
-                            size={24}
-                            color="#6A009C"
-                          />
+                          <MaterialIcons name="add" size={24} color="#6A009C" />
                         </View>
-                        <Text style={styles.addFolderText}>
-                          New Folder
-                        </Text>
+                        <Text style={styles.addFolderText}>New Folder</Text>
                       </TouchableOpacity>
                     );
                   }
@@ -2908,9 +3118,7 @@ const renderUnorganizedFolder = () => (
                       activeOpacity={0.8}
                       onPress={() => {
                         setSelectedFilterFolder(
-                          selectedFilterFolder === item.id
-                            ? null
-                            : item.id
+                          selectedFilterFolder === item.id ? null : item.id
                         );
                         setShowFolderDropdown(false);
                       }}
@@ -2966,9 +3174,8 @@ const renderUnorganizedFolder = () => (
                       </Text>
                       <Text style={styles.folderCount}>
                         {
-                          notes.filter(
-                            (note) => note.folderId === item.id
-                          ).length
+                          notes.filter((note) => note.folderId === item.id)
+                            .length
                         }{" "}
                         notes
                       </Text>
@@ -2995,11 +3202,7 @@ const renderUnorganizedFolder = () => (
                 }}
               >
                 <View style={styles.unorganizedFolderIcon}>
-                  <MaterialIcons
-                    name="folder-open"
-                    size={20}
-                    color="#64748B"
-                  />
+                  <MaterialIcons name="folder-open" size={20} color="#64748B" />
                 </View>
                 <Text
                   style={[
@@ -3021,14 +3224,19 @@ const renderUnorganizedFolder = () => (
 
       {isSelectMode && (
         <View style={styles.selectionModeHeader}>
-          <Text style={styles.selectionModeText}>
-            {selectedNotes.length}{" "}
-            <Text>{selectedNotes.length === 1 ? "note" : "notes"}</Text>{" "}
-            <Text>selected</Text>
-          </Text>
+          <View style={styles.selectionModeInfo}>
+            <View style={styles.selectionCountBadge}>
+              <Text style={styles.selectionCountText}>
+                {selectedNotes.length}
+              </Text>
+            </View>
+            <Text style={styles.selectionModeText}>
+              {selectedNotes.length === 1 ? "note" : "notes"} selected
+            </Text>
+          </View>
           <View style={styles.selectionModeActions}>
             <TouchableOpacity
-              style={styles.selectionModeButton}
+              style={[styles.selectionModeButton, styles.folderButton]}
               onPress={() => {
                 if (selectedFolder && selectedNotes.length > 0) {
                   assignNotesToFolder(selectedFolder, selectedNotes);
@@ -3043,27 +3251,24 @@ const renderUnorganizedFolder = () => (
                 }
               }}
             >
-              <MaterialIcons name="folder" size={20} color="#FFFFFF" />
+              <MaterialIcons name="folder" size={18} color="#FFFFFF" />
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[
-                styles.selectionModeButton,
-                { backgroundColor: "rgba(239, 68, 68, 0.7)" },
-              ]}
+              style={[styles.selectionModeButton, styles.deleteButton]}
               onPress={handleBulkDeleteNotes}
             >
-              <MaterialIcons name="delete" size={20} color="#FFFFFF" />
+              <MaterialIcons name="delete" size={18} color="#FFFFFF" />
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.selectionModeButton}
+              style={[styles.selectionModeButton, styles.selectioncancelButton]}
               onPress={() => {
                 setIsSelectMode(false);
                 setSelectedNotes([]);
               }}
             >
-              <MaterialIcons name="cancel" size={20} color="#FFFFFF" />
+              <MaterialIcons name="close" size={18} color="#64748B" />
             </TouchableOpacity>
           </View>
         </View>
@@ -3117,48 +3322,75 @@ const renderUnorganizedFolder = () => (
         </TouchableWithoutFeedback>
       )}
 
-      {/* Options Dropdown - positioned outside header for proper overlay */}
-      {showOptionsDropdown && (
-        <View style={styles.optionsDropdownContainer}>
-          <View style={styles.optionsDropdown}>
-            <View style={styles.dropdownPointer} />
-            <TouchableOpacity
-              style={styles.dropdownOption}
-              onPress={() => {
-                setShowCreateFolderModal(true);
-                setShowOptionsDropdown(false);
-              }}
-            >
-              <Ionicons name="folder-open-outline" size={20} color="#333" />
-              <Text style={styles.dropdownOptionText}>Create Folder</Text>
-            </TouchableOpacity>
+      {/* More Vert Menu Modal */}
+      {showMoreVertMenu && (
+        <Modal
+          visible={showMoreVertMenu}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setShowMoreVertMenu(false)}
+        >
+          <TouchableOpacity
+            style={styles.moreVertOverlay}
+            activeOpacity={1}
+            onPress={() => setShowMoreVertMenu(false)}
+          >
+            <View style={styles.moreVertMenuContainer}>
+              <TouchableOpacity
+                style={styles.moreVertMenuItem}
+                onPress={() => {
+                  setShowMoreVertMenu(false);
+                  setIsSelectMode(true);
+                }}
+              >
+                <MaterialIcons name="checklist" size={20} color="#8B5CF6" />
+                <Text style={styles.moreVertMenuText}>
+                  Select Multiple Notes
+                </Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.dropdownOption}
-              onPress={() => {
-                setShowDrawingSetupModal(true);
-                setShowOptionsDropdown(false);
-              }}
-            >
-              <MaterialCommunityIcons name="brush" size={20} color="#333" />
-              <Text style={styles.dropdownOptionText}>New Drawing</Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.moreVertMenuItem}
+                onPress={() => {
+                  setShowMoreVertMenu(false);
+                  // Clear all filters
+                  setSelectedFilterFolder(null);
+                  setSearchQuery("");
+                  setSelectedFilter("all");
+                }}
+              >
+                <MaterialIcons name="clear-all" size={20} color="#EF4444" />
+                <Text style={styles.moreVertMenuText}>Clear All Filters</Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[
-                styles.dropdownOption,
-                { borderBottomWidth: 0, borderBottomColor: "transparent" },
-              ]}
-              onPress={() => {
-                navigation.navigate("PDFs");
-                setShowOptionsDropdown(false);
-              }}
-            >
-              <Ionicons name="document-outline" size={20} color="#333" />
-              <Text style={styles.dropdownOptionText}>Import PDF</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+              <TouchableOpacity
+                style={styles.moreVertMenuItem}
+                onPress={() => {
+                  setShowMoreVertMenu(false);
+                  onRefresh();
+                }}
+              >
+                <MaterialIcons name="refresh" size={20} color="#3B82F6" />
+                <Text style={styles.moreVertMenuText}>Refresh Notes</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.moreVertMenuItem, styles.moreVertMenuItemLast]}
+                onPress={() => {
+                  setShowMoreVertMenu(false);
+                  Alert.alert(
+                    "Notes Statistics",
+                    `Total Notes: ${notes.length}\nFolders: ${folders.length}\nFiltered Notes: ${notesViewData.length}`,
+                    [{ text: "OK", style: "default" }]
+                  );
+                }}
+              >
+                <MaterialIcons name="analytics" size={20} color="#64748B" />
+                <Text style={styles.moreVertMenuText}>View Statistics</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </Modal>
       )}
 
       {/* Add Options Menu */}
@@ -3220,7 +3452,6 @@ const renderUnorganizedFolder = () => (
       <TouchableOpacity
         style={[
           styles.fabButton,
-          styles.mainAddFab,
           showAddOptionsMenu && styles.fabButtonRotated,
         ]}
         onPress={() => setShowAddOptionsMenu(!showAddOptionsMenu)}
@@ -3228,7 +3459,7 @@ const renderUnorganizedFolder = () => (
       >
         <MaterialIcons
           name={showAddOptionsMenu ? "close" : "add"}
-          size={28}
+          size={32}
           color="#fff"
         />
       </TouchableOpacity>
@@ -3240,8 +3471,8 @@ const renderUnorganizedFolder = () => (
       {renderEditFolderModal()}
       {renderFolderOptionsModal()}
       {renderDeleteConfirmModal()}
-      
-      <DocumentPreviewModal 
+
+      <DocumentPreviewModal
         visible={showDocumentPreviewModal}
         onClose={() => setShowDocumentPreviewModal(false)}
         onConfirmImport={handleConfirmDocumentImport}
@@ -3267,6 +3498,25 @@ const renderUnorganizedFolder = () => (
           />
         </Modal>
       )}
+
+      {/* PDF Annotation Viewer Modal */}
+      {showPDFViewer && currentDocument && (
+        <Modal
+          visible={showPDFViewer}
+          animationType="slide"
+          presentationStyle="fullScreen"
+          onRequestClose={() => setShowPDFViewer(false)}
+        >
+          <PDFAnnotationViewer
+            source={{ uri: currentDocument.uri }}
+            fileName={currentDocument.name}
+            onClose={() => {
+              setShowPDFViewer(false);
+              setCurrentDocument(null);
+            }}
+          />
+        </Modal>
+      )}
     </View>
   );
 }
@@ -3275,7 +3525,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#F8FAFC",
-    
   },
   header: {
     paddingTop: Platform.OS === "ios" ? 50 : 35,
@@ -3306,14 +3555,14 @@ const styles = StyleSheet.create({
     marginTop: 20, // To overlap with header's bottom curve
     backgroundColor: "#F8FAFC",
   },
-  
+
   headerTopRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
     // Remove paddingHorizontal from here - it should be at parent level
   },
-  
+
   headerTitleSection: {
     flex: 1, // This ensures proper space allocation
   },
@@ -3336,7 +3585,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "rgba(255, 255, 255, 0.2)",
-    elevation: 2,
   },
   activeSearchButton: {
     backgroundColor: "rgba(255, 255, 255, 0.3)",
@@ -3647,27 +3895,33 @@ const styles = StyleSheet.create({
     position: "absolute",
     right: 0,
     top: 40,
-    backgroundColor: "#fafafaff",
-    borderRadius: 8,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
     shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 9999,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    elevation: 12,
     zIndex: 9999999,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: "rgba(148, 163, 184, 0.1)",
+    minWidth: 180,
   },
   noteOptionItem: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
+    borderBottomColor: "#F8FAFC",
   },
   noteOptionText: {
-    fontSize: 14,
-    fontFamily: "Inter-Regular",
-    color: "#1E293B",
-    marginLeft: 8,
+    fontSize: 15,
+    fontFamily: "Inter-Medium",
+    color: "#334155",
+    marginLeft: 12,
+    fontWeight: "500",
   },
 
   notePreview: {
@@ -3788,26 +4042,27 @@ const styles = StyleSheet.create({
 
   fabButton: {
     position: "absolute",
-    bottom: 100, // Above the navbar
     right: 24,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#9C27B0",
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "#8B5CF6",
     justifyContent: "center",
     alignItems: "center",
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.24,
-    shadowRadius: 16,
-    elevation: 8,
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.3,
+    shadowRadius: 24,
+    elevation: 15,
+    zIndex: 1000,
+    bottom: Platform.OS === "ios" ? 115 : 110,
   },
   textFab: {
     backgroundColor: "#9C27B0",
   },
   drawingFab: {
     backgroundColor: "#2563EB",
-    bottom: 170, 
+    bottom: 170,
     right: 24,
   },
   modalContainer: {
@@ -3995,73 +4250,50 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     letterSpacing: -0.1,
   },
-  optionsDropdownContainer: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 5000,
-    pointerEvents: "box-none",
-  },
-  optionsDropdown: {
-    position: "absolute",
-    top: Platform.OS === "ios" ? 100 : 85,
-    right: 18,
-    backgroundColor: "#fafafaff", // 0.7 = 70% opacity
-    borderRadius: 12,
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 4,
-    paddingVertical: 5,
-    width: 180,
-    zIndex: 5000,
-  },
-  dropdownPointer: {
-    position: "absolute",
-    top: -10,
-    right: 20, // Adjust this value to align with your "more-vert" button
-    width: 0,
-    height: 0,
-    borderLeftWidth: 10,
-    borderRightWidth: 10,
-    borderBottomWidth: 10,
-    borderLeftColor: "transparent",
-    borderRightColor: "transparent",
-    borderBottomColor: "#fafafaff", // Match dropdown bg
-    zIndex: 5001,
-  },
-  dropdownOption: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
-  },
-  dropdownOptionText: {
-    fontSize: 14,
-    fontFamily: "Inter-Medium",
-    color: "#1E293B",
-    marginLeft: 12,
-  },
   selectionModeHeader: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
-    backgroundColor: "#F5E1FD",
-    paddingHorizontal: 24,
-    paddingVertical: 16,
+    backgroundColor: "#FFFFFF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     zIndex: 1000,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  selectionModeInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingTop: 50,
+  },
+  selectionCountBadge: {
+    backgroundColor: "#6366F1",
+    borderRadius: 12,
+    minWidth: 24,
+    height: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 8,
+  },
+  selectionCountText: {
+    fontSize: 12,
+    fontFamily: "Inter-Bold",
+    color: "#FFFFFF",
   },
   selectionModeContent: {
-    padding: 16,
+    padding: 20,
   },
   selectionModeFooter: {
     padding: 16,
@@ -4069,9 +4301,9 @@ const styles = StyleSheet.create({
     borderTopColor: "#E5E7EB",
   },
   selectionModeText: {
-    fontSize: 16,
+    fontSize: 15,
     fontFamily: "Inter-Medium",
-    color: "#1E293B",
+    color: "#374151",
   },
   selectionModeIcon: {
     width: 24,
@@ -4081,6 +4313,40 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
   },
+
+  selectionModeActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingTop: 50,
+  },
+  selectionModeButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  folderButton: {
+    backgroundColor: "#10B981",
+  },
+  deleteButton: {
+    backgroundColor: "#EF4444",
+  },
+  selectioncancelButton: {
+    backgroundColor: "#F1F5F9",
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+  },
+
   // Additional styles for folder selection modal
   folderItem: {
     flexDirection: "row",
@@ -4257,19 +4523,6 @@ const styles = StyleSheet.create({
     right: 0,
     height: 20,
     backgroundColor: "rgba(255, 255, 255, 0.8)",
-  },
-  selectionModeActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  selectionModeButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: "#6A009C",
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
   },
 
   // New folder card header and options button styles
@@ -4601,17 +4854,6 @@ const styles = StyleSheet.create({
     fontFamily: "Inter-Medium",
     marginLeft: 14,
     flex: 1,
-  },
-
-  mainAddFab: {
-    backgroundColor: "#8B5CF6",
-    bottom: 100,
-    right: 24,
-    shadowColor: "#8B5CF6",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
   },
 
   fabButtonRotated: {
@@ -4971,5 +5213,50 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 4,
     opacity: 0.7,
+  },
+
+  // More Vert Menu styles (similar to task management)
+  moreVertOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
+    justifyContent: "flex-start",
+    alignItems: "flex-end",
+    paddingTop: Platform.OS === "ios" ? 120 : 100,
+    paddingRight: 20,
+  },
+
+  moreVertMenuContainer: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    paddingVertical: 8,
+    minWidth: 200,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    elevation: 12,
+    borderWidth: 1,
+    borderColor: "rgba(148, 163, 184, 0.1)",
+  },
+
+  moreVertMenuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F8FAFC",
+  },
+
+  moreVertMenuItemLast: {
+    borderBottomWidth: 0,
+  },
+
+  moreVertMenuText: {
+    fontSize: 15,
+    fontFamily: "Inter-Medium",
+    color: "#334155",
+    marginLeft: 12,
+    fontWeight: "500",
   },
 });
