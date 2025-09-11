@@ -14,32 +14,61 @@ interface LoadingScreenProps {
   message?: string;
   onAnimationComplete?: () => void;
   isVisible?: boolean;
+  showSuccessIcon?: boolean;
 }
 
 export default function LoadingScreen({ 
   message = "Loading...", 
   onAnimationComplete,
-  isVisible = true
+  isVisible = true,
+  showSuccessIcon = false
 }: LoadingScreenProps) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.8)).current;
+  const successFadeAnim = useRef(new Animated.Value(0)).current;
   const insets = useSafeAreaInsets();
   
   // Visibility control for smooth transitions
   useEffect(() => {
     if (isVisible) {
-      // Fade in animation
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
+      // Fade in animation with scale
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(scaleAnim, {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+      ]).start();
+      
+      // Show success icon briefly before exit if specified
+      if (showSuccessIcon) {
+        setTimeout(() => {
+          Animated.timing(successFadeAnim, {
+            toValue: 1,
+            duration: 300,
+            useNativeDriver: true,
+          }).start();
+        }, 1000);
+      }
     } else {
-      // Fade out animation
-      Animated.timing(fadeAnim, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }).start(() => {
+      // Fade out animation with scale
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+        Animated.timing(scaleAnim, {
+          toValue: 0.8,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
         if (onAnimationComplete) {
           onAnimationComplete();
         }
@@ -55,7 +84,7 @@ export default function LoadingScreen({
       setShouldRender(true);
     } else {
       // Delay hiding the component until fade out completes
-      setTimeout(() => setShouldRender(false), 300);
+      setTimeout(() => setShouldRender(false), 400);
     }
   }, [isVisible]);
 
@@ -69,6 +98,7 @@ export default function LoadingScreen({
         styles.overlay,
         {
           opacity: fadeAnim,
+          transform: [{ scale: scaleAnim }],
         }
       ]}
     >
@@ -82,13 +112,28 @@ export default function LoadingScreen({
       <View style={styles.blurBackground}>
         <SafeAreaView style={styles.container}>
           <View style={styles.content}>
-            {/* Simple Spinner */}
-            <View style={styles.spinnerContainer}>
+            {/* Spinner or Success Icon */}
+            <Animated.View style={[
+              styles.spinnerContainer,
+              { opacity: showSuccessIcon ? Animated.subtract(1, successFadeAnim) : 1 }
+            ]}>
               <ActivityIndicator 
                 size="large" 
                 color="rgba(255, 255, 255, 0.8)"
               />
-            </View>
+            </Animated.View>
+
+            {/* Success Icon */}
+            {showSuccessIcon && (
+              <Animated.View style={[
+                styles.successContainer,
+                { opacity: successFadeAnim }
+              ]}>
+                <View style={styles.successIcon}>
+                  <Text style={styles.checkmark}>✓</Text>
+                </View>
+              </Animated.View>
+            )}
 
             {/* Loading Text */}
             <Text style={styles.message}>{message}</Text>
@@ -128,6 +173,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 20,
+  },
+  successContainer: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  successIcon: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(16, 185, 129, 0.9)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  checkmark: {
+    fontSize: 30,
+    color: '#FFFFFF',
+    fontWeight: 'bold',
   },
   message: {
     fontSize: 16,

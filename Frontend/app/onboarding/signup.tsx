@@ -13,7 +13,6 @@ import {
   Animated,
   useWindowDimensions,
   ActivityIndicator,
-  SafeAreaView,
 } from "react-native";
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -76,6 +75,58 @@ export default function SignUp() {
   const [showLoadingScreen, setShowLoadingScreen] = useState(false);
   const [emailVerificationLoading, setEmailVerificationLoading] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
+
+  // Animation state
+  const [fadeAnim] = useState(new Animated.Value(0));
+  const [slideAnim] = useState(new Animated.Value(50));
+  const [headerFadeAnim] = useState(new Animated.Value(0));
+  const [formFadeAnim] = useState(new Animated.Value(0));
+  const [buttonScaleAnim] = useState(new Animated.Value(1));
+
+  // Animation effect
+  React.useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    // Staggered animations for form elements
+    Animated.sequence([
+      Animated.timing(headerFadeAnim, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.timing(formFadeAnim, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+
+  const animateButtonPress = () => {
+    Animated.sequence([
+      Animated.timing(buttonScaleAnim, {
+        toValue: 0.95,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.timing(buttonScaleAnim, {
+        toValue: 1,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
 
   // Password visibility toggles
   const [showPassword1, setShowPassword1] = useState(false);
@@ -276,7 +327,7 @@ export default function SignUp() {
   return (
     <>
       <StatusBar {...statusBarConfig} />
-      <SafeAreaView style={[styles.safeArea, safeAreaStyle]}>
+      <View style={[styles.safeArea, safeAreaStyle]}>
         <LinearGradient
           colors={['#FAF5FF', '#F3E8FF'] as const}
           style={styles.container}
@@ -296,15 +347,20 @@ export default function SignUp() {
               ]}
               showsVerticalScrollIndicator={false}
         >
-          <View style={[
+          <Animated.View style={[
             styles.formContainer,
             {
               paddingHorizontal: isLandscape ? width * 0.1 : 24,
               maxWidth: isLandscape ? width : '100%',
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
             }
           ]}>
             {/* Header Section */}
-            <View style={styles.headerSection}>
+            <Animated.View style={[
+              styles.headerSection,
+              { opacity: headerFadeAnim }
+            ]}>
               <Text style={[
                 styles.welcomeTitle,
                 {
@@ -319,10 +375,13 @@ export default function SignUp() {
                   marginBottom: isLandscape ? 20 : 32,
                 }
               ]}>Join us and start organizing your life</Text>
-            </View>
+            </Animated.View>
 
             {/* Form Section */}
-            <View style={styles.formSection}>
+            <Animated.View style={[
+              styles.formSection,
+              { opacity: formFadeAnim }
+            ]}>
               {/* Username Input */}
               <View style={[
                 styles.inputContainer,
@@ -461,27 +520,34 @@ export default function SignUp() {
               </View>
 
               {/* Sign Up Button */}
-              <TouchableOpacity
-                style={[
-                  styles.signUpButton,
-                  {
-                    paddingVertical: isLandscape ? 12 : 16,
-                    marginBottom: isLandscape ? 12 : 16,
-                    opacity: (loading || isGoogleLoading) ? 0.7 : 1,
-                  }
-                ]}
-                onPress={handleSignUpInitiate}
-                disabled={loading || isGoogleLoading}
-              >
-                {loading ? (
-                  <ActivityIndicator color={OnboardingColors.text.white} size="small" />
-                ) : (
-                  <Text style={[
-                    styles.buttonText,
-                    { fontSize: isLandscape ? 15 : 16 }
-                  ]}>Create Account</Text>
-                )}
-              </TouchableOpacity>
+              <Animated.View style={[
+                { transform: [{ scale: buttonScaleAnim }] }
+              ]}>
+                <TouchableOpacity
+                  style={[
+                    styles.signUpButton,
+                    {
+                      paddingVertical: isLandscape ? 12 : 16,
+                      marginBottom: isLandscape ? 12 : 16,
+                      opacity: (loading || isGoogleLoading) ? 0.7 : 1,
+                    }
+                  ]}
+                  onPress={() => {
+                    animateButtonPress();
+                    handleSignUpInitiate();
+                  }}
+                  disabled={loading || isGoogleLoading}
+                >
+                  {loading ? (
+                    <ActivityIndicator color={OnboardingColors.text.white} size="small" />
+                  ) : (
+                    <Text style={[
+                      styles.buttonText,
+                      { fontSize: isLandscape ? 15 : 16 }
+                    ]}>Create Account</Text>
+                  )}
+                </TouchableOpacity>
+              </Animated.View>
 
               {/* Divider */}
               <View style={[
@@ -553,8 +619,8 @@ export default function SignUp() {
                   ]}>Sign In</Text>
                 </TouchableOpacity>
               </View>
-            </View>
-          </View>
+            </Animated.View>
+          </Animated.View>
 
           {/* Email Verification Modal */}
           <EmailVerificationModal
@@ -572,7 +638,7 @@ export default function SignUp() {
         </ScrollView>
       </KeyboardAvoidingView>
     </LinearGradient>
-    </SafeAreaView>
+    </View>
     </>
   );
 }

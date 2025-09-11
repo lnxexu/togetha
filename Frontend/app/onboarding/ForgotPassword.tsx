@@ -17,7 +17,6 @@ import {
   Modal,
   Image,
   Animated,
-  SafeAreaView,
 } from "react-native";
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -293,7 +292,7 @@ export default function ForgotPassword() {
   return (
     <>
       <StatusBar {...statusBarConfig} />
-      <SafeAreaView style={getSafeAreaContainerStyle('onboarding')}>
+      <View style={getSafeAreaContainerStyle('onboarding')}>
         <LinearGradient
           colors={OnboardingColors.background.gradient as [string, string]}
           style={styles.container}
@@ -624,7 +623,7 @@ export default function ForgotPassword() {
       </ScrollView>
     </KeyboardAvoidingView>
     </LinearGradient>
-    </SafeAreaView>
+    </View>
     </>
   );
 }

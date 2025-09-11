@@ -15,7 +15,7 @@ import {
   useWindowDimensions,
   ScrollView,
   Platform,
-  SafeAreaView,
+  Animated,
 } from "react-native";
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -30,6 +30,7 @@ import {
 } from "../utils/ToastUtils";
 import LoadingScreen from '../components/LoadingScreen';
 import { getEnhancedSafeAreaConfig, getStatusBarConfig, getSafeAreaContainerStyle, getPlatformShadow } from '../utils/SafeAreaUtils';
+import { WelcomeAnimationUtils } from '../utils/WelcomeAnimationUtils';
 
 
 export default function SignIn() {
@@ -50,6 +51,61 @@ export default function SignIn() {
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
+  // Animation state
+  const [fadeAnim] = useState(new Animated.Value(0));
+  const [headerFadeAnim] = useState(new Animated.Value(0));
+  const [formFadeAnim] = useState(new Animated.Value(0));
+  const [buttonScaleAnim] = useState(new Animated.Value(1));
+
+  // Animation effect
+  React.useEffect(() => {
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 800,
+      useNativeDriver: true,
+    }).start();
+
+    // Staggered animations for form elements
+    Animated.sequence([
+      Animated.timing(headerFadeAnim, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.timing(formFadeAnim, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+
+  const animateButtonPress = () => {
+    Animated.sequence([
+      Animated.timing(buttonScaleAnim, {
+        toValue: 0.95,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.timing(buttonScaleAnim, {
+        toValue: 1,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
+  const animateExitAndNavigate = (routeName: string) => {
+    // Set the flag that we're coming from login
+    WelcomeAnimationUtils.setFromLogin(true);
+    
+    // Navigate immediately without fade-out animation
+    navigation.reset({
+      index: 0,
+      routes: [{ name: routeName as keyof RootStackParamList }],
+    });
+  };
+
   const handleGoogleSignIn = async () => {
     try {
       setIsGoogleLoading(true);
@@ -63,13 +119,10 @@ export default function SignIn() {
         
         showSuccessToast(`Welcome ${result.user?.name || 'User'}! 🎉`);
         
-        // Show loading screen then navigate
+        // Show loading screen then navigate with animation
         setTimeout(() => {
           setShowLoadingScreen(false);
-          navigation.reset({
-            index: 0,
-            routes: [{ name: "Home" }],
-          });
+          animateExitAndNavigate("Home");
         }, 2000);
       } else {
         throw new Error(result.error || 'Google sign-in failed');
@@ -110,14 +163,10 @@ export default function SignIn() {
 
         showSuccessToast("Login successful! Welcome back.");
 
-        // Show loading screen for 2 seconds then navigate
+        // Show loading screen for 2 seconds then navigate with animation
         setTimeout(() => {
           setShowLoadingScreen(false);
-          // Force reload app state by resetting to Home screen
-          navigation.reset({
-            index: 0,
-            routes: [{ name: "Home" }],
-          });
+          animateExitAndNavigate("Home");
         }, 2000);
       } catch (loginError: any) {
         clearTimeout(timeoutId);
@@ -157,13 +206,10 @@ export default function SignIn() {
                       
                       showSuccessToast("Successfully logged in!");
                       
-                      // Show loading screen then navigate
+                      // Show loading screen then navigate with animation
                       setTimeout(() => {
                         setShowLoadingScreen(false);
-                        navigation.reset({
-                          index: 0,
-                          routes: [{ name: "Home" }],
-                        });
+                        animateExitAndNavigate("Home");
                       }, 2000);
                     } else {
                       showErrorToast(
@@ -199,7 +245,7 @@ export default function SignIn() {
       <StatusBar {...statusBarConfig} />
       
       {/* Main Content */}
-      <SafeAreaView style={[styles.safeArea, safeAreaStyle]}>
+      <View style={[styles.safeArea, safeAreaStyle]}>
         <LinearGradient
           colors={['#FAF5FF', '#F3E8FF'] as const}
           style={styles.container}
@@ -215,15 +261,19 @@ export default function SignIn() {
             ]}
             showsVerticalScrollIndicator={false}
           >
-        <View style={[
+        <Animated.View style={[
           styles.formContainer,
           {
             paddingHorizontal: isLandscape ? width * 0.1 : 24,
             maxWidth: isLandscape ? width : '100%',
+            opacity: fadeAnim,
           }
         ]}>
           {/* Header Section */}
-          <View style={styles.headerSection}>
+          <Animated.View style={[
+            styles.headerSection,
+            { opacity: headerFadeAnim }
+          ]}>
             <Text style={[
               styles.welcomeTitle,
               {
@@ -238,7 +288,7 @@ export default function SignIn() {
                 marginBottom: isLandscape ? 15 : 24,
               }
             ]}>Sign in to continue your journey</Text>
-          </View>
+          </Animated.View>
 
           {/* Illustration */}
           <View style={styles.illustrationContainer}>
@@ -257,7 +307,10 @@ export default function SignIn() {
           ) : null}
 
           {/* Form Section */}
-          <View style={styles.formSection}>
+          <Animated.View style={[
+            styles.formSection,
+            { opacity: formFadeAnim }
+          ]}>
             {/* Username Input */}
             <View style={[
               styles.inputContainer,
@@ -341,28 +394,35 @@ export default function SignIn() {
             </TouchableOpacity>
 
             {/* Sign In Button */}
-            <TouchableOpacity
-              style={[
-                styles.signInButton,
-                {
-                  paddingVertical: isLandscape ? 12 : 16,
-                  marginTop: isLandscape ? 12 : 20,
-                  marginBottom: isLandscape ? 12 : 16,
-                  opacity: (isLoading || isGoogleLoading) ? 0.7 : 1,
-                }
-              ]}
-              onPress={handleLogin}
-              disabled={isLoading || isGoogleLoading}
-            >
-              {isLoading ? (
-                <ActivityIndicator color={OnboardingColors.text.white} size="small" />
-              ) : (
-                <Text style={[
-                  styles.buttonText,
-                  { fontSize: isLandscape ? 15 : 16 }
-                ]}>Sign In</Text>
-              )}
-            </TouchableOpacity>
+            <Animated.View style={[
+              { transform: [{ scale: buttonScaleAnim }] }
+            ]}>
+              <TouchableOpacity
+                style={[
+                  styles.signInButton,
+                  {
+                    paddingVertical: isLandscape ? 12 : 16,
+                    marginTop: isLandscape ? 12 : 20,
+                    marginBottom: isLandscape ? 12 : 16,
+                    opacity: (isLoading || isGoogleLoading) ? 0.7 : 1,
+                  }
+                ]}
+                onPress={() => {
+                  animateButtonPress();
+                  handleLogin();
+                }}
+                disabled={isLoading || isGoogleLoading}
+              >
+                {isLoading ? (
+                  <ActivityIndicator color={OnboardingColors.text.white} size="small" />
+                ) : (
+                  <Text style={[
+                    styles.buttonText,
+                    { fontSize: isLandscape ? 15 : 16 }
+                  ]}>Sign In</Text>
+                )}
+              </TouchableOpacity>
+            </Animated.View>
 
             {/* Divider */}
             <View style={[
@@ -434,17 +494,18 @@ export default function SignIn() {
                 ]}>Sign Up</Text>
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
+          </Animated.View>
+        </Animated.View>
       </ScrollView>
     </LinearGradient>
-    </SafeAreaView>
+    </View>
 
     {/* Loading Screen Overlay */}
     {showLoadingScreen && (
       <LoadingScreen 
         message="Signing You In"
         isVisible={showLoadingScreen}
+        showSuccessIcon={false}
         onAnimationComplete={() => {
         }}
       />
@@ -544,7 +605,7 @@ const styles = StyleSheet.create({
   },
   forgotPasswordContainer: {
     alignSelf: "flex-end",
-    marginBottom: 24,
+    marginBottom: 5,
   },
   forgotPassword: {
     color: OnboardingColors.primary.main,
