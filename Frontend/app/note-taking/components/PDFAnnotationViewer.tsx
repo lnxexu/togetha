@@ -12,16 +12,19 @@ import {
   Platform,
   Animated,
   StatusBar,
+  ActivityIndicator,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import Pdf from "react-native-pdf";
 import { ScrollView } from "react-native";
-import { MaterialIcons, Ionicons } from "@expo/vector-icons";
+import { MaterialIcons, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import Svg, { Rect, Circle, Path, Text as SvgText } from "react-native-svg";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as FileSystem from "expo-file-system";
 import { PDFDocument as PDFLibDocument, rgb as pdfLibRgb } from "pdf-lib";
 import * as Sharing from "expo-sharing";
+import { drawingAPI, PDFSaveOptions } from '../services/drawingAPI';
+import { embedAnnotationsInPDF, saveAnnotationsDirectlyToPDF, createPDFBackup, PDFAnnotation } from '../utils/pdfUtils';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
@@ -29,22 +32,28 @@ interface Annotation {
   id: string;
   type: "highlight" | "note" | "text" | "pen" | "brush" | "pencil";
   page: number;
-  x: number;
-  y: number;
-  width?: number;
-  height?: number;
+  x: number; // Percentage of PDF page width (0-1)
+  y: number; // Percentage of PDF page height (0-1)
+  width?: number; // Percentage of PDF page width (0-1)
+  height?: number; // Percentage of PDF page height (0-1)
   color: string;
   text?: string;
-  path?: string;
+  path?: string; // SVG path with normalized coordinates (0-1)
   strokeWidth?: number;
   pressure?: number[];
   timestamp: number;
+  // Legacy fields - kept for backward compatibility
+  zoomLevel?: number;
+  pdfScale?: number;
 }
 
 interface PDFAnnotationViewerProps {
   source: { uri: string };
   fileName: string;
   onClose: () => void;
+  noteId?: string; // Optional note ID for backend integration
+  enableDirectSave?: boolean; // Whether to save annotations directly to PDF
+  autoSave?: boolean; // Whether to auto-save annotations
 }
 
 const ANNOTATION_COLORS = [
@@ -58,10 +67,18 @@ const ANNOTATION_COLORS = [
   "#A8E6CF", // Light Green
 ];
 
+// Configuration: control whether visual thickness / font sizes scale with PDF zoom.
+// When false, annotations remain visually stable (positions still follow zoom via coordinate conversion)
+// preventing highlights, pen strokes, note bubbles from becoming thicker when zooming.
+const SCALE_STROKES_WITH_ZOOM = false;
+
 const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   source,
   fileName,
   onClose,
+  noteId,
+  enableDirectSave = true,
+  autoSave = true,
 }) => {
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -85,6 +102,19 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
+  // PDF transformation state for zoom/pan synchronization
+  const [pdfTransform, setPdfTransform] = useState({
+    scale: 1,
+    translateX: 0,
+    translateY: 0,
+  });
+
+  // Direct PDF annotation state
+  const [isSavingToPDF, setIsSavingToPDF] = useState(false);
+  const [lastSavedPath, setLastSavedPath] = useState<string | null>(null);
+  const [saveMode, setSaveMode] = useState<'overlay' | 'direct'>('direct');
+  const [showSaveModeModal, setShowSaveModeModal] = useState(false);
+
   // Folder and tag states for metadata
   const [folders, setFolders] = useState<any[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
@@ -96,6 +126,14 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   
   // Sync status state
   const [syncStatus, setSyncStatus] = useState<"saved" | "syncing" | "offline">("saved");
+
+  // PDF viewport tracking
+  const [pdfDimensions, setPdfDimensions] = useState({ width: screenWidth, height: screenHeight - 300 });
+  const [scrollOffset, setScrollOffset] = useState({ x: 0, y: 0 });
+  
+  // Actual PDF page dimensions (from the PDF file itself)
+  const [pdfPageDimensions, setPdfPageDimensions] = useState({ width: 595, height: 842 }); // Default A4 size in points
+  const [pdfViewerBounds, setPdfViewerBounds] = useState({ width: screenWidth, height: screenHeight - 300 });
 
   // Create source object for PDF loading (now always local)
   const enhancedSource = React.useMemo(() => {
@@ -182,10 +220,37 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     try {
       const stored = await AsyncStorage.getItem(annotationStorageKey);
       if (stored) {
-        setAnnotations(JSON.parse(stored));
+        const loadedAnnotations = JSON.parse(stored) as Annotation[];
+        
+        // Validate and normalize loaded annotations to ensure they use percentage coordinates
+        const normalizedAnnotations = loadedAnnotations.map(ann => {
+          // Validate annotation coordinates are in percentage range (0-1)
+          if (ann.x !== undefined && ann.y !== undefined) {
+            // If coordinates are outside 0-1 range, they might be legacy pixel coordinates
+            if (ann.x > 1 || ann.y > 1) {
+              console.warn('Legacy pixel coordinates detected for annotation:', ann.id, 'Converting...');
+              // For legacy data, attempt basic conversion (this is approximate)
+              ann.x = Math.min(1, Math.max(0, ann.x / (screenWidth || 400)));
+              ann.y = Math.min(1, Math.max(0, ann.y / ((screenHeight - 300) || 600)));
+            }
+          }
+          
+          // Validate width/height are also in percentage range
+          if (ann.width !== undefined && ann.width > 1) {
+            ann.width = Math.min(1, ann.width / (screenWidth || 400));
+          }
+          if (ann.height !== undefined && ann.height > 1) {
+            ann.height = Math.min(1, ann.height / ((screenHeight - 300) || 600));
+          }
+          
+          return ann;
+        });
+        
+        setAnnotations(normalizedAnnotations);
+        console.log('✅ Loaded annotations from AsyncStorage:', normalizedAnnotations.length, 'items');
       }
     } catch (error) {
-      console.error("Error loading annotations:", error);
+      console.error("❌ Error loading annotations:", error);
     }
   };
 
@@ -201,20 +266,124 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     }
   };
 
+  // Persist annotations both locally (AsyncStorage) and optionally to backend (when noteId provided)
+  // All annotations MUST store coordinates & dimensions as normalized percentages (0-1) relative to the PDF page.
   const saveAnnotationsWithChanges = async (newAnnotations: Annotation[]) => {
     try {
-      setAnnotations(newAnnotations);
+      // Normalize & validate before saving to guarantee percentage storage.
+      const validatedAnnotations = newAnnotations.map(ann => {
+        const clone: Annotation = { ...ann };
+
+        // Ensure path-based annotations already use normalized (0-1) coordinates.
+        if (clone.path && /\d/.test(clone.path)) {
+          // Heuristic check: if any coordinate exceeds 1 it's legacy pixel data -> re-normalize.
+          if (/([0-9]+\.[0-9]+|[0-9]+)/.test(clone.path)) {
+            const needsNormalization = clone.path.split(/[ML]/).some(seg => {
+              const parts = seg.trim().split(',');
+              if (parts.length === 2) {
+                const x = parseFloat(parts[0]);
+                const y = parseFloat(parts[1]);
+                return x > 1 || y > 1; // pixel style
+              }
+              return false;
+            });
+            if (needsNormalization) {
+              console.warn('⚠️ Legacy path detected – converting to normalized % coordinates.');
+              clone.path = convertPathToNormalized(clone.path);
+            }
+          }
+        }
+
+        // Clamp numeric percentage fields.
+        if (typeof clone.x === 'number') clone.x = Math.min(1, Math.max(0, clone.x));
+        if (typeof clone.y === 'number') clone.y = Math.min(1, Math.max(0, clone.y));
+        if (typeof clone.width === 'number') clone.width = Math.min(1, Math.max(0, clone.width));
+        if (typeof clone.height === 'number') clone.height = Math.min(1, Math.max(0, clone.height));
+
+        // Logging for debugging & auditing persisted data.
+        if (clone.x !== undefined && clone.y !== undefined) {
+          console.log(`📍 Annotation(${clone.type}) % coords: x=${clone.x.toFixed(4)}, y=${clone.y.toFixed(4)}`);
+        }
+        if (clone.path) {
+          const pathSample = clone.path.substring(0, 60) + (clone.path.length > 60 ? '…' : '');
+            console.log(`✏️ Path (${clone.type}) normalized sample: ${pathSample}`);
+        }
+        return clone;
+      });
+      
+      // Update state first
+      setAnnotations(validatedAnnotations);
+      
+      // IMMEDIATELY save to AsyncStorage for persistence across reloads
+      await AsyncStorage.setItem(
+        annotationStorageKey,
+        JSON.stringify(validatedAnnotations)
+      );
+      
+      // Verify the save was successful by reading it back
+      const savedData = await AsyncStorage.getItem(annotationStorageKey);
+      const parsedData = savedData ? JSON.parse(savedData) : [];
+      
+      if (parsedData.length !== validatedAnnotations.length) {
+        throw new Error("Save verification failed - annotation count mismatch");
+      }
+      
+      console.log('✅ Annotations saved to AsyncStorage (percentage-based):', validatedAnnotations.length, 'items');
+      
       setHasUnsavedChanges(true);
       
-      // Auto-save after 2 seconds of no changes
+      // Auto-save after 2 seconds of no changes (for PDF export if enabled)
       if (autoSaveTimeoutRef.current) {
         clearTimeout(autoSaveTimeoutRef.current);
       }
-      autoSaveTimeoutRef.current = setTimeout(() => {
-        handleSaveAnnotations();
-      }, 2000);
+      
+      if (autoSave) {
+        autoSaveTimeoutRef.current = setTimeout(() => {
+          handleSaveAnnotations();
+        }, 2000);
+      }
+
+      // Fire-and-forget backend sync (optional) – ensures persistence server-side.
+      if (noteId) {
+        syncAnnotationsToBackend(validatedAnnotations).catch(err => {
+          console.warn('Backend annotation sync failed (non-blocking):', err);
+        });
+      }
     } catch (error) {
-      console.error("Error updating annotations:", error);
+      console.error("❌ Error saving annotations to AsyncStorage:", error);
+      Alert.alert("Save Error", "Failed to save annotations. Please try again.");
+      // Rollback state change if save failed
+      await loadAnnotations();
+    }
+  };
+
+  // Sends annotations to backend by converting to stroke format used by existing drawing API.
+  // This keeps server implementation unified. Non-blocking; errors logged only.
+  const syncAnnotationsToBackend = async (anns: Annotation[]) => {
+    if (!noteId) return; // No backend context
+    try {
+      // Convert PDF annotations to drawing strokes using drawingAPI logic
+      const pdfAnnotations: PDFAnnotation[] = anns.map(a => ({
+        id: a.id,
+        type: a.type as PDFAnnotation['type'],
+        page: a.page,
+        x: a.x || 0,
+        y: a.y || 0,
+        color: a.color,
+        path: a.path,
+        strokeWidth: a.strokeWidth,
+        timestamp: a.timestamp,
+      }));
+      // Reuse existing savePDFAnnotationsWithBackend for consistency; set lightweight options.
+      await drawingAPI.savePDFAnnotationsWithBackend(
+        noteId,
+        source.uri,
+        pdfAnnotations,
+        { createBackup: false, saveDirectly: false }
+      );
+      console.log('🌐 Backend sync complete for annotations:', pdfAnnotations.length);
+    } catch (err) {
+      console.warn('⚠️ Non-fatal backend sync error:', err);
     }
   };
 
@@ -222,15 +391,77 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     if (!hasUnsavedChanges) return;
     
     try {
-      // Save annotations to AsyncStorage
-      await AsyncStorage.setItem(annotationStorageKey, JSON.stringify(annotations));
-      setHasUnsavedChanges(false);
+      setIsSavingToPDF(true);
       
-      // Optional: Show success feedback
-      console.log("Annotations saved successfully!");
+      if (saveMode === 'direct' && enableDirectSave) {
+        // Save annotations directly to PDF
+        await saveAnnotationsDirectlyToPDF(annotations);
+      } else {
+        // Save annotations as overlays (traditional method)
+        await AsyncStorage.setItem(annotationStorageKey, JSON.stringify(annotations));
+      }
+      
+      setHasUnsavedChanges(false);
+      console.log(`Annotations saved successfully using ${saveMode} mode!`);
+      
     } catch (error) {
       console.error("Error saving annotations:", error);
-      Alert.alert("Error", "Failed to save annotations. Please try again.");
+      Alert.alert("Error", `Failed to save annotations using ${saveMode} mode. Please try again.`);
+    } finally {
+      setIsSavingToPDF(false);
+    }
+  };
+
+  const saveAnnotationsDirectlyToPDF = async (annotationsToSave: Annotation[]) => {
+    try {
+      console.log('Saving annotations directly to PDF...');
+      
+      // Convert UI annotations to PDF annotations format
+      const pdfAnnotations: PDFAnnotation[] = annotationsToSave.map(annotation => ({
+        ...annotation,
+        type: annotation.type as PDFAnnotation['type']
+      }));
+
+      const saveOptions: PDFSaveOptions = {
+        createBackup: true,
+        saveDirectly: false, // Create new file to preserve original
+        outputFileName: `annotated_${Date.now()}_${fileName}`
+      };
+
+      let result;
+      
+      if (noteId) {
+        // Save to both backend and PDF
+        result = await drawingAPI.savePDFAnnotationsWithBackend(
+          noteId, 
+          source.uri, 
+          pdfAnnotations, 
+          saveOptions
+        );
+      } else {
+        // Save only to PDF
+        result = await drawingAPI.savePDFAnnotations(source.uri, pdfAnnotations, saveOptions);
+      }
+
+      setLastSavedPath(result.savedPath);
+      console.log('Annotations successfully embedded in PDF:', result.savedPath);
+      
+      // Show success message
+      Alert.alert(
+        "Success", 
+        `Annotations have been embedded directly into the PDF!\n\nSaved as: ${result.savedPath.split('/').pop()}`,
+        [
+          { text: "OK" },
+          {
+            text: "Open Location",
+            onPress: () => console.log("PDF saved at:", result.savedPath),
+          },
+        ]
+      );
+
+    } catch (error) {
+      console.error('Error saving annotations to PDF:', error);
+      throw error;
     }
   };
 
@@ -280,8 +511,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
           text: "Clear All",
           style: "destructive",
           onPress: () => {
-            setAnnotations([]);
-            setHasUnsavedChanges(true);
+            saveAnnotationsWithChanges([]);
             Alert.alert("Success", "All annotations have been cleared.");
           }
         }
@@ -305,18 +535,31 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     );
   };
 
-  const onPdfLoadComplete = (numberOfPages: number, filePath: string) => {
-    console.log("onPdfLoadComplete called with:", { numberOfPages, filePath });
+  const onPdfLoadComplete = (numberOfPages: number, filePath: string, { width, height }: { width?: number, height?: number } = {}) => {
+    console.log("onPdfLoadComplete called with:", { numberOfPages, filePath, width, height });
     setTotalPages(numberOfPages);
     setIsLoading(false);
     setHasError(false);
+    
+    // Set actual PDF page dimensions if available
+    if (width && height) {
+      console.log("Setting PDF page dimensions:", { width, height });
+      setPdfPageDimensions({ width, height });
+    }
+    
+    // Update PDF viewer bounds for accurate coordinate conversion
+    const viewerWidth = screenWidth;
+    const viewerHeight = screenHeight - 300; // Account for header and toolbar
+    setPdfViewerBounds({ width: viewerWidth, height: viewerHeight });
+    
+    console.log("PDF viewer bounds set:", { width: viewerWidth, height: viewerHeight });
     console.log(
       "PDF loaded successfully:",
       numberOfPages,
       "pages from:",
       filePath
     );
-    console.log("Loading state set to false, hasError set to false");
+    console.log("✅ Coordinate system ready - annotations will use percentage-based coordinates (0-1)");
   };
 
   const onPdfLoadProgress = (percent: number) => {
@@ -360,7 +603,13 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   };
 
   const onPdfScaleChanged = (scale: number) => {
+    console.log('PDF Scale Changed:', scale);
     setPdfScale(scale);
+    setZoomLevel(scale);
+    setPdfTransform(prev => ({ ...prev, scale }));
+    
+    // Force re-render of annotations to match the new PDF scale
+    setAnnotations(prev => [...prev]);
   };
 
   // Tag management functions
@@ -426,19 +675,52 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     setShowFolderModal(false);
   };
 
-  // Zoom control functions
+  // Zoom control functions - now working with PDF ref
   const handleZoomIn = () => {
-    const newZoom = Math.min(zoomLevel + 0.25, 3); // Max zoom 3x
+    const newZoom = Math.min(zoomLevel * 1.25, 3); // Max zoom 3x
     setZoomLevel(newZoom);
+    setPdfTransform(prev => ({ ...prev, scale: newZoom }));
+    
+    // Try to control PDF zoom via ref if methods are available
+    if (pdfRef.current) {
+      try {
+        // Some PDF libraries support setNativeProps for zoom
+        (pdfRef.current as any).setNativeProps?.({ zoom: newZoom });
+      } catch (error) {
+        console.log('PDF zoom control not available via ref:', error);
+      }
+    }
   };
 
   const handleZoomOut = () => {
-    const newZoom = Math.max(zoomLevel - 0.25, 0.5); // Min zoom 0.5x
+    const newZoom = Math.max(zoomLevel * 0.8, 0.5); // Min zoom 0.5x
     setZoomLevel(newZoom);
+    setPdfTransform(prev => ({ ...prev, scale: newZoom }));
+    
+    // Try to control PDF zoom via ref if methods are available
+    if (pdfRef.current) {
+      try {
+        // Some PDF libraries support setNativeProps for zoom
+        (pdfRef.current as any).setNativeProps?.({ zoom: newZoom });
+      } catch (error) {
+        console.log('PDF zoom control not available via ref:', error);
+      }
+    }
   };
 
   const resetZoom = () => {
     setZoomLevel(1);
+    setPdfTransform({ scale: 1, translateX: 0, translateY: 0 });
+    
+    // Try to reset PDF zoom via ref if methods are available
+    if (pdfRef.current) {
+      try {
+        // Some PDF libraries support setNativeProps for zoom
+        (pdfRef.current as any).setNativeProps?.({ zoom: 1 });
+      } catch (error) {
+        console.log('PDF zoom reset not available via ref:', error);
+      }
+    }
   };
 
   // Pan responder for drawing and annotations
@@ -450,25 +732,21 @@ const panResponder = PanResponder.create({
       const { locationX, locationY } = evt.nativeEvent;
       const pressure = (evt.nativeEvent as any).force || 1;
       
-      // Convert screen coordinates to normalized PDF coordinates (0-1 range)
-      // This ensures annotations stay in the same relative position when zooming
-      const normalizedX = locationX / screenWidth;
-      const normalizedY = locationY / (screenHeight - 300); // Account for UI elements
-      
-      // Store as actual pixel coordinates for immediate use
-      const pdfX = locationX;
-      const pdfY = locationY;
-
       if (selectedTool === "note") {
-        setNotePosition({ x: normalizedX, y: normalizedY });
+        // Convert to normalized coordinates for consistent positioning
+        const coords = screenToPDFCoordinates(locationX, locationY);
+        setNotePosition({ x: coords.normalizedX, y: coords.normalizedY });
         setShowNoteModal(true);
       } else if (selectedTool === "text") {
-        setNotePosition({ x: normalizedX, y: normalizedY });
+        // Convert to normalized coordinates for consistent positioning
+        const coords = screenToPDFCoordinates(locationX, locationY);
+        setNotePosition({ x: coords.normalizedX, y: coords.normalizedY });
         setShowNoteModal(true);
       } else if (selectedTool === "highlight" || selectedTool === "eraser" || 
                  selectedTool === "pen" || selectedTool === "brush" || selectedTool === "pencil") {
         setIsDrawing(true);
-        setCurrentPath(`M${pdfX},${pdfY}:${pressure}`);
+        // Use screen coordinates for path data, will be normalized later
+        setCurrentPath(`M${locationX},${locationY}:${pressure}`);
       }
     },
 
@@ -478,10 +756,8 @@ const panResponder = PanResponder.create({
         const { locationX, locationY } = evt.nativeEvent;
         const pressure = (evt.nativeEvent as any).force || 1;
         
-        // Use actual pixel coordinates for drawing
-        const pdfX = locationX;
-        const pdfY = locationY;
-        setCurrentPath((prev) => `${prev} L${pdfX},${pdfY}:${pressure}`);
+        // Use screen coordinates for path data, will be normalized later
+        setCurrentPath((prev) => `${prev} L${locationX},${locationY}:${pressure}`);
       }
     },
 
@@ -500,22 +776,106 @@ const panResponder = PanResponder.create({
     },
   });
 
+  // ---------------------------------------------------------------------------
+  // Coordinate System Helpers
+  // ---------------------------------------------------------------------------
+  // Internally ALL annotations store geometry in normalized percentage space
+  // relative to the underlying PDF page (0 - 1 for x/y/width/height and path points).
+  // This makes annotations:
+  //   • Resolution & device independent
+  //   • Stable across orientation / layout changes
+  //   • Easier to embed into PDFs (device pixels not required)
+  // On interaction we convert screen -> % for storage. On render we convert
+  // % -> screen using current pdfScale and the measured viewer bounds.
+  // ---------------------------------------------------------------------------
+  // Convert screen coordinates to PDF page coordinates (0-1 normalized percentages)
+  const screenToPDFCoordinates = (screenX: number, screenY: number) => {
+    // Get the current PDF viewer dimensions - these should match the actual PDF container size
+    const viewerWidth = pdfViewerBounds.width || screenWidth;
+    const viewerHeight = pdfViewerBounds.height || (screenHeight - 300);
+    
+    // Account for current PDF zoom/scale when converting coordinates
+    // We need to normalize based on the actual PDF page content, not just the viewer
+    const effectiveViewerWidth = viewerWidth / (pdfScale || 1);
+    const effectiveViewerHeight = viewerHeight / (pdfScale || 1);
+    
+    // Convert screen coordinates to normalized coordinates (0-1) relative to PDF page
+    const normalizedX = Math.max(0, Math.min(1, screenX / effectiveViewerWidth));
+    const normalizedY = Math.max(0, Math.min(1, screenY / effectiveViewerHeight));
+    
+    console.log("screenToPDF (percentage-based):", {
+      screen: { x: screenX, y: screenY },
+      viewer: { width: viewerWidth, height: viewerHeight },
+      effective: { width: effectiveViewerWidth, height: effectiveViewerHeight },
+      scale: pdfScale,
+      normalized: { x: normalizedX, y: normalizedY }
+    });
+    
+    return {
+      normalizedX: normalizedX,
+      normalizedY: normalizedY
+    };
+  };
+
+  // Convert normalized PDF coordinates (0-1 percentages) back to current screen coordinates
+  const pdfToScreenCoordinates = (normalizedX: number, normalizedY: number) => {
+    // Get the current PDF viewer dimensions
+    const viewerWidth = pdfViewerBounds.width || screenWidth;
+    const viewerHeight = pdfViewerBounds.height || (screenHeight - 300);
+    
+    // Convert normalized coordinates (percentages) to screen coordinates
+    // Apply current PDF zoom level for proper positioning
+  // Positions track zoom so they stay anchored to underlying PDF content
+  const screenX = normalizedX * viewerWidth * (pdfScale || 1);
+  const screenY = normalizedY * viewerHeight * (pdfScale || 1);
+    
+    console.log("pdfToScreen (percentage-based):", {
+      normalized: { x: normalizedX, y: normalizedY },
+      viewer: { width: viewerWidth, height: viewerHeight },
+      scale: pdfScale,
+      screen: { x: screenX, y: screenY }
+    });
+    
+    return {
+      screenX: screenX,
+      screenY: screenY
+    };
+  };
+
   const addPenAnnotation = (path: string, penType: "pen" | "brush" | "pencil") => {
-    // Convert path coordinates to normalized coordinates
+    // Convert path coordinates to PDF page percentages for storage
     const normalizedPath = convertPathToNormalized(path);
-    const pathWithPressure = path;
-    const pressureData = extractPressureFromPath(path);
     
     const newAnnotation: Annotation = {
       id: Date.now().toString(),
       type: penType,
       page: currentPage,
-      x: 0,
-      y: 0,
+      x: 0, // Will be calculated from path bounds if needed
+      y: 0, // Will be calculated from path bounds if needed
       color: selectedColor,
-      path: normalizedPath,
+      path: normalizedPath, // SVG path with percentage coordinates (0-1)
       strokeWidth,
-      pressure: pressureData,
+      pressure: extractPressureFromPath(path),
+      timestamp: Date.now(),
+    };
+
+    const updated = [...annotations, newAnnotation];
+    saveAnnotationsWithChanges(updated);
+  };
+
+  const addFreehandHighlight = (path: string) => {
+    // Convert path coordinates to PDF page percentages for storage
+    const normalizedPath = convertPathToNormalized(path);
+    
+    const newAnnotation: Annotation = {
+      id: Date.now().toString(),
+      type: "highlight",
+      page: currentPage,
+      x: 0, // Will be calculated from path bounds if needed
+      y: 0, // Will be calculated from path bounds if needed
+      color: selectedColor,
+      path: normalizedPath, // SVG path with percentage coordinates (0-1)
+      strokeWidth,
       timestamp: Date.now(),
     };
 
@@ -554,12 +914,16 @@ const panResponder = PanResponder.create({
       if (part === 'M' || part === 'L') {
         normalizedPath += part;
       } else if (part && part.trim()) {
-        // This is a coordinate pair - normalize it
+        // This is a coordinate pair - convert to normalized coordinates
         const coords = part.trim().split(',');
         if (coords.length === 2) {
-          const normalizedX = parseFloat(coords[0]) / screenWidth;
-          const normalizedY = parseFloat(coords[1]) / (screenHeight - 300);
-          normalizedPath += `${normalizedX},${normalizedY}`;
+          const screenX = parseFloat(coords[0]);
+          const screenY = parseFloat(coords[1]);
+          
+          // Convert screen coordinates to normalized (0-1) coordinates
+          const convertedCoords = screenToPDFCoordinates(screenX, screenY);
+          
+          normalizedPath += `${convertedCoords.normalizedX.toFixed(6)},${convertedCoords.normalizedY.toFixed(6)}`;
         } else {
           normalizedPath += part;
         }
@@ -580,12 +944,22 @@ const panResponder = PanResponder.create({
       if (part === 'M' || part === 'L') {
         screenPath += part;
       } else if (part && part.trim()) {
-        // This is a coordinate pair - convert back to screen coordinates
+        // This is a coordinate pair - convert normalized coordinates to screen coordinates
         const coords = part.trim().split(',');
         if (coords.length === 2) {
-          const screenX = parseFloat(coords[0]) * screenWidth;
-          const screenY = parseFloat(coords[1]) * (screenHeight - 300);
-          screenPath += `${screenX},${screenY}`;
+          const normalizedX = parseFloat(coords[0]);
+          const normalizedY = parseFloat(coords[1]);
+          
+          // Validate normalized coordinates are within expected range (0-1)
+          if (normalizedX >= 0 && normalizedX <= 1 && normalizedY >= 0 && normalizedY <= 1) {
+            // Convert normalized coordinates to current screen coordinates
+            const screenCoords = pdfToScreenCoordinates(normalizedX, normalizedY);
+            
+            screenPath += `${screenCoords.screenX.toFixed(2)},${screenCoords.screenY.toFixed(2)}`;
+          } else {
+            // If coordinates are out of range, keep them as is (might be legacy data)
+            screenPath += part;
+          }
         } else {
           screenPath += part;
         }
@@ -596,56 +970,15 @@ const panResponder = PanResponder.create({
   };
 
   const scalePathForZoom = (path: string, scale: number): string => {
-    if (!path) return '';
-    
-    // Split the path into commands and coordinates
-    const parts = path.split(/([ML])/);
-    let scaledPath = '';
-    
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      if (part === 'M' || part === 'L') {
-        scaledPath += part;
-      } else if (part && part.trim()) {
-        // This is a coordinate pair
-        const coords = part.trim().split(',');
-        if (coords.length === 2) {
-          const x = parseFloat(coords[0]) * scale;
-          const y = parseFloat(coords[1]) * scale;
-          scaledPath += `${x},${y}`;
-        } else {
-          scaledPath += part;
-        }
-      }
-    }
-    
-    return scaledPath;
-  };
-
-  const addFreehandHighlight = (path: string) => {
-    // Convert path coordinates to normalized coordinates
-    const normalizedPath = convertPathToNormalized(path);
-    
-    const newAnnotation: Annotation = {
-      id: Date.now().toString(),
-      type: "highlight",
-      page: currentPage,
-      x: 0,
-      y: 0,
-      color: selectedColor,
-      path: normalizedPath,
-      strokeWidth,
-      timestamp: Date.now(),
-    };
-
-    const updated = [...annotations, newAnnotation];
-    saveAnnotationsWithChanges(updated);
+    // This function is deprecated - use convertNormalizedPathToScreen instead
+    // keeping for backward compatibility but delegating to the new approach
+    return convertNormalizedPathToScreen(path);
   };
 
   const partialEraseAnnotations = (eraserPath: string) => {
     const normalizedEraserPath = convertPathToNormalized(eraserPath);
     const eraserPoints = getPathPoints(normalizedEraserPath);
-    const eraseThreshold = 25 / screenWidth; // Normalize the threshold too
+    const eraseThreshold = 0.05; // Use normalized threshold (5% of screen)
     
     const modifiedAnnotations = annotations.map((ann) => {
       if (ann.page !== currentPage) return ann; // Keep annotations from other pages
@@ -746,10 +1079,10 @@ const panResponder = PanResponder.create({
       return true;
     });
     
-    saveAnnotations(erased);
+    saveAnnotationsWithChanges(erased);
   };
 
-  // Simple path intersection detection (basic implementation)
+  // Simple path intersection detection (using normalized coordinates)
   const isPathIntersecting = (path1: string, path2: string) => {
     // Extract points from both paths
     const getPathPoints = (path: string) => {
@@ -773,7 +1106,7 @@ const panResponder = PanResponder.create({
     const path2Points = getPathPoints(path2);
 
     // Check if any point in path1 is close to any point in path2
-    const threshold = 20; // pixels
+    const threshold = 0.03; // Normalized threshold (3% of screen)
     
     for (const p1 of path1Points) {
       for (const p2 of path2Points) {
@@ -787,7 +1120,7 @@ const panResponder = PanResponder.create({
     return false;
   };
 
-  // Check if a point is close to the eraser path
+  // Check if a point is close to the eraser path (using normalized coordinates)
   const isPointInEraserPath = (x: number, y: number, eraserPath: string) => {
     const getPathPoints = (path: string) => {
       const points: { x: number, y: number }[] = [];
@@ -807,7 +1140,7 @@ const panResponder = PanResponder.create({
     };
 
     const eraserPoints = getPathPoints(eraserPath);
-    const threshold = 25; // pixels
+    const threshold = 0.05; // Normalized threshold (5% of screen)
 
     for (const point of eraserPoints) {
       const distance = Math.sqrt((x - point.x) ** 2 + (y - point.y) ** 2);
@@ -820,31 +1153,35 @@ const panResponder = PanResponder.create({
   };
 
   const addHighlightAnnotation = (x: number, y: number) => {
+    // Convert screen coordinates to PDF page percentages (0-1)
+    const coords = screenToPDFCoordinates(x, y);
+    
     const newAnnotation: Annotation = {
       id: Date.now().toString(),
       type: "highlight",
       page: currentPage,
-      x,
-      y,
-      width: 100,
-      height: 20,
+      x: coords.normalizedX, // Percentage of PDF page width (0-1)
+      y: coords.normalizedY, // Percentage of PDF page height (0-1)
+      width: 0.15, // 15% of PDF page width
+      height: 0.025, // 2.5% of PDF page height
       color: selectedColor,
       timestamp: Date.now(),
     };
 
     const updated = [...annotations, newAnnotation];
-    saveAnnotations(updated);
+    saveAnnotationsWithChanges(updated);
   };
 
   const addNoteAnnotation = () => {
     if (!noteText.trim()) return;
 
+    // notePosition already contains PDF page percentages from pan responder
     const newAnnotation: Annotation = {
       id: Date.now().toString(),
       type: selectedTool === "text" ? "text" : "note",
       page: currentPage,
-      x: notePosition.x, // Already normalized from pan responder
-      y: notePosition.y, // Already normalized from pan responder
+      x: notePosition.x, // Percentage of PDF page width (0-1)
+      y: notePosition.y, // Percentage of PDF page height (0-1)
       color: selectedColor,
       text: noteText,
       timestamp: Date.now(),
@@ -863,160 +1200,118 @@ const panResponder = PanResponder.create({
 
   const exportAnnotatedPDF = async () => {
     try {
-      Alert.alert(
-        "Info",
-        "Creating annotated PDF with embedded annotations..."
-      );
-
-      // Check if it's a remote URL or local file
-      const isRemoteUrl =
-        source.uri.startsWith("http://") || source.uri.startsWith("https://");
-      let pdfBytes: string;
-
-      if (isRemoteUrl) {
-        // For remote URLs, fetch the PDF first
-        console.log("Downloading PDF from remote URL for annotation export...");
-        const response = await fetch(source.uri);
-        if (!response.ok) {
-          throw new Error(
-            `Failed to download PDF: ${response.status} ${response.statusText}`
-          );
-        }
-
-        // In React Native, we need to use response.text() and convert to base64
-        const responseText = await response.text();
-        pdfBytes = btoa(responseText);
-      } else {
-        // For local files, read directly
-        pdfBytes = await FileSystem.readAsStringAsync(source.uri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
+      if (annotations.length === 0) {
+        Alert.alert("No Annotations", "There are no annotations to export.");
+        return;
       }
 
-      const pdfArrayBuffer = Uint8Array.from(atob(pdfBytes), (c) =>
-        c.charCodeAt(0)
-      ).buffer;
-
-      // Load the existing PDF
-      const pdfDoc = await PDFLibDocument.load(pdfArrayBuffer);
-      const pages = pdfDoc.getPages();
-
-      // Get all annotations grouped by page
-      const annotationsByPage = annotations.reduce((acc, annotation) => {
-        if (!acc[annotation.page]) {
-          acc[annotation.page] = [];
-        }
-        acc[annotation.page].push(annotation);
-        return acc;
-      }, {} as Record<number, Annotation[]>);
-
-      // Embed annotations into each page
-      for (const [pageNum, pageAnnotations] of Object.entries(
-        annotationsByPage
-      )) {
-        const pageIndex = parseInt(pageNum) - 1; // Convert to 0-based index
-        if (pageIndex >= 0 && pageIndex < pages.length) {
-          const page = pages[pageIndex];
-          const { width, height } = page.getSize();
-
-          for (const annotation of pageAnnotations) {
-            const normalizedColor = hexToRgb(annotation.color);
-            const pdfColor = pdfLibRgb(
-              normalizedColor.r / 255,
-              normalizedColor.g / 255,
-              normalizedColor.b / 255
-            );
-
-            switch (annotation.type) {
-              case "highlight":
-                // Add highlight rectangle
-                page.drawRectangle({
-                  x: annotation.x,
-                  y: height - annotation.y - (annotation.height || 20), // PDF coordinates are from bottom-left
-                  width: annotation.width || 100,
-                  height: annotation.height || 20,
-                  color: pdfColor,
-                  opacity: 0.4,
-                });
-                break;
-
-              case "note":
-                // Add note icon (circle) and text
-                page.drawCircle({
-                  x: annotation.x + 12,
-                  y: height - annotation.y - 12,
-                  size: 12,
-                  color: pdfColor,
-                });
-
-                // Add note text below the icon
-                if (annotation.text) {
-                  page.drawText("📝", {
-                    x: annotation.x + 8,
-                    y: height - annotation.y - 16,
-                    size: 10,
-                    color: pdfLibRgb(1, 1, 1), // White color
-                  });
-
-                  // Add the note text nearby
-                  page.drawText(annotation.text, {
-                    x: annotation.x + 30,
-                    y: height - annotation.y - 10,
-                    size: 10,
-                    color: pdfColor,
-                  });
-                }
-                break;
-
-              case "text":
-                // Add text annotation directly
-                if (annotation.text) {
-                  page.drawText(annotation.text, {
-                    x: annotation.x,
-                    y: height - annotation.y,
-                    size: 14,
-                    color: pdfColor,
-                  });
-                }
-                break;
-            }
+      Alert.alert(
+        "Export Options",
+        "Choose how you'd like to export your annotated PDF:",
+        [
+          {
+            text: "Cancel",
+            style: "cancel"
+          },
+          {
+            text: "New File",
+            onPress: () => exportToPDFNewFile()
+          },
+          {
+            text: "Update Original",
+            onPress: () => exportToPDFDirect(),
+            style: "destructive"
           }
-        }
-      }
-
-      // Save the modified PDF
-      const modifiedPdfBytes = await pdfDoc.save();
-      const outputPath = `${
-        FileSystem.documentDirectory
-      }annotated_${Date.now()}_${fileName}`;
-
-      // Convert Uint8Array to base64 for saving
-      const base64String = btoa(
-        String.fromCharCode(...Array.from(modifiedPdfBytes))
+        ]
       );
-      await FileSystem.writeAsStringAsync(outputPath, base64String, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
 
+    } catch (error) {
+      console.error("Error in export options:", error);
+      Alert.alert("Error", "Failed to show export options.");
+    }
+  };
+
+  const exportToPDFNewFile = async () => {
+    try {
+      Alert.alert("Info", "Creating new annotated PDF file...");
+
+      // Convert UI annotations to PDF annotations format
+      const pdfAnnotations: PDFAnnotation[] = annotations.map(annotation => ({
+        ...annotation,
+        type: annotation.type as PDFAnnotation['type']
+      }));
+
+      const saveOptions: PDFSaveOptions = {
+        createBackup: false, // No need for backup when creating new file
+        saveDirectly: false,
+        outputFileName: `exported_${Date.now()}_${fileName}`
+      };
+
+      const result = await drawingAPI.savePDFAnnotations(source.uri, pdfAnnotations, saveOptions);
+      setLastSavedPath(result.savedPath);
+      
       Alert.alert(
-        "Success",
-        `Annotated PDF with embedded annotations saved!\n\nFile: ${outputPath
-          .split("/")
-          .pop()}`,
+        "Export Success",
+        `Annotated PDF exported successfully!\n\nFile: ${result.savedPath.split('/').pop()}`,
         [
           { text: "OK" },
           {
-            text: "Open Location",
-            onPress: () => console.log("PDF saved at:", outputPath),
-          },
+            text: "Share",
+            onPress: () => shareExportedPDF(result.savedPath)
+          }
         ]
       );
+
     } catch (error) {
-      console.error("Error creating annotated PDF:", error);
+      console.error("Error exporting PDF to new file:", error);
+      Alert.alert("Export Error", "Failed to export annotated PDF to new file.");
+    }
+  };
+
+  const exportToPDFDirect = async () => {
+    try {
+      Alert.alert("Info", "Updating original PDF with embedded annotations...");
+
+      // Convert UI annotations to PDF annotations format
+      const pdfAnnotations: PDFAnnotation[] = annotations.map(annotation => ({
+        ...annotation,
+        type: annotation.type as PDFAnnotation['type']
+      }));
+
+      const saveOptions: PDFSaveOptions = {
+        createBackup: true, // Create backup when modifying original
+        saveDirectly: true
+      };
+
+      const result = await drawingAPI.savePDFAnnotations(source.uri, pdfAnnotations, saveOptions);
+      
       Alert.alert(
-        "Error",
-        "Failed to create annotated PDF with embedded annotations"
+        "Update Success",
+        `Original PDF has been updated with embedded annotations!\n\n${result.backupPath ? `Backup created: ${result.backupPath.split('/').pop()}` : ''}`,
+        [
+          { text: "OK" },
+        ]
       );
+
+    } catch (error) {
+      console.error("Error updating original PDF:", error);
+      Alert.alert("Update Error", "Failed to update original PDF with annotations.");
+    }
+  };
+
+  const shareExportedPDF = async (pdfPath: string) => {
+    try {
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(pdfPath, {
+          mimeType: "application/pdf",
+          dialogTitle: "Share Annotated PDF"
+        });
+      } else {
+        Alert.alert("Share Not Available", "Sharing is not available on this device.");
+      }
+    } catch (error) {
+      console.error("Error sharing PDF:", error);
+      Alert.alert("Share Error", "Failed to share the PDF.");
     }
   };
 
@@ -1033,16 +1328,23 @@ const panResponder = PanResponder.create({
   };
 
   const renderAnnotations = () => {
+    // Rendering converts stored percentage-based data back into current
+    // screen pixel positions factoring in current zoom (pdfScale) and
+    // viewer bounds. Paths are re-hydrated via convertNormalizedPathToScreen.
     const pageAnnotations = annotations.filter(
       (ann) => ann.page === currentPage
     );
 
+    // Get current PDF viewer dimensions - use bounds if available
+    const pdfViewerWidth = pdfViewerBounds.width || screenWidth;
+    const pdfViewerHeight = pdfViewerBounds.height || (screenHeight - 300);
+
     return (
       <Svg
-        style={[StyleSheet.absoluteFill, { zIndex: 10 }]}
-        width={screenWidth}
-        height={screenHeight - 200}
-        viewBox={`0 0 ${screenWidth} ${screenHeight - 200}`}
+        style={StyleSheet.absoluteFillObject}
+        width={pdfViewerWidth}
+        height={pdfViewerHeight}
+        viewBox={`0 0 ${pdfViewerWidth} ${pdfViewerHeight}`}
       >
         {pageAnnotations.map((annotation) => {
           const getPenStyle = (penType: string, baseWidth: number) => {
@@ -1087,12 +1389,13 @@ const panResponder = PanResponder.create({
               // Check if it's a freehand highlight (has path) or traditional highlight (rectangle)
               if (annotation.path) {
                 const screenPath = convertNormalizedPathToScreen(annotation.path);
+                const highlightStrokeWidth = (annotation.strokeWidth || 12) * (SCALE_STROKES_WITH_ZOOM ? (pdfScale || 1) : 1);
                 return (
                   <Path
                     key={annotation.id}
                     d={screenPath}
                     stroke={annotation.color}
-                    strokeWidth={annotation.strokeWidth || 12}
+                    strokeWidth={highlightStrokeWidth}
                     fill="none"
                     opacity={0.4}
                     strokeLinecap="round"
@@ -1101,16 +1404,17 @@ const panResponder = PanResponder.create({
                   />
                 );
               } else {
-                // Traditional rectangle highlight - convert normalized coordinates to screen coordinates
-                const screenX = annotation.x * screenWidth;
-                const screenY = annotation.y * (screenHeight - 300);
-                const screenWidth_rect = (annotation.width || 100) * screenWidth / 100; // Assume width was stored as percentage
-                const screenHeight_rect = (annotation.height || 20);
+                // Traditional rectangle highlight - convert percentage coordinates to screen coordinates
+                const screenCoords = pdfToScreenCoordinates(annotation.x, annotation.y);
+                // Convert percentage width/height to screen pixels; keep size stable if scaling disabled
+                const zoomFactor = SCALE_STROKES_WITH_ZOOM ? (pdfScale || 1) : 1;
+                const screenWidth_rect = (annotation.width || 0.15) * pdfViewerWidth * zoomFactor;
+                const screenHeight_rect = (annotation.height || 0.025) * pdfViewerHeight * zoomFactor;
                 return (
                   <Rect
                     key={annotation.id}
-                    x={screenX}
-                    y={screenY}
+                    x={screenCoords.screenX}
+                    y={screenCoords.screenY}
                     width={screenWidth_rect}
                     height={screenHeight_rect}
                     fill={annotation.color}
@@ -1123,7 +1427,9 @@ const panResponder = PanResponder.create({
             case "pen":
             case "brush":
             case "pencil":
-              const penStyle = getPenStyle(annotation.type, annotation.strokeWidth || 3);
+              // Convert percentage-based path back to screen coordinates with zoom scaling
+              const baseStroke = (annotation.strokeWidth || 3) * (SCALE_STROKES_WITH_ZOOM ? (pdfScale || 1) : 1);
+              const penStyle = getPenStyle(annotation.type, baseStroke);
               const penScreenPath = convertNormalizedPathToScreen(annotation.path || "");
               return (
                 <Path
@@ -1141,14 +1447,17 @@ const panResponder = PanResponder.create({
               );
 
             case "note":
-              const noteScreenX = annotation.x * screenWidth;
-              const noteScreenY = annotation.y * (screenHeight - 300);
+              // Convert percentage coordinates to screen coordinates with zoom scaling
+              const noteScreenCoords = pdfToScreenCoordinates(annotation.x, annotation.y);
+              const noteScreenX = noteScreenCoords.screenX;
+              const noteScreenY = noteScreenCoords.screenY;
+              const noteRadius = 12 * (SCALE_STROKES_WITH_ZOOM ? (pdfScale || 1) : 1);
               return (
                 <React.Fragment key={annotation.id}>
                   <Circle
                     cx={noteScreenX}
                     cy={noteScreenY}
-                    r={12}
+                    r={noteRadius}
                     fill={annotation.color}
                     onPress={() => {
                       Alert.alert("Note", annotation.text, [
@@ -1162,9 +1471,9 @@ const panResponder = PanResponder.create({
                   />
                   <SvgText
                     x={noteScreenX}
-                    y={noteScreenY + 4}
+                    y={noteScreenY + 4 * (SCALE_STROKES_WITH_ZOOM ? (pdfScale || 1) : 1)}
                     textAnchor="middle"
-                    fontSize={10}
+                    fontSize={10 * (SCALE_STROKES_WITH_ZOOM ? (pdfScale || 1) : 1)}
                     fill="white"
                   >
                     📝
@@ -1173,15 +1482,15 @@ const panResponder = PanResponder.create({
               );
 
             case "text":
-              const textScreenX = annotation.x * screenWidth;
-              const textScreenY = annotation.y * (screenHeight - 300);
+              // Convert percentage coordinates to screen coordinates with zoom scaling
+              const textScreenCoords = pdfToScreenCoordinates(annotation.x, annotation.y);
               return (
                 <SvgText
                   key={annotation.id}
-                  x={textScreenX}
-                  y={textScreenY}
+                  x={textScreenCoords.screenX}
+                  y={textScreenCoords.screenY}
                   fill={annotation.color}
-                  fontSize={14}
+                  fontSize={14 * (SCALE_STROKES_WITH_ZOOM ? (pdfScale || 1) : 1)}
                   fontWeight="bold"
                   onPress={() => {
                     Alert.alert("Text", annotation.text, [
@@ -1206,7 +1515,7 @@ const panResponder = PanResponder.create({
         {isDrawing && currentPath && (
           (() => {
             const cleanPath = cleanPathFromPressure(currentPath);
-            const baseStrokeWidth = strokeWidth;
+            const baseStrokeWidth = strokeWidth * (SCALE_STROKES_WITH_ZOOM ? (pdfScale || 1) : 1);
             
             switch (selectedTool) {
               case "highlight":
@@ -1322,17 +1631,50 @@ return (
             <Text style={styles.headerSubtitle}>PDF Annotation Viewer</Text>
           </View>
           <View style={styles.headerRight}>
+            {/* Save Mode Toggle */}
+            <TouchableOpacity
+              onPress={() => setSaveMode(saveMode === 'direct' ? 'overlay' : 'direct')}
+              style={[
+                styles.saveModeButton, 
+                saveMode === 'direct' && styles.saveModeButtonDirect,
+                isSavingToPDF && styles.saveModeButtonDisabled
+              ]}
+              activeOpacity={0.8}
+              disabled={isSavingToPDF}
+            >
+              <MaterialIcons 
+                name={saveMode === 'direct' ? "picture-as-pdf" : "layers"} 
+                size={16} 
+                color={saveMode === 'direct' ? "#22C55E" : "#8B5CF6"} 
+              />
+              <Text style={[
+                styles.saveModeText,
+                saveMode === 'direct' && styles.saveModeTextDirect
+              ]}>
+                {saveMode === 'direct' ? 'PDF' : 'Overlay'}
+              </Text>
+            </TouchableOpacity>
+
             {/* Save Button */}
             <TouchableOpacity
               onPress={handleSaveAnnotations}
-              style={[styles.saveButton, hasUnsavedChanges && styles.saveButtonActive]}
+              style={[
+                styles.saveButton, 
+                hasUnsavedChanges && styles.saveButtonActive,
+                isSavingToPDF && styles.saveButtonSaving
+              ]}
               activeOpacity={0.8}
+              disabled={isSavingToPDF}
             >
-              <MaterialIcons 
-                name={hasUnsavedChanges ? "save" : "check"} 
-                size={20} 
-                color="#ffffff" 
-              />
+              {isSavingToPDF ? (
+                <MaterialIcons name="sync" size={20} color="#ffffff" />
+              ) : (
+                <MaterialIcons 
+                  name={hasUnsavedChanges ? "save" : "check"} 
+                  size={20} 
+                  color="#ffffff" 
+                />
+              )}
             </TouchableOpacity>
 
             {/* More Options Menu */}
@@ -1439,7 +1781,6 @@ return (
             >
               <MaterialIcons name="zoom-out" size={20} color="#64748b" />
             </TouchableOpacity>
-            
             <TouchableOpacity
               style={styles.zoomResetButton}
               onPress={resetZoom}
@@ -1447,7 +1788,6 @@ return (
             >
               <Text style={styles.zoomText}>{Math.round(zoomLevel * 100)}%</Text>
             </TouchableOpacity>
-            
             <TouchableOpacity
               style={styles.zoomButton}
               onPress={handleZoomIn}
@@ -1548,108 +1888,92 @@ return (
           </View>
         </View>
 
-       {/* PDF Viewer with Scroll and Zoom */}
-        <View style={styles.pdfContainer}>
-          <ScrollView
-            style={styles.pdfScrollView}
-            contentContainerStyle={[
-              styles.pdfScrollContent,
-              {
-                transform: [{ scale: zoomLevel }],
-                width: screenWidth * zoomLevel,
-                height: (screenHeight - 300) * zoomLevel,
-              }
-            ]}
-            showsVerticalScrollIndicator={true}
-            showsHorizontalScrollIndicator={true}
-            maximumZoomScale={3}
-            minimumZoomScale={0.5}
-            bouncesZoom={true}
-            // Remove panResponder from ScrollView
-            scrollEnabled={selectedTool === null} // Disable scroll when annotation tool is selected
-          >
-            {!hasError && (
-              <View style={styles.pdfWrapper} {...panResponder.panHandlers}>
-                <Pdf
-                  ref={pdfRef}
-                  source={enhancedSource}
-                  onLoadComplete={onPdfLoadComplete}
-                  onPageChanged={onPageChanged}
-                  onScaleChanged={onPdfScaleChanged}
-                  style={{
-                    width: screenWidth,
-                    height: screenHeight - 300,
-                    flex: 1,
-                  }}
-                  spacing={10}
-                  enablePaging={true}
-                  horizontal={false}
-                />
-                {!isLoading && !hasError && renderAnnotations()}
-              </View>
-            )}
+        {/* PDF Viewer - Direct without container */}
+        {isLoading ? (
+          <View style={styles.loadingContainer}>
+            <Animated.View
+              style={{
+                transform: [
+                  {
+                    rotate: fadeAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: ["0deg", "360deg"],
+                    }),
+                  },
+                ],
+              }}
+            >
+              <MaterialIcons name="description" size={56} color="#667eea" />
+            </Animated.View>
+            <Text style={styles.loadingText}>Loading your PDF...</Text>
+            <Text style={[styles.loadingText, { fontSize: 14, marginTop: 4 }]}>
+              Please wait while we prepare your document
+            </Text>
+          </View>
+        ) : hasError ? (
+          <View style={styles.errorContainer}>
+            <View style={styles.errorIconContainer}>
+              <MaterialIcons name="error-outline" size={72} color="#ef4444" />
+            </View>
+            <Text style={styles.errorTitle}>Oops! Cannot Load PDF</Text>
+            <Text style={styles.errorMessage}>
+              We're having trouble loading your PDF file. Here are some things
+              you can try:
+              {"\n\n"}📁 Check if the file exists and is accessible
+              {"\n"}📋 Verify the file is a valid PDF document
+              {"\n"}🔒 Ensure you have permission to read the file
+            </Text>
 
-            {/* Loading indicator */}
-            {isLoading && (
-              <View style={styles.loadingContainer}>
-                <Animated.View
-                  style={{
-                    transform: [
-                      {
-                        rotate: fadeAnim.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: ["0deg", "360deg"],
-                        }),
-                      },
-                    ],
-                  }}
-                >
-                  <MaterialIcons name="description" size={56} color="#667eea" />
-                </Animated.View>
-                <Text style={styles.loadingText}>Loading your PDF...</Text>
-                <Text style={[styles.loadingText, { fontSize: 14, marginTop: 4 }]}>
-                  Please wait while we prepare your document
-                </Text>
-              </View>
-            )}
-
-            {/* Error state */}
-            {hasError && (
-              <View style={styles.errorContainer}>
-                <View style={styles.errorIconContainer}>
-                  <MaterialIcons name="error-outline" size={72} color="#ef4444" />
-                </View>
-                <Text style={styles.errorTitle}>Oops! Cannot Load PDF</Text>
-                <Text style={styles.errorMessage}>
-                  We're having trouble loading your PDF file. Here are some things
-                  you can try:
-                  {"\n\n"}📁 Check if the file exists and is accessible
-                  {"\n"}📋 Verify the file is a valid PDF document
-                  {"\n"}🔒 Ensure you have permission to read the file
-                </Text>
-
-                <LinearGradient
-                  colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
-                  style={styles.retryButton}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                >
-                  <TouchableOpacity
-                    style={styles.retryButtonInner}
-                    onPress={() => {
-                      setHasError(false);
-                      setIsLoading(true);
-                    }}
-                    activeOpacity={0.8}
-                  >
-                    <MaterialIcons name="refresh" size={20} color="#ffffff" />
-                    <Text style={styles.retryButtonText}>Try Again</Text>
-                  </TouchableOpacity>
-                </LinearGradient>
-              </View>
-            )}
-          </ScrollView>
-        </View>
+            <LinearGradient
+              colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
+              style={styles.retryButton}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+            >
+              <TouchableOpacity
+                style={styles.retryButtonInner}
+                onPress={() => {
+                  setHasError(false);
+                  setIsLoading(true);
+                }}
+                activeOpacity={0.8}
+              >
+                <MaterialIcons name="refresh" size={20} color="#ffffff" />
+                <Text style={styles.retryButtonText}>Try Again</Text>
+              </TouchableOpacity>
+            </LinearGradient>
+          </View>
+        ) : (
+          <View style={{ flex: 1 }} {...panResponder.panHandlers}>
+<Pdf
+  ref={pdfRef}
+  source={enhancedSource}
+  style={styles.pdf}
+  onLoadComplete={onPdfLoadComplete}
+  onPageChanged={onPageChanged}
+  onScaleChanged={onPdfScaleChanged}
+  enablePaging={true}
+  horizontal={false}
+/>
+            
+            {/* Annotation overlay - positioned directly over the PDF.
+                When SCALE_STROKES_WITH_ZOOM is false we only scale positions (already handled in pdfToScreenCoordinates)
+                and keep stroke widths constant for readability. If set true, we mirror pdfScale with a transform so
+                thickness grows naturally. */}
+            <View
+              style={[
+                StyleSheet.absoluteFillObject,
+                SCALE_STROKES_WITH_ZOOM && {
+                  transform: [{ scale: pdfScale || 1 }],
+                  transformOrigin: 'top left',
+                },
+              ]}
+              pointerEvents="none"
+            >
+              {renderAnnotations()}
+            </View>
+          </View>
+        )}
 
       </View> {/* Close Main Container */}
 
@@ -1979,24 +2303,6 @@ mainContainer: {
     paddingVertical: 4,
     borderRadius: 12,
   },
-  pdfContainer: {
-    flex: 1,
-    position: "relative",
-    backgroundColor: "#ffffff",
-    marginHorizontal: 8, // Add some margin for better visual separation
-    borderRadius: 12,
-    overflow: "hidden",
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  pdfWrapper: {
-    flex: 1,
-    position: 'relative',
-  },
-
   pdf: {
     flex: 1,
     width: "100%",
@@ -2505,6 +2811,37 @@ mainContainer: {
     color: "#334155",
     marginLeft: 12,
     fontWeight: "500",
+  },
+
+  // Save mode button styles
+  saveModeButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    marginRight: 8,
+    minWidth: 50,
+    justifyContent: "center",
+  },
+  saveModeButtonDirect: {
+    backgroundColor: "rgba(34, 197, 94, 0.2)",
+  },
+  saveModeButtonDisabled: {
+    opacity: 0.5,
+  },
+  saveModeText: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#8B5CF6",
+    marginLeft: 4,
+  },
+  saveModeTextDirect: {
+    color: "#22C55E",
+  },
+  saveButtonSaving: {
+    backgroundColor: "#F59E0B",
   },
 });
 

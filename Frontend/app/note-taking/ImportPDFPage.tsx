@@ -243,6 +243,8 @@ const ImportPDFPage = () => {
         source={{ uri: selectedDocument.uri }}
         fileName={selectedDocument.name}
         onClose={handleCloseDocument}
+        enableDirectSave={true}
+        autoSave={true}
       />
     );
   }

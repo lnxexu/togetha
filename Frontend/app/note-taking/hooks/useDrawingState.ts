@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_URL, API_ENDPOINTS } from '@/constants/ApiConfig';
 import { drawingAPI, DrawingStroke } from '../services/drawingAPI';
@@ -29,6 +29,8 @@ export const useDrawingState = ({
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  // Add ref for unique segment ID generation
+  const segmentIdRef = useRef(0);
   const [error, setError] = useState<string | null>(null);
   const [currentNoteId, setCurrentNoteId] = useState<string | undefined>(noteId);
   const [lastSaveTime, setLastSaveTime] = useState<number>(0);
@@ -273,7 +275,7 @@ export const useDrawingState = ({
               
               result.push({
                 ...stroke,
-                id: stroke.id + '_seg_' + segmentIndex + '_' + Date.now(),
+                id: `${stroke.id}_seg_${segmentIndex}_${++segmentIdRef.current}`,
                 points: newPoints,
               });
             }

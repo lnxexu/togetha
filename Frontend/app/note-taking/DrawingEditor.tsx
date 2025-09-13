@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   View,
   StyleSheet,
@@ -15,6 +15,7 @@ import {
   Dimensions,
   Vibration,
   Animated,
+  PanResponder,
 } from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -30,6 +31,11 @@ import {
   getTemplateOptions,
   getTemplateBackgroundColor,
 } from "./utils/templateConfig";
+
+// Configuration: control whether visual thickness / font sizes scale with canvas zoom.
+// When false, strokes remain visually stable (positions still follow zoom via coordinate conversion)
+// preventing pen strokes, brushes, etc. from becoming thicker when zooming the canvas.
+const SCALE_STROKES_WITH_ZOOM = false;
 
 interface Folder {
   id: string;
@@ -155,6 +161,9 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
   // Exit confirmation modal state
   const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
   const [windowDimensions, setWindowDimensions] = useState(Dimensions.get('window'));
+  
+  // Scroll offset state for coordinate conversion
+  const [scrollOffset, setScrollOffset] = useState({ x: 0, y: 0 });
 
   // Animation states
   const fadeAnim = useState(new Animated.Value(0))[0];
@@ -164,9 +173,90 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
   const [currentTool, setCurrentTool] = useState<DrawingTool>('pen');
   const [currentColor, setCurrentColor] = useState('#000000');
   const [currentWidth, setCurrentWidth] = useState(2);
+  const [currentZoom, setCurrentZoom] = useState(1); // Track canvas zoom level
+  
+  // Gesture handling refs
+  const lastTapRef = useRef(0);
+  const gestureStartZoomRef = useRef(1);
+  const gestureStartDistanceRef = useRef(0);
 
   const isTablet = windowDimensions.width >= 768;
   const isSmallPhone = windowDimensions.width < 375;
+
+  // Helper function to calculate distance between two touches
+  const getDistance = (touches: any[]) => {
+    if (touches.length < 2) return 0;
+    const [touch1, touch2] = touches;
+    const dx = touch1.pageX - touch2.pageX;
+    const dy = touch1.pageY - touch2.pageY;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  // Handle double tap to reset zoom
+  const handleDoubleTap = () => {
+    const now = Date.now();
+    const timeSinceLastTap = now - lastTapRef.current;
+    
+    if (timeSinceLastTap < 300 && timeSinceLastTap > 0) {
+      // Double tap detected - reset zoom to 1x
+      setCurrentZoom(1);
+    }
+    
+    lastTapRef.current = now;
+  };
+
+  // Zoom control functions
+  const handleZoomIn = () => {
+    const newZoom = Math.min(currentZoom * 1.25, 3); // Max zoom 3x
+    setCurrentZoom(newZoom);
+  };
+
+  const handleZoomOut = () => {
+    const newZoom = Math.max(currentZoom * 0.8, 0.5); // Min zoom 0.5x
+    setCurrentZoom(newZoom);
+  };
+
+  const resetZoom = () => {
+    setCurrentZoom(1);
+  };
+
+  // Create PanResponder for pinch-to-zoom gestures
+  const panResponder = PanResponder.create({
+    onMoveShouldSetPanResponder: (evt, gestureState) => {
+      // Only handle multi-touch gestures (pinch-to-zoom)
+      return evt.nativeEvent.touches.length === 2;
+    },
+    onMoveShouldSetPanResponderCapture: (evt, gestureState) => {
+      // Only capture pinch gestures
+      return evt.nativeEvent.touches.length === 2;
+    },
+    onPanResponderGrant: (evt, gestureState) => {
+      if (evt.nativeEvent.touches.length === 2) {
+        gestureStartZoomRef.current = currentZoom;
+        gestureStartDistanceRef.current = getDistance(evt.nativeEvent.touches);
+      }
+    },
+    onPanResponderMove: (evt, gestureState) => {
+      if (evt.nativeEvent.touches.length === 2) {
+        const currentDistance = getDistance(evt.nativeEvent.touches);
+        const startDistance = gestureStartDistanceRef.current;
+        
+        if (startDistance > 0) {
+          const scale = currentDistance / startDistance;
+          const newZoom = Math.max(0.5, Math.min(3, gestureStartZoomRef.current * scale));
+          setCurrentZoom(newZoom);
+        }
+      }
+    },
+    onPanResponderRelease: () => {
+      // Reset gesture tracking
+      gestureStartDistanceRef.current = 0;
+    },
+    onPanResponderTerminate: () => {
+      // Reset gesture tracking
+      gestureStartDistanceRef.current = 0;
+    },
+  });
 
   // Effects
   useEffect(() => {
@@ -619,101 +709,168 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
 
         {/* Main Content Container positioned above header */}
         <View style={styles.mainContentContainer}>
-          {/* Compact header info */}
-          {!readOnly && (
-            <View style={styles.compactHeaderInfo}>
-              {/* Compact metadata row */}
-              <View style={styles.compactMetadata}>
-                <View style={styles.folderSection}>
-                  <TouchableOpacity
-                    style={styles.compactFolderSelector}
-                    onPress={() => setShowFolderModal(true)}
-                  >
-                    <MaterialIcons name="folder" size={16} color="#8B5CF6" />
-                    <Text style={styles.compactFolderText}>{folderName}</Text>
-                    <MaterialIcons name="keyboard-arrow-down" size={16} color="#8B5CF6" />
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.tagSection}>
-                  <View style={styles.compactTagsSection}>
+          <ScrollView
+            style={styles.mainScrollView}
+            contentContainerStyle={styles.mainScrollContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            bounces={false}
+          >
+            {/* Compact header info */}
+            {!readOnly && (
+              <View style={styles.compactHeaderInfo}>
+                {/* Compact metadata row */}
+                <View style={styles.compactMetadata}>
+                  <View style={styles.folderSection}>
                     <TouchableOpacity
-                      style={styles.addTagButton}
-                      onPress={() => setShowTagModal(true)}
+                      style={styles.compactFolderSelector}
+                      onPress={() => setShowFolderModal(true)}
                     >
-                      <MaterialIcons name="add" size={14} color="#8B5CF6" />
-                      <Text style={styles.addTagText}>Tag</Text>
+                      <MaterialIcons name="folder" size={16} color="#8B5CF6" />
+                      <Text style={styles.compactFolderText}>{folderName}</Text>
+                      <MaterialIcons name="keyboard-arrow-down" size={16} color="#8B5CF6" />
                     </TouchableOpacity>
-                    
-                    <View style={styles.tagsDisplayContainer}>
-                      <ScrollView 
-                        horizontal 
-                        showsHorizontalScrollIndicator={false}
-                        contentContainerStyle={styles.tagsScrollContent}
+                  </View>
+
+                  <View style={styles.tagSection}>
+                    <View style={styles.compactTagsSection}>
+                      <TouchableOpacity
+                        style={styles.addTagButton}
+                        onPress={() => setShowTagModal(true)}
                       >
-                        <View style={styles.tagsContainer}>
-                          {tags.map((tag, index) => (
-                            <View key={index} style={styles.compactTag}>
-                              <Text style={styles.compactTagText} numberOfLines={1}>
-                                {tag}
-                              </Text>
-                              <TouchableOpacity onPress={() => removeTag(tag)}>
-                                <MaterialIcons name="close" size={12} color="#8B5CF6" />
-                              </TouchableOpacity>
-                            </View>
-                          ))}
-                        </View>
-                      </ScrollView>
+                        <MaterialIcons name="add" size={14} color="#8B5CF6" />
+                        <Text style={styles.addTagText}>Tag</Text>
+                      </TouchableOpacity>
+                      
+                      <View style={styles.tagsDisplayContainer}>
+                        <ScrollView 
+                          horizontal 
+                          showsHorizontalScrollIndicator={false}
+                          contentContainerStyle={styles.tagsScrollContent}
+                        >
+                          <View style={styles.tagsContainer}>
+                            {tags.map((tag, index) => (
+                              <View key={index} style={styles.compactTag}>
+                                <Text style={styles.compactTagText} numberOfLines={1}>
+                                  {tag}
+                                </Text>
+                                <TouchableOpacity onPress={() => removeTag(tag)}>
+                                  <MaterialIcons name="close" size={12} color="#8B5CF6" />
+                                </TouchableOpacity>
+                              </View>
+                            ))}
+                          </View>
+                        </ScrollView>
+                      </View>
                     </View>
                   </View>
                 </View>
               </View>
-            </View>
-          )}
+            )}
 
-          {/* Toolbar */}
-          {!readOnly && (
-            <View style={styles.compactToolbarContainer}>
-              <View style={styles.toolbarContentWrapper}>
-                <DrawingToolbar
-                  currentTool={currentTool}
-                  currentColor={currentColor}
-                  currentWidth={currentWidth}
-                  currentTemplate={activeTemplate}
-                  onToolChange={setCurrentTool}
-                  onColorChange={setCurrentColor}
-                  onWidthChange={setCurrentWidth}
-                  onTemplateChange={handleTemplateChange}
-                  onUndo={undo}
-                  onRedo={redo}
-                  onClear={handleClear}
-                  onDropdownToggle={handleToolbarDropdownToggle}
-                  canUndo={canUndo}
-                  canRedo={canRedo}
-                />
+            {/* Toolbar */}
+            {!readOnly && (
+              <View style={styles.compactToolbarContainer}>
+                <View style={styles.toolbarContentWrapper}>
+                  <DrawingToolbar
+                    currentTool={currentTool}
+                    currentColor={currentColor}
+                    currentWidth={currentWidth}
+                    currentTemplate={activeTemplate}
+                    currentZoom={currentZoom}
+                    onToolChange={setCurrentTool}
+                    onColorChange={setCurrentColor}
+                    onWidthChange={setCurrentWidth}
+                    onTemplateChange={handleTemplateChange}
+                    onUndo={undo}
+                    onRedo={redo}
+                    onClear={handleClear}
+                    onDropdownToggle={handleToolbarDropdownToggle}
+                    onZoomIn={handleZoomIn}
+                    onZoomOut={handleZoomOut}
+                    onZoomReset={resetZoom}
+                    canUndo={canUndo}
+                    canRedo={canRedo}
+                  />
+                </View>
               </View>
-            </View>
-          )}
+            )}
 
-          {/* Canvas Container */}
-          <View style={[styles.modernCanvasWrapper, { 
-            minHeight: isTablet ? 600 : isSmallPhone ? 400 : 500,
-            maxHeight: windowDimensions.height - 300
-          }]}>
-            <DrawingCanvas
-              strokes={strokes}
-              currentTool={currentTool}
-              currentColor={currentColor}
-              currentWidth={currentWidth}
-              onStrokeComplete={handleStrokeComplete}
-              onAddStroke={addStroke}
-              onStrokeUpdate={setCurrentStroke}
-              disabled={readOnly}
-              backgroundColor={getTemplateBackgroundColor(activeTemplate)}
-              template={activeTemplate}
-              templateOptions={getTemplateOptionsForCanvas()}
-            />
-          </View>
+            {/* Canvas Container */}
+            <View style={styles.canvasSection}>
+              <ScrollView
+                style={styles.canvasScrollView}
+                contentContainerStyle={styles.canvasScrollContent}
+                showsHorizontalScrollIndicator={false}
+                showsVerticalScrollIndicator={false}
+                bounces={false}
+                scrollEnabled={currentZoom > 1}
+                minimumZoomScale={0.5}
+                maximumZoomScale={3}
+                zoomScale={currentZoom}
+                onScroll={(event) => {
+                  setScrollOffset({
+                    x: event.nativeEvent.contentOffset.x,
+                    y: event.nativeEvent.contentOffset.y,
+                  });
+                }}
+                scrollEventThrottle={16}
+                onScrollBeginDrag={() => {
+                  // Disable drawing when scrolling
+                  setCurrentStroke(null);
+                }}
+                {...panResponder.panHandlers}
+              >
+                <TouchableOpacity
+                  style={[styles.modernCanvasWrapper, { 
+                    width: windowDimensions.width - 32, // Account for margins
+                    height: Math.min(
+                      isTablet ? 600 : isSmallPhone ? 400 : 500,
+                      windowDimensions.height - 350
+                    ),
+                    transform: [{ scale: currentZoom }],
+                    transformOrigin: 'center',
+                  }]}
+                  onPress={handleDoubleTap}
+                  activeOpacity={1}
+                >
+                  <DrawingCanvas
+                    strokes={strokes}
+                    currentTool={currentTool}
+                    currentColor={currentColor}
+                    currentWidth={currentWidth}
+                    onStrokeComplete={handleStrokeComplete}
+                    onAddStroke={addStroke}
+                    onStrokeUpdate={setCurrentStroke}
+                    disabled={readOnly}
+                    backgroundColor={getTemplateBackgroundColor(activeTemplate)}
+                    template={activeTemplate}
+                    templateOptions={getTemplateOptionsForCanvas()}
+                    scaleStrokesWithZoom={SCALE_STROKES_WITH_ZOOM}
+                    currentZoom={currentZoom}
+                  />
+                </TouchableOpacity>
+              </ScrollView>
+              
+              {/* Zoom Indicator */}
+              {currentZoom !== 1 && (
+                <View style={styles.zoomIndicator}>
+                  <Text style={styles.zoomIndicatorText}>
+                    {Math.round(currentZoom * 100)}%
+                  </Text>
+                </View>
+              )}
+              
+              {/* Gesture Hint */}
+              {!readOnly && (
+                <View style={styles.gestureHint}>
+                  <Text style={styles.gestureHintText}>
+                    Pinch to zoom • Double tap to reset • Scroll when zoomed
+                  </Text>
+                </View>
+              )}
+            </View>
+          </ScrollView>
         </View>
 
         </Animated.View>
@@ -1019,8 +1176,14 @@ const styles = StyleSheet.create({
     elevation: 10,
     zIndex: 1000,
     overflow: "hidden",
+  },
+  mainScrollView: {
+    flex: 1,
+  },
+  mainScrollContent: {
     paddingTop: 20,
     paddingHorizontal: Platform.select({ ios: 16, android: 12 }),
+    paddingBottom: 20,
   },
   compactHeaderInfo: {
     backgroundColor: "#FFFFFF",
@@ -1145,7 +1308,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   modernCanvasWrapper: {
-    flex: 1,
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
     borderWidth: 1,
@@ -1155,6 +1317,57 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.04,
     shadowRadius: 8,
     elevation: 2,
+    overflow: "hidden",
+    // Remove flex: 1 to allow explicit sizing
+  },
+
+  // Canvas section with gesture controls
+  canvasSection: {
+    flex: 1,
+    position: "relative",
+  },
+  canvasScrollView: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+  },
+  canvasScrollContent: {
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: "100%",
+    padding: 16, // Add padding to prevent content from touching edges
+  },
+  zoomIndicator: {
+    position: "absolute",
+    top: 16,
+    right: 16,
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    zIndex: 10,
+  },
+  zoomIndicatorText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "600",
+    fontFamily: "Inter-SemiBold",
+  },
+  gestureHint: {
+    position: "absolute",
+    bottom: 16,
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    zIndex: 10,
+  },
+  gestureHintText: {
+    color: "#64748b",
+    fontSize: 11,
+    fontFamily: "Inter-Medium",
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
     overflow: "hidden",
   },
   

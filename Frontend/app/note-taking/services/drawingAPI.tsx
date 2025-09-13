@@ -1,6 +1,7 @@
 
 import { API_URL, API_ENDPOINTS } from '@/constants/ApiConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { embedAnnotationsInPDF, saveAnnotationsDirectlyToPDF, createPDFBackup, PDFAnnotation } from '../utils/pdfUtils';
 
 // Add these interfaces
 export interface DrawingStroke {
@@ -18,6 +19,20 @@ export interface DrawingData {
   noteId: string;
   hasDrawing: boolean;
   lastUpdate?: string;
+}
+
+// PDF-specific interfaces
+export interface PDFAnnotationData {
+  annotations: PDFAnnotation[];
+  pdfUri: string;
+  hasAnnotations: boolean;
+  lastUpdate?: string;
+}
+
+export interface PDFSaveOptions {
+  createBackup?: boolean;
+  saveDirectly?: boolean;
+  outputFileName?: string;
 }
 
 // Add this new class to your existing api.tsx file
@@ -248,6 +263,175 @@ export class DrawingAPI {
     } catch (error) {
       console.error('Failed to create drawing note:', error);
       throw error;
+    }
+  }
+
+  // PDF Annotation Methods
+
+  /**
+   * Converts DrawingStroke array to PDFAnnotation array
+   */
+  convertStrokesToPDFAnnotations(strokes: DrawingStroke[], currentPage: number = 1): PDFAnnotation[] {
+    return strokes.map(stroke => ({
+      id: stroke.id,
+      type: stroke.tool as PDFAnnotation['type'],
+      page: currentPage,
+      x: 0, // These would need to be set based on actual stroke positions
+      y: 0, // These would need to be set based on actual stroke positions  
+      color: stroke.color,
+      path: this.convertPointsToPath(stroke.points),
+      strokeWidth: stroke.width,
+      timestamp: stroke.timestamp,
+      opacity: stroke.opacity,
+    }));
+  }
+
+  /**
+   * Converts points array to SVG path string
+   */
+  private convertPointsToPath(points: number[]): string {
+    if (points.length < 2) return '';
+    
+    let path = `M${points[0]},${points[1]}`;
+    for (let i = 2; i < points.length; i += 2) {
+      if (i + 1 < points.length) {
+        path += ` L${points[i]},${points[i + 1]}`;
+      }
+    }
+    return path;
+  }
+
+  /**
+   * Saves annotations directly to a PDF file
+   */
+  async savePDFAnnotations(
+    pdfUri: string, 
+    annotations: PDFAnnotation[], 
+    options: PDFSaveOptions = {}
+  ): Promise<{savedPath: string, backupPath?: string}> {
+    try {
+      console.log('savePDFAnnotations called with:', {
+        pdfUri,
+        annotationsCount: annotations.length,
+        options
+      });
+
+      const { createBackup = true, saveDirectly = false, outputFileName } = options;
+      let backupPath: string | undefined;
+
+      // Create backup if requested
+      if (createBackup && saveDirectly) {
+        backupPath = await createPDFBackup(pdfUri);
+      }
+
+      let savedPath: string;
+
+      if (saveDirectly) {
+        // Save annotations directly to the original PDF (modifies original)
+        await saveAnnotationsDirectlyToPDF(pdfUri, annotations);
+        savedPath = pdfUri;
+      } else {
+        // Create a new annotated PDF file (keeps original intact)
+        savedPath = await embedAnnotationsInPDF(pdfUri, annotations, outputFileName);
+      }
+
+      console.log('PDF annotations saved successfully:', {
+        savedPath,
+        backupPath,
+        annotationsEmbedded: annotations.length
+      });
+
+      return { savedPath, backupPath };
+
+    } catch (error) {
+      console.error('Failed to save PDF annotations:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Saves annotations to both the backend and directly to the PDF file
+   */
+  async savePDFAnnotationsWithBackend(
+    noteId: string,
+    pdfUri: string,
+    annotations: PDFAnnotation[],
+    options: PDFSaveOptions = {}
+  ): Promise<{savedPath: string, backupPath?: string, backendResponse: any}> {
+    try {
+      console.log('savePDFAnnotationsWithBackend called');
+
+      // Convert PDF annotations to drawing strokes format for backend
+      const strokes: DrawingStroke[] = annotations.map(annotation => ({
+        id: annotation.id,
+        points: annotation.path ? this.convertPathToPoints(annotation.path) : [annotation.x, annotation.y],
+        color: annotation.color,
+        width: annotation.strokeWidth || 3,
+        tool: annotation.type,
+        timestamp: annotation.timestamp,
+        opacity: 1.0
+      }));
+
+      // Save to backend first
+      const backendResponse = await this.saveDrawing(noteId, strokes);
+
+      // Then save to PDF
+      const pdfResult = await this.savePDFAnnotations(pdfUri, annotations, options);
+
+      console.log('Both backend and PDF save completed successfully');
+
+      return {
+        ...pdfResult,
+        backendResponse
+      };
+
+    } catch (error) {
+      console.error('Failed to save annotations to both backend and PDF:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Converts SVG path string to points array
+   */
+  private convertPathToPoints(path: string): number[] {
+    const points: number[] = [];
+    try {
+      const commands = path.replace(/[ML]/g, ' ').split(/[\s,]+/).filter(cmd => cmd.trim());
+      
+      for (let i = 0; i < commands.length; i += 2) {
+        if (i + 1 < commands.length) {
+          const x = parseFloat(commands[i]);
+          const y = parseFloat(commands[i + 1]);
+          
+          if (!isNaN(x) && !isNaN(y)) {
+            points.push(x, y);
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('Error converting path to points:', error);
+    }
+    
+    return points;
+  }
+
+  /**
+   * Auto-saves PDF annotations (both backend and PDF)
+   */
+  async autoSavePDFAnnotations(
+    noteId: string,
+    pdfUri: string,
+    annotations: PDFAnnotation[],
+    options: PDFSaveOptions = {}
+  ): Promise<void> {
+    try {
+      // Use non-direct save for auto-save to preserve original
+      const safeOptions = { ...options, saveDirectly: false, createBackup: false };
+      await this.savePDFAnnotationsWithBackend(noteId, pdfUri, annotations, safeOptions);
+    } catch (error) {
+      console.warn('Auto-save PDF annotations failed:', error);
+      // Don't throw error for auto-save failures
     }
   }
 }

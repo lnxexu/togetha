@@ -30,7 +30,7 @@ interface DrawingCanvasProps {
   currentColor: string;
   currentWidth: number;
   onStrokeComplete: (stroke: Stroke) => void;
-  onStrokeUpdate?: (currentStroke: Stroke | null) => void;
+  onStrokeUpdate?: (stroke: Stroke | null) => void;
   backgroundColor?: string;
   disabled?: boolean;
   template?: TemplateType;
@@ -39,6 +39,8 @@ interface DrawingCanvasProps {
     lineHeight?: number;
     margin?: number;
   };
+  scaleStrokesWithZoom?: boolean; // Controls whether stroke thickness scales with zoom
+  currentZoom?: number; // Current zoom level for scaling calculations
 }
 
 export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
@@ -52,11 +54,15 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   disabled = false,
   template = 'blank',
   templateOptions = {},
+  scaleStrokesWithZoom = false,
+  currentZoom = 1,
 }) => {
   const [currentStroke, setCurrentStroke] = useState<Stroke | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [canvasDimensions, setCanvasDimensions] = useState({ width: 400, height: 600 });
   const strokeIdRef = useRef(0);
+  // Add a ref for unique segment ID generation
+  const segmentIdRef = useRef(0);
 
   // Debug effect to monitor strokes received
   React.useEffect(() => {
@@ -222,9 +228,11 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         // Create new strokes for each segment
         segments.forEach((segment, index) => {
           if (segment.length > 1) {
+            // Generate unique ID for each segment using a counter
+            const uniqueSegmentId = `${stroke.id}_segment_${index}_${++segmentIdRef.current}`;
             result.push({
               ...stroke,
-              id: stroke.id + '_segment_' + index + '_' + Date.now(),
+              id: uniqueSegmentId,
               points: segment,
             });
           }
@@ -338,7 +346,7 @@ const handleTouchEnd = useCallback(() => {
     return convertedStroke;
   }, []);
 
-  const renderStroke = useCallback((stroke: Stroke, index: number) => {
+  const renderStroke = useCallback((stroke: Stroke, index: number | string) => {
     if (stroke.points.length < 2) {
       console.log(`DrawingCanvas: Skipping stroke ${stroke.id} - insufficient points:`, stroke.points.length);
       return null;
@@ -353,8 +361,8 @@ const handleTouchEnd = useCallback(() => {
     
     console.log(`DrawingCanvas: Rendering stroke ${stroke.id} with ${stroke.points.length} points, color: ${stroke.color}, width: ${stroke.width}`);
     
-    // Apply tool-specific styling
-    let strokeWidth = stroke.width;
+    // Apply tool-specific styling with optional zoom scaling
+    let strokeWidth = stroke.width * (scaleStrokesWithZoom ? currentZoom : 1);
     let strokeOpacity = 1;
     let fillOpacity = 0;
     let strokeLinecap: 'round' | 'square' | 'butt' = 'round';
@@ -362,33 +370,33 @@ const handleTouchEnd = useCallback(() => {
     
     switch (stroke.tool) {
       case 'highlighter':
-        strokeWidth = stroke.width * 2.5;
+        strokeWidth = (stroke.width * 2.5) * (scaleStrokesWithZoom ? currentZoom : 1);
         strokeOpacity = 0.4;
         fillOpacity = 0.2;
         break;
       case 'brush':
-        strokeWidth = stroke.width * 1.8;
+        strokeWidth = (stroke.width * 1.8) * (scaleStrokesWithZoom ? currentZoom : 1);
         strokeOpacity = 0.9;
         strokeLinecap = 'round';
         break;
       case 'pencil':
-        strokeWidth = stroke.width * 0.8;
+        strokeWidth = (stroke.width * 0.8) * (scaleStrokesWithZoom ? currentZoom : 1);
         strokeOpacity = 0.8;
         strokeLinecap = 'round';
         break;
       case 'calligraphy':
-        strokeWidth = stroke.width * 1.8;
+        strokeWidth = (stroke.width * 1.8) * (scaleStrokesWithZoom ? currentZoom : 1);
         strokeLinecap = 'square';
         break;
       case 'eraser':
         // Eraser strokes are temporary and should appear as dashed lines
-        strokeWidth = stroke.width;
+        strokeWidth = stroke.width * (scaleStrokesWithZoom ? currentZoom : 1);
         strokeOpacity = 0.5;
         strokeDasharray = '5,5';
         break;
       case 'pen':
       default:
-        strokeWidth = stroke.width;
+        strokeWidth = stroke.width * (scaleStrokesWithZoom ? currentZoom : 1);
         strokeOpacity = 1.0;
         strokeLinecap = 'round';
         break;
@@ -396,7 +404,7 @@ const handleTouchEnd = useCallback(() => {
     
     return (
       <Path
-        key={stroke.id || index}
+        key={`${stroke.id}-${index}`}
         d={pathData}
         stroke={stroke.color}
         strokeWidth={strokeWidth}
@@ -439,7 +447,7 @@ const handleTouchEnd = useCallback(() => {
           })}
           
           {/* Render current stroke being drawn */}
-          {currentStroke && renderStroke(currentStroke, -1)}
+          {currentStroke && renderStroke(currentStroke, 'current')}
         </G>
       </Svg>
     </View>

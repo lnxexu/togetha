@@ -19,6 +19,7 @@ interface DrawingToolbarProps {
   currentColor: string;
   currentWidth: number;
   currentTemplate?: TemplateType;
+  currentZoom?: number;
   onToolChange: (tool: DrawingTool) => void;
   onColorChange: (color: string) => void;
   onWidthChange: (width: number) => void;
@@ -28,6 +29,9 @@ interface DrawingToolbarProps {
   onRedo?: () => void;
   onClear?: () => void;
   onImageImport?: (imageUri: string) => void;
+  onZoomIn?: () => void;
+  onZoomOut?: () => void;
+  onZoomReset?: () => void;
   canUndo?: boolean;
   canRedo?: boolean;
 }
@@ -79,6 +83,7 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
   currentColor,
   currentWidth,
   currentTemplate = 'blank',
+  currentZoom = 1,
   onToolChange,
   onColorChange,
   onWidthChange,
@@ -88,6 +93,9 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
   onRedo,
   onClear,
   onImageImport,
+  onZoomIn,
+  onZoomOut,
+  onZoomReset,
   canUndo = false,
   canRedo = false,
 }) => {
@@ -178,6 +186,7 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
         showsHorizontalScrollIndicator={false}
         style={styles.container}
         contentContainerStyle={styles.contentContainer}
+        keyboardShouldPersistTaps="handled"
       >
         {/* Tools Section */}
         <View style={styles.section}>
@@ -355,6 +364,35 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
             {/* Moved to popout container below */}
           </View>
         </View>
+
+        {/* Zoom Section */}
+        {(onZoomIn || onZoomOut || onZoomReset) && (
+          <View style={styles.section}>
+            <View style={styles.zoomSection}>
+              <TouchableOpacity
+                style={styles.zoomButton}
+                onPress={onZoomOut}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="remove" size={16} color="#64748b" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.zoomResetButton}
+                onPress={onZoomReset}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.zoomText}>{Math.round(currentZoom * 100)}%</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.zoomButton}
+                onPress={onZoomIn}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="add" size={16} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
 
         {/* Actions Section */}
         <View style={styles.section}>
@@ -656,6 +694,48 @@ const styles = StyleSheet.create({
 
   templateSection: {
     alignItems: 'center',
+  },
+
+  // Zoom Section
+  zoomSection: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+
+  zoomButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#F3F4F6",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+
+  zoomResetButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: "#F8FAFC",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    minWidth: 60,
+  },
+
+  zoomText: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#64748b",
+    fontFamily: "Inter-SemiBold",
   },
 
   // Dropdown Styles
