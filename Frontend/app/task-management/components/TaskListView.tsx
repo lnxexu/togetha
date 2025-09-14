@@ -87,7 +87,7 @@ const TaskListView: React.FC<TaskListViewProps> = ({
   selectedCategory,
   onCategoryChange,
 }) => {
-  const [selectedQuadrant, setSelectedQuadrant] = useState<string>("urgent-important");
+  const [selectedQuadrant, setSelectedQuadrant] = useState<string>("all");
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
 
   const getFilteredTasks = () => {
@@ -269,11 +269,22 @@ const TaskListView: React.FC<TaskListViewProps> = ({
     if (filteredTasks.length === 0) {
       return (
         <View style={styles.emptyListContainer}>
-          <MaterialIcons name="check-circle" size={48} color="#e0e0e0" />
+          <View style={styles.emptyStateIconContainer}>
+            <MaterialIcons name="assignment" size={64} color="#E2E8F0" />
+          </View>
           <Text style={styles.emptyListText}>No tasks found</Text>
           <Text style={styles.emptyListSubText}>
-            No tasks in the {quadrants[selectedQuadrant]?.title} category
+            {selectedQuadrant === "all" 
+              ? "Start by creating your first task to get organized!" 
+              : `No tasks in the ${quadrants[selectedQuadrant]?.title} category yet.`}
           </Text>
+          <TouchableOpacity 
+            style={styles.emptyStateButton}
+            onPress={() => {/* Navigate to create task */}}
+          >
+            <MaterialIcons name="add" size={20} color="#FFFFFF" />
+            <Text style={styles.emptyStateButtonText}>Add Your First Task</Text>
+          </TouchableOpacity>
         </View>
       );
     }
@@ -535,46 +546,90 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingTop: 60,
+    paddingHorizontal: 32,
+    paddingTop: 80,
+  },
+  emptyStateIconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: "#F8FAFC",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 24,
+    borderWidth: 2,
+    borderColor: "#E2E8F0",
+    borderStyle: "dashed",
   },
   emptyListText: {
-    fontSize: 16,
+    fontSize: 20,
     fontFamily: "Inter-SemiBold",
-    color: "#666",
-    marginTop: 16,
+    color: "#374151",
+    marginBottom: 8,
+    textAlign: "center",
   },
   emptyListSubText: {
-    fontSize: 14,
+    fontSize: 16,
     fontFamily: "Inter-Regular",
-    color: "#999",
-    marginTop: 8,
+    color: "#64748B",
+    marginBottom: 32,
     textAlign: "center",
+    lineHeight: 24,
+    maxWidth: 280,
+  },
+  emptyStateButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#8B5CF6",
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 24,
+    shadowColor: "#8B5CF6",
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  emptyStateButtonText: {
+    fontSize: 16,
+    fontFamily: "Inter-SemiBold",
+    color: "#FFFFFF",
+    marginLeft: 8,
   },
   taskCard: {
     backgroundColor: "#ffffff",
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#f0f0f0",
-    shadowColor: "#1E293B",
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 0,
+    shadowColor: "#000",
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 4,
     },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
-    marginBottom: 8,
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 6,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    overflow: 'hidden',
   },
   overdueTask: {
-    backgroundColor: "#FEF2F2",
-    borderColor: "#EF4444",
-    borderWidth: 1,
+    backgroundColor: "#FFF5F5",
+    borderLeftColor: "#EF4444",
+    borderLeftWidth: 6,
+    shadowColor: "#EF4444",
+    shadowOpacity: 0.15,
   },
   completedTask: {
     backgroundColor: "#F0FDF4",
-    opacity: 0.7,
+    borderLeftColor: "#22C55E",
+    borderLeftWidth: 6,
+    opacity: 0.85,
+    shadowColor: "#22C55E",
+    shadowOpacity: 0.1,
   },
   cardContent: {
     flex: 1,
@@ -583,27 +638,38 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: 16,
   },
   checkbox: {
-    padding: 4,
+    padding: 6,
+    borderRadius: 8,
+    backgroundColor: "#F8FAFC",
   },
   priorityBadge: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   cardBody: {
     flex: 1,
   },
   taskTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontFamily: "Inter-SemiBold",
     color: "#1E293B",
-    marginBottom: 4,
-    lineHeight: 20,
+    marginBottom: 6,
+    lineHeight: 24,
+    letterSpacing: -0.2,
   },
   completedTaskTitle: {
     textDecorationLine: "line-through",
@@ -613,11 +679,12 @@ const styles = StyleSheet.create({
     color: "#dc2626",
   },
   taskDescription: {
-    fontSize: 14,
+    fontSize: 15,
     fontFamily: "Inter-Regular",
-    color: "#6b7280",
-    marginBottom: 8,
-    lineHeight: 18,
+    color: "#64748B",
+    marginBottom: 12,
+    lineHeight: 22,
+    letterSpacing: -0.1,
   },
   completedTaskDescription: {
     textDecorationLine: "line-through",
@@ -627,28 +694,39 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginTop: 8,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9",
   },
   categoryTag: {
-    backgroundColor: "#f3f4f6",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
+    backgroundColor: "#F8FAFC",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
   },
   categoryText: {
-    fontSize: 11,
+    fontSize: 12,
     fontFamily: "Inter-Medium",
-    color: "#374151",
+    color: "#475569",
+    fontWeight: "600",
   },
   dueDateContainer: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: 6,
+    backgroundColor: "#F1F5F9",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
   },
   dueDateText: {
     fontSize: 12,
-    fontFamily: "Inter-Regular",
-    color: "#6c757d",
+    fontFamily: "Inter-Medium",
+    color: "#64748B",
+    fontWeight: "500",
   },
 });
 

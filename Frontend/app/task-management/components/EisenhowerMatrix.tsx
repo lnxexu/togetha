@@ -213,12 +213,15 @@ const EisenhowerMatrix: React.FC<EisenhowerMatrixProps> = ({
               style={styles.emptyQuadrant}
               onPress={() => onAddTask(quadrant.priority)}
             >
-              <MaterialIcons
-                name="add-circle-outline"
-                size={32}
-                color="#bdc3c7"
-              />
+              <View style={styles.emptyQuadrantIconContainer}>
+                <MaterialIcons
+                  name="add-circle-outline"
+                  size={40}
+                  color="#A855F7"
+                />
+              </View>
               <Text style={styles.emptyText}>Add your first task</Text>
+              <Text style={styles.emptySubText}>Tap to get started</Text>
             </TouchableOpacity>
           ) : (
             quadrantTasks.map((task) => (
@@ -686,33 +689,68 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 40,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: "#E2E8F0",
+    borderStyle: "dashed",
+    backgroundColor: "#FAFAFA",
+  },
+  emptyQuadrantIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: "#F3F4F6",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 12,
   },
   emptyText: {
+    fontSize: 14,
+    color: "#64748B",
+    marginBottom: 4,
+    textAlign: "center",
+    fontFamily: "Inter-Medium",
+  },
+  emptySubText: {
     fontSize: 12,
-    color: "#bdc3c7",
-    marginTop: 8,
+    color: "#94A3B8",
     textAlign: "center",
     fontFamily: "Inter-Regular",
   },
   taskRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 10, // Increased margin for better spacing
-    paddingHorizontal: 6, // Increased padding
+    marginBottom: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   checkbox: {
-    marginRight: 10, // Increased margin
-    paddingVertical: 2,
+    marginRight: 12,
+    paddingVertical: 4,
+    paddingHorizontal: 2,
   },
   taskTextContainer: {
     flex: 1,
   },
   taskText: {
-    fontSize: 14, // Increased font size for larger width
-    fontWeight: "400",
-    color: "#333333",
-    lineHeight: 20, // Increased line height
-    fontFamily: "Inter-Regular",
+    fontSize: 15,
+    fontWeight: "500",
+    color: "#374151",
+    lineHeight: 20,
+    fontFamily: "Inter-Medium",
+    letterSpacing: -0.1,
   },
   overdueTaskText: {
     color: "#e74c3c",

@@ -124,9 +124,30 @@ def note_list(request):
         return Response(serializer.data)
     
     elif request.method == 'POST':
+        # Check for potential duplicates based on title and recent creation time (within last 5 seconds)
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        title = request.data.get('title', '').strip()
+        if title:
+            five_seconds_ago = timezone.now() - timedelta(seconds=5)
+            existing_note = Note.objects.filter(
+                user=user,
+                title=title,
+                created_at__gte=five_seconds_ago
+            ).first()
+            
+            if existing_note:
+                # Return the existing note instead of creating a duplicate
+                serializer = NoteSerializer(existing_note, context={'request': request})
+                return Response({
+                    **serializer.data,
+                    'message': 'Note already exists, returning existing note'
+                }, status=status.HTTP_200_OK)
+        
         serializer = NoteSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
-            serializer.save(user=user)
+            note = serializer.save(user=user, last_modified_by=user)
             # Create a log for note creation
             create_log(
                 user=user,
@@ -174,9 +195,22 @@ def note_detail(request, pk):
     
     elif request.method in ['PUT', 'PATCH']:
         old_title = note.title
+        current_version = note.version
+        
+        # Check for version conflicts if version is provided in request
+        provided_version = request.data.get('version')
+        if provided_version is not None and int(provided_version) != current_version:
+            return Response({
+                "error": "Version conflict detected",
+                "current_version": current_version,
+                "provided_version": provided_version,
+                "message": "This note has been modified by another session. Please refresh and try again."
+            }, status=status.HTTP_409_CONFLICT)
+        
         serializer = NoteSerializer(note, data=request.data, partial=request.method=='PATCH', context={'request': request})
         if serializer.is_valid():
-            serializer.save()
+            # Set last_modified_by to current user
+            serializer.save(last_modified_by=user)
             # Create a log for note update
             create_log(
                 user=user,

@@ -46,6 +46,16 @@ class Note(models.Model):
     document_file = models.FileField(upload_to='documents/', null=True, blank=True)
     document_annotations = models.JSONField(null=True, blank=True)  # Store annotations as JSON
     
+    # Version tracking for conflict resolution
+    version = models.PositiveIntegerField(default=1)
+    last_modified_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='last_modified_notes')
+    
+    def save(self, *args, **kwargs):
+        # Increment version on each save (except initial creation)
+        if self.pk:
+            self.version += 1
+        super().save(*args, **kwargs)
+    
     def save_drawing_strokes(self, strokes_data):
         """Helper method to save drawing strokes"""
         self.drawing_data = strokes_data

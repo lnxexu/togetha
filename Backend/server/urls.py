@@ -46,6 +46,7 @@ urlpatterns = [
     path('signup/', views.signup, name='signup'),
     path('test_token/', views.test_token, name='test_token'),
     path('validate_token/', views.validate_token, name='validate_token'),
+    path('health/', views.health_check, name='health_check'),
     
     # Navigation URLs
     path('chatbot_page/', views.chatbot_page, name='chatbot_page'),

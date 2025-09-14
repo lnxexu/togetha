@@ -23,9 +23,9 @@ class NoteSerializer(serializers.ModelSerializer):
             'drawing_strokes', 'drawing_thumbnail', 
             'last_drawing_update', 'tag_names', 'formatted_content', 'tags',
             'type', 'folder', 'folder_name', 'folder_color', 'has_drawing', 'drawing_data',
-            'document_file', 'document_url', 'document_annotations'
+            'document_file', 'document_url', 'document_annotations', 'version', 'last_modified_by'
         ]
-        read_only_fields = ['created_at', 'updated_at', 'last_drawing_update', 'folder_name', 'folder_color']
+        read_only_fields = ['created_at', 'updated_at', 'last_drawing_update', 'folder_name', 'folder_color', 'last_modified_by']
     
     def get_document_url(self, obj):
         """Generate the full URL for the document file"""

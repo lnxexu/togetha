@@ -15,7 +15,8 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import Pdf from "react-native-pdf";
+// Conditionally import PDF component only for native platforms
+const Pdf = Platform.OS !== 'web' ? require("react-native-pdf").default : null;
 import { ScrollView } from "react-native";
 import { MaterialIcons, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import Svg, { Rect, Circle, Path, Text as SvgText } from "react-native-svg";
@@ -54,6 +55,10 @@ interface PDFAnnotationViewerProps {
   noteId?: string; // Optional note ID for backend integration
   enableDirectSave?: boolean; // Whether to save annotations directly to PDF
   autoSave?: boolean; // Whether to auto-save annotations
+  annotations?: Annotation[]; // External annotations to load
+  onAnnotationChange?: (annotations: Annotation[]) => void; // Callback when annotations change
+  networkStatus?: any; // Network status object
+  saveStatus?: any; // Save status object
 }
 
 const ANNOTATION_COLORS = [
@@ -79,6 +84,10 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   noteId,
   enableDirectSave = true,
   autoSave = true,
+  annotations: externalAnnotations,
+  onAnnotationChange,
+  networkStatus,
+  saveStatus,
 }) => {
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -140,13 +149,38 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     return source;
   }, [source]);
 
-  const pdfRef = useRef<Pdf>(null);
+  // Helper function to update annotations with callback
+  const updateAnnotations = useCallback((newAnnotations: Annotation[] | ((prev: Annotation[]) => Annotation[])) => {
+    if (typeof newAnnotations === 'function') {
+      setAnnotations(prev => {
+        const updated = newAnnotations(prev);
+        if (onAnnotationChange) {
+          onAnnotationChange(updated);
+        }
+        return updated;
+      });
+    } else {
+      setAnnotations(newAnnotations);
+      if (onAnnotationChange) {
+        onAnnotationChange(newAnnotations);
+      }
+    }
+  }, [onAnnotationChange]);
+
+  const pdfRef = useRef<any>(null);
   const annotationStorageKey = `pdf_annotations_${fileName}`;
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Load annotations when component mounts
   React.useEffect(() => {
-    loadAnnotations();
+    // Use external annotations if provided, otherwise load from storage
+    if (externalAnnotations && externalAnnotations.length > 0) {
+      updateAnnotations(externalAnnotations);
+      console.log(`Loaded ${externalAnnotations.length} external annotations`);
+    } else {
+      loadAnnotations();
+    }
+    
     console.log("PDFAnnotationViewer initialized with local source:", source);
 
     validatePDFSource();
@@ -246,7 +280,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
           return ann;
         });
         
-        setAnnotations(normalizedAnnotations);
+        updateAnnotations(normalizedAnnotations);
         console.log('✅ Loaded annotations from AsyncStorage:', normalizedAnnotations.length, 'items');
       }
     } catch (error) {
@@ -260,7 +294,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         annotationStorageKey,
         JSON.stringify(newAnnotations)
       );
-      setAnnotations(newAnnotations);
+      updateAnnotations(newAnnotations);
     } catch (error) {
       console.error("Error saving annotations:", error);
     }
@@ -312,7 +346,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       });
       
       // Update state first
-      setAnnotations(validatedAnnotations);
+      updateAnnotations(validatedAnnotations);
       
       // IMMEDIATELY save to AsyncStorage for persistence across reloads
       await AsyncStorage.setItem(
@@ -609,7 +643,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     setPdfTransform(prev => ({ ...prev, scale }));
     
     // Force re-render of annotations to match the new PDF scale
-    setAnnotations(prev => [...prev]);
+    updateAnnotations(prev => [...prev]);
   };
 
   // Tag management functions
@@ -1629,6 +1663,54 @@ return (
               {fileName}
             </Text>
             <Text style={styles.headerSubtitle}>PDF Annotation Viewer</Text>
+            
+            {/* Status Indicator */}
+            {(networkStatus || saveStatus) && (
+              <View style={styles.statusIndicator}>
+                <MaterialIcons 
+                  name={
+                    !networkStatus?.isConnected || !networkStatus?.isInternetReachable 
+                      ? "cloud-off" 
+                      : saveStatus?.status === 'saving' 
+                        ? "sync" 
+                        : saveStatus?.status === 'error'
+                          ? "error"
+                          : "cloud-done"
+                  } 
+                  size={12} 
+                  color={
+                    !networkStatus?.isConnected || !networkStatus?.isInternetReachable
+                      ? "#FF9500"
+                      : saveStatus?.status === 'saving' 
+                        ? "#007AFF"
+                        : saveStatus?.status === 'error'
+                          ? "#FF3B30"
+                          : "#34C759"
+                  } 
+                />
+                <Text style={[
+                  styles.statusText,
+                  { 
+                    color: !networkStatus?.isConnected || !networkStatus?.isInternetReachable
+                      ? "#FF9500"
+                      : saveStatus?.status === 'saving' 
+                        ? "#007AFF"
+                        : saveStatus?.status === 'error'
+                          ? "#FF3B30"
+                          : "#34C759"
+                  }
+                ]}>
+                  {!networkStatus?.isConnected || !networkStatus?.isInternetReachable
+                    ? "Offline"
+                    : saveStatus?.status === 'saving' 
+                      ? "Saving..."
+                      : saveStatus?.status === 'error'
+                        ? "Error"
+                        : "Saved"
+                  }
+                </Text>
+              </View>
+            )}
           </View>
           <View style={styles.headerRight}>
             {/* Save Mode Toggle */}
@@ -1945,16 +2027,24 @@ return (
           </View>
         ) : (
           <View style={{ flex: 1 }} {...panResponder.panHandlers}>
-<Pdf
-  ref={pdfRef}
-  source={enhancedSource}
-  style={styles.pdf}
-  onLoadComplete={onPdfLoadComplete}
-  onPageChanged={onPageChanged}
-  onScaleChanged={onPdfScaleChanged}
-  enablePaging={true}
-  horizontal={false}
-/>
+            {Platform.OS !== 'web' && Pdf ? (
+              <Pdf
+                ref={pdfRef}
+                source={enhancedSource}
+                style={styles.pdf}
+                onLoadComplete={onPdfLoadComplete}
+                onPageChanged={onPageChanged}
+                onScaleChanged={onPdfScaleChanged}
+                enablePaging={true}
+                horizontal={false}
+              />
+            ) : (
+              <View style={styles.webPdfPlaceholder}>
+                <MaterialIcons name="description" size={64} color="#9CA3AF" />
+                <Text style={styles.webPdfText}>PDF viewing not supported on web</Text>
+                <Text style={styles.webPdfSubtext}>Please use the mobile app to view and annotate PDFs</Text>
+              </View>
+            )}
             
             {/* Annotation overlay - positioned directly over the PDF.
                 When SCALE_STROKES_WITH_ZOOM is false we only scale positions (already handled in pdfToScreenCoordinates)
@@ -2842,6 +2932,45 @@ mainContainer: {
   },
   saveButtonSaving: {
     backgroundColor: "#F59E0B",
+  },
+  statusIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+  },
+  statusText: {
+    fontSize: 10,
+    fontWeight: "500",
+    marginLeft: 4,
+    color: "#fff",
+  },
+  webPdfPlaceholder: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    padding: 40,
+  },
+  webPdfText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#4B5563',
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  webPdfSubtext: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    marginTop: 8,
+    textAlign: 'center',
+    lineHeight: 20,
   },
 });
 

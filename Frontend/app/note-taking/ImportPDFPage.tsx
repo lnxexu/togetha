@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import {
   View,
   Text,
@@ -19,7 +20,11 @@ import * as FileSystem from "expo-file-system";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Navbar from "../NavBar";
 import PDFAnnotationViewer from "./components/PDFAnnotationViewer";
+import UnsavedChangesModal from "./components/UnsavedChangesModal";
 import { getLocalPDFPath, isRemoteURL } from "./utils/pdfUtils";
+import { useNetworkStatus, getNetworkStatusText, getNetworkStatusColor } from "./services/networkService";
+import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
+import { showSuccessToast, showErrorToast, showWarningToast } from "../utils/ToastUtils";
 
 const { width, height } = Dimensions.get("window");
 
@@ -31,14 +36,35 @@ interface PDFDocument {
   mimeType: string;
   lastModified: number;
   annotationCount: number;
+  noteId?: string; // Link to backend note
+  annotations?: any[]; // Store annotations
+}
+
+interface AnnotationSaveStatus {
+  status: 'saved' | 'saving' | 'offline' | 'error';
+  lastSaved?: Date;
+  message?: string;
 }
 
 const ImportPDFPage = () => {
+  const navigation = useNavigation();
   const [documents, setDocuments] = useState<PDFDocument[]>([]);
   const [selectedDocument, setSelectedDocument] = useState<PDFDocument | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [annotations, setAnnotations] = useState<any[]>([]);
+  const [saveStatus, setSaveStatus] = useState<AnnotationSaveStatus>({ status: 'saved' });
   const fadeAnim = useState(new Animated.Value(0))[0];
   const slideAnim = useState(new Animated.Value(50))[0];
+
+  // Unsaved changes modal state
+  const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false);
+  const [hasUnsavedAnnotations, setHasUnsavedAnnotations] = useState(false);
+
+  // Network status monitoring
+  const networkStatus = useNetworkStatus();
+  const isOnline = networkStatus.isConnected && 
+                  networkStatus.isInternetReachable && 
+                  networkStatus.isServerReachable;
 
   useEffect(() => {
     loadDocuments();
@@ -56,6 +82,60 @@ const ImportPDFPage = () => {
       }),
     ]).start();
   }, []);
+
+  // Navigation protection for unsaved annotations
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+      if (!hasUnsavedAnnotations) {
+        // No unsaved changes, allow navigation
+        return;
+      }
+
+      // Prevent default behavior of leaving the screen
+      e.preventDefault();
+
+      // Show confirmation modal
+      setShowUnsavedChangesModal(true);
+    });
+
+    return unsubscribe;
+  }, [navigation, hasUnsavedAnnotations]);
+
+  // Modal handlers for unsaved changes
+  const handleSaveAndExit = async () => {
+    setShowUnsavedChangesModal(false);
+    if (selectedDocument && hasUnsavedAnnotations) {
+      try {
+        // Clear the timeout and save immediately
+        clearTimeout((window as any).annotationSaveTimeout);
+        await saveAnnotationsToBackend(selectedDocument.id, annotations);
+        showSuccessToast("Annotations saved successfully");
+      } catch (error) {
+        showErrorToast("Failed to save annotations");
+        console.error('Error saving annotations:', error);
+        return; // Don't navigate if save failed
+      }
+    }
+    
+    // Navigate back after successful save
+    navigation.goBack();
+  };
+
+  const handleDiscardAndExit = () => {
+    setShowUnsavedChangesModal(false);
+    setHasUnsavedAnnotations(false);
+    showWarningToast("Changes discarded");
+    
+    // Clear any pending save timeout
+    clearTimeout((window as any).annotationSaveTimeout);
+    
+    // Navigate back without saving
+    navigation.goBack();
+  };
+
+  const handleContinueEditing = () => {
+    setShowUnsavedChangesModal(false);
+  };
 
   const loadDocuments = async () => {
     try {
@@ -176,6 +256,17 @@ const ImportPDFPage = () => {
       
       console.log('Opening PDF:', document.name, 'at URI:', document.uri);
       setSelectedDocument(document);
+      
+      // Load existing annotations for this document
+      try {
+        const loadedAnnotations = await loadAnnotations(document.id);
+        setAnnotations(loadedAnnotations);
+        console.log(`Loaded ${loadedAnnotations.length} annotations for document:`, document.name);
+      } catch (error) {
+        console.error('Failed to load annotations:', error);
+        setAnnotations([]);
+      }
+      
     } catch (error) {
       console.error('Error checking file:', error);
       Alert.alert("Error", "Could not access the PDF file.");
@@ -225,6 +316,213 @@ const ImportPDFPage = () => {
     );
   };
 
+  // Annotation handling functions
+  const saveAnnotationsToBackend = async (docId: string, annotations: any[]) => {
+    if (!isOnline) {
+      // Save locally when offline
+      await saveAnnotationsLocally(docId, annotations);
+      setSaveStatus({ 
+        status: 'offline', 
+        message: 'Annotations saved locally. Will sync when online.',
+        lastSaved: new Date()
+      });
+      return;
+    }
+
+    try {
+      setSaveStatus({ status: 'saving' });
+      
+      const token = await AsyncStorage.getItem('authToken');
+      if (!token) {
+        throw new Error('No auth token found');
+      }
+
+      const document = documents.find(doc => doc.id === docId);
+      if (!document) {
+        throw new Error('Document not found');
+      }
+
+      // Create or update note with document annotations
+      const noteData = {
+        title: `PDF: ${document.name}`,
+        content: `PDF document with ${annotations.length} annotations`,
+        type: 'document',
+        document_annotations: annotations,
+        document_file: document.uri,
+      };
+
+      const url = document.noteId 
+        ? `${API_URL}${API_ENDPOINTS.NOTES}${document.noteId}/`
+        : `${API_URL}${API_ENDPOINTS.NOTES}`;
+      
+      const method = document.noteId ? 'PUT' : 'POST';
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          Authorization: `Token ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(noteData),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const savedNote = await response.json();
+      
+      // Update document with note ID
+      if (!document.noteId) {
+        const updatedDocuments = documents.map(doc => 
+          doc.id === docId 
+            ? { ...doc, noteId: savedNote.id, annotations }
+            : doc
+        );
+        setDocuments(updatedDocuments);
+        await saveDocuments(updatedDocuments);
+      }
+
+      // Save locally as backup
+      await saveAnnotationsLocally(docId, annotations);
+      
+      setSaveStatus({ 
+        status: 'saved', 
+        message: 'Annotations saved successfully',
+        lastSaved: new Date()
+      });
+      setHasUnsavedAnnotations(false); // Clear unsaved state
+      
+      showSuccessToast('Annotations saved to cloud');
+      
+    } catch (error) {
+      console.error('Failed to save annotations to backend:', error);
+      
+      // Fall back to local storage
+      await saveAnnotationsLocally(docId, annotations);
+      
+      setSaveStatus({ 
+        status: 'error', 
+        message: 'Failed to save to server. Saved locally.',
+        lastSaved: new Date()
+      });
+      
+      showErrorToast('Failed to sync annotations. Saved locally.');
+    }
+  };
+
+  const saveAnnotationsLocally = async (docId: string, annotations: any[]) => {
+    try {
+      await AsyncStorage.setItem(
+        `pdf_annotations_${docId}`, 
+        JSON.stringify({
+          annotations,
+          lastModified: new Date().toISOString(),
+        })
+      );
+      
+      // Update annotation count in document
+      const updatedDocuments = documents.map(doc => 
+        doc.id === docId 
+          ? { ...doc, annotationCount: annotations.length, annotations }
+          : doc
+      );
+      setDocuments(updatedDocuments);
+      await saveDocuments(updatedDocuments);
+      
+    } catch (error) {
+      console.error('Failed to save annotations locally:', error);
+      throw error;
+    }
+  };
+
+  const loadAnnotations = async (docId: string): Promise<any[]> => {
+    try {
+      const stored = await AsyncStorage.getItem(`pdf_annotations_${docId}`);
+      if (stored) {
+        const data = JSON.parse(stored);
+        return data.annotations || [];
+      }
+      
+      // Try to load from backend if available
+      if (isOnline) {
+        const document = documents.find(doc => doc.id === docId);
+        if (document?.noteId) {
+          const token = await AsyncStorage.getItem('authToken');
+          if (token) {
+            const response = await fetch(
+              `${API_URL}${API_ENDPOINTS.NOTES}${document.noteId}/`,
+              {
+                headers: { Authorization: `Token ${token}` }
+              }
+            );
+            
+            if (response.ok) {
+              const note = await response.json();
+              if (note.document_annotations) {
+                // Save locally for offline access
+                await saveAnnotationsLocally(docId, note.document_annotations);
+                return note.document_annotations;
+              }
+            }
+          }
+        }
+      }
+      
+      return [];
+    } catch (error) {
+      console.error('Failed to load annotations:', error);
+      return [];
+    }
+  };
+
+  const handleAnnotationChange = async (newAnnotations: any[]) => {
+    if (!selectedDocument) return;
+    
+    setAnnotations(newAnnotations);
+    setHasUnsavedAnnotations(true); // Mark as having unsaved changes
+    setSaveStatus({ status: 'saving', message: 'Saving annotations...' });
+    
+    // Debounced save to avoid excessive API calls
+    clearTimeout((window as any).annotationSaveTimeout);
+    (window as any).annotationSaveTimeout = setTimeout(() => {
+      saveAnnotationsToBackend(selectedDocument.id, newAnnotations);
+    }, 2000); // Save 2 seconds after user stops editing
+  };
+
+  const getSaveStatusIcon = () => {
+    if (!isOnline) return "cloud-off";
+    
+    switch (saveStatus.status) {
+      case 'saving': return "sync";
+      case 'saved': return "cloud-done";
+      case 'error': return "error";
+      default: return "cloud-done";
+    }
+  };
+
+  const getSaveStatusColor = () => {
+    if (!isOnline) return "#FF9500"; // Orange for offline
+    
+    switch (saveStatus.status) {
+      case 'saving': return "#007AFF";
+      case 'saved': return "#34C759";
+      case 'error': return "#FF3B30";
+      default: return "#34C759";
+    }
+  };
+
+  const getSaveStatusText = () => {
+    if (!isOnline) return getNetworkStatusText(networkStatus);
+    
+    switch (saveStatus.status) {
+      case 'saving': return "Saving...";
+      case 'saved': return "Saved";
+      case 'error': return "Error";
+      default: return "Saved";
+    }
+  };
+
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
@@ -245,6 +543,10 @@ const ImportPDFPage = () => {
         onClose={handleCloseDocument}
         enableDirectSave={true}
         autoSave={true}
+        annotations={annotations}
+        onAnnotationChange={handleAnnotationChange}
+        networkStatus={networkStatus}
+        saveStatus={saveStatus}
       />
     );
   }
@@ -272,6 +574,23 @@ const ImportPDFPage = () => {
           <View style={styles.header}>
             <Text style={styles.headerTitle}>PDF Documents</Text>
             <Text style={styles.headerSubtitle}>Import and annotate PDF documents with embedded annotations</Text>
+            
+            {/* Network and Save Status */}
+            <View style={styles.statusContainer}>
+              <MaterialIcons 
+                name={getSaveStatusIcon()} 
+                size={16} 
+                color={getSaveStatusColor()} 
+              />
+              <Text style={[styles.statusText, { color: getSaveStatusColor() }]}>
+                {getSaveStatusText()}
+              </Text>
+              {saveStatus.lastSaved && (
+                <Text style={styles.lastSavedText}>
+                  Last saved: {saveStatus.lastSaved.toLocaleTimeString()}
+                </Text>
+              )}
+            </View>
           </View>
 
           {/* Import Section */}
@@ -345,6 +664,13 @@ const ImportPDFPage = () => {
       </LinearGradient>
       
       <Navbar activeRoute="PDFs" />
+
+      <UnsavedChangesModal
+        visible={showUnsavedChangesModal}
+        onSave={handleSaveAndExit}
+        onDiscard={handleDiscardAndExit}
+        onCancel={handleContinueEditing}
+      />
     </SafeAreaView>
   );
 };
@@ -518,6 +844,32 @@ const styles = StyleSheet.create({
     backgroundColor: "#fef2f2",
     borderLeftWidth: 1,
     borderLeftColor: "#fecaca",
+  },
+  statusContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+  },
+  statusText: {
+    fontSize: 14,
+    fontWeight: "500",
+    marginLeft: 6,
+    textShadowColor: "rgba(0,0,0,0.1)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 1,
+  },
+  lastSavedText: {
+    fontSize: 12,
+    color: "rgba(255, 255, 255, 0.7)",
+    marginLeft: 8,
+    fontWeight: "400",
   },
 });
 

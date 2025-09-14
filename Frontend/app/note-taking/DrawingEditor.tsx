@@ -27,10 +27,12 @@ import DrawingToolbar from "./components/DrawingToolbar";
 import { useDrawingState } from "./hooks/useDrawingState";
 import { DrawingStroke, drawingAPI } from "./services/drawingAPI";
 import { TemplateType } from "./components/TemplateOverlay";
+import UnsavedChangesModal from "./components/UnsavedChangesModal";
 import {
   getTemplateOptions,
   getTemplateBackgroundColor,
 } from "./utils/templateConfig";
+import { useNetworkStatus, getNetworkStatusText, getNetworkStatusColor } from "./services/networkService";
 
 // Configuration: control whether visual thickness / font sizes scale with canvas zoom.
 // When false, strokes remain visually stable (positions still follow zoom via coordinate conversion)
@@ -146,6 +148,9 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
   const [folders, setFolders] = useState<Folder[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [folderName, setFolderName] = useState("Unorganized Notes");
+  
+  // Unsaved changes modal state
+  const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false);
   const [showFolderModal, setShowFolderModal] = useState(false);
 
   // Tags states
@@ -157,6 +162,12 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
   const [syncStatus, setSyncStatus] = useState<"saved" | "syncing" | "offline">(
     "saved"
   );
+
+  // Network status monitoring
+  const networkStatus = useNetworkStatus();
+  const isOnline = networkStatus.isConnected && 
+                  networkStatus.isInternetReachable && 
+                  networkStatus.isServerReachable;
 
   // Exit confirmation modal state
   const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
@@ -379,33 +390,45 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
 
   // Sync status functions
   const getSyncStatusIcon = () => {
+    // If network is offline, always show offline status
+    if (!isOnline) {
+      return "cloud-off";
+    }
+    
+    // Otherwise show actual sync status
     switch (syncStatus) {
       case "syncing":
         return "sync";
-      case "offline":
-        return "cloud-off";
       default:
         return "cloud-done";
     }
   };
 
   const getSyncStatusColor = () => {
+    // If network is offline, always show offline color
+    if (!isOnline) {
+      return "#FF9500"; // Orange for offline
+    }
+    
+    // Otherwise show actual sync status color
     switch (syncStatus) {
       case "syncing":
-        return "#F59E0B";
-      case "offline":
-        return "#EF4444";
+        return "#007AFF"; // Blue for syncing
       default:
-        return "#34C759";
+        return "#34C759"; // Green for saved
     }
   };
 
   const getSyncStatusText = () => {
+    // If network is offline, always show network status
+    if (!isOnline) {
+      return getNetworkStatusText(networkStatus);
+    }
+    
+    // Otherwise show actual sync status
     switch (syncStatus) {
       case "syncing":
-        return "Syncing...";
-      case "offline":
-        return "Offline";
+        return "Saving...";
       default:
         return "Auto-saved";
     }
@@ -590,21 +613,55 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
   };
 
   const handleBack = () => {
-    // If there are strokes (drawing content) or unsaved changes, show toast and exit
+    // If there are strokes (drawing content) or unsaved changes, show confirmation modal
     if (strokes.length > 0 || hasUnsavedChanges) {
-      showSuccessToast("Drawing saved automatically");
-      // Add haptic feedback
-      if (Platform.OS === 'ios') {
-        Vibration.vibrate(10);
+      setShowUnsavedChangesModal(true);
+    } else {
+      // No changes to save, navigate back directly
+      if (onBack) {
+        onBack();
+      } else if (navigation && typeof navigation.goBack === "function") {
+        navigation.goBack();
       }
     }
+  };
+
+  // Modal handlers for unsaved changes
+  const handleSaveAndExit = async () => {
+    setShowUnsavedChangesModal(false);
+    try {
+      if (strokes.length > 0 || hasUnsavedChanges) {
+        await saveDrawing();
+        showSuccessToast("Drawing saved successfully");
+      }
+    } catch (error) {
+      showErrorToast("Failed to save drawing");
+      console.error('Error saving drawing:', error);
+      return; // Don't navigate if save failed
+    }
     
-    // Navigate back
+    // Navigate back after successful save
     if (onBack) {
       onBack();
     } else if (navigation && typeof navigation.goBack === "function") {
       navigation.goBack();
     }
+  };
+
+  const handleDiscardAndExit = () => {
+    setShowUnsavedChangesModal(false);
+    showWarningToast("Changes discarded");
+    
+    // Navigate back without saving
+    if (onBack) {
+      onBack();
+    } else if (navigation && typeof navigation.goBack === "function") {
+      navigation.goBack();
+    }
+  };
+
+  const handleContinueEditing = () => {
+    setShowUnsavedChangesModal(false);
   };
   
   const getTemplateOptionsForCanvas = () => {
@@ -1020,6 +1077,13 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
             </View>
           </View>
         </Modal>
+
+        <UnsavedChangesModal
+          visible={showUnsavedChangesModal}
+          onSave={handleSaveAndExit}
+          onDiscard={handleDiscardAndExit}
+          onCancel={handleContinueEditing}
+        />
     </KeyboardAvoidingView>
   );
 };

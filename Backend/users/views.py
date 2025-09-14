@@ -78,16 +78,108 @@ def user_profile(request):
 
 @api_auth_required(['GET'])
 def user_progress(request):
-    """Get the user's progress statistics"""
+    """Get the user's progress statistics with time-based filtering"""
+    from django.db.models import Count, Q
+    from datetime import datetime, timedelta
+    from django.utils import timezone
+    
     user = request.user
     
-    # Check if refresh is requested
+    # Get time period parameter (default to 'month')
+    period = request.query_params.get('period', 'month')
     refresh = request.query_params.get('refresh', 'false').lower() == 'true'
+    
+    # Calculate date ranges
+    now = timezone.now()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    if period == 'week':
+        start_date = today_start - timedelta(days=7)
+        period_name = 'This Week'
+    elif period == 'month':
+        start_date = today_start - timedelta(days=30)
+        period_name = 'This Month'
+    elif period == 'year':
+        start_date = today_start - timedelta(days=365)
+        period_name = 'This Year'
+    else:  # overall
+        start_date = user.date_joined
+        period_name = 'All Time'
     
     # Get or create user progress record
     progress, created = UserProgress.objects.get_or_create(user=user)
     
-    # Update statistics if needed
+    # Calculate time-based statistics
+    tasks_completed = Task.objects.filter(
+        user=user, 
+        completed=True,
+        updated_at__gte=start_date
+    ).count()
+    
+    notes_created = Note.objects.filter(
+        user=user,
+        created_at__gte=start_date
+    ).count()
+    
+    chatbot_interactions = Message.objects.filter(
+        conversation__user=user,
+        message_type='user',
+        created_at__gte=start_date
+    ).count()
+    
+    # Calculate daily progress for the last 7 days for charts
+    daily_data = []
+    for i in range(6, -1, -1):
+        day_start = today_start - timedelta(days=i)
+        day_end = day_start + timedelta(days=1)
+        
+        day_tasks = Task.objects.filter(
+            user=user,
+            completed=True,
+            updated_at__gte=day_start,
+            updated_at__lt=day_end
+        ).count()
+        
+        day_notes = Note.objects.filter(
+            user=user,
+            created_at__gte=day_start,
+            created_at__lt=day_end
+        ).count()
+        
+        daily_data.append({
+            'date': day_start.strftime('%Y-%m-%d'),
+            'day_name': day_start.strftime('%a'),
+            'tasks': day_tasks,
+            'notes': day_notes
+        })
+    
+    # Calculate weekly progress for the last 4 weeks for monthly view
+    weekly_data = []
+    for i in range(3, -1, -1):
+        week_start = today_start - timedelta(weeks=i+1)
+        week_end = week_start + timedelta(weeks=1)
+        
+        week_tasks = Task.objects.filter(
+            user=user,
+            completed=True,
+            updated_at__gte=week_start,
+            updated_at__lt=week_end
+        ).count()
+        
+        week_notes = Note.objects.filter(
+            user=user,
+            created_at__gte=week_start,
+            created_at__lt=week_end
+        ).count()
+        
+        weekly_data.append({
+            'week_start': week_start.strftime('%Y-%m-%d'),
+            'week_label': f'Week {4-i}',
+            'tasks': week_tasks,
+            'notes': week_notes
+        })
+    
+    # Update overall progress if needed
     if created or refresh:
         progress.tasks_completed = Task.objects.filter(user=user, completed=True).count()
         progress.notes_created = Note.objects.filter(user=user).count()
@@ -97,9 +189,35 @@ def user_progress(request):
         ).count()
         progress.save()
     
-    # Serialize and return data
-    serializer = UserProgressSerializer(progress)
-    return Response(serializer.data)
+    # Prepare response data
+    response_data = {
+        'period': period,
+        'period_name': period_name,
+        'start_date': start_date.isoformat(),
+        'end_date': now.isoformat(),
+        
+        # Period-specific stats
+        'tasks_completed': tasks_completed,
+        'notes_created': notes_created,
+        'chatbot_interactions': chatbot_interactions,
+        
+        # Overall stats
+        'overall_tasks_completed': progress.tasks_completed,
+        'overall_notes_created': progress.notes_created,
+        'overall_chatbot_interactions': progress.chatbot_interactions,
+        
+        # Chart data
+        'daily_progress': daily_data,
+        'weekly_progress': weekly_data,
+        
+        # User info
+        'username': user.username,
+        'email': user.email,
+        'date_joined': user.date_joined.isoformat() if user.date_joined else None,
+        'last_login': progress.last_login.isoformat() if progress.last_login else None,
+    }
+    
+    return Response(response_data)
 
 @api_auth_required(['POST'])
 def manage_session(request):

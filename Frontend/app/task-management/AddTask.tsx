@@ -204,10 +204,22 @@ const AddTask: React.FC = () => {
 
       await taskService.createTask(payload);
 
-      showSuccessToast("Task created successfully!");
+      // Show appropriate success message based on online status
+      if (taskService.isOnline()) {
+        showSuccessToast("Task created successfully!");
+      } else {
+        showSuccessToast("Task saved offline. Will sync when online.");
+      }
       navigation.goBack();
     } catch (error) {
-      showErrorToast("Failed to create task. Please try again.");
+      console.error("Error creating task:", error);
+      
+      // Provide more specific error messages
+      if (!taskService.isOnline()) {
+        showErrorToast("Failed to save task offline. Please try again.");
+      } else {
+        showErrorToast("Failed to create task. Please try again.");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -472,6 +484,7 @@ const AddTask: React.FC = () => {
                               const isToday =
                                 currentDate.toDateString() ===
                                 new Date().toDateString();
+                              const isPastDate = currentDate.getTime() < new Date().setHours(0, 0, 0, 0);
                               const isSelected =
                                 formData.due_datetime &&
                                 currentDate.toDateString() ===
@@ -486,8 +499,17 @@ const AddTask: React.FC = () => {
                                     !isCurrentMonth && styles.inactiveDay,
                                     isToday && styles.todayCalendarDay,
                                     isSelected && styles.selectedCalendarDay,
+                                    isPastDate && styles.pastDateCalendarDay,
                                   ]}
                                   onPress={() => {
+                                    if (isPastDate) {
+                                      Alert.alert(
+                                        "Invalid Date",
+                                        "Please select today's date or a future date.",
+                                        [{ text: "OK", style: "default" }]
+                                      );
+                                      return;
+                                    }
                                     // Use UTC to avoid timezone shifts
                                     const selectedDate = new Date(
                                       Date.UTC(
@@ -506,6 +528,7 @@ const AddTask: React.FC = () => {
                                     );
                                     setShowDatePicker(false);
                                   }}
+                                  disabled={isPastDate}
                                 >
                                   <Text
                                     style={[
@@ -514,6 +537,7 @@ const AddTask: React.FC = () => {
                                       !isCurrentMonth && styles.inactiveDayText,
                                       isToday && styles.todayDayText,
                                       isSelected && styles.selectedDayText,
+                                      isPastDate && styles.pastDateText,
                                     ]}
                                   >
                                     {currentDate.getDate()}
@@ -1467,6 +1491,10 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 5,
   },
+  pastDateCalendarDay: {
+    backgroundColor: "#F1F5F9",
+    opacity: 0.5,
+  },
   calendarDayText: {
     fontSize: 15,
     color: "#1E293B",
@@ -1488,6 +1516,10 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontFamily: "Inter-Bold",
     fontWeight: "700",
+  },
+  pastDateText: {
+    color: "#94A3B8",
+    textDecorationLine: "line-through",
   },
   // Clock styles
   clockDropdown: {

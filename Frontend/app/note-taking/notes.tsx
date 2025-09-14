@@ -29,7 +29,7 @@ import RenderHtml from "react-native-render-html";
 import Navbar from "../NavBar";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import DrawingPreview from "./components/DrawingPreview";
+import TemplatePreview from "./components/TemplatePreview";
 import { DocumentPreviewModal } from "./components/DocumentPreviewModal";
 import { DocumentViewer } from "./components/DocumentViewer";
 import PDFAnnotationViewer from "./components/PDFAnnotationViewer";
@@ -1890,8 +1890,8 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
                 </View>
 
                 {strokeCount > 0 ? (
-                  <DrawingPreview
-                    drawingData={item.drawing_data}
+                  <TemplatePreview
+                    note={item}
                     width={windowWidth / 2 - 64}
                     height={120}
                   />
@@ -1909,146 +1909,90 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
             </View>
           );
         } else if (isDocument) {
-          // Document preview
-          const documentType = item.document_file
-            ?.toLowerCase()
-            .includes(".pdf")
-            ? "PDF"
-            : item.document_file?.toLowerCase().includes(".doc")
-            ? "Word"
-            : "Document";
-          const documentIcon =
-            documentType === "PDF" ? "picture-as-pdf" : "description";
-          const documentColor = documentType === "PDF" ? "#FF5722" : "#1976D2";
-
+          // Document preview with enhanced component
           return (
             <View style={styles.previewImageContainer}>
-              <View style={styles.documentPreview}>
-                <View style={styles.documentPreviewHeader}>
-                  <MaterialIcons
-                    name={documentIcon as any}
-                    size={32}
-                    color={documentColor}
-                    style={styles.documentIcon}
-                  />
-                  <View
-                    style={[
-                      styles.documentBadge,
-                      { backgroundColor: documentColor },
-                    ]}
-                  >
-                    <Text style={styles.documentBadgeText}>{documentType}</Text>
-                  </View>
-                </View>
+              <TemplatePreview
+                note={item}
+                width={windowWidth / 2 - 64}
+                height={120}
+              />
 
-                <View style={styles.documentInfo}>
-                  <Text style={styles.documentTitle} numberOfLines={2}>
-                    {item.title || "Untitled Document"}
-                  </Text>
-                  <Text style={styles.documentDataStatus}>
-                    {item.document_annotations
-                      ? `${
-                          Object.keys(item.document_annotations).length
-                        } annotations`
-                      : "No annotations"}
-                  </Text>
-                </View>
+              <TouchableOpacity
+                style={styles.viewDocumentButton}
+                onPress={async () => {
+                  const documentType = item.document_file
+                    ?.toLowerCase()
+                    .includes(".pdf")
+                    ? "PDF"
+                    : item.document_file?.toLowerCase().includes(".doc")
+                    ? "Word"
+                    : "Document";
 
-                <TouchableOpacity
-                  style={styles.viewDocumentButton}
-                  onPress={async () => {
-                    const docType =
-                      documentType === "PDF"
-                        ? "pdf"
-                        : documentType === "Word"
-                        ? "word"
-                        : "document";
+                  const docType =
+                    documentType === "PDF"
+                      ? "pdf"
+                      : documentType === "Word"
+                      ? "word"
+                      : "document";
 
-                    const documentUrl =
-                      item.document_url || item.document_file || "";
-                    let finalDocumentUri = documentUrl;
+                  const documentUrl =
+                    item.document_url || item.document_file || "";
+                  let finalDocumentUri = documentUrl;
 
-                    // For PDF files, download to local storage if it's a remote URL
-                    if (docType === "pdf" && isRemoteURL(documentUrl)) {
-                      try {
-                        console.log(
-                          "PDF is remote URL, downloading to local storage:",
-                          documentUrl
-                        );
-                        finalDocumentUri = await getLocalPDFPath(documentUrl);
-                        console.log(
-                          "PDF downloaded to local path:",
-                          finalDocumentUri
-                        );
-                      } catch (error) {
-                        console.error(
-                          "Failed to download PDF to local storage:",
-                          error
-                        );
-                        // Fall back to original URL - PDFAnnotationViewer will handle the error
-                        finalDocumentUri = documentUrl;
-                      }
+                  // For PDF files, download to local storage if it's a remote URL
+                  if (docType === "pdf" && isRemoteURL(documentUrl)) {
+                    try {
+                      console.log(
+                        "PDF is remote URL, downloading to local storage:",
+                        documentUrl
+                      );
+                      finalDocumentUri = await getLocalPDFPath(documentUrl);
+                      console.log(
+                        "PDF downloaded to local path:",
+                        finalDocumentUri
+                      );
+                    } catch (error) {
+                      console.error(
+                        "Failed to download PDF to local storage:",
+                        error
+                      );
+                      // Fall back to original URL - PDFAnnotationViewer will handle the error
+                      finalDocumentUri = documentUrl;
                     }
+                  }
 
-                    setCurrentDocument({
-                      uri: finalDocumentUri,
-                      name: item.title || "Untitled Document",
-                      noteId: item.id,
-                      type: docType,
-                    });
+                  setCurrentDocument({
+                    uri: finalDocumentUri,
+                    name: item.title || "Untitled Document",
+                    noteId: item.id,
+                    type: docType,
+                  });
 
-                    // Use PDFAnnotationViewer for PDF files, DocumentViewer for others
-                    if (docType === "pdf") {
-                      setShowPDFViewer(true);
-                    } else {
-                      setShowDocumentViewer(true);
-                    }
-                  }}
-                >
-                  <MaterialIcons name="visibility" size={16} color="#FFFFFF" />
-                  <Text style={styles.viewDocumentButtonText}>
-                    View Document
-                  </Text>
-                </TouchableOpacity>
-              </View>
+                  // Use PDFAnnotationViewer for PDF files, DocumentViewer for others
+                  if (docType === "pdf") {
+                    setShowPDFViewer(true);
+                  } else {
+                    setShowDocumentViewer(true);
+                  }
+                }}
+              >
+                <MaterialIcons name="visibility" size={16} color="#FFFFFF" />
+                <Text style={styles.viewDocumentButtonText}>
+                  View Document
+                </Text>
+              </TouchableOpacity>
             </View>
           );
         } else {
-          // Text note preview (existing logic remains the same)
-          if (item.formatted_content) {
-            return (
-              <View style={styles.previewContentContainer}>
-                <RenderHtml
-                  contentWidth={windowWidth / 2 - 64}
-                  source={{ html: item.formatted_content }}
-                  tagsStyles={previewHtmlTagStyles}
-                  enableExperimentalMarginCollapsing={true}
-                />
-              </View>
-            );
-          } else if (item.content) {
-            return (
-              <View style={styles.previewTextContainer}>
-                <Text style={styles.previewTextContent} numberOfLines={4}>
-                  {item.content}
-                </Text>
-              </View>
-            );
-          } else {
-            return (
-              <View style={styles.previewDocumentContainer}>
-                <View style={styles.documentLines}>
-                  <View
-                    style={[styles.documentLine, styles.documentTitleLine]}
-                  />
-                  <View style={[styles.documentLine, { width: "90%" }]} />
-                  <View style={[styles.documentLine, { width: "75%" }]} />
-                  <View style={[styles.documentLine, { width: "85%" }]} />
-                  <View style={[styles.documentLine, { width: "65%" }]} />
-                </View>
-              </View>
-            );
-          }
+          // Enhanced text note preview
+          return (
+            <TemplatePreview
+              note={item}
+              width={windowWidth / 2 - 64}
+              height={120}
+            />
+          );
         }
       };
 

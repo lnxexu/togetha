@@ -13,3 +13,4 @@ pyotp
 qrcode[pil]
 cryptography
 bcrypt
+pytesseract

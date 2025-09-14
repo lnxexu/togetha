@@ -24,7 +24,7 @@ export const TaskNotificationChecker = () => {
       const notificationId = `${task.id}_${new Date().toDateString()}`;
       
       // Check if we already notified today for this task
-      const existingNotifications = await NotificationService.getNotifications(task.id);
+      const existingNotifications = await NotificationService.getNotifications();
       const alreadyNotified = existingNotifications.some(
         n => n.taskId === task.id && 
         new Date(n.createdAt).toDateString() === new Date().toDateString()

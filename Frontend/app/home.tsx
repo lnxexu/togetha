@@ -810,7 +810,9 @@ export default function Home() {
               </TouchableOpacity>
             </View>
           </LinearGradient>
-        </Animated.View>        {/* Main Content Container positioned above header */}
+        </Animated.View>
+        
+        {/* Main Content Container positioned above header */}
         <Animated.View style={[
           styles.mainContentContainer,
           {

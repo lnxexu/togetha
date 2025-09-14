@@ -31,7 +31,7 @@ const ManageProfile: React.FC = () => {
 
     const loadUserData = async () => {
         try {
-            const profile = await userService.getUserProfile();
+            const profile = await userService.getUserInfo();
             // time formatting for date_joined to make it more readable
             if (profile.date_joined) {
                 const date = new Date(profile.date_joined);
@@ -119,9 +119,9 @@ const ManageProfile: React.FC = () => {
                 {/* Profile Summary */}
                 <View style={styles.profileSummary}>
                     <View style={styles.profilePicContainer}>
-                        {userData.profilePicture ? (
+                        {userData.profile?.profile_picture ? (
                             <Image 
-                                source={{ uri: userData.profilePicture }} 
+                                source={{ uri: userData.profile.profile_picture }} 
                                 style={styles.profilePic}
                             />
                         ) : (

@@ -343,7 +343,7 @@ git clone [repository-url]
 cd Togetha/Frontend
 npm install
 ```
-
+   
 2. Generate Android Folder (if missing)
 
 ```bash

@@ -6,6 +6,7 @@ import { RootStackParamList } from "../navigation/AppNavigator";
 import Navbar from "../NavBar";
 import EisenhowerMatrix from "./components/EisenhowerMatrix";
 import TaskListView from "./components/TaskListView";
+import OfflineIndicator from "./components/OfflineIndicator";
 import { Task, TaskCategory } from "./types/Task";
 import { LinearGradient } from "expo-linear-gradient";
 import  taskService  from "./services/taskService";
@@ -226,20 +227,29 @@ const ToDo: React.FC = () => {
   const loadTasks = async () => {
     try {
       setIsLoading(true);
-      console.log("Fetching tasks from the server...");
+      console.log("Loading tasks...");
 
       const loadedTasks = await taskService.getAllTasks();
 
       console.log(
-        `Successfully loaded ${loadedTasks.length} tasks from the server`
+        `Successfully loaded ${loadedTasks.length} tasks`
       );
       setTasks(loadedTasks);
     } catch (error) {
       console.error("Error loading tasks:", error);
-      Alert.alert(
-        "Error",
-        "Failed to load tasks. Please check your connection and try again."
-      );
+      
+      // Check if we're offline to provide appropriate error message
+      const isOnline = taskService.isOnline();
+      if (!isOnline) {
+        // Offline - tasks might still load from local storage
+        console.log("Device is offline, loaded tasks from local storage");
+      } else {
+        // Online but failed - show error
+        Alert.alert(
+          "Error",
+          "Failed to load tasks. Please check your connection and try again."
+        );
+      }
     } finally {
       setIsLoading(false);
     }
@@ -263,7 +273,13 @@ const ToDo: React.FC = () => {
           try {
             await taskService.deleteTask(taskId);
             await loadTasks();
+            
+            // Show appropriate message based on online status
+            if (!taskService.isOnline()) {
+              Alert.alert("Task Deleted", "Task deleted offline. Changes will sync when you're back online.");
+            }
           } catch (error) {
+            console.error("Error deleting task:", error);
             Alert.alert("Error", "Failed to delete task");
           }
         },
@@ -275,7 +291,13 @@ const ToDo: React.FC = () => {
     try {
       await taskService.markTaskComplete(taskId);
       await loadTasks();
+      
+      // Show appropriate message based on online status
+      if (!taskService.isOnline()) {
+        // Silent operation for offline - the offline indicator will show sync status
+      }
     } catch (error) {
+      console.error("Error updating task:", error);
       Alert.alert("Error", "Failed to update task");
     }
   };
@@ -401,6 +423,9 @@ const ToDo: React.FC = () => {
     <>
       <StatusBar barStyle="light-content" backgroundColor="#7C3AED" />
       <SafeAreaView style={[styles.container, safeAreaStyle]}>
+        {/* Offline Indicator */}
+        <OfflineIndicator style={{ top: safeAreaConfig.paddingTop }} />
+        
         {/* Header */}
         <LinearGradient
           colors={["#A855F7", "#8B5CF6", "#7C3AED"]}

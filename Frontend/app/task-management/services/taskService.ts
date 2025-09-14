@@ -6,6 +6,7 @@ import {
   convertToPhilippineTime,
   getCurrentPhilippineDate,
 } from "@/app/utils/dateHelpers";
+import offlineTaskService from './offlineTaskService';
 
 class TaskService {
   private async getAuthToken(): Promise<string | null> {
@@ -97,196 +98,68 @@ class TaskService {
   }
 
   async getAllTasks(): Promise<Task[]> {
-    try {
-      const response = await this.apiRequest<any[]>(API_ENDPOINTS.TASKS);
-      return await Promise.all(
-        response.map((task: any) => this.formatTaskDates(task))
-      );
-    } catch (error) {
-      console.error("Error fetching tasks:", error);
-      return [];
-    }
+    return offlineTaskService.getAllTasks();
   }
 
   async getTaskById(id: string): Promise<Task | undefined> {
-    try {
-      const response = await this.apiRequest<any>(
-        API_ENDPOINTS.TASK_DETAIL(id)
-      );
-      return this.formatTaskDates(response);
-    } catch (error) {
-      console.error(`Error fetching task with id ${id}:`, error);
-      return undefined;
-    }
+    return offlineTaskService.getTaskById(id);
   }
 
   async createTask(taskData: TaskFormData): Promise<Task> {
-    try {
-      // Get the auth token
-      const token = await this.getAuthToken();
-
-      // Get the username
-      const username =
-        (await AsyncStorage.getItem("username")) || "default_user";
-
-      // Prepare the payload
-      const payload = {
-        title: taskData.title,
-        description: taskData.description || "",
-        priority: taskData.priority || "not-urgent-not-important",
-        category: taskData.category || "",
-        completed: taskData.completed || false,
-        user: username,
-        created_at: new Date().toISOString(), // Use standard UTC ISO string
-        updated_at: new Date().toISOString(), // Use standard UTC ISO string
-        completed_at: taskData.completed_at
-          ? taskData.completed_at.toISOString()
-          : null,
-        due_datetime: taskData.due_datetime
-          ? taskData.due_datetime.toISOString()
-          : null,
-      };
-
-      console.log("Sending to backend:", payload);
-
-      const data = await this.apiRequest<Task>(
-        API_ENDPOINTS.TASKS,
-        "POST",
-        payload
-      );
-
-      return this.formatTaskDates(data);
-    } catch (error) {
-      console.error("Error in createTask:", error);
-      throw error;
-    }
+    return offlineTaskService.createTask(taskData);
   }
+
   async updateTask(id: string, updates: Partial<TaskFormData>): Promise<Task> {
-    // Transform data to match API expectations
-    const apiUpdates: any = {};
-
-    apiUpdates.updated_at = new Date().toISOString(); // Use standard UTC ISO string
-
-    // Handle title correctly
-    if (updates.title !== undefined) apiUpdates.title = updates.title;
-
-    if (updates.description !== undefined)
-      apiUpdates.description = updates.description;
-
-    // Handle date properly for backend in UTC
-    if (updates.due_datetime !== undefined) {
-      if (updates.due_datetime instanceof Date) {
-        // Send UTC ISO string to backend
-        apiUpdates.due_datetime = updates.due_datetime.toISOString();
-      } else if (typeof updates.due_datetime === "string") {
-        // Convert string date to Date and then to UTC ISO string
-        const dateObj = new Date(updates.due_datetime);
-        apiUpdates.due_datetime = dateObj.toISOString();
-      } else {
-        apiUpdates.due_datetime = null; // Handle null case
-      }
-    }
-
-    // Handle priority format correctly for the backend
-    if (updates.priority !== undefined) {
-      apiUpdates.priority = updates.priority.toLowerCase();
-    }
-
-    // Pass other fields directly
-    if (updates.category !== undefined) apiUpdates.category = updates.category;
-    if (updates.due_time !== undefined)
-      apiUpdates.due_time = updates.due_time || null;
-    if (updates.completed !== undefined)
-      apiUpdates.completed = updates.completed;
-
-    // Handle date timestamps in UTC
-    if (updates.completed_at !== undefined) {
-      if (updates.completed_at instanceof Date) {
-        apiUpdates.completed_at = updates.completed_at.toISOString();
-      } else if (typeof updates.completed_at === "string") {
-        const dateObj = new Date(updates.completed_at);
-        apiUpdates.completed_at = dateObj.toISOString();
-      } else {
-        apiUpdates.completed_at = null;
-      }
-    }
-
-    console.log("Sending to API:", apiUpdates);
-    console.log("API endpoint:", API_ENDPOINTS.TASK_DETAIL(id));
-    console.log("Now:", apiUpdates.updated_at);
-
-    try {
-      const data = await this.apiRequest<any>(
-        API_ENDPOINTS.TASK_DETAIL(id),
-        "PATCH",
-        apiUpdates
-      );
-      return this.formatTaskDates(data);
-    } catch (error) {
-      console.error("Error in updateTask:", error);
-      throw error;
-    }
+    return offlineTaskService.updateTask(id, updates);
   }
+
   async deleteTask(id: string): Promise<void> {
-    await this.apiRequest(API_ENDPOINTS.TASK_DETAIL(id), "DELETE");
+    return offlineTaskService.deleteTask(id);
   }
 
   async markTaskComplete(id: string): Promise<Task> {
-    const apiUpdates = {
-      completed: true,
-      completed_at: new Date().toISOString(), // Use standard UTC ISO string
-    };
-
-    const response = await this.apiRequest<any>(
-      API_ENDPOINTS.TASK_DETAIL(id),
-      "PATCH",
-      apiUpdates
-    );
-    return this.formatTaskDates(response);
+    return offlineTaskService.markTaskComplete(id);
   }
 
   async markTaskIncomplete(id: string): Promise<Task> {
-    const apiUpdates = {
-      completed: false,
-      completed_at: null,
-    };
-
-    const response = await this.apiRequest<any>(
-      API_ENDPOINTS.TASK_DETAIL(id),
-      "PATCH",
-      apiUpdates
-    );
-    return this.formatTaskDates(response);
+    return offlineTaskService.markTaskIncomplete(id);
   }
 
   async getTasksByPriority(priority: string): Promise<Task[]> {
-    try {
-      const allTasks = await this.getAllTasks();
-      return allTasks.filter((task) => task.priority === priority);
-    } catch (error) {
-      console.error("Error fetching tasks by priority:", error);
-      return [];
-    }
+    return offlineTaskService.getTasksByPriority(priority);
   }
 
   async getTasksByStatus(completed: boolean): Promise<Task[]> {
-    try {
-      const allTasks = await this.getAllTasks();
-      return allTasks.filter((task) => task.completed === completed);
-    } catch (error) {
-      console.error("Error fetching tasks by status:", error);
-      return [];
-    }
+    return offlineTaskService.getTasksByStatus(completed);
   }
 
   async getOverdueTasks(): Promise<Task[]> {
-    try {
-      const allTasks = await this.getAllTasks();
-      return allTasks.filter((task) => task.overdue && !task.completed);
-    } catch (error) {
-      console.error("Error fetching overdue tasks:", error);
-      return [];
-    }
+    return offlineTaskService.getOverdueTasks();
+  }
+
+  // Offline-specific methods
+  async syncWithServer(): Promise<void> {
+    return offlineTaskService.syncWithServer();
+  }
+
+  isOnline(): boolean {
+    return offlineTaskService.isOnline();
+  }
+
+  async hasPendingChanges(): Promise<boolean> {
+    return offlineTaskService.hasPendingChanges();
+  }
+
+  getNetworkStatus() {
+    return offlineTaskService.getNetworkStatus();
+  }
+
+  addNetworkStatusListener(listener: (status: any) => void): () => void {
+    return offlineTaskService.addNetworkStatusListener(listener);
+  }
+
+  getSyncStatus() {
+    return offlineTaskService.getSyncStatus();
   }
 }
 

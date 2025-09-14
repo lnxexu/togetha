@@ -22,6 +22,10 @@ import {
 import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
 import { LinearGradient } from "expo-linear-gradient";
 import { showSuccessToast, showErrorToast, showWarningToast } from "../utils/ToastUtils";
+import { useAutoSave } from "./hooks/useAutoSave";
+import { noteService, Note as NoteType, SaveStatus } from "./services/noteService";
+import { useNetworkStatus, getNetworkStatusText, getNetworkStatusColor } from "./services/networkService";
+import UnsavedChangesModal from "./components/UnsavedChangesModal";
 
 
 const { RichEditor, RichToolbar } = require("react-native-pell-rich-editor");
@@ -34,11 +38,12 @@ interface NoteEditorProps {
       initialNote?: {
         title: string;
         content: string;
-        formatted_content?: string; // Added formatted_content field
+        formatted_content?: string;
         tags?: string[];
         folderId?: string | null;
         createdAt?: string;
         updatedAt?: string;
+        version?: number;
       };
     };
   };
@@ -54,6 +59,7 @@ interface Note {
   folderId?: string | null;
   createdAt?: string;
   updatedAt?: string;
+  version?: number;
 }
 
 interface RinaPopupProps {
@@ -157,10 +163,17 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   const [showMoreOptions, setShowMoreOptions] = useState(false);
   const [showTagModal, setShowTagModal] = useState(false);
   const [newTag, setNewTag] = useState("");
-  const [syncStatus, setSyncStatus] = useState<"saved" | "syncing" | "offline">(
-    "saved"
-  );
-  const [noteId] = useState(route.params?.noteId || `note_${Date.now()}`);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>({ status: 'saved' });
+  const [noteId, setNoteId] = useState(route.params?.noteId || noteService.generateNoteId());
+  const [currentNote, setCurrentNote] = useState<NoteType>(() => ({
+    id: route.params?.noteId || noteService.generateNoteId(),
+    title: route.params?.initialNote?.title || "",
+    content: route.params?.initialNote?.content || "",
+    formatted_content: route.params?.initialNote?.formatted_content || "",
+    tags: route.params?.initialNote?.tags || [],
+    folderId: route.params?.initialNote?.folderId || null,
+    version: route.params?.initialNote?.version || 1,
+  }));
   const [showRinaPopup, setShowRinaPopup] = useState(false);
   const [selectedText, setSelectedText] = useState("");
   const [selectionPosition, setSelectionPosition] = useState({ x: 0, y: 0 });
@@ -182,6 +195,14 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   const [wordMeaning, setWordMeaning] = useState("");
   const [isLoadingMeaning, setIsLoadingMeaning] = useState(false);
   const [windowDimensions, setWindowDimensions] = useState(Dimensions.get('window'));
+  const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
+  // Network status monitoring
+  const networkStatus = useNetworkStatus();
+  const isOnline = networkStatus.isConnected && 
+                  networkStatus.isInternetReachable && 
+                  networkStatus.isServerReachable;
 
   // Animation states
   const fadeAnim = useState(new Animated.Value(0))[0];
@@ -280,20 +301,94 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     };
   }, []);
 
-  // Auto-save logic similar to DrawingEditor - debounced after 1 second
-  useEffect(() => {
-    if (title.trim() || content.trim() || formattedContent.trim()) {
-      setSyncStatus("syncing");
-      
-      const timeoutId = setTimeout(() => {
-        handleAutoSave();
-      }, 1000); // 1 second auto-save like drawing editor
-
-      return () => {
-        clearTimeout(timeoutId);
-      };
+  // Auto-save setup with new Google Docs-style system
+  const saveNote = async (note: NoteType): Promise<NoteType | void> => {
+    const result = await noteService.saveNote(note, false);
+    setSaveStatus(result.status);
+    
+    if (result.note.id !== note.id) {
+      // Note ID changed (server assigned new ID)
+      setNoteId(result.note.id);
+      setCurrentNote(result.note);
     }
-  }, [title, content, formattedContent, selectedFolderId, tags]);
+    
+    return result.note;
+  };
+
+  const { triggerSave, forceSave } = useAutoSave(currentNote, saveNote, {
+    delay: 2000, // 2 seconds like Google Docs
+    enabled: true,
+    onSaveStart: () => setSaveStatus({ status: 'saving' }),
+    onSaveSuccess: (result) => {
+      if (result && result.id !== currentNote.id) {
+        setNoteId(result.id);
+        setCurrentNote(result);
+      }
+    },
+    onSaveError: (error) => {
+      setSaveStatus({ 
+        status: 'error', 
+        message: 'Auto-save failed. Changes saved locally.' 
+      });
+    },
+  });
+
+  // Update current note when individual fields change and trigger auto-save
+  useEffect(() => {
+    const updatedNote: NoteType = {
+      ...currentNote,
+      title,
+      content,
+      formatted_content: formattedContent,
+      tags,
+      folderId: selectedFolderId,
+      updatedAt: new Date().toISOString(),
+    };
+    
+    setCurrentNote(updatedNote);
+    
+    // Only trigger save if there's actual content
+    if (title.trim() || content.trim() || formattedContent.trim()) {
+      triggerSave(updatedNote);
+    }
+  }, [title, content, formattedContent, tags, selectedFolderId]);
+
+  // Track unsaved changes
+  useEffect(() => {
+    const hasContent = Boolean(title.trim() || content.trim() || formattedContent.trim());
+    const hasChanges = saveStatus.status === 'saving' || saveStatus.status === 'error';
+    setHasUnsavedChanges(hasContent && hasChanges);
+  }, [title, content, formattedContent, saveStatus.status]);
+
+  // Handle back button with unsaved changes check
+  const handleBackPress = () => {
+    if (hasUnsavedChanges && (title.trim() || content.trim() || formattedContent.trim())) {
+      setShowUnsavedChangesModal(true);
+    } else {
+      navigation.goBack();
+    }
+  };
+
+  const handleSaveAndExit = async () => {
+    try {
+      await forceSave(currentNote);
+      showSuccessToast("Note saved successfully");
+      navigation.goBack();
+    } catch (error) {
+      showErrorToast("Failed to save note");
+    } finally {
+      setShowUnsavedChangesModal(false);
+    }
+  };
+
+  const handleDiscardAndExit = () => {
+    setShowUnsavedChangesModal(false);
+    navigation.goBack();
+  };
+
+  const handleContinueEditing = () => {
+    setShowUnsavedChangesModal(false);
+  };
 
   // Helper functions
   const getWordMeaning = async (word: string) => {
@@ -377,20 +472,6 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     setShowFolderModal(false);
   };
 
-  const getCurrentNoteData = (): Note => {
-    return {
-      id: noteId,
-      title,
-      content,
-      formatted_content: formattedContent,
-      tags,
-      folderId: selectedFolderId, // Include the selected folder ID
-      createdAt:
-        route.params?.initialNote?.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-  };
-
   const openColorPicker = (type: "text" | "background") => {
     setCurrentColorAction(type);
     setShowColorPicker(true);
@@ -409,104 +490,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     setShowColorPicker(false);
   };
 
-  // Storage functions
-  const saveToLocalStorage = async (noteData: Note) => {
-    try {
-      await storage.setItem(`note-${noteData.id}`, JSON.stringify(noteData));
-    } catch (e) {
-      showErrorToast("Failed to save note locally");
-      throw e;
-    }
-  };
-
-  const syncToCloud = async (noteData: Note) => {
-    try {
-      const token = await AsyncStorage.getItem("authToken");
-      if (!token) return;
-      // Prepare the request body
-      const requestBody = {
-        title: noteData.title,
-        content: noteData.content,
-        formatted_content: noteData.formatted_content,
-        tag_names: noteData.tags || [],
-        folder: noteData.folderId, // Send folder ID to the backend
-      };
-
-      // Check if this is a new note or an existing note
-      const isNewNote =
-        !route.params?.noteId || noteData.id.startsWith("note_");
-
-      const url = isNewNote
-        ? `${API_URL}${API_ENDPOINTS.NOTES}`
-        : `${API_URL}${API_ENDPOINTS.NOTES}${route.params?.noteId || noteData.id}/`;
-
-      const method = isNewNote ? "POST" : "PUT";
-
-      const response = await fetch(url, {
-        method: method,
-        headers: {
-          Authorization: `Token ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestBody),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to sync note");
-      }
-
-      const savedNote = await response.json();
-
-      // If it was a new note, return the server note with its ID
-      if (isNewNote) {
-        return savedNote;
-      }
-
-      return null; // No need to return for existing notes
-    } catch (error) {
-      showErrorToast("Failed to sync note to cloud");
-      throw error;
-    }
-  };
-
   // Event handlers
-  const handleAutoSave = async () => {
-    if (!title.trim() && !content.trim() && !formattedContent.trim()) {
-      setSyncStatus("saved");
-      return;
-    }
-
-    try {
-      const currentNote = getCurrentNoteData();
-      await saveToLocalStorage(currentNote);
-
-      // Check network connectivity
-      const isOnline = true; // Replace with actual network check like NetInfo.fetch()
-
-      if (isOnline) {
-        const savedNote = await syncToCloud(currentNote);
-
-        // If we got a new ID from the server (for newly created notes)
-        if (savedNote && savedNote.id && savedNote.id !== currentNote.id) {
-          await saveToLocalStorage({
-            ...currentNote,
-            id: savedNote.id,
-          });
-        }
-
-        setSyncStatus("saved");
-        // Only show toast when leaving the editor, not during auto-save
-        // showSuccessToast("Note auto-saved successfully");
-      } else {
-        setSyncStatus("offline");
-        // showWarningToast("Auto-saved offline. Will sync when connected.");
-      }
-    } catch (error) {
-      setSyncStatus("offline");
-      // showErrorToast("Auto-save failed. Please check your connection.");
-    }
-  };
-
   const handleSave = async () => {
     // Prevent duplicate saves by checking if already saving
     if (isSaving) {
@@ -515,45 +499,22 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
 
     setIsSaving(true);
     try {
-      const noteData = getCurrentNoteData();
-      await saveToLocalStorage(noteData);
-
-      // Check network connectivity
-      const isOnline = true; // Replace with actual network check like NetInfo.fetch()
-
-      if (isOnline) {
-        const savedNote = await syncToCloud(noteData);
-        // Note saved to cloud successfully
-
-        // If this was a new note and we received a server ID
-        if (savedNote && savedNote.id && savedNote.id !== noteData.id) {
-          // Save the note with the server ID before navigating back
-          await saveToLocalStorage({
-            ...noteData,
-            id: savedNote.id,
-          });
-        }
-
-        // Show toast notification instead of navigating back automatically
+      // Force immediate save (bypass debounce)
+      await forceSave(currentNote);
+      
+      // Show success message for manual saves
+      if (saveStatus.status === 'saved') {
         showSuccessToast("Note saved successfully");
-
-        // Update sync status in header
-        setSyncStatus("saved");
-      } else {
-        Alert.alert(
-          "Offline",
-          "Note saved locally. It will sync when you're back online."
-        );
-        setSyncStatus("offline");
+      } else if (saveStatus.status === 'offline') {
+        showWarningToast("Note saved locally. Will sync when online.");
+      } else if (saveStatus.status === 'conflict') {
+        showErrorToast("Note was modified elsewhere. Please refresh and try again.");
       }
 
-      // Don't automatically navigate back - let the user continue editing
-      // navigation.goBack();
     } catch (error) {
       showErrorToast("Failed to save note. Please try again.");
     } finally {
       // Add a slight delay before enabling the save button again
-      // This prevents rapid double-clicks even after save completes
       setTimeout(() => {
         setIsSaving(false);
       }, 1000);
@@ -613,24 +574,64 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   };
 
   const getSyncStatusIcon = () => {
-    switch (syncStatus) {
-      case "syncing":
+    // If network is offline, always show offline status
+    if (!isOnline) {
+      return "cloud-off";
+    }
+    
+    // Otherwise show actual save status
+    switch (saveStatus.status) {
+      case "saving":
         return "sync";
-      case "offline":
-        return "cloud-off";
+      case "saved":
+        return "cloud-done";
+      case "conflict":
+        return "warning";
+      case "error":
+        return "error";
       default:
         return "cloud-done";
     }
   };
 
   const getSyncStatusColor = () => {
-    switch (syncStatus) {
-      case "syncing":
-        return "#FF9500";
-      case "offline":
-        return "#FF3B30";
+    // If network is offline, always show offline color
+    if (!isOnline) {
+      return "#FF9500"; // Orange for offline
+    }
+    
+    // Otherwise show actual save status color
+    switch (saveStatus.status) {
+      case "saving":
+        return "#007AFF"; // Blue for saving
+      case "saved":
+        return "#34C759"; // Green for saved
+      case "conflict":
+      case "error":
+        return "#FF3B30"; // Red for error/conflict
       default:
         return "#34C759";
+    }
+  };
+
+  const getSyncStatusText = () => {
+    // If network is offline, always show network status
+    if (!isOnline) {
+      return getNetworkStatusText(networkStatus);
+    }
+    
+    // Otherwise show actual save status
+    switch (saveStatus.status) {
+      case "saving":
+        return "Saving...";
+      case "saved":
+        return "Saved";
+      case "conflict":
+        return "Conflict";
+      case "error":
+        return "Error";
+      default:
+        return "Saved";
     }
   };
 
@@ -660,17 +661,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
             <View style={styles.headerTopRow}>
               <TouchableOpacity
                 style={styles.backButton}
-                onPress={() => {
-                  // If content has changed, show toast and exit
-                  if (title.trim() || content.trim()) {
-                    showSuccessToast("Note saved automatically");
-                    // Add haptic feedback
-                    if (Platform.OS === 'ios') {
-                      Vibration.vibrate(10);
-                    }
-                  }
-                  navigation.goBack();
-                }}
+                onPress={handleBackPress}
               >
                 <Ionicons name="chevron-back" size={24} color="#fff" />
               </TouchableOpacity>
@@ -715,11 +706,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
                   <Text
                     style={[styles.syncStatus, { color: getSyncStatusColor() }]}
                   >
-                    {syncStatus === "syncing"
-                      ? "Syncing..."
-                      : syncStatus === "offline"
-                      ? "Offline"
-                      : "Saved"}
+                    {getSyncStatusText()}
                   </Text>
                 </View>
               </View>
@@ -1375,6 +1362,13 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
             </View>
           </View>
         </Modal>
+
+        <UnsavedChangesModal
+          visible={showUnsavedChangesModal}
+          onSave={handleSaveAndExit}
+          onDiscard={handleDiscardAndExit}
+          onCancel={handleContinueEditing}
+        />
       </Animated.View>
     </KeyboardAvoidingView>
   );

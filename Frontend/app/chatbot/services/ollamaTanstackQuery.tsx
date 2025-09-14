@@ -6,6 +6,14 @@ import { useMutation } from '@tanstack/react-query';
 
 // Add this to your component (replace the current handleSendMessage implementation)
 
+// Message interface definition
+interface Message {
+  id: string;
+  text: string;
+  isUser: boolean;
+  timestamp: Date;
+}
+
 // Ollama API types (matching your example)
 interface OllamaMessage {
   role: "user" | "assistant";
@@ -65,7 +73,14 @@ const fetchOllamaMessage = async ({ updatedMessages }: MutationVariables): Promi
 };
 
 // Inside your ChatBot component, replace handleSendMessage with this:
-export const useOllamaMutation = () => {
+interface UseOllamaMutationProps {
+  messages: Message[];
+  setMessages: (messages: Message[]) => void;
+  inputText: string;
+  setInputText: (text: string) => void;
+}
+
+export const useOllamaMutation = ({ messages, setMessages, inputText, setInputText }: UseOllamaMutationProps) => {
   const {
     mutate: sendMessage,
     isPending: isLoading,

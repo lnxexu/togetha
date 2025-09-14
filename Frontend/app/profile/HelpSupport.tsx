@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -8,17 +8,21 @@ import {
   Platform,
   Alert,
   Linking,
+  TextInput,
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { LinearGradient } from "expo-linear-gradient";
 import { RootStackParamList } from "../navigation/AppNavigator";
+import { utilityService } from "./services/utilityService";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 const HelpSupport: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
+  const [supportMessage, setSupportMessage] = useState("");
+  const [showContactForm, setShowContactForm] = useState(false);
 
   const helpSections = [
     {
@@ -109,36 +113,61 @@ const HelpSupport: React.FC = () => {
     },
   ];
 
-  const handleEmailSupport = () => {
-    const email = "support@togetha.app";
-    const subject = "Help Request - Togetha App";
-    const body = "Please describe your issue here...";
-    
-    Linking.openURL(`mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
+  const handleEmailSupport = async () => {
+    try {
+      if (showContactForm) {
+        // If contact form is open, send support request
+        await utilityService.contactSupport(supportMessage);
+        setSupportMessage("");
+        setShowContactForm(false);
+        Alert.alert(
+          "Support Request Sent",
+          "Your support request has been prepared. Please share the generated file with our support team.",
+          [{ text: "OK" }]
+        );
+      } else {
+        // Show contact form
+        setShowContactForm(true);
+      }
+    } catch (error) {
+      Alert.alert(
+        "Error",
+        error instanceof Error ? error.message : "Failed to send support request"
+      );
+    }
   };
 
   const handleLiveChat = () => {
     Alert.alert(
       "Live Chat",
-      "Live chat feature will be available soon! For now, please use email support.",
-      [{ text: "OK" }]
+      "Live chat feature will be available soon! For now, please use email support or send us a support request.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Send Support Request", onPress: () => setShowContactForm(true) }
+      ]
     );
   };
 
   const handleCommunityForum = () => {
-    Alert.alert(
-      "Community Forum",
-      "Community forum will be available in the next update!",
-      [{ text: "OK" }]
-    );
+    const forumUrl = "https://github.com/lnxexu/Togetha/discussions"; // Using GitHub discussions as forum
+    Linking.openURL(forumUrl).catch(() => {
+      Alert.alert(
+        "Cannot Open Forum",
+        "Unable to open the community forum. Please check your internet connection and try again."
+      );
+    });
   };
 
   const handleVideoTutorials = () => {
-    Alert.alert(
-      "Video Tutorials",
-      "Video tutorials are coming soon! Check back in future updates.",
-      [{ text: "OK" }]
-    );
+    // For now, redirect to a placeholder or documentation
+    const tutorialsUrl = "https://github.com/lnxexu/Togetha/wiki"; // Using GitHub wiki for tutorials
+    Linking.openURL(tutorialsUrl).catch(() => {
+      Alert.alert(
+        "Video Tutorials",
+        "Video tutorials are coming soon! Check back in future updates.",
+        [{ text: "OK" }]
+      );
+    });
   };
 
   const handleHelpItemPress = (item: { title: string; icon: string }) => {
@@ -196,6 +225,43 @@ const HelpSupport: React.FC = () => {
             ))}
           </View>
         </View>
+
+        {/* Contact Form */}
+        {showContactForm && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Send Support Request</Text>
+            <View style={styles.contactForm}>
+              <Text style={styles.formLabel}>Describe your issue:</Text>
+              <TextInput
+                style={styles.textInput}
+                multiline
+                numberOfLines={4}
+                value={supportMessage}
+                onChangeText={setSupportMessage}
+                placeholder="Please describe your issue in detail. Include steps to reproduce the problem, error messages, and any relevant information..."
+                placeholderTextColor="#9CA3AF"
+              />
+              <View style={styles.formButtons}>
+                <TouchableOpacity
+                  style={styles.cancelButton}
+                  onPress={() => {
+                    setShowContactForm(false);
+                    setSupportMessage("");
+                  }}
+                >
+                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.sendButton}
+                  onPress={handleEmailSupport}
+                >
+                  <MaterialIcons name="send" size={16} color="#FFFFFF" />
+                  <Text style={styles.sendButtonText}>Send Request</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
 
         {/* Help Topics */}
         <View style={styles.section}>
@@ -509,6 +575,69 @@ const styles = StyleSheet.create({
   },
   bottomPadding: {
     height: 20,
+  },
+  contactForm: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  formLabel: {
+    fontSize: 16,
+    color: "#1E293B",
+    fontFamily: "Inter-SemiBold",
+    marginBottom: 12,
+  },
+  textInput: {
+    backgroundColor: "#F8F9FA",
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 14,
+    fontFamily: "Inter-Regular",
+    color: "#1E293B",
+    textAlignVertical: "top",
+    minHeight: 100,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  formButtons: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  cancelButton: {
+    flex: 1,
+    backgroundColor: "#F3F4F6",
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    alignItems: "center",
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    color: "#6B7280",
+    fontFamily: "Inter-SemiBold",
+  },
+  sendButton: {
+    flex: 1,
+    backgroundColor: "#6A009C",
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 8,
+  },
+  sendButtonText: {
+    fontSize: 16,
+    color: "#FFFFFF",
+    fontFamily: "Inter-SemiBold",
   },
 });
 

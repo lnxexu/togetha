@@ -10,17 +10,17 @@ export type Priority =
 export interface Task {
   id: string;
   title: string;
-  description?: string;
+  description?: string | null;
   completed: boolean;
   priority: Priority;
-  category?: string;
-  category_name?: string;
-  due_date?: string; // ISO format date string from backend
-  due_time?: string; // Time string from backend (HH:MM:SS or HH:MM AM/PM)
+  category?: string | null;
+  category_name?: string | null;
+  due_date?: string | null; // ISO format date string from backend
+  due_time?: string | null; // Time string from backend (HH:MM:SS or HH:MM AM/PM)
   due_datetime?: Date | null; // Full datetime from backend
   created_at: string;
   updated_at: string;
-  completed_at?: string;
+  completed_at?: string | null;
   overdue: boolean;
   user?: string;
 }

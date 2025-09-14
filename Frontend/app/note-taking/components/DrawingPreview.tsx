@@ -48,6 +48,9 @@ const DrawingPreview: React.FC<DrawingPreviewProps> = ({
           strokes = parsed;
         } else if (parsed.strokes && Array.isArray(parsed.strokes)) {
           strokes = parsed.strokes;
+        } else if (parsed.version && parsed.strokes) {
+          // Handle versioned drawing data format
+          strokes = parsed.strokes;
         }
       } else if (Array.isArray(drawingData)) {
         // Direct array
@@ -57,9 +60,21 @@ const DrawingPreview: React.FC<DrawingPreviewProps> = ({
         // Object with strokes property
         console.log('DrawingPreview: Object with strokes property containing', drawingData.strokes.length, 'strokes');
         strokes = drawingData.strokes;
+      } else if (drawingData.version && drawingData.strokes) {
+        // Handle versioned drawing data format
+        strokes = drawingData.strokes;
       }
 
-      console.log('DrawingPreview: Final strokes count:', strokes.length);
+      // Validate stroke data structure
+      strokes = strokes.filter(stroke => {
+        return stroke && 
+               stroke.points && 
+               Array.isArray(stroke.points) && 
+               stroke.points.length >= 2 &&
+               stroke.color;
+      });
+
+      console.log('DrawingPreview: Final valid strokes count:', strokes.length);
       if (strokes.length > 0) {
         console.log('DrawingPreview: First stroke sample:', {
           id: strokes[0].id,

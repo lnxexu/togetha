@@ -334,6 +334,68 @@ export default function AllItemsView() {
         }
     };
 
+    // Helper function to get appropriate preview text for different note types
+    const getNotePreview = (note: Note): string => {
+        switch (note.type) {
+            case 'drawing':
+                return '🎨 Hand-drawn sketch with annotations and creative elements';
+            case 'document':
+                // For documents, try to extract meaningful text from the content
+                const documentText = note.content
+                    .replace(/<[^>]*>/g, '') // Remove HTML tags
+                    .replace(/&nbsp;/g, ' ') // Replace non-breaking spaces
+                    .replace(/&[a-z]+;/gi, '') // Remove other HTML entities
+                    .trim();
+                return documentText.length > 0 
+                    ? `📄 ${documentText.substring(0, 110) + (documentText.length > 110 ? '...' : '')}`
+                    : '📄 Document with formatted content and media';
+            case 'image':
+                return '🖼️ Image note with visual content and captions';
+            case 'text':
+            default:
+                // For text notes, clean and format the content
+                const textContent = note.content
+                    .replace(/<[^>]*>/g, '') // Remove HTML tags
+                    .replace(/&nbsp;/g, ' ') // Replace non-breaking spaces
+                    .replace(/&[a-z]+;/gi, '') // Remove other HTML entities
+                    .replace(/\s+/g, ' ') // Normalize whitespace
+                    .trim();
+                return textContent.length > 0
+                    ? textContent.substring(0, 100) + (textContent.length > 100 ? '...' : '')
+                    : 'Empty note - tap to add content';
+        }
+    };
+
+    // Helper function to get appropriate icon for note type
+    const getNoteIcon = (noteType: string) => {
+        switch (noteType) {
+            case 'drawing':
+                return 'draw';
+            case 'document':
+                return 'description';
+            case 'image':
+                return 'image';
+            case 'text':
+            default:
+                return 'note';
+        }
+    };
+
+    // Helper function to get appropriate icon color for note type
+    const getNoteIconColor = (noteType: string) => {
+        switch (noteType) {
+            case 'drawing':
+                return '#F59E0B'; // Amber for drawings
+            case 'document':
+                return '#EF4444'; // Red for documents
+            case 'image':
+                return '#10B981'; // Green for images
+            case 'text':
+            default:
+                return '#3B82F6'; // Blue for text notes
+        }
+    };
+
     const getPriorityColor = (priority: "High" | "Medium" | "Low" | string) => {
         switch (priority) {
             case "High":
@@ -501,22 +563,24 @@ export default function AllItemsView() {
             onPress={() => navigation.navigate("NoteEditor", { noteId: item.id })}
         >
             <View style={styles.noteCardContent}>
-                <View style={styles.noteIcon}>
+                <View style={[styles.noteIcon, { backgroundColor: `${getNoteIconColor(item.type)}15` }]}>
                     <MaterialIcons
-                        name={item.type === 'drawing' ? 'draw' : item.type === 'document' ? 'description' : 'note'}
+                        name={getNoteIcon(item.type)}
                         size={24}
-                        color="#3B82F6"
+                        color={getNoteIconColor(item.type)}
                     />
                 </View>
                 <View style={styles.noteContent}>
                     <Text style={styles.noteTitle} numberOfLines={2}>
-                        {item.title}
+                        {item.title || 'Untitled Note'}
                     </Text>
-                    <Text style={styles.notePreview} numberOfLines={2}>
-                        {item.content.replace(/<[^>]*>/g, '').substring(0, 100)}...
+                    <Text style={styles.notePreview} numberOfLines={3}>
+                        {getNotePreview(item)}
                     </Text>
                     <View style={styles.noteDetailsRow}>
-                        <Text style={styles.noteFolder}>{item.folder || 'Unorganized'}</Text>
+                        <Text style={[styles.noteFolder, { color: getNoteIconColor(item.type) }]}>
+                            {item.folder || 'Unorganized'}
+                        </Text>
                         <Text style={styles.noteDate}>
                             {new Date(item.updatedAt).toLocaleDateString()}
                         </Text>
@@ -925,12 +989,12 @@ const styles = StyleSheet.create({
     },
     noteFolder: {
         fontSize: 12,
-        color: "#3B82F6",
         fontFamily: "Inter-Medium",
-        backgroundColor: "#EFF6FF",
         paddingHorizontal: 8,
         paddingVertical: 4,
         borderRadius: 8,
+        backgroundColor: "rgba(59, 130, 246, 0.1)", // Default background
+        overflow: "hidden",
     },
     noteDate: {
         fontSize: 12,
