@@ -18,7 +18,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import Navbar from '../NavBar';
 import { progressService, ProgressData, ProgressSummary } from './services/progressService';
-import { ProgressOverview, WeeklyProgressChart } from './components/ProgressComponents';
+import { ProgressCard } from './components/ProgressComponents';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -180,57 +180,63 @@ const Dashboard: React.FC = () => {
           </View>
         )}
 
-        {/* Progress Overview */}
-        {progressData && (
-          <ProgressOverview
-            summary={progressSummary}
-            dailyData={progressData.daily_progress}
-            weeklyData={progressData.weekly_progress}
-            period={selectedPeriod}
-          />
+        {/* Progress Overview - Simple version without SVG */}
+        {progressData && progressSummary.length > 0 && (
+          <View style={styles.overviewSection}>
+            <Text style={styles.sectionTitle}>Progress Summary</Text>
+            <View style={styles.summaryGrid}>
+              {progressSummary.slice(0, 4).map((item, index) => (
+                <ProgressCard key={index} data={item} compact />
+              ))}
+            </View>
+          </View>
         )}
 
-        {/* Detailed Statistics */}
-        {progressData && (
-          <View style={styles.statsSection}>
-            <Text style={styles.sectionTitle}>Detailed Statistics</Text>
+        {/* All Progress Cards */}
+        {progressSummary.length > 0 && (
+          <View style={styles.allCardsSection}>
+            <Text style={styles.sectionTitle}>Complete Progress Overview</Text>
+            <Text style={styles.sectionSubtitle}>Detailed breakdown of your productivity metrics</Text>
+            <View style={styles.cardsGrid}>
+              {progressSummary.map((item, index) => (
+                <ProgressCard key={index} data={item} />
+              ))}
+            </View>
+          </View>
+        )}
+
+        {/* Progress Charts */}
+        {progressData && progressData.daily_progress.length > 0 && (
+          <View style={styles.chartsSection}>
+            <Text style={styles.sectionTitle}>Weekly Activity Trends</Text>
+            <Text style={styles.sectionSubtitle}>Visual breakdown of your daily activity patterns</Text>
             
-            <View style={styles.statsGrid}>
-              <View style={styles.statCard}>
-                <MaterialIcons name="assignment-turned-in" size={32} color="#4CAF50" />
-                <Text style={styles.statValue}>{progressData.tasks_completed}</Text>
-                <Text style={styles.statLabel}>Tasks Completed</Text>
-                <Text style={styles.statSubLabel}>
-                  {progressData.overall_tasks_completed} total
-                </Text>
+            <View style={styles.chartContainer}>
+              <Text style={styles.chartTitle}>Daily Activity Overview (Last 7 Days)</Text>
+              <View style={styles.simpleChart}>
+                {progressData.daily_progress.map((day, index) => {
+                  const totalActivity = day.tasks + day.notes;
+                  const maxTotal = Math.max(...progressData.daily_progress.map(d => d.tasks + d.notes), 1);
+                  return (
+                    <View key={index} style={styles.chartDay}>
+                      <View style={styles.chartBarContainer}>
+                        <View 
+                          style={[
+                            styles.chartBar, 
+                            { 
+                              height: Math.max((totalActivity / maxTotal) * 80, 2),
+                              backgroundColor: '#9C27B0'
+                            }
+                          ]} 
+                        />
+                      </View>
+                      <Text style={styles.chartLabel}>{day.day_name.slice(0, 3)}</Text>
+                      <Text style={styles.chartValue}>{totalActivity}</Text>
+                    </View>
+                  );
+                })}
               </View>
-              
-              <View style={styles.statCard}>
-                <MaterialIcons name="note" size={32} color="#2196F3" />
-                <Text style={styles.statValue}>{progressData.notes_created}</Text>
-                <Text style={styles.statLabel}>Notes Created</Text>
-                <Text style={styles.statSubLabel}>
-                  {progressData.overall_notes_created} total
-                </Text>
-              </View>
-              
-              <View style={styles.statCard}>
-                <MaterialIcons name="chat" size={32} color="#FF9800" />
-                <Text style={styles.statValue}>{progressData.chatbot_interactions}</Text>
-                <Text style={styles.statLabel}>AI Interactions</Text>
-                <Text style={styles.statSubLabel}>
-                  {progressData.overall_chatbot_interactions} total
-                </Text>
-              </View>
-              
-              <View style={styles.statCard}>
-                <MaterialIcons name="trending-up" size={32} color="#9C27B0" />
-                <Text style={styles.statValue}>
-                  {progressData.daily_progress.filter(d => d.tasks > 0 || d.notes > 0).length}
-                </Text>
-                <Text style={styles.statLabel}>Active Days</Text>
-                <Text style={styles.statSubLabel}>out of 7 days</Text>
-              </View>
+              <Text style={styles.chartNote}>Combined tasks and notes created per day</Text>
             </View>
           </View>
         )}
@@ -398,53 +404,6 @@ const styles = StyleSheet.create({
     color: '#6c757d',
     fontFamily: 'Inter-Regular',
   },
-  statsSection: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    color: '#1E293B',
-    fontFamily: 'Inter-Bold',
-    marginBottom: 16,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  statCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    alignItems: 'center',
-    flex: 1,
-    minWidth: '45%',
-    shadowColor: '#1E293B',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  statValue: {
-    fontSize: 28,
-    color: '#1E293B',
-    fontFamily: 'Inter-Bold',
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 14,
-    color: '#1E293B',
-    fontFamily: 'Inter-SemiBold',
-    textAlign: 'center',
-    marginBottom: 2,
-  },
-  statSubLabel: {
-    fontSize: 12,
-    color: '#6c757d',
-    fontFamily: 'Inter-Regular',
-    textAlign: 'center',
-  },
   insightsSection: {
     marginBottom: 24,
   },
@@ -475,6 +434,96 @@ const styles = StyleSheet.create({
     color: '#6c757d',
     fontFamily: 'Inter-Regular',
     lineHeight: 20,
+  },
+  allCardsSection: {
+    marginBottom: 24,
+  },
+  overviewSection: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    color: '#1E293B',
+    fontFamily: 'Inter-Bold',
+    marginBottom: 16,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    color: '#6c757d',
+    fontFamily: 'Inter-Regular',
+    marginBottom: 16,
+    marginTop: -8,
+  },
+  summaryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  cardsGrid: {
+    flexDirection: 'column',
+    gap: 16,
+  },
+  chartsSection: {
+    marginBottom: 24,
+  },
+  chartContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    shadowColor: '#1E293B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  chartTitle: {
+    fontSize: 16,
+    color: '#1E293B',
+    fontFamily: 'Inter-SemiBold',
+    marginBottom: 12,
+  },
+  simpleChart: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    height: 120,
+    paddingHorizontal: 8,
+  },
+  chartDay: {
+    flex: 1,
+    alignItems: 'center',
+    marginHorizontal: 2,
+  },
+  chartBarContainer: {
+    height: 80,
+    justifyContent: 'flex-end',
+    width: 20,
+    marginBottom: 8,
+  },
+  chartBar: {
+    width: '100%',
+    borderRadius: 4,
+    minHeight: 2,
+  },
+  chartLabel: {
+    fontSize: 10,
+    color: '#6c757d',
+    fontFamily: 'Inter-Medium',
+    marginBottom: 2,
+  },
+  chartValue: {
+    fontSize: 12,
+    color: '#1E293B',
+    fontFamily: 'Inter-Bold',
+  },
+  chartNote: {
+    fontSize: 12,
+    color: '#6c757d',
+    fontFamily: 'Inter-Regular',
+    textAlign: 'center',
+    marginTop: 8,
+    fontStyle: 'italic',
   },
   bottomPadding: {
     height: 100,

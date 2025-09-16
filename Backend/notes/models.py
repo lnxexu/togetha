@@ -1,6 +1,9 @@
 from django.db import models
 import uuid
+import hashlib
+import json
 from django.conf import settings
+from django.utils import timezone
 
 class Folder(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -45,16 +48,56 @@ class Note(models.Model):
     # Document fields
     document_file = models.FileField(upload_to='documents/', null=True, blank=True)
     document_annotations = models.JSONField(null=True, blank=True)  # Store annotations as JSON
+    document_metadata = models.JSONField(null=True, blank=True)  # Store document metadata (page count, size, etc.)
     
     # Version tracking for conflict resolution
     version = models.PositiveIntegerField(default=1)
     last_modified_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='last_modified_notes')
+    content_hash = models.CharField(max_length=64, blank=True, null=True)  # For change detection
+    
+    # Auto-save tracking
+    auto_save_enabled = models.BooleanField(default=True)
+    last_auto_save = models.DateTimeField(null=True, blank=True)
+    manual_save_count = models.PositiveIntegerField(default=0)
+    auto_save_count = models.PositiveIntegerField(default=0)
     
     def save(self, *args, **kwargs):
-        # Increment version on each save (except initial creation)
-        if self.pk:
-            self.version += 1
+        # Determine if this is an auto-save or manual save
+        is_auto_save = kwargs.pop('is_auto_save', False)
+        
+        # Calculate content hash for change detection
+        content_for_hash = json.dumps({
+            'title': self.title,
+            'content': self.content,
+            'formatted_content': self.formatted_content,
+            'drawing_data': self.drawing_data,
+            'document_annotations': self.document_annotations,
+        }, sort_keys=True)
+        new_hash = hashlib.sha256(content_for_hash.encode()).hexdigest()
+        
+        # Check if content actually changed
+        content_changed = self.content_hash != new_hash
+        
+        if content_changed:
+            self.content_hash = new_hash
+            
+            # Increment version on each content change (except initial creation)
+            if self.pk:
+                self.version += 1
+            
+            # Update save counters
+            if is_auto_save:
+                self.auto_save_count += 1
+                self.last_auto_save = timezone.now()
+            else:
+                self.manual_save_count += 1
+        
         super().save(*args, **kwargs)
+    
+    def has_unsaved_changes(self, current_data):
+        """Check if current data differs from saved data"""
+        current_hash = hashlib.sha256(json.dumps(current_data, sort_keys=True).encode()).hexdigest()
+        return self.content_hash != current_hash
     
     def save_drawing_strokes(self, strokes_data):
         """Helper method to save drawing strokes"""
@@ -80,6 +123,12 @@ class Tag(models.Model):
     name = models.CharField(max_length=100)
     notes = models.ManyToManyField(Note, related_name='tags')
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='tags')
+    color = models.CharField(max_length=7, default='#667eea')  # Hex color for tag
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        unique_together = ['name', 'user']  # Prevent duplicate tag names per user
+        ordering = ['name']
 
     def __str__(self):
         return self.name

@@ -142,3 +142,35 @@ export/
 # Temporary files
 *.tmp
 *.temp
+
+# Additional root-level gitignore entries
+
+# Backup files
+*.bak
+*.backup
+*.old
+*.orig
+
+# Archive files
+*.zip
+*.tar.gz
+*.rar
+
+# Documentation build
+docs/_build/
+site/
+
+# Cache directories
+.cache/
+.parcel-cache/
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Optional: Local development scripts
+run-local.sh
+start-dev.sh
+setup-local.sh

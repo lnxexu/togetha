@@ -19,7 +19,10 @@ import { RootStackParamList } from "../navigation/AppNavigator";
 import Navbar from "../NavBar";
 import AuthService from "../onboarding/service/AuthService";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { userService, UserProfile, UserProgress } from "./services/userService";
+import { userService, UserProfile } from "./services/userService";
+import { progressService, ProgressSummary, DailyProgress } from "./services/progressService";
+import { utilityService } from "./services/utilityService";
+import { ProgressCard, ProgressChart } from "./components/ProgressComponents";
 import { API_URL } from "../../constants/ApiConfig";
 import * as ImagePicker from "expo-image-picker";
 
@@ -28,10 +31,13 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 const Profile: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const [userData, setUserData] = useState<UserProfile | null>(null);
-  const [progress, setProgress] = useState<UserProgress | null>(null);
+  const [progressSummary, setProgressSummary] = useState<ProgressSummary[]>([]);
+  const [dailyProgress, setDailyProgress] = useState<DailyProgress[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [username, setUsername] = useState<string>("");
+  const [selectedLanguage, setSelectedLanguage] = useState<string>("English");
+  const [selectedTheme, setSelectedTheme] = useState<string>("Light");
 
   // Load user data when screen is focused
   useFocusEffect(
@@ -70,9 +76,15 @@ const Profile: React.FC = () => {
         await AsyncStorage.setItem("username", profile.username || "");
       }
 
-      // Fetch progress data
-      const progressData = await userService.getUserProgress();
-      setProgress(progressData);
+      // Fetch enhanced progress data
+      const [summary, progressData] = await Promise.all([
+        progressService.getProgressSummary('month'),
+        progressService.getProgressData('month', true)
+      ]);
+      
+      setProgressSummary(summary);
+      setDailyProgress(progressData.daily_progress);
+
     } catch (error) {
       console.error("Error loading user data:", error);
       Alert.alert("Error", "Failed to load profile data. Please try again.");
@@ -137,25 +149,115 @@ const Profile: React.FC = () => {
     );
   }
 
-  const progressData = [
-    {
-      title: "Tasks Completed",
-      value: progress?.tasksCompleted || 0,
-      icon: "check-circle",
-      color: "#4CAF50",
-      description: "Total tasks completed this month",
-    },
-    {
-      title: "Notes Created",
-      value: progress?.notesCreated || 0,
-      icon: "note",
-      color: "#2196F3",
-      description: "Notes created this month",
-    },
-  ];
-
+  // Updated functional handlers
   const handleEditProfile = () => {
     navigation.navigate("EditProfile");
+  };
+
+  const handleClearCache = async () => {
+    Alert.alert(
+      "Clear Cache",
+      "This will clear app cache and temporary files. Continue?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await utilityService.clearAppCache();
+              Alert.alert("Success", "Cache cleared successfully!");
+            } catch (error) {
+              Alert.alert("Error", error instanceof Error ? error.message : "Failed to clear cache");
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handlePrivacySettings = () => {
+    navigation.navigate('PrivacySecurity');
+  };
+
+  const handleLanguageSettings = () => {
+    navigation.navigate('Language');
+  };
+
+  const handleThemeSettings = () => {
+    navigation.navigate('Themes');
+  };
+
+  const handleNotificationSettings = () => {
+    Alert.alert(
+      "Notification Settings",
+      "Choose what notifications you want to receive:",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Task Reminders",
+          onPress: () => {
+            Alert.alert("Task Reminders", "Get notified about upcoming tasks and deadlines. Currently enabled.");
+          }
+        },
+        {
+          text: "Achievement Notifications",
+          onPress: () => {
+            Alert.alert("Achievements", "Receive notifications when you complete goals or reach milestones. Currently enabled.");
+          }
+        },
+        {
+          text: "Daily Summary",
+          onPress: () => {
+            Alert.alert("Daily Summary", "Get a summary of your daily progress. Currently enabled for 6 PM.");
+          }
+        }
+      ]
+    );
+  };
+
+  const handleStorageSettings = () => {
+    navigation.navigate('StorageData');
+  };
+
+  const handleExportData = async () => {
+    Alert.alert(
+      "Export Data",
+      "This will export all your data including tasks, notes, and progress statistics.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Export",
+          onPress: async () => {
+            try {
+              await utilityService.exportUserData();
+            } catch (error) {
+              Alert.alert("Error", error instanceof Error ? error.message : "Failed to export data");
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      "Delete Account",
+      "This action cannot be undone. All your data will be permanently deleted.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            Alert.alert(
+              "Account Deletion",
+              "This feature will be implemented with proper authentication."
+            );
+          },
+        },
+      ]
+    );
   };
 
   const handleChangeProfilePicture = async () => {
@@ -221,47 +323,6 @@ const Profile: React.FC = () => {
         "Failed to update profile picture. Please try again."
       );
     }
-  };
-
-  const handleClearCache = () => {
-    Alert.alert(
-      "Clear Cache",
-      "This will clear app cache and temporary files. Continue?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Clear",
-          style: "destructive",
-          onPress: () => {
-            Alert.alert("Success", "Cache cleared successfully!");
-          },
-        },
-      ]
-    );
-  };
-
-  const handleExportData = () => {
-    Alert.alert("Export Data", "Your data export will be available soon!");
-  };
-
-  const handleDeleteAccount = () => {
-    Alert.alert(
-      "Delete Account",
-      "This action cannot be undone. All your data will be permanently deleted.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => {
-            Alert.alert(
-              "Account Deletion",
-              "This feature will be implemented with proper authentication."
-            );
-          },
-        },
-      ]
-    );
   };
 
   return (
@@ -332,38 +393,53 @@ const Profile: React.FC = () => {
         }
       >
         <View style={styles.progressHeader}>
-          <Text style={styles.sectionTitle}>Your Progress</Text>
+          <Text style={styles.sectionTitle}>Quick Overview</Text>
         </View>
 
-        <View style={styles.progressContainer}>
-          {progressData.map((item, index) => (
-            <View key={index} style={styles.progressCard}>
-              <View style={styles.progressHeader}>
-                <View
-                  style={[
-                    styles.iconContainer,
-                    { backgroundColor: `${item.color}20` },
-                  ]}
-                >
-                  <MaterialIcons
-                    name={item.icon as any}
-                    size={24}
-                    color={item.color}
-                  />
-                </View>
-                <View style={styles.progressInfo}>
-                  <Text style={styles.progressTitle}>{item.title}</Text>
-                  <Text style={styles.progressDescription}>
-                    {item.description}
-                  </Text>
-                </View>
-              </View>
-              <Text style={[styles.progressValue, { color: item.color }]}>
-                {item.value}
-              </Text>
-            </View>
-          ))}
+        {/* Quick Stats - Tasks, Notes, and Time Usage */}
+        <View style={styles.quickStatsContainer}>
+          <View style={styles.quickStatCard}>
+            <MaterialIcons name="assignment-turned-in" size={32} color="#4CAF50" />
+            <Text style={styles.quickStatValue}>
+              {progressSummary.find(item => item.title.includes('Tasks'))?.value || 0}
+            </Text>
+            <Text style={styles.quickStatLabel}>Tasks Completed</Text>
+            <Text style={styles.quickStatPeriod}>This Month</Text>
+          </View>
+
+          <View style={styles.quickStatCard}>
+            <MaterialIcons name="note" size={32} color="#2196F3" />
+            <Text style={styles.quickStatValue}>
+              {progressSummary.find(item => item.title.includes('Notes'))?.value || 0}
+            </Text>
+            <Text style={styles.quickStatLabel}>Notes Made</Text>
+            <Text style={styles.quickStatPeriod}>This Month</Text>
+          </View>
+
+          <View style={styles.quickStatCard}>
+            <MaterialIcons name="schedule" size={32} color="#FF9800" />
+            <Text style={styles.quickStatValue}>
+              {dailyProgress.length > 0 ? 
+                Math.round(dailyProgress.reduce((acc, day) => acc + (day.tasks + day.notes) * 0.5, 0)) : 0}h
+            </Text>
+            <Text style={styles.quickStatLabel}>Time Usage</Text>
+            <Text style={styles.quickStatPeriod}>Estimated</Text>
+          </View>
         </View>
+
+        {/* Quick Action for Full Dashboard */}
+        {progressSummary.length > 0 && (
+          <TouchableOpacity
+            style={styles.dashboardButton}
+            onPress={() => {
+              navigation.navigate("Dashboard");
+            }}
+          >
+            <MaterialIcons name="dashboard" size={20} color="#FFFFFF" />
+            <Text style={styles.dashboardButtonText}>View Full Dashboard & Analytics</Text>
+            <MaterialIcons name="arrow-forward" size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+        )}
 
         {/* Profile Management */}
         <Text style={styles.sectionTitle}>Profile Management</Text>
@@ -397,7 +473,10 @@ const Profile: React.FC = () => {
 
         <View style={styles.settingsContainer}>
 
-          <TouchableOpacity style={styles.settingItem}>
+          <TouchableOpacity 
+            style={styles.settingItem}
+            onPress={handlePrivacySettings}
+          >
             <View style={styles.settingLeft}>
               <MaterialIcons name="security" size={24} color="#6A009C" />
               <Text style={styles.settingText}>Privacy & Security</Text>
@@ -415,13 +494,27 @@ const Profile: React.FC = () => {
             </View>
             <MaterialIcons name="chevron-right" size={24} color="#6c757d" />
           </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.settingItem}
+            onPress={handleNotificationSettings}
+          >
+            <View style={styles.settingLeft}>
+              <MaterialIcons name="notifications" size={24} color="#6A009C" />
+              <Text style={styles.settingText}>Notifications</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#6c757d" />
+          </TouchableOpacity>
         </View>
 
         {/* App Settings */}
         <Text style={styles.sectionTitle}>App Settings</Text>
 
         <View style={styles.settingsContainer}>
-          <TouchableOpacity style={styles.settingItem}>
+          <TouchableOpacity 
+            style={styles.settingItem}
+            onPress={handleLanguageSettings}
+          >
             <View style={styles.settingLeft}>
               <MaterialIcons name="language" size={24} color="#6A009C" />
               <Text style={styles.settingText}>Language</Text>
@@ -429,10 +522,24 @@ const Profile: React.FC = () => {
             <MaterialIcons name="chevron-right" size={24} color="#6c757d" />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.settingItem}>
+          <TouchableOpacity 
+            style={styles.settingItem}
+            onPress={handleThemeSettings}
+          >
             <View style={styles.settingLeft}>
               <MaterialIcons name="dark-mode" size={24} color="#6A009C" />
               <Text style={styles.settingText}>Theme</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#6c757d" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.settingItem}
+            onPress={handleStorageSettings}
+          >
+            <View style={styles.settingLeft}>
+              <MaterialIcons name="storage" size={24} color="#6A009C" />
+              <Text style={styles.settingText}>Storage & Data</Text>
             </View>
             <MaterialIcons name="chevron-right" size={24} color="#6c757d" />
           </TouchableOpacity>
@@ -447,21 +554,10 @@ const Profile: React.FC = () => {
             </View>
             <MaterialIcons name="chevron-right" size={24} color="#6c757d" />
           </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.settingItem}
-            onPress={handleClearCache}
-          >
-            <View style={styles.settingLeft}>
-              <MaterialIcons name="clear-all" size={24} color="#6A009C" />
-              <Text style={styles.settingText}>Clear Cache</Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={24} color="#6c757d" />
-          </TouchableOpacity>
         </View>
 
-        {/* Data & Support */}
-        <Text style={styles.sectionTitle}>Data & Support</Text>
+        {/* Backup & Sync */}
+        <Text style={styles.sectionTitle}>Backup & Sync</Text>
 
         <View style={styles.settingsContainer}>
           <TouchableOpacity
@@ -469,12 +565,42 @@ const Profile: React.FC = () => {
             onPress={handleExportData}
           >
             <View style={styles.settingLeft}>
-              <MaterialIcons name="download" size={24} color="#6A009C" />
+              <MaterialIcons name="cloud-download" size={24} color="#6A009C" />
               <Text style={styles.settingText}>Export Data</Text>
             </View>
             <MaterialIcons name="chevron-right" size={24} color="#6c757d" />
           </TouchableOpacity>
 
+          <TouchableOpacity
+            style={styles.settingItem}
+            onPress={() => {
+              Alert.alert(
+                "Auto Backup",
+                "Automatically backup your data to ensure it's never lost:",
+                [
+                  { text: "Cancel", style: "cancel" },
+                  {
+                    text: "Setup Cloud Backup",
+                    onPress: () => {
+                      Alert.alert("Cloud Backup", "Connect your Google Drive or iCloud account to automatically backup your tasks, notes, and progress data.");
+                    }
+                  }
+                ]
+              );
+            }}
+          >
+            <View style={styles.settingLeft}>
+              <MaterialIcons name="cloud-upload" size={24} color="#6A009C" />
+              <Text style={styles.settingText}>Auto Backup</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#6c757d" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Data & Support */}
+        <Text style={styles.sectionTitle}>Support</Text>
+
+        <View style={styles.settingsContainer}>
           <TouchableOpacity 
             style={styles.settingItem}
             onPress={() => navigation.navigate("HelpSupport")}
@@ -482,6 +608,37 @@ const Profile: React.FC = () => {
             <View style={styles.settingLeft}>
               <MaterialIcons name="help" size={24} color="#6A009C" />
               <Text style={styles.settingText}>Help & Support</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#6c757d" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.settingItem}
+            onPress={() => {
+              Alert.alert(
+                "Send Feedback",
+                "Help us improve the app by sharing your thoughts:",
+                [
+                  { text: "Cancel", style: "cancel" },
+                  {
+                    text: "Report Bug",
+                    onPress: () => {
+                      Alert.alert("Bug Report", "Thank you for helping us improve! Please describe the issue you encountered and we'll investigate it.");
+                    }
+                  },
+                  {
+                    text: "Suggest Feature",
+                    onPress: () => {
+                      Alert.alert("Feature Request", "We'd love to hear your ideas! Please describe the feature you'd like to see added.");
+                    }
+                  }
+                ]
+              );
+            }}
+          >
+            <View style={styles.settingLeft}>
+              <MaterialIcons name="feedback" size={24} color="#6A009C" />
+              <Text style={styles.settingText}>Send Feedback</Text>
             </View>
             <MaterialIcons name="chevron-right" size={24} color="#6c757d" />
           </TouchableOpacity>
@@ -633,20 +790,24 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   progressContainer: {
+    flexDirection: 'row',
     gap: 12,
-    marginBottom: 32,
+    marginBottom: 24,
+    paddingHorizontal: 4,
+  },
+  progressScrollView: {
+    marginBottom: 24,
   },
   progressCard: {
     backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 20,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    borderRadius: 20,
+    padding: 24,
+    flex: 1,
+    minWidth: '45%',
     shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
     elevation: 2,
   },
   progressHeader: {
@@ -800,6 +961,72 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#1E293B",
     fontFamily: "Inter-Regular",
+  },
+  chartsContainer: {
+    gap: 16,
+    marginBottom: 24,
+  },
+  dashboardButton: {
+    backgroundColor: '#6A009C',
+    borderRadius: 16,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 32,
+    shadowColor: '#6A009C',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+    gap: 8,
+  },
+  dashboardButtonText: {
+    fontSize: 16,
+    color: '#FFFFFF',
+    fontFamily: 'Inter-SemiBold',
+    flex: 1,
+    textAlign: 'center',
+  },
+  quickStatsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginHorizontal: 20,
+    marginBottom: 16,
+    gap: 12,
+  },
+  quickStatCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  quickStatValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1E293B',
+    marginTop: 8,
+    marginBottom: 4,
+    fontFamily: 'Lexend',
+  },
+  quickStatLabel: {
+    fontSize: 14,
+    color: '#64748B',
+    textAlign: 'center',
+    fontFamily: 'Inter-Medium',
+  },
+  quickStatPeriod: {
+    fontSize: 12,
+    color: '#94A3B8',
+    textAlign: 'center',
+    marginTop: 2,
+    fontFamily: 'Inter-Regular',
   },
 });
 

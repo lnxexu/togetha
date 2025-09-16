@@ -1,0 +1,42 @@
+# Backend-specific gitignore additions
+
+# Django specific
+staticfiles/
+static_root/
+collectstatic/
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Celery specific
+celerybeat-schedule
+celerybeat.pid
+
+# Email debug files (you already have email_debug.log in your backend)
+*.eml
+
+# Test databases
+test_*.sqlite3
+test_*.db
+
+# Django migrations (optional - some teams prefer to ignore these)
+# */migrations/0*.py
+# !*/migrations/__init__.py
+
+# Virtual environment (if created inside Backend/)
+venv/
+env/
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db

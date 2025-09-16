@@ -33,11 +33,16 @@ import CompletedTasks from '../task-management/CompletedTasks';
 
 //profile components
 import Profile from '../profile/Profile';
+import Dashboard from '../profile/Dashboard';
 import ManageProfile from '../profile/ManageProfile';
 import EditProfile from '../profile/EditProfile';
 import ChangePassword from '../profile/ChangePassword';
 import HelpSupport from '../profile/HelpSupport';
 import About from '../profile/About';
+import PrivacySecurity from '../profile/PrivacySecurity';
+import Language from '../profile/Language';
+import Themes from '../profile/Themes';
+import StorageData from '../profile/StorageData';
 
 export type RootStackParamList = {
   Welcome: undefined;
@@ -111,11 +116,16 @@ export type RootStackParamList = {
     };
   } | undefined;
   Profile: undefined;
+  Dashboard: undefined;
   ManageProfile: undefined;
   EditProfile: undefined;
   ChangePassword: undefined;
   HelpSupport: undefined;
   About: undefined;
+  PrivacySecurity: undefined;
+  Language: undefined;
+  Themes: undefined;
+  StorageData: undefined;
   Logs: undefined;
   DrawingNoteEditor: {
     noteId?: string;
@@ -325,6 +335,7 @@ const AppNavigator: React.FC = () => {
         <Stack.Screen name="ToDo" component={ToDo} />
         <Stack.Screen name="RINA" component={ChatBot} />
         <Stack.Screen name="Profile" component={Profile} />
+        <Stack.Screen name="Dashboard" component={Dashboard} />
         <Stack.Screen name="Logs" component={Logs} /> 
 
         {/* Profile components */}
@@ -333,6 +344,10 @@ const AppNavigator: React.FC = () => {
         <Stack.Screen name="ChangePassword" component={ChangePassword} />
         <Stack.Screen name="HelpSupport" component={HelpSupport} />
         <Stack.Screen name="About" component={About} />
+        <Stack.Screen name="PrivacySecurity" component={PrivacySecurity} />
+        <Stack.Screen name="Language" component={Language} />
+        <Stack.Screen name="Themes" component={Themes} />
+        <Stack.Screen name="StorageData" component={StorageData} />
 
 
         {/* Note Taking components */}

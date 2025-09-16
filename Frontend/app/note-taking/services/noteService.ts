@@ -28,7 +28,7 @@ class NoteService {
   /**
    * Google Docs-style save that handles new notes and updates intelligently
    */
-  async saveNote(note: Note, isManualSave = false): Promise<{ note: Note; status: SaveStatus }> {
+  async saveNote(note: Note, isAutoSave = true): Promise<{ note: Note; status: SaveStatus }> {
     const noteKey = note.id;
 
     // Prevent duplicate saves for the same note
@@ -63,7 +63,7 @@ class NoteService {
       }
 
       // Attempt to sync to cloud
-      const result = await this.syncToCloud(note, isManualSave);
+      const result = await this.syncToCloud(note, isAutoSave);
       
       if (result.conflict) {
         return {
@@ -85,7 +85,7 @@ class NoteService {
         note: result.savedNote || note,
         status: {
           status: 'saved',
-          message: isManualSave ? 'Note saved successfully' : undefined,
+          message: !isAutoSave ? 'Note saved successfully' : undefined,
           lastSaved: new Date()
         }
       };
@@ -121,7 +121,7 @@ class NoteService {
   /**
    * Sync note to cloud backend
    */
-  private async syncToCloud(note: Note, isManualSave: boolean): Promise<{
+  private async syncToCloud(note: Note, isAutoSave: boolean): Promise<{
     savedNote?: Note;
     conflict?: boolean;
   }> {
@@ -139,6 +139,7 @@ class NoteService {
       formatted_content: note.formatted_content,
       tag_names: note.tags || [],
       folder: note.folderId,
+      is_auto_save: isAutoSave, // Pass auto-save flag to backend
     };
 
     // Include version for conflict detection on updates

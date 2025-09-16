@@ -24,7 +24,7 @@ import UnsavedChangesModal from "./components/UnsavedChangesModal";
 import { getLocalPDFPath, isRemoteURL } from "./utils/pdfUtils";
 import { useNetworkStatus, getNetworkStatusText, getNetworkStatusColor } from "./services/networkService";
 import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
-import { showSuccessToast, showErrorToast, showWarningToast } from "../utils/ToastUtils";
+import { showSuccessToast, showErrorToast, showWarningToast, showInfoToast } from "../utils/ToastUtils";
 
 const { width, height } = Dimensions.get("window");
 
@@ -124,7 +124,7 @@ const ImportPDFPage = () => {
   const handleDiscardAndExit = () => {
     setShowUnsavedChangesModal(false);
     setHasUnsavedAnnotations(false);
-    showWarningToast("Changes discarded");
+    showInfoToast("Changes discarded");
     
     // Clear any pending save timeout
     clearTimeout((window as any).annotationSaveTimeout);

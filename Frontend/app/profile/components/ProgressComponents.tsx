@@ -13,32 +13,73 @@ export const ProgressCard: React.FC<ProgressCardProps> = ({ data, compact = fals
   return (
     <View style={[styles.card, compact && styles.compactCard]}>
       <View style={styles.cardHeader}>
-        <View style={[styles.iconContainer, { backgroundColor: `${data.color}20` }]}>
-          <MaterialIcons name={data.icon as any} size={24} color={data.color} />
+        <View style={[styles.iconContainer, { backgroundColor: `${data.color}15` }]}>
+          <MaterialIcons name={data.icon as any} size={compact ? 20 : 24} color={data.color} />
         </View>
         <View style={styles.cardInfo}>
-          <Text style={styles.cardTitle}>{data.title}</Text>
-          <Text style={styles.cardDescription}>{data.description}</Text>
-        </View>
-        <View style={styles.valueContainer}>
-          <Text style={[styles.cardValue, { color: data.color }]}>{data.value}</Text>
-          {data.trend && (
-            <MaterialIcons 
-              name={
-                data.trend === 'up' ? 'trending-up' : 
-                data.trend === 'down' ? 'trending-down' : 
-                'trending-flat'
-              } 
-              size={16} 
-              color={
-                data.trend === 'up' ? '#4CAF50' : 
-                data.trend === 'down' ? '#F44336' : 
-                '#757575'
-              } 
-            />
+          <Text style={[styles.cardTitle, compact && styles.compactTitle]}>{data.title}</Text>
+          {!compact && (
+            <Text style={styles.cardDescription}>{data.description}</Text>
           )}
         </View>
       </View>
+      
+      <View style={styles.cardMetrics}>
+        <View style={styles.valueSection}>
+          <Text style={[styles.cardValue, { color: data.color }]}>{data.value}</Text>
+          {data.trend && (
+            <View style={styles.trendSection}>
+              <MaterialIcons 
+                name={
+                  data.trend === 'up' ? 'trending-up' : 
+                  data.trend === 'down' ? 'trending-down' : 
+                  'trending-flat'
+                } 
+                size={18} 
+                color={
+                  data.trend === 'up' ? '#4CAF50' : 
+                  data.trend === 'down' ? '#F44336' : 
+                  '#757575'
+                } 
+              />
+              {data.change && (
+                <Text style={[styles.changeText, { 
+                  color: data.trend === 'up' ? '#4CAF50' : 
+                         data.trend === 'down' ? '#F44336' : '#757575'
+                }]}>
+                  {data.change > 0 ? '+' : ''}{data.change}%
+                </Text>
+              )}
+            </View>
+          )}
+        </View>
+        
+        {!compact && (
+          <View style={styles.progressIndicator}>
+            <View style={[styles.progressBar, { backgroundColor: `${data.color}20` }]}>
+              <View 
+                style={[
+                  styles.progressFill, 
+                  { 
+                    backgroundColor: data.color,
+                    width: `${Math.min((typeof data.value === 'number' ? data.value : 0) * 10, 100)}%`
+                  }
+                ]} 
+              />
+            </View>
+          </View>
+        )}
+      </View>
+      
+      {!compact && data.trend && (
+        <View style={styles.cardFooter}>
+          <Text style={styles.footerText}>
+            {data.trend === 'up' ? 'Trending upward' : 
+             data.trend === 'down' ? 'Needs attention' : 
+             'Stable performance'}
+          </Text>
+        </View>
+      )}
     </View>
   );
 };
@@ -379,6 +420,55 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     fontFamily: 'Inter-Regular',
     marginTop: 4,
+    textAlign: 'center',
+  },
+  compactTitle: {
+    fontSize: 14,
+    color: '#1E293B',
+    fontFamily: 'Inter-SemiBold',
+    marginBottom: 2,
+  },
+  cardMetrics: {
+    marginTop: 12,
+  },
+  valueSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  trendSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  changeText: {
+    fontSize: 12,
+    fontFamily: 'Inter-Medium',
+    fontWeight: '600',
+  },
+  progressIndicator: {
+    marginTop: 8,
+  },
+  progressBar: {
+    height: 6,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  cardFooter: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  footerText: {
+    fontSize: 12,
+    color: '#64748B',
+    fontFamily: 'Inter-Medium',
     textAlign: 'center',
   },
 });

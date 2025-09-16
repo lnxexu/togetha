@@ -209,16 +209,30 @@ def note_detail(request, pk):
         
         serializer = NoteSerializer(note, data=request.data, partial=request.method=='PATCH', context={'request': request})
         if serializer.is_valid():
-            # Set last_modified_by to current user
-            serializer.save(last_modified_by=user)
-            # Create a log for note update
-            create_log(
-                user=user,
-                action='update',
-                entity_type='note',
-                entity_id=note.id,
-                message=f'Note "{old_title}" updated to "{serializer.data["title"]}".'
-            )
+            # Check if this is an auto-save request
+            is_auto_save = request.data.get('is_auto_save', False)
+            
+            # Set last_modified_by to current user and pass auto-save flag
+            serializer.save(last_modified_by=user, is_auto_save=is_auto_save)
+            
+            # Create a log for note update (less verbose for auto-saves)
+            if is_auto_save:
+                create_log(
+                    user=user,
+                    action='auto_save',
+                    entity_type='note',
+                    entity_id=note.id,
+                    level='DEBUG',
+                    message=f'Note "{note.title}" auto-saved.'
+                )
+            else:
+                create_log(
+                    user=user,
+                    action='update',
+                    entity_type='note',
+                    entity_id=note.id,
+                    message=f'Note "{old_title}" updated to "{serializer.data["title"]}".'
+                )
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     

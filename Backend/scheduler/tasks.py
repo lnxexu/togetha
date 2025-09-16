@@ -16,19 +16,28 @@ def get_local_timezone():
 def has_recent_user_activity(hours=24):
     """Check if there has been any user activity in the last N hours"""
     from django.contrib.auth.models import User
-    from logs.models import UserLog
+    from logs.models import UserLog, Log
     
     try:
         local_tz = get_local_timezone()
         now_local = timezone.now().astimezone(local_tz)
         cutoff_time = now_local - timedelta(hours=hours)
         
-        # Check for recent user logs
-        recent_activity = UserLog.objects.filter(
+        # Check for recent user logs (HTTP request tracking)
+        recent_user_logs = UserLog.objects.filter(
             timestamp__gte=cutoff_time
         ).exists()
         
+        # Check for recent application logs (user actions like creating notes, tasks, etc.)
+        recent_app_logs = Log.objects.filter(
+            timestamp__gte=cutoff_time,
+            user__isnull=False  # Only count logs with actual users
+        ).exists()
+        
+        recent_activity = recent_user_logs or recent_app_logs
+        
         logger.info(f"Checking user activity since {cutoff_time}: {'Found' if recent_activity else 'None'}")
+        logger.info(f"UserLog entries: {recent_user_logs}, App Log entries: {recent_app_logs}")
         return recent_activity
         
     except Exception as e:

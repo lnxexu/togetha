@@ -25,6 +25,57 @@ class CSRFExemptAPIMiddleware:
         return response
 
 
+class UserActivityMiddleware:
+    """
+    Middleware to track user activity for scheduler purposes
+    """
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        
+        # Only track successful requests from authenticated users
+        if (response.status_code < 400 and 
+            hasattr(request, 'user') and 
+            request.user.is_authenticated and 
+            request.method in ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']):
+            
+            # Skip tracking for certain endpoints to avoid noise
+            skip_paths = [
+                '/admin/',
+                '/static/',
+                '/media/',
+                '/favicon.ico',
+                '/csrf/',
+            ]
+            
+            if not any(request.path.startswith(path) for path in skip_paths):
+                try:
+                    from logs.models import UserLog
+                    
+                    # Get client IP
+                    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+                    if x_forwarded_for:
+                        ip_address = x_forwarded_for.split(',')[0]
+                    else:
+                        ip_address = request.META.get('REMOTE_ADDR')
+                    
+                    # Create user activity log
+                    UserLog.objects.create(
+                        user=request.user,
+                        action=f"{request.method} {request.path}",
+                        endpoint=request.path,
+                        ip_address=ip_address,
+                        user_agent=request.META.get('HTTP_USER_AGENT', '')[:500]  # Limit length
+                    )
+                except Exception as e:
+                    # Don't let logging errors break the request
+                    print(f"UserActivityMiddleware error: {str(e)}")
+        
+        return response
+
+
 class DebugAuthMiddleware:
     """
     Middleware to debug authentication issues

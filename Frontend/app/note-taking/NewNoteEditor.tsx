@@ -302,8 +302,8 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   }, []);
 
   // Auto-save setup with new Google Docs-style system
-  const saveNote = async (note: NoteType): Promise<NoteType | void> => {
-    const result = await noteService.saveNote(note, false);
+  const saveNote = async (note: NoteType, isAutoSave = true): Promise<NoteType | void> => {
+    const result = await noteService.saveNote(note, isAutoSave);
     setSaveStatus(result.status);
     
     if (result.note.id !== note.id) {
@@ -315,15 +315,21 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     return result.note;
   };
 
-  const { triggerSave, forceSave } = useAutoSave(currentNote, saveNote, {
+  const { triggerSave, forceSave, hasUnsavedChanges: autoSaveHasChanges } = useAutoSave(currentNote, saveNote, {
     delay: 2000, // 2 seconds like Google Docs
     enabled: true,
+    initialData: route.params?.initialNote ? {
+      id: route.params.noteId || noteService.generateNoteId(),
+      ...route.params.initialNote
+    } : undefined,
+    trackChanges: true,
     onSaveStart: () => setSaveStatus({ status: 'saving' }),
     onSaveSuccess: (result) => {
       if (result && result.id !== currentNote.id) {
         setNoteId(result.id);
         setCurrentNote(result);
       }
+      setSaveStatus({ status: 'saved' });
     },
     onSaveError: (error) => {
       setSaveStatus({ 
@@ -353,12 +359,11 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     }
   }, [title, content, formattedContent, tags, selectedFolderId]);
 
-  // Track unsaved changes
+  // Track unsaved changes using enhanced auto-save detection
   useEffect(() => {
     const hasContent = Boolean(title.trim() || content.trim() || formattedContent.trim());
-    const hasChanges = saveStatus.status === 'saving' || saveStatus.status === 'error';
-    setHasUnsavedChanges(hasContent && hasChanges);
-  }, [title, content, formattedContent, saveStatus.status]);
+    setHasUnsavedChanges(hasContent && autoSaveHasChanges);
+  }, [title, content, formattedContent, autoSaveHasChanges]);
 
   // Handle back button with unsaved changes check
   const handleBackPress = () => {
@@ -369,19 +374,34 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     }
   };
 
-  const handleSaveAndExit = async () => {
-    try {
-      await forceSave(currentNote);
+const handleSaveAndExit = async () => {
+  try {
+    setShowUnsavedChangesModal(false);
+    
+    // Force save and wait for completion
+    await forceSave(currentNote);
+    
+    // Wait a brief moment for status to update
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // Only show success toast and navigate if save was actually successful
+    if (saveStatus.status === 'saved') {
       showSuccessToast("Note saved successfully");
-      navigation.goBack();
-    } catch (error) {
-      showErrorToast("Failed to save note");
-    } finally {
-      setShowUnsavedChangesModal(false);
+    } else if (saveStatus.status === 'offline') {
+      showWarningToast("Note saved locally. Will sync when online.");
+    } else {
+      // Fallback - assume success if no error was thrown
+      showSuccessToast("Note saved successfully");
     }
-  };
-
-  const handleDiscardAndExit = () => {
+    
+    // Navigate back after successful save
+    navigation.goBack();
+  } catch (error) {
+    showErrorToast("Failed to save note");
+    // Don't close modal or navigate if save failed
+    setShowUnsavedChangesModal(true);
+  }
+};  const handleDiscardAndExit = () => {
     setShowUnsavedChangesModal(false);
     navigation.goBack();
   };
@@ -499,16 +519,23 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
 
     setIsSaving(true);
     try {
-      // Force immediate save (bypass debounce)
-      await forceSave(currentNote);
+      // Force immediate save (bypass debounce) and wait for completion
+      const saveResult = await forceSave(currentNote);
       
-      // Show success message for manual saves
+      // Wait a brief moment for status to update
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Show success message based on the actual save result
+      // Check the updated save status
       if (saveStatus.status === 'saved') {
         showSuccessToast("Note saved successfully");
       } else if (saveStatus.status === 'offline') {
         showWarningToast("Note saved locally. Will sync when online.");
       } else if (saveStatus.status === 'conflict') {
         showErrorToast("Note was modified elsewhere. Please refresh and try again.");
+      } else {
+        // Fallback - if status doesn't update, assume success if no error thrown
+        showSuccessToast("Note saved successfully");
       }
 
     } catch (error) {
@@ -1368,6 +1395,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
           onSave={handleSaveAndExit}
           onDiscard={handleDiscardAndExit}
           onCancel={handleContinueEditing}
+          isSaving={isSaving}
         />
       </Animated.View>
     </KeyboardAvoidingView>

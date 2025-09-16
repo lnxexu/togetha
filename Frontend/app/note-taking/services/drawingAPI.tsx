@@ -73,12 +73,13 @@ export class DrawingAPI {
       };
     }
   }
-  async saveDrawing(noteId: string, strokes: DrawingStroke[]): Promise<any> {
+  async saveDrawing(noteId: string, strokes: DrawingStroke[], tags?: string[]): Promise<any> {
     try {
       console.log('drawingAPI.saveDrawing called with:', {
         noteId,
         strokesCount: strokes.length,
-        firstStroke: strokes.length > 0 ? strokes[0] : null
+        firstStroke: strokes.length > 0 ? strokes[0] : null,
+        tags: tags
       });
 
       const drawingDataString = JSON.stringify(strokes);
@@ -91,14 +92,21 @@ export class DrawingAPI {
       const headers = await this.getAuthHeaders();
       
       // Try using the regular notes endpoint with PATCH instead of the drawing-specific endpoint
-      const requestBody = { 
+      const requestBody: any = { 
         drawing_data: drawingDataString
       };
+      
+      // Include tags if provided
+      if (tags) {
+        requestBody.tag_names = tags;
+      }
       
       console.log('Request body structure:', {
         hasDrawingData: !!requestBody.drawing_data,
         drawingDataLength: requestBody.drawing_data.length,
-        drawingDataType: typeof requestBody.drawing_data
+        drawingDataType: typeof requestBody.drawing_data,
+        hasTags: !!requestBody.tag_names,
+        tagsCount: requestBody.tag_names?.length || 0
       });
 
       // Use the regular notes endpoint for updating drawing data
@@ -222,7 +230,8 @@ export class DrawingAPI {
   async createDrawingNote(
     title: string, 
     strokes: DrawingStroke[], 
-    folderId?: string | null
+    folderId?: string | null,
+    tags?: string[]
   ): Promise<{noteId: string, note: any}> {
     try {
       const headers = await this.getAuthHeaders();
@@ -240,6 +249,7 @@ export class DrawingAPI {
           category: null, // You can add category support later
           folder: folderId,   // Include folder information
           drawing_data: JSON.stringify(strokes), // Add drawing data directly
+          tag_names: tags || [], // Include tags
         }),
       });
 
@@ -356,7 +366,8 @@ export class DrawingAPI {
     noteId: string,
     pdfUri: string,
     annotations: PDFAnnotation[],
-    options: PDFSaveOptions = {}
+    options: PDFSaveOptions = {},
+    tags?: string[]
   ): Promise<{savedPath: string, backupPath?: string, backendResponse: any}> {
     try {
       console.log('savePDFAnnotationsWithBackend called');
@@ -372,8 +383,8 @@ export class DrawingAPI {
         opacity: 1.0
       }));
 
-      // Save to backend first
-      const backendResponse = await this.saveDrawing(noteId, strokes);
+      // Save to backend first with tags
+      const backendResponse = await this.saveDrawing(noteId, strokes, tags);
 
       // Then save to PDF
       const pdfResult = await this.savePDFAnnotations(pdfUri, annotations, options);

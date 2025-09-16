@@ -16,6 +16,7 @@ interface SaveOptions {
   title?: string;
   template?: string;
   folderId?: string | null;
+  tags?: string[];
 }
 
 export const useDrawingState = ({ 
@@ -116,7 +117,7 @@ export const useDrawingState = ({
       // Create new note
       console.log('Creating new note...');
       const title = options?.title || defaultTitle || 'Untitled Drawing';
-      result = await drawingAPI.createDrawingNote(title, strokes, options?.folderId);
+      result = await drawingAPI.createDrawingNote(title, strokes, options?.folderId, options?.tags);
       noteId = result.noteId;
       setCurrentNoteId(noteId);
       console.log('Created new note with ID:', noteId);
@@ -132,11 +133,12 @@ export const useDrawingState = ({
       if (options?.title) updateData.title = options.title;
       if (options?.folderId !== undefined) updateData.folder = options.folderId;
       if (options?.template) updateData.template = options.template;
+      if (options?.tags) updateData.tag_names = options.tags;
       
       console.log('Sending combined update:', {
         hasDrawingData: !!updateData.drawing_data,
         drawingDataLength: updateData.drawing_data.length,
-        metadata: { title: updateData.title, folder: updateData.folder, template: updateData.template }
+        metadata: { title: updateData.title, folder: updateData.folder, template: updateData.template, tags: updateData.tag_names }
       });
       
       try {

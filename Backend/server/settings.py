@@ -50,19 +50,39 @@ ALLOWED_HOSTS = [
 
 DEFAULT_FROM_EMAIL = 'kcorpuz_220000002183@uic.edu.ph'
 
+# Email Configuration with ISP-resistant fallback
+# Try multiple SMTP configurations to bypass ISP blocking
+import os
 
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+# Use custom fallback backend for ISP-resistant email sending
+# For development/testing in restricted networks, uncomment the line below:
+# EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+
+# Production email backend with automatic fallback
+EMAIL_BACKEND = 'server.email_backend.FallbackSMTPBackend'
+
+# Primary SMTP configuration (these will be tried by the fallback backend)
 EMAIL_HOST = 'smtp.gmail.com'
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
+EMAIL_PORT = 465  # SSL port - less commonly blocked than 587
+EMAIL_USE_SSL = True  # Use SSL instead of TLS for port 465
+EMAIL_USE_TLS = False  # Don't use TLS when using SSL
 EMAIL_HOST_USER = 'kcorpuz_220000002183@uic.edu.ph'  # Your Gmail
 EMAIL_HOST_PASSWORD = 'tjsw zzdo piwn zjea'  # Your Gmail App Password
+
+# Alternative: Use SendGrid for production (recommended for ISP-restricted environments)
+# Uncomment these lines and sign up for SendGrid if Gmail continues to fail
+# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+# EMAIL_HOST = 'smtp.sendgrid.net'
+# EMAIL_PORT = 587
+# EMAIL_USE_TLS = True
+# EMAIL_HOST_USER = 'apikey'
+# EMAIL_HOST_PASSWORD = 'your-sendgrid-api-key'
 
 # For console testing only (uncomment the line below to test locally)
 # EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 
 # Security settings
-EMAIL_TIMEOUT = 30
+EMAIL_TIMEOUT = 60  # Increased timeout for slow connections
 EMAIL_USE_LOCALTIME = False
 
 # Application definition
@@ -98,6 +118,7 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'server.middleware.DebugAuthMiddleware',  # Our custom middleware
+    'server.middleware.UserActivityMiddleware',  # Track user activity for scheduler
     "debug_toolbar.middleware.DebugToolbarMiddleware",
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
@@ -242,6 +263,10 @@ LOGGING = {
         'console': {
             'class': 'logging.StreamHandler',
         },
+        'file': {
+            'class': 'logging.FileHandler',
+            'filename': 'email_debug.log',
+        },
     },
     'root': {
         'handlers': ['console'],
@@ -251,6 +276,16 @@ LOGGING = {
         'scheduler.tasks': {
             'handlers': ['console'],
             'level': 'INFO',
+            'propagate': False,
+        },
+        'server.email_backend': {
+            'handlers': ['console', 'file'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        'django.core.mail': {
+            'handlers': ['console', 'file'],
+            'level': 'DEBUG',
             'propagate': False,
         },
     },

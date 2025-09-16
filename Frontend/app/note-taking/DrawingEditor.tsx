@@ -21,7 +21,7 @@ import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LinearGradient } from "expo-linear-gradient";
 import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
-import { showSuccessToast, showErrorToast, showWarningToast } from "../utils/ToastUtils";
+import { showSuccessToast, showErrorToast, showWarningToast, showInfoToast } from "../utils/ToastUtils";
 import DrawingCanvas, { Stroke, DrawingTool } from "./components/DrawingCanvas";
 import DrawingToolbar from "./components/DrawingToolbar";
 import { useDrawingState } from "./hooks/useDrawingState";
@@ -444,7 +444,8 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
           const result = await drawingAPI.createDrawingNote(
             drawingTitle || "Untitled Drawing", 
             strokes, // Use current strokes (could be empty or have data)
-            selectedFolderId
+            selectedFolderId,
+            tags
           );
           // Set the note ID in the useDrawingState hook
           setNoteId(result.noteId);
@@ -458,7 +459,8 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
             type: "drawing",
             title: drawingTitle,
             template: activeTemplate,
-            folderId: selectedFolderId
+            folderId: selectedFolderId,
+            tags: tags
           });
         }
       }
@@ -578,7 +580,15 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
 
   const handleManualSave = async () => {
     try {
-      await saveDrawing();
+      await saveDrawing({
+        type: "drawing",
+        title: drawingTitle,
+        template: activeTemplate,
+        folderId: selectedFolderId,
+        tags: tags
+      });
+      // Wait a brief moment to ensure save state is updated
+      await new Promise(resolve => setTimeout(resolve, 100));
       showSuccessToast("Drawing saved successfully");
     } catch (error) {
       showErrorToast("Failed to save drawing. Please try again.");
@@ -631,12 +641,22 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
     setShowUnsavedChangesModal(false);
     try {
       if (strokes.length > 0 || hasUnsavedChanges) {
-        await saveDrawing();
+        await saveDrawing({
+          type: "drawing",
+          title: drawingTitle,
+          template: activeTemplate,
+          folderId: selectedFolderId,
+          tags: tags
+        });
+        // Wait a brief moment to ensure save completion
+        await new Promise(resolve => setTimeout(resolve, 100));
         showSuccessToast("Drawing saved successfully");
       }
     } catch (error) {
       showErrorToast("Failed to save drawing");
       console.error('Error saving drawing:', error);
+      // Show modal again if save failed
+      setShowUnsavedChangesModal(true);
       return; // Don't navigate if save failed
     }
     
@@ -650,7 +670,7 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
 
   const handleDiscardAndExit = () => {
     setShowUnsavedChangesModal(false);
-    showWarningToast("Changes discarded");
+    showInfoToast("Changes discarded");
     
     // Navigate back without saving
     if (onBack) {
@@ -1083,6 +1103,7 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
           onSave={handleSaveAndExit}
           onDiscard={handleDiscardAndExit}
           onCancel={handleContinueEditing}
+          isSaving={isSaving}
         />
     </KeyboardAvoidingView>
   );

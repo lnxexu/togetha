@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   Modal,
   View,
@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Animated,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -15,7 +16,7 @@ const { width } = Dimensions.get('window');
 
 interface UnsavedChangesModalProps {
   visible: boolean;
-  onSave: () => void;
+  onSave: () => Promise<void> | void;
   onDiscard: () => void;
   onCancel: () => void;
   title?: string;
@@ -23,6 +24,7 @@ interface UnsavedChangesModalProps {
   saveButtonText?: string;
   discardButtonText?: string;
   cancelButtonText?: string;
+  isSaving?: boolean;
 }
 
 const UnsavedChangesModal: React.FC<UnsavedChangesModalProps> = ({
@@ -35,9 +37,26 @@ const UnsavedChangesModal: React.FC<UnsavedChangesModalProps> = ({
   saveButtonText = "Save Changes",
   discardButtonText = "Discard Changes",
   cancelButtonText = "Continue Editing",
+  isSaving = false,
 }) => {
   const scaleValue = React.useRef(new Animated.Value(0)).current;
   const opacityValue = React.useRef(new Animated.Value(0)).current;
+  const [isLocalSaving, setIsLocalSaving] = useState(false);
+
+  const handleSave = useCallback(async () => {
+    try {
+      setIsLocalSaving(true);
+      await onSave();
+      // The modal should close automatically after successful save
+    } catch (error) {
+      console.error('Save failed:', error);
+      // Keep modal open if save fails
+    } finally {
+      setIsLocalSaving(false);
+    }
+  }, [onSave]);
+
+  const currentlySaving = isSaving || isLocalSaving;
 
   React.useEffect(() => {
     if (visible) {
@@ -119,34 +138,58 @@ const UnsavedChangesModal: React.FC<UnsavedChangesModalProps> = ({
             <View style={styles.actions}>
               {/* Save Button */}
               <TouchableOpacity
-                style={[styles.button, styles.saveButton]}
-                onPress={onSave}
+                style={[
+                  styles.button, 
+                  styles.saveButton,
+                  currentlySaving && styles.savingButton
+                ]}
+                onPress={handleSave}
                 activeOpacity={0.8}
+                disabled={currentlySaving}
               >
-                <MaterialIcons name="save" size={20} color="#FFF" />
-                <Text style={styles.saveButtonText}>{saveButtonText}</Text>
+                {currentlySaving ? (
+                  <>
+                    <ActivityIndicator size="small" color="#FFF" />
+                    <Text style={styles.saveButtonText}>Saving...</Text>
+                  </>
+                ) : (
+                  <>
+                    <MaterialIcons name="save" size={20} color="#FFF" />
+                    <Text style={styles.saveButtonText}>{saveButtonText}</Text>
+                  </>
+                )}
               </TouchableOpacity>
 
               {/* Action Row */}
               <View style={styles.actionRow}>
                 {/* Discard Button */}
                 <TouchableOpacity
-                  style={[styles.button, styles.discardButton]}
+                  style={[
+                    styles.button, 
+                    styles.discardButton,
+                    currentlySaving && styles.disabledButton
+                  ]}
                   onPress={onDiscard}
                   activeOpacity={0.8}
+                  disabled={currentlySaving}
                 >
-                  <MaterialIcons name="delete-outline" size={18} color="#FF6B6B" />
-                  <Text style={styles.discardButtonText}>{discardButtonText}</Text>
+                  <MaterialIcons name="delete-outline" size={18} color={currentlySaving ? "#999" : "#FF6B6B"} />
+                  <Text style={[styles.discardButtonText, currentlySaving && styles.disabledText]}>{discardButtonText}</Text>
                 </TouchableOpacity>
 
                 {/* Cancel Button */}
                 <TouchableOpacity
-                  style={[styles.button, styles.cancelButton]}
+                  style={[
+                    styles.button, 
+                    styles.cancelButton,
+                    currentlySaving && styles.disabledButton
+                  ]}
                   onPress={onCancel}
                   activeOpacity={0.8}
+                  disabled={currentlySaving}
                 >
-                  <MaterialIcons name="edit" size={18} color="#667eea" />
-                  <Text style={styles.cancelButtonText}>{cancelButtonText}</Text>
+                  <MaterialIcons name="edit" size={18} color={currentlySaving ? "#999" : "#667eea"} />
+                  <Text style={[styles.cancelButtonText, currentlySaving && styles.disabledText]}>{cancelButtonText}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -230,6 +273,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 4,
   },
+  savingButton: {
+    backgroundColor: '#28A745',
+    opacity: 0.8,
+  },
   saveButtonText: {
     color: '#FFF',
     fontSize: 16,
@@ -265,6 +312,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     marginLeft: 6,
+  },
+  disabledButton: {
+    opacity: 0.5,
+    backgroundColor: 'rgba(128, 128, 128, 0.1)',
+    borderColor: '#999',
+  },
+  disabledText: {
+    color: '#999',
   },
 });
 
