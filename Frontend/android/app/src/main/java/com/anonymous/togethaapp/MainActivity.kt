@@ -3,6 +3,8 @@ import expo.modules.splashscreen.SplashScreenManager
 
 import android.os.Build
 import android.os.Bundle
+import android.view.View
+import android.view.WindowManager
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
@@ -21,6 +23,55 @@ class MainActivity : ReactActivity() {
     SplashScreenManager.registerOnActivity(this)
     // @generated end expo-splashscreen
     super.onCreate(null)
+    
+    // Configure system UI to maintain solid navigation bar
+    configureSystemUI()
+  }
+
+  override fun onResume() {
+    super.onResume()
+    // Reapply system UI configuration when app resumes
+    configureSystemUI()
+  }
+
+  override fun onWindowFocusChanged(hasFocus: Boolean) {
+    super.onWindowFocusChanged(hasFocus)
+    if (hasFocus) {
+      // Ensure system UI stays consistent when window regains focus
+      configureSystemUI()
+    }
+  }
+
+  private fun configureSystemUI() {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+      // Android 11+ (API 30+)
+      window.setDecorFitsSystemWindows(false)
+      window.statusBarColor = android.graphics.Color.WHITE
+      window.navigationBarColor = android.graphics.Color.BLACK
+      
+      val controller = window.insetsController
+      controller?.setSystemBarsAppearance(
+        android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS,
+        android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+      )
+      controller?.setSystemBarsAppearance(
+        0, // Dark navigation bar
+        android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+      )
+    } else {
+      // Android 10 and below
+      window.decorView.systemUiVisibility = (
+        View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+        View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+        View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+      )
+      window.statusBarColor = android.graphics.Color.WHITE
+      window.navigationBarColor = android.graphics.Color.BLACK
+      
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        window.navigationBarColor = android.graphics.Color.BLACK
+      }
+    }
   }
 
   /**

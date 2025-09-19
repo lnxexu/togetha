@@ -13,6 +13,10 @@ export interface SafeAreaConfig {
 /**
  * Enhanced safe area configuration for all screens
  * Handles Android navigation bar, iOS notch, landscape orientation, and different screen types
+ * 
+ * IMPORTANT: This addresses the Android navigation bar overlay issue where the floating
+ * navigation footer was being covered by the phone's built-in navigation bar.
+ * The solution includes proper bottom padding calculations and stable layout handling.
  */
 export const getEnhancedSafeAreaConfig = (
   insets: EdgeInsets,

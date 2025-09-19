@@ -1,8 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import React from "react";
-import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import React, { useRef, useEffect } from "react";
+import { Image, StyleSheet, Text, TouchableOpacity, View, Platform } from "react-native";
+import { useSafeAreaInsets, EdgeInsets } from "react-native-safe-area-context";
 import { RootStackParamList } from "./navigation/AppNavigator";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -13,9 +14,25 @@ interface NavbarProps {
 
 export default function Navbar({ activeRoute = "Home" }: NavbarProps) {
   const navigation = useNavigation<NavigationProp>();
+  const currentInsets = useSafeAreaInsets();
+  const stableInsets = useRef<EdgeInsets>(currentInsets);
+  const isFirstRender = useRef(true);
+
+  // Maintain stable bottom insets to prevent navigation bar transparency issues
+  useEffect(() => {
+    if (isFirstRender.current && currentInsets.bottom > 0) {
+      stableInsets.current = currentInsets;
+      isFirstRender.current = false;
+    }
+  }, [currentInsets]);
+
+  // Calculate consistent bottom padding for Android navigation bar
+  const safeBottomPadding = Platform.OS === 'android' 
+    ? Math.max(stableInsets.current.bottom, 20) + 10 // Ensure minimum spacing above Android nav bar
+    : stableInsets.current.bottom + 20; // iOS safe area + padding
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { bottom: safeBottomPadding }]}>
       <View style={styles.navbar}>
         <TouchableOpacity
           style={styles.navItem}
@@ -121,7 +138,6 @@ export default function Navbar({ activeRoute = "Home" }: NavbarProps) {
 const styles = StyleSheet.create({
   container: {
     position: "absolute",
-    bottom: 20,
     left: 0,
     right: 0,
     alignItems: "center",

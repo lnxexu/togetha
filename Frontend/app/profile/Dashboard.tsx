@@ -16,7 +16,6 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { RootStackParamList } from '../navigation/AppNavigator';
-import Navbar from '../NavBar';
 import { progressService, ProgressData, ProgressSummary } from './services/progressService';
 import { ProgressCard } from './components/ProgressComponents';
 
@@ -98,7 +97,6 @@ const Dashboard: React.FC = () => {
           <ActivityIndicator size="large" color="#6A009C" />
           <Text style={styles.loadingText}>Loading dashboard...</Text>
         </View>
-        <Navbar activeRoute="Profile" />
       </View>
     );
   }
@@ -262,8 +260,6 @@ const Dashboard: React.FC = () => {
 
         <View style={styles.bottomPadding} />
       </ScrollView>
-
-      <Navbar activeRoute="Profile" />
     </View>
   );
 };

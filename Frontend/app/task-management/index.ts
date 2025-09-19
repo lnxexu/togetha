@@ -10,3 +10,5 @@ export { default as offlineStorageService } from './services/offlineStorageServi
 
 // Export components
 export { default as OfflineIndicator } from './components/OfflineIndicator';
+export { default as GoogleCalendar } from './components/GoogleCalendar';
+export { default as DateTasksModal } from './components/DateTasksModal';

@@ -18,6 +18,7 @@ import {
   Animated,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { SafeAreaWrapper } from "./components/SafeAreaWrapper";
 import Navbar from "./NavBar";
 import { RootStackParamList } from "./navigation/AppNavigator";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -122,10 +123,8 @@ export default function Home() {
 
   // Greeting based on time of day
   const getGreeting = () => {
-    // Get current time in user's timezone
-    const date = new Date().toLocaleDateString("en-US", {
-      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    });
+    // Get current time in utc VALUES
+    const date = new Date();
     const hours = new Date(date).getHours();
     if (hours < 12) {
       return "Good Morning";
@@ -755,25 +754,23 @@ export default function Home() {
   };
 
   return (
-    <View style={styles.rootContainer}>
+    <SafeAreaWrapper style={styles.container} includeNavBar={true}>
       <StatusBar barStyle="light-content" backgroundColor="#7C3AED" />
 
-      {/* Container for both header and content */}
-      <View style={styles.container}>
-        {/* Header positioned behind content */}
-        <Animated.View style={[
-          {
-            transform: [{ translateY: headerSlideAnim }],
-          }
-        ]}>
-          <LinearGradient
-            colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.header}
-          >
-            <View style={styles.headerContent}>
-              <View style={styles.headerLeftSection}>
+      {/* Header positioned behind content */}
+      <Animated.View style={[
+        {
+          transform: [{ translateY: headerSlideAnim }],
+        }
+      ]}>
+        <LinearGradient
+          colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.header}
+        >
+          <View style={styles.headerContent}>
+            <View style={styles.headerLeftSection}>
                 <TouchableOpacity
                   style={styles.profilePicture}
                   onPress={() => navigation.navigate("EditProfile")}
@@ -785,7 +782,7 @@ export default function Home() {
                     </Text>
                   </View>
                 </TouchableOpacity>
-
+  
                 <View style={styles.headerGreeting}>
                   <Text style={styles.welcomeText}>{getGreeting()},</Text>
                   <Text style={styles.nameText}>{username}! 👋</Text>
@@ -1242,8 +1239,8 @@ export default function Home() {
               )}
             </Animated.View>
 
-            {/* Bottom spacing for navbar */}
-            <View style={{ height: 100 }} />
+            {/* Bottom spacing reduced for NavBar */}
+            <View style={{ height: 20 }} />
           </ScrollView>
         </Animated.View>
 
@@ -1251,16 +1248,11 @@ export default function Home() {
         <View style={styles.navbarContainer}>
           <Navbar activeRoute="Home" />
         </View>
-      </View>
-    </View>
+    </SafeAreaWrapper>
   );
 }
 
 const styles = StyleSheet.create({
-  rootContainer: {
-    flex: 1,
-    backgroundColor: "#ffffffff",
-  },
   container: {
     flex: 1,
     backgroundColor: "#ffffffff",
@@ -1274,8 +1266,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 24,
-    paddingTop: Platform.OS === "ios" ? 50 : 35,
-    paddingBottom: 100,
+    paddingTop: 10,
+    paddingBottom: 20,
     zIndex: 1,
   },
   mainContentContainer: {
@@ -1283,7 +1275,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
-    marginTop: 160, // Position it below the header
+    marginTop: 120, // Reduced for better spacing
     shadowColor: "#1E293B",
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.1,
@@ -1368,11 +1360,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingTop: 20, // Reduced since content is in separate container
-    paddingBottom: 100,
+    paddingTop: 20,
+    paddingBottom: 120, // Space for NavBar
   },
   section: {
-    marginBottom: 32,
+    marginBottom: 24, // Reduced from 32
     position: "relative",
   },
   sectionHeader: {

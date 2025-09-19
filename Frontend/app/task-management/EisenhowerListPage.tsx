@@ -15,7 +15,6 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RouteProp } from "@react-navigation/native";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import { Task } from "./types/Task";
-import Navbar from "../NavBar";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 
@@ -127,12 +126,27 @@ const EisenhowerListPage: React.FC = () => {
           ? new Date(task.due_datetime)
           : task.due_datetime;
       if (!isNaN(due.getTime())) {
-        timeString = due.toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
+        // Use due_time if available, otherwise extract time from due_datetime with proper timezone handling
+        if (task.due_time) {
+          timeString = task.due_time;
+        } else {
+          // Format time in Philippine timezone (GMT+8)
+          console.log(due);
+          // use utc values
+          timeString = due.toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true,
+            timeZone: 'UTC'
+          });
+        }
+        dateString = due.toLocaleDateString('en-US', {
+          timeZone: 'UTC'
         });
-        dateString = due.toLocaleDateString();
       }
+    } else if (task.due_time) {
+      // If only due_time is available without due_datetime
+      timeString = task.due_time;
     }
 
     // MOVE THESE INSIDE THE FUNCTION
@@ -331,8 +345,6 @@ const EisenhowerListPage: React.FC = () => {
           />
         </View>
       </View>
-
-      <Navbar activeRoute="ToDo" />
     </View>
   );
 };

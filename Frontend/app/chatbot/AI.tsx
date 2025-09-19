@@ -109,7 +109,7 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
       id: "2",
       text: "Create practice questions",
       description: "Generate quiz questions from your study materials",
-      icon: "�",
+      icon: "❓",
     },
     {
       id: "3",
@@ -121,7 +121,7 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
       id: "4",
       text: "Explain with examples",
       description: "Provide real-world examples for better understanding",
-      icon: "�",
+      icon: "💡",
     },
   ];
 
@@ -639,7 +639,12 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
             paddingBottom: 20,
           }]}
         >
-        <TouchableOpacity style={styles.backButton} onPress={handleGoBack}>
+        <TouchableOpacity 
+          style={styles.backButton} 
+          onPress={handleGoBack}
+          accessibilityLabel="Go back"
+          accessibilityHint="Navigate to the previous screen"
+        >
           <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
         </TouchableOpacity>
         <View style={styles.headerInfo}>
@@ -653,7 +658,12 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
             </Text>
           </View>
         </View>
-        <TouchableOpacity style={styles.menuButton} onPress={handleMenuPress}>
+        <TouchableOpacity 
+          style={styles.menuButton} 
+          onPress={handleMenuPress}
+          accessibilityLabel="Chat history"
+          accessibilityHint="View previous chat sessions"
+        >
           <MaterialIcons name="history" size={24} color="#FFFFFF" />
         </TouchableOpacity>
       </LinearGradient>
@@ -689,6 +699,9 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
                     key={prompt.id}
                     style={styles.promptCard}
                     onPress={() => handlePromptSelection(prompt.text)}
+                    accessibilityLabel={prompt.text}
+                    accessibilityHint={prompt.description}
+                    activeOpacity={0.7}
                   >
                     <Text style={styles.promptIcon}>{prompt.icon}</Text>
                     <Text style={styles.promptTitle}>{prompt.text}</Text>
@@ -770,7 +783,19 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
 
         {isLoading && (
           <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>Rina is thinking...</Text>
+            <View style={styles.typingIndicatorContainer}>
+              <View style={styles.typingAvatar}>
+                <Text style={styles.typingAvatarText}>R</Text>
+              </View>
+              <View style={styles.typingBubble}>
+                <Text style={styles.loadingText}>Rina is thinking</Text>
+                <View style={styles.typingIndicator}>
+                  <View style={styles.typingDot} />
+                  <View style={styles.typingDot} />
+                  <View style={styles.typingDot} />
+                </View>
+              </View>
+            </View>
           </View>
         )}
       </ScrollView>
@@ -785,12 +810,19 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
           <TouchableOpacity
             style={styles.actionButton}
             onPress={handleSummarize}
+            accessibilityLabel="Summarize content"
+            accessibilityHint="Generate a summary of the conversation or document"
           >
             <Ionicons name="document-text" size={16} color="#6B46C1" />
             <Text style={styles.actionButtonText}>Summarize</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.actionButton} onPress={handleExplain}>
+          <TouchableOpacity 
+            style={styles.actionButton} 
+            onPress={handleExplain}
+            accessibilityLabel="Explain concepts"
+            accessibilityHint="Get detailed explanations of concepts"
+          >
             <Ionicons name="bulb" size={16} color="#6B46C1" />
             <Text style={styles.actionButtonText}>Explain</Text>
           </TouchableOpacity>
@@ -798,12 +830,20 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
           <TouchableOpacity
             style={styles.actionButton}
             onPress={handleGenerateQuiz}
+            accessibilityLabel="Generate quiz"
+            accessibilityHint="Create practice questions based on the content"
           >
             <Ionicons name="help-circle" size={16} color="#6B46C1" />
             <Text style={styles.actionButtonText}>Generate Quiz</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionButton} onPress={handleOCR}>
-            <Ionicons name="help-circle" size={16} color="#6B46C1" />
+          
+          <TouchableOpacity 
+            style={styles.actionButton} 
+            onPress={handleOCR}
+            accessibilityLabel="Extract text"
+            accessibilityHint="Extract text from uploaded images"
+          >
+            <Ionicons name="scan" size={16} color="#6B46C1" />
             <Text style={styles.actionButtonText}>Extract Text</Text>
           </TouchableOpacity>
         </ScrollView>
@@ -816,13 +856,17 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
             value={inputText}
             onChangeText={setInputText}
             placeholder="Ask me anything about your studies..."
-            placeholderTextColor="#999"
+            placeholderTextColor="#94A3B8"
             multiline
             maxLength={1000}
+            accessibilityLabel="Message input"
+            accessibilityHint="Type your message to send to Rina"
           />
           <TouchableOpacity
             style={styles.attachButton}
             onPress={handleFileImport}
+            accessibilityLabel="Attach file"
+            accessibilityHint="Import and upload a document or image"
           >
             <Ionicons name="attach" size={24} color="#6B46C1" />
           </TouchableOpacity>
@@ -833,6 +877,8 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
             ]}
             onPress={handleSendMessage}
             disabled={inputText.trim() === ""}
+            accessibilityLabel="Send message"
+            accessibilityHint="Send your message to Rina"
           >
             <Ionicons name="send" size={20} color="#fff" />
           </TouchableOpacity>
@@ -944,7 +990,7 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8f9fa",
+    backgroundColor: "#F8FAFC",
   },
   keyboardAvoidingView: {
     flex: 1,
@@ -960,14 +1006,17 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 25,
     borderBottomRightRadius: 25,
     shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
-    zIndex: 2000, // Higher than navbar
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+    zIndex: 2000,
   },
   backButton: {
     marginRight: 12,
+    padding: 8,
+    borderRadius: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
   },
   headerInfo: {
     flexDirection: "row",
@@ -1002,6 +1051,9 @@ const styles = StyleSheet.create({
   },
   menuButton: {
     marginLeft: 12,
+    padding: 8,
+    borderRadius: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
   },
   messagesContainer: {
     flex: 1,
@@ -1014,56 +1066,46 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     borderRadius: 20,
     maxWidth: "85%",
-    shadowColor: "#000",
+    shadowColor: "#1E293B",
     shadowOffset: {
       width: 0,
-      height: 1,
+      height: 2,
     },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
   },
   userMessage: {
     backgroundColor: "#6B46C1",
     alignSelf: "flex-end",
     borderBottomRightRadius: 8,
+    shadowColor: "#6B46C1",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
   },
   aiMessage: {
-    backgroundColor: "white",
+    backgroundColor: "#FFFFFF",
     alignSelf: "flex-start",
     borderWidth: 1,
-    borderColor: "#f0f0f0",
+    borderColor: "#E2E8F0",
     borderBottomLeftRadius: 8,
   },
   messageText: {
     fontSize: 16,
     lineHeight: 24,
+    fontFamily: "Inter-Regular",
   },
   userMessageText: {
-    color: "#fff",
+    color: "#FFFFFF",
+    fontWeight: "500",
   },
   aiMessageText: {
-    color: "#333",
+    color: "#1E293B",
+    lineHeight: 22,
   },
   suggestedPromptsContainer: {
     marginTop: 16,
-  },
-  promptCard: {
-    backgroundColor: "white",
-    padding: 20,
-    marginBottom: 16,
-    borderRadius: 16,
-    width: "48%",
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-    borderWidth: 1,
-    borderColor: "#f0f0f0",
   },
   promptText: {
     fontSize: 14,
@@ -1071,73 +1113,91 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   loadingContainer: {
-    alignItems: "center",
-    padding: 16,
+    paddingVertical: 8,
   },
   loadingText: {
     color: "#666",
+    fontSize: 14,
     fontStyle: "italic",
+    marginBottom: 4,
   },
   actionsContainer: {
     flexDirection: "row",
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: "#fff",
+    paddingVertical: 12,
+    backgroundColor: "#FFFFFF",
     borderTopWidth: 1,
-    borderTopColor: "#e9ecef",
-    gap: 8,
+    borderTopColor: "#E2E8F0",
+    gap: 12,
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
   },
   actionButton: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: "#f8f9fa",
-    borderWidth: 1,
-    borderColor: "#6A009C",
+    paddingVertical: 10,
+    borderRadius: 24,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1.5,
+    borderColor: "#6B46C1",
+    minHeight: 40,
+    shadowColor: "#6B46C1",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   actionButtonText: {
-    color: "#6A009C",
-    fontSize: 12,
-    marginLeft: 4,
-    fontWeight: "500",
+    color: "#6B46C1",
+    fontSize: 13,
+    marginLeft: 6,
+    fontWeight: "600",
+    fontFamily: "Inter-SemiBold",
   },
   inputContainer: {
     flexDirection: "row",
     padding: 16,
-    backgroundColor: "#fff",
+    backgroundColor: "#FFFFFF",
     alignItems: "flex-end",
     borderTopWidth: 1,
-    borderTopColor: "#f0f0f0",
-    shadowColor: "#000",
+    borderTopColor: "#E2E8F0",
+    shadowColor: "#1E293B",
     shadowOffset: {
       width: 0,
-      height: -2,
+      height: -4,
     },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 8,
   },
   textInput: {
     flex: 1,
     borderWidth: 2,
-    borderColor: "#f0f0f0",
+    borderColor: "#E2E8F0",
     borderRadius: 25,
     paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingVertical: 14,
     maxHeight: 120,
     fontSize: 16,
-    backgroundColor: "#f8f9fa",
+    backgroundColor: "#F8FAFC",
     minHeight: 48,
+    fontFamily: "Inter-Regular",
+    color: "#1E293B",
   },
   attachButton: {
     marginLeft: 12,
     padding: 12,
     borderRadius: 25,
-    backgroundColor: "#f8f9fa",
-    borderWidth: 1,
-    borderColor: "#f0f0f0",
+    backgroundColor: "#F8FAFC",
+    borderWidth: 2,
+    borderColor: "#E2E8F0",
+    minWidth: 48,
+    alignItems: "center",
+    justifyContent: "center",
   },
   sendButton: {
     backgroundColor: "#6B46C1",
@@ -1150,82 +1210,116 @@ const styles = StyleSheet.create({
     shadowColor: "#6B46C1",
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 3,
     },
     shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
+    shadowRadius: 6,
+    elevation: 6,
   },
   sendButtonDisabled: {
-    backgroundColor: "#ccc",
+    backgroundColor: "#CBD5E1",
+    shadowOpacity: 0,
+    elevation: 0,
   },
 
   // Welcome section styles
   welcomeContainer: {
     paddingHorizontal: 20,
-    paddingVertical: 30,
+    paddingVertical: 40,
   },
   welcomeHeader: {
     alignItems: "center",
-    marginBottom: 30,
+    marginBottom: 32,
   },
   welcomeAvatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     backgroundColor: "#6B46C1",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 16,
+    marginBottom: 20,
+    shadowColor: "#6B46C1",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
   },
   welcomeAvatarText: {
-    fontSize: 24,
+    fontSize: 32,
     color: "white",
   },
   welcomeTitle: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: "bold",
-    color: "#1a1a1a",
-    marginBottom: 8,
+    color: "#1E293B",
+    marginBottom: 12,
     textAlign: "center",
+    fontFamily: "Inter-Bold",
   },
   welcomeSubtitle: {
-    fontSize: 16,
-    color: "#666",
+    fontSize: 18,
+    color: "#64748B",
     textAlign: "center",
+    fontFamily: "Inter-Medium",
+    lineHeight: 24,
   },
   featuresContainer: {
-    marginTop: 20,
+    marginTop: 24,
   },
   featuresTitle: {
-    fontSize: 20,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 20,
+    fontSize: 22,
+    fontWeight: "700",
+    color: "#1E293B",
+    marginBottom: 24,
     textAlign: "center",
+    fontFamily: "Inter-Bold",
   },
   suggestedPromptsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
+    gap: 16,
+  },
+  promptCard: {
+    backgroundColor: "#FFFFFF",
+    padding: 24,
+    marginBottom: 16,
+    borderRadius: 20,
+    width: "47%",
+    shadowColor: "#1E293B",
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 6,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
+    minHeight: 140,
+    justifyContent: "space-between",
   },
   promptIcon: {
-    fontSize: 24,
-    marginBottom: 8,
+    fontSize: 32,
+    marginBottom: 12,
     textAlign: "center",
   },
   promptTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 4,
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#1E293B",
+    marginBottom: 8,
     textAlign: "center",
+    fontFamily: "Inter-Bold",
+    lineHeight: 20,
   },
   promptDescription: {
-    fontSize: 12,
-    color: "#666",
+    fontSize: 13,
+    color: "#64748B",
     textAlign: "center",
-    lineHeight: 16,
+    lineHeight: 18,
+    fontFamily: "Inter-Regular",
   },
 
   // Enhanced message styles
@@ -1249,10 +1343,11 @@ const styles = StyleSheet.create({
     color: "white",
   },
   messageTime: {
-    fontSize: 12,
-    color: "#999",
-    marginTop: 4,
+    fontSize: 11,
+    color: "#94A3B8",
+    marginTop: 6,
     alignSelf: "flex-end",
+    fontFamily: "Inter-Regular",
   },
 
   // Legacy prompt styles for backward compatibility
@@ -1275,10 +1370,48 @@ const styles = StyleSheet.create({
   },
 
   // Typing indicator styles
+  typingIndicatorContainer: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    marginVertical: 8,
+    marginHorizontal: 20,
+    maxWidth: "85%",
+  },
+  typingAvatar: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "#6B46C1",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 8,
+    marginBottom: 4,
+  },
+  typingAvatarText: {
+    fontSize: 12,
+    fontWeight: "bold",
+    color: "white",
+  },
+  typingBubble: {
+    backgroundColor: "white",
+    padding: 16,
+    borderRadius: 20,
+    borderBottomLeftRadius: 8,
+    borderWidth: 1,
+    borderColor: "#f0f0f0",
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
   typingIndicator: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 8,
+    marginTop: 4,
   },
   typingDot: {
     width: 8,
@@ -1286,7 +1419,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: "#6B46C1",
     marginHorizontal: 2,
-    opacity: 0.4,
+    opacity: 0.7,
   },
 
   // File preview styles

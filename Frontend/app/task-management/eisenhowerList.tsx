@@ -13,7 +13,6 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import Navbar from '../NavBar';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { Task } from './types/Task';
 
@@ -227,8 +226,6 @@ const EisenhowerListPage: React.FC = () => {
           ItemSeparatorComponent={() => <View style={styles.separator} />}
         />
       </View>
-
-      <Navbar activeRoute="ToDo" />
     </View>
   );
 };

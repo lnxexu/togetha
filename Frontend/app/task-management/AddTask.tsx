@@ -593,6 +593,10 @@ const AddTask: React.FC = () => {
                                 isLandscape && styles.timeScrollViewLandscape
                               ]}
                               showsVerticalScrollIndicator={false}
+                              nestedScrollEnabled={true}
+                              scrollEnabled={true}
+                              bounces={true}
+                              alwaysBounceVertical={true}
                             >
                               {Array.from({ length: 12 }, (_, i) => i + 1).map(
                                 (hour) => {
@@ -656,6 +660,10 @@ const AddTask: React.FC = () => {
                                 isLandscape && styles.timeScrollViewLandscape
                               ]}
                               showsVerticalScrollIndicator={false}
+                              nestedScrollEnabled={true}
+                              scrollEnabled={true}
+                              bounces={true}
+                              alwaysBounceVertical={true}
                             >
                               {Array.from({ length: 60 }, (_, i) => i).map(
                                 (minute) => {
@@ -716,6 +724,10 @@ const AddTask: React.FC = () => {
                                 isLandscape && styles.timeScrollViewLandscape
                               ]}
                               showsVerticalScrollIndicator={false}
+                              nestedScrollEnabled={true}
+                              scrollEnabled={true}
+                              bounces={true}
+                              alwaysBounceVertical={true}
                             >
                               {["AM", "PM"].map((period) => {
                                 const currentTime =
@@ -1402,124 +1414,139 @@ const styles = StyleSheet.create({
     width: "100%",
     left: 0,
     right: 0,
-    maxHeight: 400, // Default fallback
+    maxHeight: 400,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 8,
   },
   calendarContainer: {
-    padding: 20,
+    padding: 24,
+    backgroundColor: "#FFFFFF",
   },
   calendarContainerLandscape: {
-    padding: 12,
+    padding: 16,
   },
   calendarHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 20,
+    marginBottom: 24,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
   },
   monthNavButton: {
-    padding: 12,
-    borderRadius: 14,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: "#F8FAFC",
+    justifyContent: "center",
+    alignItems: "center",
     borderWidth: 1,
     borderColor: "#E2E8F0",
   },
   monthNavButtonLandscape: {
-    padding: 8,
-    borderRadius: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
   },
   monthYearText: {
-    fontSize: 18,
+    fontSize: 20,
     fontFamily: "Inter-SemiBold",
-    color: "#1E293B",
-    fontWeight: "700",
+    color: "#1F2937",
+    fontWeight: "600",
+    letterSpacing: -0.5,
   },
   monthYearTextLandscape: {
-    fontSize: 16,
+    fontSize: 18,
   },
   calendarGrid: {
-    gap: 10,
+    gap: 0,
   },
   calendarGridLandscape: {
-    gap: 6,
+    gap: 0,
   },
   dayHeadersRow: {
     flexDirection: "row",
     justifyContent: "space-around",
-    marginBottom: 12,
+    marginBottom: 16,
+    paddingHorizontal: 4,
   },
   dayHeader: {
-    fontSize: 13,
-    color: "#64748B",
+    fontSize: 12,
+    color: "#6B7280",
     fontFamily: "Inter-Medium",
     textAlign: "center",
     flex: 1,
-    fontWeight: "600",
+    fontWeight: "500",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   dayHeaderLandscape: {
-    fontSize: 11,
+    fontSize: 10,
   },
   daysContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 5,
   },
   calendarDay: {
-    width: "13.2%",
-    aspectRatio: 1,
+    width: "14.28%",
+    height: 44,
     justifyContent: "center",
     alignItems: "center",
-    borderRadius: 10,
-    margin: 1,
+    borderRadius: 22,
   },
   calendarDayLandscape: {
-    borderRadius: 8,
-    margin: 0.5,
+    height: 36,
+    borderRadius: 18,
   },
   inactiveDay: {
-    opacity: 0.3,
+    opacity: 0.4,
   },
   todayCalendarDay: {
-    backgroundColor: "#EDE9FE",
-    borderWidth: 1.5,
-    borderColor: "#8B5CF6",
+    backgroundColor: "#E3F2FD",
+    borderWidth: 2,
+    borderColor: "#2196F3",
   },
   selectedCalendarDay: {
-    backgroundColor: "#8B5CF6",
-    shadowColor: "#8B5CF6",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
+    backgroundColor: "#4285F4",
+    shadowColor: "#4285F4",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
   },
   pastDateCalendarDay: {
-    backgroundColor: "#F1F5F9",
-    opacity: 0.5,
+    backgroundColor: "transparent",
   },
   calendarDayText: {
-    fontSize: 15,
-    color: "#1E293B",
+    fontSize: 14,
+    color: "#374151",
     fontFamily: "Inter-Medium",
-    fontWeight: "600",
+    fontWeight: "500",
   },
   calendarDayTextLandscape: {
-    fontSize: 13,
+    fontSize: 12,
   },
   inactiveDayText: {
-    color: "#CBD5E1",
+    color: "#D1D5DB",
   },
   todayDayText: {
-    color: "#8B5CF6",
-    fontFamily: "Inter-Bold",
-    fontWeight: "700",
+    color: "#2196F3",
+    fontFamily: "Inter-SemiBold",
+    fontWeight: "600",
   },
   selectedDayText: {
     color: "#FFFFFF",
-    fontFamily: "Inter-Bold",
-    fontWeight: "700",
+    fontFamily: "Inter-SemiBold",
+    fontWeight: "600",
   },
   pastDateText: {
-    color: "#94A3B8",
-    textDecorationLine: "line-through",
+    color: "#9CA3AF",
   },
   // Clock styles
   clockDropdown: {
@@ -1576,7 +1603,7 @@ const styles = StyleSheet.create({
     borderColor: "#E2E8F0",
   },
   timeScrollViewLandscape: {
-    height: 100,
+    height: 120,
     borderRadius: 10,
   },
   timeOption: {

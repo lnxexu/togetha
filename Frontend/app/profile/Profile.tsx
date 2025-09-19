@@ -16,6 +16,7 @@ import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { LinearGradient } from "expo-linear-gradient";
 import { RootStackParamList } from "../navigation/AppNavigator";
+import { SafeAreaWrapper } from "../components/SafeAreaWrapper";
 import Navbar from "../NavBar";
 import AuthService from "../onboarding/service/AuthService";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -326,7 +327,7 @@ const Profile: React.FC = () => {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaWrapper style={styles.container} includeNavBar={true}>
       {/* Header */}
       <LinearGradient
         colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
@@ -675,7 +676,7 @@ const Profile: React.FC = () => {
       </ScrollView>
 
       <Navbar activeRoute="Profile" />
-    </View>
+    </SafeAreaWrapper>
   );
 };
 

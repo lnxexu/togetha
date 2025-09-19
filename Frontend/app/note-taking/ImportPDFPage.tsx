@@ -18,7 +18,6 @@ import { MaterialIcons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import Navbar from "../NavBar";
 import PDFAnnotationViewer from "./components/PDFAnnotationViewer";
 import UnsavedChangesModal from "./components/UnsavedChangesModal";
 import { getLocalPDFPath, isRemoteURL } from "./utils/pdfUtils";
@@ -662,8 +661,6 @@ const ImportPDFPage = () => {
         )}
         </Animated.View>
       </LinearGradient>
-      
-      <Navbar activeRoute="PDFs" />
 
       <UnsavedChangesModal
         visible={showUnsavedChangesModal}

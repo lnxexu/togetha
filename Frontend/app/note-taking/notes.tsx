@@ -26,6 +26,7 @@ import {
   Ionicons,
 } from "@expo/vector-icons";
 import RenderHtml from "react-native-render-html";
+import { SafeAreaWrapper } from "../components/SafeAreaWrapper";
 import Navbar from "../NavBar";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -2921,7 +2922,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
   );
 
   return (
-    <View style={styles.container}>
+    <SafeAreaWrapper style={styles.container} includeNavBar={true}>
       <StatusBar barStyle="light-content" backgroundColor="#7C3AED" />
 
       {/* Fixed Header - outside of content container */}
@@ -3461,7 +3462,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
           />
         </Modal>
       )}
-    </View>
+    </SafeAreaWrapper>
   );
 }
 
@@ -3936,29 +3937,38 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 24,
-    marginTop: 40, // Add margin between empty state and header
+    paddingHorizontal: 32,
+    paddingVertical: 40,
+    minHeight: 400,
   },
   emptyStateIconContainer: {
-    position: "relative",
-    alignItems: "center",
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: "#F8FAFC",
     justifyContent: "center",
-    marginBottom: 16,
+    alignItems: "center",
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: "#E2E8F0",
+    borderStyle: "dashed",
+    position: "relative",
   },
   emptyStateTitle: {
-    fontSize: 20,
-    fontFamily: "Inter-Bold",
-    color: "#1E293B",
-    marginTop: 16,
+    fontSize: 18,
+    fontFamily: "Inter-SemiBold",
+    color: "#374151",
+    marginBottom: 6,
+    textAlign: "center",
   },
   emptyStateSubtitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontFamily: "Inter-Regular",
     color: "#64748B",
-    textAlign: "center",
-    marginTop: 8,
     marginBottom: 24,
-    maxWidth: 280,
+    textAlign: "center",
+    lineHeight: 20,
+    maxWidth: 260,
   },
   emptyStateButtons: {
     flexDirection: "row",

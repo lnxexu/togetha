@@ -1,7 +1,7 @@
 import { useFonts } from "expo-font";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
-import { ActivityIndicator, View } from "react-native";
+import { ActivityIndicator, View, AppState, Platform, StatusBar } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import AppNavigator from "./app/navigation/AppNavigator";
 import Toast from "react-native-toast-message";
@@ -20,14 +20,39 @@ export default function App() {
     "Lexend": require("./assets/fonts/Lexend-SemiBold.ttf"),
   });
 
-  // Remove this line - it's causing the error
-  // useSessionMonitor();
-
   useEffect(() => {
     if (fontsLoaded) {
       SplashScreen.hideAsync();
     }
   }, [fontsLoaded]);
+
+  // Enhanced app state handling to prevent Android navigation bar transparency issues
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState) => {
+      if (Platform.OS === 'android') {
+        if (nextAppState === 'active') {
+          // When app becomes active, ensure consistent UI behavior
+          StatusBar.setBarStyle('dark-content', true);
+          StatusBar.setBackgroundColor('#ffffff', true);
+          
+          // Small delay to ensure system UI is properly set
+          setTimeout(() => {
+            // Force consistent navigation bar behavior
+          }, 150);
+        }
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    
+    // Set initial status bar style
+    if (Platform.OS === 'android') {
+      StatusBar.setBarStyle('dark-content', true);
+      StatusBar.setBackgroundColor('#ffffff', true);
+    }
+    
+    return () => subscription?.remove();
+  }, []);
 
   if (!fontsLoaded) {
     return (

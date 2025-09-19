@@ -3,16 +3,17 @@ import { MaterialIcons, Ionicons, Entypo } from "@expo/vector-icons";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
+import { SafeAreaWrapper } from "../components/SafeAreaWrapper";
 import Navbar from "../NavBar";
 import EisenhowerMatrix from "./components/EisenhowerMatrix";
 import TaskListView from "./components/TaskListView";
 import OfflineIndicator from "./components/OfflineIndicator";
+import GoogleCalendar from "./components/GoogleCalendar";
+import DateTasksModal from "./components/DateTasksModal";
 import { Task, TaskCategory } from "./types/Task";
 import { LinearGradient } from "expo-linear-gradient";
 import  taskService  from "./services/taskService";
 import { categoryService } from "./services/categoryService";
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getEnhancedSafeAreaConfig, getStatusBarConfig, getSafeAreaContainerStyle } from '../utils/SafeAreaUtils';
 import EnhancedLoadingScreen from '../components/EnhancedLoadingScreen';
 import SkeletonLoader from '../components/SkeletonLoader';
 import {
@@ -24,10 +25,8 @@ import {
   Platform,
   Dimensions,
   Modal,
-  SafeAreaView,
   StatusBar,
   useWindowDimensions,
-  Animated,
   FlatList,
   TextInput,
 } from "react-native";
@@ -36,11 +35,7 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 const ToDo: React.FC = () => {
   const { width, height } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
   const isLandscape = width > height;
-  const safeAreaConfig = getEnhancedSafeAreaConfig(insets, height, isLandscape);
-  const statusBarConfig = getStatusBarConfig();
-  const safeAreaStyle = getSafeAreaContainerStyle();
   
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const navigation = useNavigation<NavigationProp>();
@@ -60,14 +55,12 @@ const ToDo: React.FC = () => {
   >("all");
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showCalendarModal, setShowCalendarModal] = useState(false);
-  const [calendarDate, setCalendarDate] = useState(new Date());
-  const [calendarViewMode, setCalendarViewMode] = useState<"month" | "week">("month");
-  const [animatedValue] = useState(new Animated.Value(0));
   const [showQuickFilters, setShowQuickFilters] = useState(false);
   
-  // Selected date tasks modal state
+  // Google Calendar date tasks modal state
   const [showDateTasksModal, setShowDateTasksModal] = useState(false);
   const [dateTasksModalDate, setDateTasksModalDate] = useState<Date | null>(null);
+  const [dateTasksModalTasks, setDateTasksModalTasks] = useState<Task[]>([]);
   
   // More vert menu state
   const [showMoreVertMenu, setShowMoreVertMenu] = useState(false);
@@ -93,50 +86,24 @@ const ToDo: React.FC = () => {
   };
 
   // Enhanced date task handlers
-  const handleCalendarDateClick = (date: Date) => {
-    const tasksForDate = getTasksForDate(date);
-    if (tasksForDate.length > 0) {
-      setDateTasksModalDate(date);
-      setShowDateTasksModal(true);
-    }
-    setSelectedDate(date);
+  const handleCalendarDateSelect = (date: Date, tasksForDate?: Task[]) => {
+    const tasks = tasksForDate || getTasksForDate(date);
+    setDateTasksModalDate(date);
+    setDateTasksModalTasks(tasks);
+    setShowDateTasksModal(true);
+    setShowCalendarModal(false);
   };
 
+  const handleAddTaskForDate = (date: Date) => {
+    setShowDateTasksModal(false);
+    navigation.navigate("AddTask", { 
+      quadrant: "not-urgent-not-important" as any
+    });
+  };
+
+  // Handle task interaction
   const handleTaskClick = (taskId: string) => {
     navigation.navigate("TaskDetails", { taskId });
-  };
-
-  // Enhanced Calendar Functions with Google Calendar-like features
-  const getWeekDates = () => {
-    const startOfWeek = new Date(calendarDate);
-    startOfWeek.setDate(calendarDate.getDate() - calendarDate.getDay());
-
-    const weekDates = [];
-    for (let i = 0; i < 7; i++) {
-      const date = new Date(startOfWeek);
-      date.setDate(startOfWeek.getDate() + i);
-      weekDates.push(date);
-    }
-    return weekDates;
-  };
-
-  // Enhanced calendar days generation with better week handling
-  const getCalendarDays = () => {
-    const year = calendarDate.getFullYear();
-    const month = calendarDate.getMonth();
-
-    const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
-    const startDate = new Date(firstDay);
-    startDate.setDate(startDate.getDate() - firstDay.getDay());
-
-    const days = [];
-    for (let i = 0; i < 42; i++) {
-      const date = new Date(startDate);
-      date.setDate(startDate.getDate() + i);
-      days.push(date);
-    }
-    return days;
   };
 
   // Get tasks for a specific date (Google Calendar style)
@@ -151,47 +118,8 @@ const ToDo: React.FC = () => {
   // Quick navigation functions
   const navigateToToday = () => {
     const today = new Date();
-    setCalendarDate(today);
     setSelectedDate(today);
   };
-
-  const navigateToPrevPeriod = () => {
-    const newDate = new Date(calendarDate);
-    if (calendarViewMode === "month") {
-      newDate.setMonth(newDate.getMonth() - 1);
-    } else {
-      newDate.setDate(newDate.getDate() - 7);
-    }
-    setCalendarDate(newDate);
-  };
-
-  const navigateToNextPeriod = () => {
-    const newDate = new Date(calendarDate);
-    if (calendarViewMode === "month") {
-      newDate.setMonth(newDate.getMonth() + 1);
-    } else {
-      newDate.setDate(newDate.getDate() + 7);
-    }
-    setCalendarDate(newDate);
-  };
-
-  const weekDates = getWeekDates();
-  const calendarDays = getCalendarDays();
-  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const monthNames = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
-  ];
 
   // Load tasks when screen is focused
   useFocusEffect(
@@ -210,19 +138,6 @@ const ToDo: React.FC = () => {
       console.error('Error loading categories:', error);
     }
   };
-
-  // Initialize animation when modal opens
-  React.useEffect(() => {
-    if (showCalendarModal) {
-      Animated.timing(animatedValue, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-    } else {
-      animatedValue.setValue(0);
-    }
-  }, [showCalendarModal]);
 
   const loadTasks = async () => {
     try {
@@ -327,24 +242,6 @@ const ToDo: React.FC = () => {
   // Get category names for filtering (derived from categories state)
   const categoryNames = categories.map(cat => cat.name);
 
-  const isDateSelected = (date: Date) => {
-    return date.toDateString() === selectedDate.toDateString();
-  };
-
-  const isCurrentDate = (date: Date) => {
-    const today = new Date();
-    return date.toDateString() === today.toDateString();
-  };
-
-  const isCurrentMonth = (date: Date) => {
-    return date.getMonth() === calendarDate.getMonth();
-  };
-
-  const handleCalendarDateSelect = (date: Date) => {
-    handleCalendarDateClick(date);
-    setShowCalendarModal(false);
-  };
-
   const getCurrentDateDisplay = () => {
     const today = new Date();
     return today.getDate().toString();
@@ -422,16 +319,16 @@ const ToDo: React.FC = () => {
   return (
     <>
       <StatusBar barStyle="light-content" backgroundColor="#7C3AED" />
-      <SafeAreaView style={[styles.container, safeAreaStyle]}>
+      <SafeAreaWrapper style={styles.container} includeNavBar={true}>
         {/* Offline Indicator */}
-        <OfflineIndicator style={{ top: safeAreaConfig.paddingTop }} />
+        <OfflineIndicator style={{ top: 10 }} />
         
         {/* Header */}
         <LinearGradient
           colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
-          style={[styles.header, { paddingTop: safeAreaConfig.paddingTop }]}
+          style={styles.header}
         >
         <View style={styles.headerTopRow}>
           <View style={styles.headerTitleSection}>
@@ -489,265 +386,24 @@ const ToDo: React.FC = () => {
           </View>
         </View>
         
-        {/* Enhanced Calendar Modal with Google Calendar features */}
-        <Modal
+        {/* Google Calendar Modal */}
+        <GoogleCalendar
           visible={showCalendarModal}
-          transparent={true}
-          animationType="fade"
-          onRequestClose={() => setShowCalendarModal(false)}
-        >
-          <TouchableOpacity
-            style={styles.modalOverlay}
-            activeOpacity={1}
-            onPress={() => setShowCalendarModal(false)}
-          >
-            <Animated.View 
-              style={[
-                styles.calendarModal,
-                {
-                  transform: [{
-                    scale: animatedValue.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0.8, 1],
-                    })
-                  }],
-                  opacity: animatedValue,
-                }
-              ]}
-            >
-              {/* Calendar Header with view toggles */}
-              <View style={styles.calendarModalHeader}>
-                <View style={styles.calendarControls}>
-                  <TouchableOpacity
-                    style={styles.calendarNavButton}
-                    onPress={navigateToPrevPeriod}
-                  >
-                    <MaterialIcons name="chevron-left" size={24} color="#495057" />
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={styles.monthYearContainer}
-                    onPress={navigateToToday}
-                  >
-                    <Text style={styles.monthYearText}>
-                      {calendarViewMode === "month" 
-                        ? `${monthNames[calendarDate.getMonth()]} ${calendarDate.getFullYear()}`
-                        : `Week of ${monthNames[calendarDate.getMonth()]} ${calendarDate.getDate()}`
-                      }
-                    </Text>
-                    <Text style={styles.todayHint}>Tap to go to today</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity
-                    style={styles.calendarNavButton}
-                    onPress={navigateToNextPeriod}
-                  >
-                    <MaterialIcons name="chevron-right" size={24} color="#495057" />
-                  </TouchableOpacity>
-                </View>
-
-                {/* View Mode Toggle */}
-                <View style={styles.viewModeToggle}>
-                  <TouchableOpacity
-                    style={[
-                      styles.viewModeButton,
-                      calendarViewMode === "month" && styles.activeViewModeButton
-                    ]}
-                    onPress={() => setCalendarViewMode("month")}
-                  >
-                    <Text style={[
-                      styles.viewModeText,
-                      calendarViewMode === "month" && styles.activeViewModeText
-                    ]}>Month</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.viewModeButton,
-                      calendarViewMode === "week" && styles.activeViewModeButton
-                    ]}
-                    onPress={() => setCalendarViewMode("week")}
-                  >
-                    <Text style={[
-                      styles.viewModeText,
-                      calendarViewMode === "week" && styles.activeViewModeText
-                    ]}>Week</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* Calendar Grid */}
-              <View style={styles.calendarGrid}>
-                {/* Day headers */}
-                <View style={styles.dayHeadersRow}>
-                  {dayNames.map((day) => (
-                    <Text key={day} style={styles.dayHeader}>
-                      {day}
-                    </Text>
-                  ))}
-                </View>
-
-                {/* Calendar Days */}
-                <View style={styles.daysContainer}>
-                  {(calendarViewMode === "month" ? calendarDays : getWeekDates()).map((date, index) => {
-                    const dayTasks = getTasksForDate(date);
-                    const hasOverdueTasks = dayTasks.some(task => task.overdue && !task.completed);
-                    const hasCompletedTasks = dayTasks.some(task => task.completed);
-                    
-                    return (
-                      <TouchableOpacity
-                        key={index}
-                        style={[
-                          styles.calendarDay,
-                          calendarViewMode === "month" && !isCurrentMonth(date) && styles.inactiveDay,
-                          isCurrentDate(date) && styles.todayCalendarDay,
-                          isDateSelected(date) && styles.selectedCalendarDay,
-                        ]}
-                        onPress={() => handleCalendarDateSelect(date)}
-                      >
-                        <Text
-                          style={[
-                            styles.calendarDayText,
-                            calendarViewMode === "month" && !isCurrentMonth(date) && styles.inactiveDayText,
-                            isCurrentDate(date) && styles.todayDayText,
-                            isDateSelected(date) && styles.selectedDayText,
-                          ]}
-                        >
-                          {date.getDate()}
-                        </Text>
-                        
-                        {/* Task indicators */}
-                        {dayTasks.length > 0 && (
-                          <View style={styles.taskIndicators}>
-                            {hasOverdueTasks && <View style={[styles.taskDot, styles.overdueDot]} />}
-                            {hasCompletedTasks && <View style={[styles.taskDot, styles.completedDot]} />}
-                            {dayTasks.length > 2 && (
-                              <Text style={styles.taskCount}>+{dayTasks.length - 2}</Text>
-                            )}
-                          </View>
-                        )}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-
-              {/* Today's Tasks Preview */}
-              {getTasksForDate(selectedDate).length > 0 && (
-                <View style={styles.tasksPreview}>
-                  <Text style={styles.tasksPreviewTitle}>
-                    Tasks for {selectedDate.toLocaleDateString()}
-                  </Text>
-                  <FlatList
-                    data={getTasksForDate(selectedDate).slice(0, 3)}
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    keyExtractor={(item) => item.id}
-                    renderItem={({ item }) => (
-                      <TouchableOpacity
-                        style={styles.taskPreviewCard}
-                        onPress={() => {
-                          setShowCalendarModal(false);
-                          handleTaskClick(item.id);
-                        }}
-                      >
-                        <Text style={styles.taskPreviewTitle} numberOfLines={1}>
-                          {item.title}
-                        </Text>
-                        <Text style={[
-                          styles.taskPreviewStatus,
-                          item.completed && styles.completedStatus,
-                          item.overdue && !item.completed && styles.overdueStatus
-                        ]}>
-                          {item.completed ? 'Completed' : item.overdue ? 'Overdue' : 'Pending'}
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-                  />
-                </View>
-              )}
-            </Animated.View>
-          </TouchableOpacity>
-        </Modal>
+          onClose={() => setShowCalendarModal(false)}
+          tasks={tasks}
+          onDateSelect={handleCalendarDateSelect}
+          onAddTask={handleAddTaskForDate}
+        />
 
         {/* Date Tasks Modal */}
-        <Modal
+        <DateTasksModal
           visible={showDateTasksModal}
-          transparent={true}
-          animationType="slide"
-          onRequestClose={() => setShowDateTasksModal(false)}
-        >
-          <View style={styles.dateTasksModalOverlay}>
-            <TouchableOpacity
-              style={styles.dateTasksModalOverlay}
-              activeOpacity={1}
-              onPress={() => setShowDateTasksModal(false)}
-            >
-              <View style={styles.dateTasksModalContent}>
-                <View style={styles.dateTasksModalHeader}>
-                  <Text style={styles.dateTasksModalTitle}>
-                    Tasks for {dateTasksModalDate?.toLocaleDateString()}
-                  </Text>
-                  <TouchableOpacity
-                    style={styles.dateTasksModalCloseButton}
-                    onPress={() => setShowDateTasksModal(false)}
-                  >
-                    <Ionicons name="close" size={24} color="#666" />
-                  </TouchableOpacity>
-                </View>
-                
-                <FlatList
-                  data={dateTasksModalDate ? getTasksForDate(dateTasksModalDate) : []}
-                  keyExtractor={(item) => item.id}
-                  showsVerticalScrollIndicator={false}
-                  renderItem={({ item }) => (
-                    <TouchableOpacity
-                      style={styles.dateTaskItem}
-                      onPress={() => {
-                        setShowDateTasksModal(false);
-                        handleTaskClick(item.id);
-                      }}
-                    >
-                      <View style={styles.dateTaskItemHeader}>
-                        <Text style={styles.dateTaskItemTitle} numberOfLines={2}>
-                          {item.title}
-                        </Text>
-                        <View style={[
-                          styles.dateTaskItemStatus,
-                          item.completed && styles.dateTaskStatusCompleted,
-                          item.overdue && !item.completed && styles.dateTaskStatusOverdue,
-                        ]}>
-                          <Text style={styles.dateTaskItemStatusText}>
-                            {item.completed ? 'Completed' : item.overdue ? 'Overdue' : 'Pending'}
-                          </Text>
-                        </View>
-                      </View>
-                      {item.description && (
-                        <Text style={styles.dateTaskItemDescription} numberOfLines={2}>
-                          {item.description}
-                        </Text>
-                      )}
-                      <View style={styles.dateTaskItemFooter}>
-                        <Text style={styles.dateTaskItemCategory}>
-                          {item.category_name || 'No Category'}
-                        </Text>
-                        {item.due_time && (
-                          <Text style={styles.dateTaskItemTime}>
-                            {item.due_time}
-                          </Text>
-                        )}
-                      </View>
-                    </TouchableOpacity>
-                  )}
-                  ListEmptyComponent={() => (
-                    <View style={styles.dateTasksEmptyState}>
-                      <Text style={styles.dateTasksEmptyText}>No tasks for this date</Text>
-                    </View>
-                  )}
-                />
-              </View>
-            </TouchableOpacity>
-          </View>
-        </Modal>
+          onClose={() => setShowDateTasksModal(false)}
+          selectedDate={dateTasksModalDate}
+          tasks={dateTasksModalTasks}
+          onTaskPress={handleTaskPress}
+          onAddTask={handleAddTaskForDate}
+        />
 
         {/* More Vert Menu Modal */}
         <Modal
@@ -958,7 +614,7 @@ const ToDo: React.FC = () => {
       </TouchableOpacity>
 
       <Navbar activeRoute="ToDo" />
-      </SafeAreaView>
+      </SafeAreaWrapper>
     </>
   );
 };
@@ -974,7 +630,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === "ios" ? 50 : 35,
+    paddingTop: 10,
     paddingBottom: 40,
     borderBottomLeftRadius: 30,
     borderBottomRightRadius: 30,

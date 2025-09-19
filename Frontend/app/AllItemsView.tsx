@@ -18,7 +18,6 @@ import {
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { RootStackParamList } from "./navigation/AppNavigator";
-import Navbar from "./NavBar";
 import { API_URL, API_ENDPOINTS } from "../constants/ApiConfig";
 import SkeletonLoader from "./components/SkeletonLoader";
 
@@ -687,9 +686,6 @@ export default function AllItemsView() {
                     }
                 />
             )}
-
-            {/* Bottom Navigation */}
-            <Navbar activeRoute="Home" />
         </SafeAreaView>
     );
 }
