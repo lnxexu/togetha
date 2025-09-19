@@ -1,47 +1,34 @@
-import { Ionicons, MaterialIcons } from "@expo/vector-icons";
-import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import * as DocumentPicker from "expo-document-picker";
-import { LinearGradient } from "expo-linear-gradient";
-import React, { useEffect, useState } from "react";
-import chatbotServices from "./services/chatbotServices";
+import React, { useState, useEffect } from "react";
 import {
-  Alert,
   SafeAreaView,
   ScrollView,
   StatusBar,
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
-  Platform,
-  Modal,
-  FlatList,
+  ActivityIndicator,
+  StyleSheet,
   KeyboardAvoidingView,
+  Modal,
+  Platform,
 } from "react-native";
-import { RootStackParamList } from "../navigation/AppNavigator";
+import { LinearGradient } from "expo-linear-gradient";
+import { Ionicons, MaterialIcons } from "@expo/vector-icons";
+import axios from "axios";
+import { useMutation, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getEnhancedSafeAreaConfig, getStatusBarConfig } from '../utils/SafeAreaUtils';
+import * as DocumentPicker from "expo-document-picker";
+import { useNavigation } from "@react-navigation/native";
 
-type ChatBotNavigationProp = NativeStackNavigationProp<
-  RootStackParamList,
-  "RINA"
->;
+const API_URL = "http://192.168.1.187:8000/chatbot/chat/";
+const PDF_UPLOAD_URL = "http://192.168.1.187:8000/chatbot/upload_pdf/";
+
+type Role = "user" | "assistant";
 
 interface Message {
-  id: string;
-  text: string;
-  isUser: boolean;
-  timestamp: Date;
-}
-
-interface ChatSession {
-  id: string;
-  title: string;
-  lastMessage: string;
-  timestamp: Date;
-  messageCount: number;
+  role: Role;
+  content: string;
 }
 
 interface ChatBotProps {
@@ -131,498 +118,148 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
 
   const checkAuthentication = async () => {
     const token = await AsyncStorage.getItem("authToken");
-    if (!token) {
-      handleLogout();
-    }
-  };
+    if (!token) throw new Error("No auth token found");
 
-  const handleLogout = async () => {
-    try {
-      // Clear all authentication data
-      await AsyncStorage.removeItem("authToken");
-      await AsyncStorage.removeItem("token");
-      await AsyncStorage.removeItem("username");
-      await AsyncStorage.removeItem("session_id");
-
-      // Navigate to login screen
-      navigation.reset({
-        index: 0,
-        routes: [{ name: "Login" }],
-      });
-    } catch (error) {
-      console.error("Logout error:", error);
-    }
-  };
-
-  // Ollama API configuration
-  const OLLAMA_URL = "http://localhost:11434/api/chat";
-
-  // Message transformation utilities
-  const transformToOllamaFormat = (messages: Message[]) => {
-    return messages.map(msg => ({
-      role: (msg.isUser ? 'user' : 'assistant') as 'user' | 'assistant',
-      content: msg.text
-    }));
-  };
-
-  // Ollama API call function (following TanStack Query pattern)
-  const fetchOllamaMessage = async (ollamaMessages: { role: 'user' | 'assistant'; content: string }[]): Promise<string> => {
-    try {
-      const response = await fetch(OLLAMA_URL, {
-        method: 'POST',
+    const response = await axios.post(
+      API_URL,
+      { messages: updatedMessages },
+      {
         headers: {
-          'Content-Type': 'application/json',
+          Authorization: `Token ${token}`,
         },
-        body: JSON.stringify({
-          model: "llama3.2",
-          messages: ollamaMessages,
-          stream: false,
-        }),
-      });
-
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new Error('Model "llama3.2" not found. Make sure it\'s installed in Ollama');
-        }
-        throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
       }
+    );
 
-      const data = await response.json();
-      return data.message?.content || "I couldn't generate a response. Please try again.";
-    } catch (error) {
-      if (error instanceof Error) {
-        if (error.message.includes('Failed to fetch') || error.message.includes('ECONNREFUSED')) {
-          throw new Error('Cannot connect to Ollama. Make sure Ollama is running on localhost:11434');
-        }
-        if (error.message.includes('404')) {
-          throw new Error('Model "llama3.2" not found. Make sure it\'s installed in Ollama');
-        }
-      }
-      throw error;
-    }
-  };
+    return response.data as BackendResponse;
+  } catch (err: any) {
+    console.error("Chat request failed:", err.response?.data || err.message);
+    throw err;
+  }
+}
 
-  const handleSendMessage = async () => {
-    if (inputText.trim() === "") return;
+const queryClient = new QueryClient();
 
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      text: inputText,
-      isUser: true,
-      timestamp: new Date(),
+function OllamaChatTanstackInner(): React.ReactElement {
+  const [token, setToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    const getToken = async () => {
+      const authToken = await AsyncStorage.getItem("authToken");
+      setToken(authToken);
     };
+    getToken();
+  }, []);
 
-    // Update messages with user message
-    const updatedMessages = [...messages, userMessage];
+  const navigation = useNavigation();
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [lastAttempt, setLastAttempt] = useState<Message[] | null>(null);
+  const [showChatHistory, setShowChatHistory] = useState(false);
+
+  const mutation = useMutation<BackendResponse, unknown, MutationVariables>({
+    mutationFn: fetchOllamaMessage,
+  });
+
+  const suggestedPrompts = [
+    { id: "1", text: "Help me understand complex concepts", icon: "🧠" },
+    { id: "2", text: "Create practice questions", icon: "📘" },
+    { id: "3", text: "Summarize documents", icon: "📄" },
+    { id: "4", text: "Explain with examples", icon: "💡" },
+  ];
+
+  const handleSend = async () => {
+    if (!input.trim()) return;
+    const updatedMessages: Message[] = [...messages, { role: "user", content: input }];
     setMessages(updatedMessages);
-    const currentInput = inputText;
-    setInputText("");
-    setIsLoading(true);
-    setIsStreaming(false);
-    setStreamingMessage("");
-
+    setLastAttempt(updatedMessages);
+    setErrorMessage(null);
+    setLoading(true);
     try {
-      // Transform messages to Ollama format
-      const ollamaMessages = transformToOllamaFormat(updatedMessages);
+      const aiReply = await mutation.mutateAsync({ updatedMessages });
+      const replyContent =
+        aiReply.source === "rag"
+          ? `${aiReply.content} (from RAG)`
+          : aiReply.content;
 
-      // Call Ollama API (following the TanStack Query pattern)
-      const aiReply = await fetchOllamaMessage(ollamaMessages);
-
-      // Create AI response message
-      const aiResponse: Message = {
-        id: (Date.now() + 1).toString(),
-        text: aiReply,
-        isUser: false,
-        timestamp: new Date(),
-      };
-
-      // Update messages with AI response
-      setMessages([...updatedMessages, aiResponse]);
-      setIsLoading(false);
-
-    } catch (error) {
-      console.error('Chat Error:', error);
-      setIsLoading(false);
-      setIsStreaming(false);
-      setStreamingMessage("");
-      
-      // Enhanced error handling based on TanStack Query example
-      let errorMessage = "Error communicating with Ollama.";
-      
-      if (error instanceof Error) {
-        errorMessage = error.message;
-      }
-      
-      // Fallback response on error
-      const errorResponse: Message = {
-        id: (Date.now() + 1).toString(),
-        text: errorMessage,
-        isUser: false,
-        timestamp: new Date(),
-      };
-      setMessages([...updatedMessages, errorResponse]);
+      setMessages((prev) => [...updatedMessages, { role: "assistant", content: replyContent }]);
+    } catch (err: any) {
+      const msg = err?.message ? String(err.message) : "Error communicating with AI.";
+      setErrorMessage(msg);
+      setMessages((prev) => [...prev, { role: "assistant", content: "[Error] " + msg }]);
+    } finally {
+      setLoading(false);
+      setInput("");
     }
   };
 
-  // Optional: Streaming version (currently not used but available for future enhancement)
-  const handleSendMessageStreaming = async () => {
-    if (inputText.trim() === "") return;
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      text: inputText,
-      isUser: true,
-      timestamp: new Date(),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    const currentInput = inputText;
-    setInputText("");
-    setIsLoading(false);
-    setIsStreaming(true);
-    setStreamingMessage("");
-
-    // Create placeholder message for streaming
-    const streamingMessageId = (Date.now() + 1).toString();
-    const placeholderMessage: Message = {
-      id: streamingMessageId,
-      text: "",
-      isUser: false,
-      timestamp: new Date(),
-    };
-    
-    setMessages((prev) => [...prev, placeholderMessage]);
-
+  const handleRetry = async () => {
+    if (!lastAttempt) return;
+    setErrorMessage(null);
+    setLoading(true);
     try {
-      const OLLAMA_URL = "http://localhost:11434/api/chat";
-      
-      const ollamaMessages = messages.map(msg => ({
-        role: (msg.isUser ? 'user' : 'assistant') as 'user' | 'assistant',
-        content: msg.text
-      }));
-      
-      ollamaMessages.push({
-        role: 'user' as const,
-        content: currentInput
+      const aiReply = await mutation.mutateAsync({ updatedMessages: lastAttempt });
+      const replyContent =
+        aiReply.source === "rag"
+          ? `${aiReply.content} (from RAG)`
+          : aiReply.content;
+
+      setMessages((prev) => {
+        const withoutError = prev.filter(
+          (m) => !(m.role === "assistant" && m.content.startsWith("[Error]"))
+        );
+        return [...withoutError, ...lastAttempt, { role: "assistant", content: replyContent }];
       });
-
-      const response = await fetch(OLLAMA_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: "llama3.2",
-          messages: ollamaMessages,
-          stream: true,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Streaming failed: ${response.status}`);
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error('No response body');
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let fullResponse = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (line.trim()) {
-            try {
-              const json = JSON.parse(line);
-              if (json.message?.content) {
-                fullResponse += json.message.content;
-                setStreamingMessage(fullResponse);
-                
-                setMessages((prev) =>
-                  prev.map(msg =>
-                    msg.id === streamingMessageId
-                      ? { ...msg, text: fullResponse }
-                      : msg
-                  )
-                );
-              }
-              if (json.done) break;
-            } catch (parseError) {
-              console.warn('Failed to parse streaming response:', line);
-            }
-          }
-        }
-      }
-
-      setIsStreaming(false);
-      setStreamingMessage("");
-
-    } catch (error) {
-      console.error('Streaming Error:', error);
-      setIsStreaming(false);
-      setStreamingMessage("");
-      
-      // Remove placeholder and add error message
-      setMessages((prev) => prev.filter(msg => msg.id !== streamingMessageId));
-      
-      const errorResponse: Message = {
-        id: (Date.now() + 1).toString(),
-        text: "Failed to stream response from Ollama. Please try again.",
-        isUser: false,
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, errorResponse]);
+    } catch (err: any) {
+      const msg = err?.message ? String(err.message) : "Error communicating with AI.";
+      setErrorMessage(msg);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleFileImport = async () => {
+  const handlePickPDF = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: "*/*",
+        type: "application/pdf",
         copyToCacheDirectory: true,
       });
 
-      if (result.assets && result.assets.length > 0) {
-        const file = result.assets[0];
+      if (result.canceled) return;
 
-        // Check if token exists before attempting OCR
-        const token = await AsyncStorage.getItem("authToken");
-        if (!token) {
-          Alert.alert(
-            "Authentication Required",
-            "Please log in to use the OCR feature.",
-            [
-              {
-                text: "Login",
-                onPress: () => handleLogout(), // This will redirect to login
-              },
-              {
-                text: "Cancel",
-                style: "cancel",
-              },
-            ]
-          );
-          return;
-        }
+      const file = result.assets[0];
 
-        Alert.alert(
-          "File Imported",
-          `File "${file.name}" has been imported and is ready for processing.`,
-          [
-            {
-              text: "Extract Text",
-              onPress: async () => {
-                try {
-                  setIsLoading(true); // Show loading indicator
-                  const extractedText =
-                    await chatbotServices.extractTextFromImages(file.uri);
-                  setIsLoading(false);
+      setMessages((prev) => [
+        ...prev,
+        { role: "user", content: `📄 Uploaded PDF: ${file.name}` },
+      ]);
 
-                  if (extractedText.trim()) {
-                    setInputText(`Extracted Text: ${extractedText}`);
-                  } else {
-                    Alert.alert(
-                      "No Text Found",
-                      "The system couldn't detect any text in this image."
-                    );
-                  }
-                } catch (error) {
-                  setIsLoading(false);
-                  const errorMessage =
-                    error instanceof Error ? error.message : "Unknown error";
+      const formData = new FormData();
+      formData.append("file", {
+        uri: file.uri,
+        name: file.name,
+        type: file.mimeType ?? "application/pdf",
+      } as any);
 
-                  if (errorMessage.includes("401")) {
-                    Alert.alert(
-                      "Session Expired",
-                      "Your session has expired. Please log in again.",
-                      [
-                        {
-                          text: "Login",
-                          onPress: () => handleLogout(), // Logout and redirect to login
-                        },
-                      ]
-                    );
-                  } else {
-                    Alert.alert(
-                      "Error",
-                      "Failed to extract text from the image"
-                    );
-                    console.error("OCR Error:", error);
-                  }
-                }
-              },
-            },
-            { text: "Cancel", style: "cancel" },
-          ]
-        );
-      }
-    } catch (error: unknown) {
-      // Check if the error is because user cancelled the document picker
-      const isCancelled =
-        error instanceof Error &&
-        (error.name === "canceled" ||
-          error.message?.includes("canceled") ||
-          error.message?.includes("cancelled"));
-
-      if (isCancelled) {
-        // User cancelled the picker
-      } else {
-        Alert.alert("Error", "Failed to import file");
-        console.log("Document picker error:", error);
-      }
-    }
-  };
-
-  const handleGoBack = () => {
-    navigation.goBack(); // Use navigation.goBack() instead of useRouter()
-  };
-
-  const handleMenuPress = () => {
-    setShowChatHistory(true);
-  };
-
-  const handleCloseChatHistory = () => {
-    setShowChatHistory(false);
-  };
-
-  const handleSelectChatSession = (sessionId: string) => {
-    // Here you would load the selected chat session
-    // For now, we'll just close the modal
-    setShowChatHistory(false);
-    // You could implement loading historical messages here
-    console.log("Selected chat session:", sessionId);
-  };
-
-  const handleDeleteChatSession = (sessionId: string) => {
-    Alert.alert(
-      "Delete Chat",
-      "Are you sure you want to delete this chat session?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => {
-            setChatSessions((prev) =>
-              prev.filter((session) => session.id !== sessionId)
-            );
-          },
+      await axios.post(PDF_UPLOAD_URL, formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+          Authorization: `Token ${token}`,
         },
-      ]
-    );
-  };
+      });
 
-  const handleNewChat = () => {
-    setShowChatHistory(false);
-    setMessages([
-      {
-        id: "1",
-        text: "Hello! How can I assist you today?",
-        isUser: false,
-        timestamp: new Date(),
-      },
-    ]);
-  };
-
-  const handlePromptSelection = (prompt: string) => {
-    setInputText(prompt);
-  };
-
-  const handleSummarize = async () => {
-    if (!streamingMessage && messages.length > 1) {
-      try {
-        setIsLoading(true);
-        const lastMessage = messages[messages.length - 1];
-        if (!lastMessage.isUser) {
-          const summary = await chatbotServices.summarizeText(lastMessage.text);
-          
-          const summaryMessage: Message = {
-            id: Date.now().toString(),
-            text: `**Summary:** ${summary}`,
-            isUser: false,
-            timestamp: new Date(),
-          };
-          
-          setMessages((prev) => [...prev, summaryMessage]);
-        }
-      } catch (error) {
-        console.error('Summarization error:', error);
-        Alert.alert('Error', 'Failed to generate summary. Please try again.');
-      } finally {
-        setIsLoading(false);
-      }
-    } else {
-      handlePromptSelection("Please summarize the uploaded document");
+      setMessages((prev) => [
+        ...prev,
+        { role: "user", content: "✅ PDF uploaded successfully!" },
+      ]);
+    } catch (err) {
+      console.error("PDF upload error:", err);
+      setMessages((prev) => [
+        ...prev,
+        { role: "user", content: "❌ Failed to upload PDF." },
+      ]);
     }
-  };
-
-  const handleExplain = async () => {
-    if (!streamingMessage && messages.length > 1) {
-      try {
-        setIsLoading(true);
-        const lastMessage = messages[messages.length - 1];
-        if (!lastMessage.isUser) {
-          const explanation = await chatbotServices.explainConcept(lastMessage.text);
-          
-          const explanationMessage: Message = {
-            id: Date.now().toString(),
-            text: `**Explanation:** ${explanation}`,
-            isUser: false,
-            timestamp: new Date(),
-          };
-          
-          setMessages((prev) => [...prev, explanationMessage]);
-        }
-      } catch (error) {
-        console.error('Explanation error:', error);
-        Alert.alert('Error', 'Failed to generate explanation. Please try again.');
-      } finally {
-        setIsLoading(false);
-      }
-    } else {
-      handlePromptSelection("Please explain the key concepts in the uploaded document");
-    }
-  };
-
-  const handleGenerateQuiz = async () => {
-    if (!streamingMessage && messages.length > 1) {
-      try {
-        setIsLoading(true);
-        const conversationText = messages
-          .filter(msg => !msg.isUser)
-          .map(msg => msg.text)
-          .join('\n\n');
-        
-        const quiz = await chatbotServices.generateQuiz(conversationText, 5);
-        
-        const quizMessage: Message = {
-          id: Date.now().toString(),
-          text: `**Quiz Questions:** ${quiz}`,
-          isUser: false,
-          timestamp: new Date(),
-        };
-        
-        setMessages((prev) => [...prev, quizMessage]);
-      } catch (error) {
-        console.error('Quiz generation error:', error);
-        Alert.alert('Error', 'Failed to generate quiz. Please try again.');
-      } finally {
-        setIsLoading(false);
-      }
-    } else {
-      handlePromptSelection("Please generate a quiz based on the uploaded document");
-    }
-  };
-
-  const handleOCR = () => {
-    handlePromptSelection("Please extract text from the uploaded document");
   };
 
   return (
@@ -649,13 +286,10 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
         </TouchableOpacity>
         <View style={styles.headerInfo}>
           <View style={styles.avatar}>
-            <Text style={styles.avatarText}>R</Text>
+            <Text style={styles.avatarText}>A</Text>
           </View>
           <View>
-            <Text style={styles.botName}>Rina</Text>
-            <Text style={styles.botDescription}>
-              Your AI Tutoring Assistant
-            </Text>
+            <Text style={styles.botDescription}>Your AI Tutoring Assistant</Text>
           </View>
         </View>
         <TouchableOpacity 
@@ -668,30 +302,17 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
         </TouchableOpacity>
       </LinearGradient>
 
-      <KeyboardAvoidingView 
+      {/* Messages */}
+      <KeyboardAvoidingView
         style={styles.keyboardAvoidingView}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        {/* Messages */}
-        <ScrollView style={[styles.messagesContainer, { 
-          paddingTop: safeAreaConfig.paddingTop + 80 // Space for the header + safe area
-        }]}>
-        {messages.length === 1 && (
-          <View style={styles.welcomeContainer}>
-            <View style={styles.welcomeHeader}>
-              <View style={styles.welcomeAvatar}>
-                <Text style={styles.welcomeAvatarText}>✨</Text>
-              </View>
+        <ScrollView style={styles.messagesContainer}>
+          {messages.length === 0 && (
+            <View style={styles.welcomeContainer}>
               <Text style={styles.welcomeTitle}>Welcome to Rina!</Text>
               <Text style={styles.welcomeSubtitle}>
                 Your intelligent AI tutoring assistant
-              </Text>
-            </View>
-
-            <View style={styles.featuresContainer}>
-              <Text style={styles.featuresTitle}>
-                What I can help you with:
               </Text>
               <View style={styles.suggestedPromptsGrid}>
                 {suggestedPrompts.map((prompt) => (
@@ -705,79 +326,42 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
                   >
                     <Text style={styles.promptIcon}>{prompt.icon}</Text>
                     <Text style={styles.promptTitle}>{prompt.text}</Text>
-                    <Text style={styles.promptDescription}>
-                      {prompt.description}
-                    </Text>
                   </TouchableOpacity>
                 ))}
               </View>
             </View>
-          </View>
-        )}
+          )}
 
-        {/* Regular Messages */}
-        {messages.slice(1).map((message) => (
-          <View
-            key={message.id}
-            style={[
-              styles.messageBubble,
-              message.isUser ? styles.userMessage : styles.aiMessage,
-            ]}
-          >
-            {!message.isUser && (
-              <View style={styles.aiMessageHeader}>
-                <View style={styles.aiAvatar}>
-                  <Text style={styles.aiAvatarText}>R</Text>
-                </View>
-              </View>
-            )}
-            <Text
+          {messages.map((msg, idx) => (
+            <View
+              key={idx}
               style={[
-                styles.messageText,
-                message.isUser ? styles.userMessageText : styles.aiMessageText,
+                styles.messageBubble,
+                msg.role === "user" ? styles.userMessage : styles.aiMessage,
               ]}
             >
-              {message.text}
-            </Text>
-            <Text style={styles.messageTime}>
-              {message.timestamp.toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </Text>
-          </View>
-        ))}
-
-        {/* Initial Message */}
-        {messages.length > 1 && (
-          <View style={[styles.messageBubble, styles.aiMessage]}>
-            <View style={styles.aiMessageHeader}>
-              <View style={styles.aiAvatar}>
-                <Text style={styles.aiAvatarText}>R</Text>
-              </View>
-            </View>
-            <Text style={styles.aiMessageText}>{messages[0].text}</Text>
-            <Text style={styles.messageTime}>
-              {messages[0].timestamp.toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </Text>
-          </View>
-        )}
-
-        {/* Suggested Prompts */}
-        {messages.length === 1 && (
-          <View style={styles.legacyPromptsContainer}>
-            {suggestedPrompts.map((prompt) => (
-              <TouchableOpacity
-                key={prompt.id}
-                style={styles.legacyPromptCard}
-                onPress={() => handlePromptSelection(prompt.text)}
+              <Text
+                style={msg.role === "user" ? styles.userMessageText : styles.aiMessageText}
               >
-                <Text style={styles.legacyPromptText}>{prompt.text}</Text>
-              </TouchableOpacity>
-            ))}
+                {msg.content}
+              </Text>
+            </View>
+          ))}
+
+          {loading && (
+            <View style={styles.loadingRow}>
+              <ActivityIndicator color="#6B21A8" />
+              <Text style={styles.loadingText}>Thinking…</Text>
+            </View>
+          )}
+        </ScrollView>
+
+        {errorMessage && (
+          <View style={styles.errorBanner}>
+            <Text style={styles.errorText}>{errorMessage}</Text>
+            <TouchableOpacity onPress={handleRetry} style={styles.retryButton}>
+              <Text style={styles.retryText}>Retry</Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -870,6 +454,8 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
           >
             <Ionicons name="attach" size={24} color="#6B46C1" />
           </TouchableOpacity>
+
+          {/* Send Button */}
           <TouchableOpacity
             style={[
               styles.sendButton,
@@ -883,109 +469,21 @@ const ChatBot: React.FC<ChatBotProps> = ({ navigation }) => {
             <Ionicons name="send" size={20} color="#fff" />
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>      {/* Chat History Modal */}
+      </KeyboardAvoidingView>
+
+      {/* Chat History Modal */}
       <Modal
         visible={showChatHistory}
         animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={handleCloseChatHistory}
+        onRequestClose={() => setShowChatHistory(false)}
       >
         <SafeAreaView style={styles.chatHistoryContainer}>
-          {/* Chat History Header */}
-          <LinearGradient
-            colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.chatHistoryHeader}
-          >
-            <TouchableOpacity
-              style={styles.closeButton}
-              onPress={handleCloseChatHistory}
-            >
-              <Ionicons name="close" size={24} color="#FFFFFF" />
-            </TouchableOpacity>
-            <Text style={styles.chatHistoryTitle}>Chat History</Text>
-            <TouchableOpacity
-              style={styles.newChatButton}
-              onPress={handleNewChat}
-            >
-              <Ionicons name="add" size={24} color="#FFFFFF" />
-            </TouchableOpacity>
-          </LinearGradient>
-
-          {/* Chat Sessions List */}
-          <View style={styles.chatHistoryContent}>
-            <FlatList
-              data={chatSessions}
-              keyExtractor={(item) => item.id}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.chatSessionsList}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.chatSessionCard}
-                  onPress={() => handleSelectChatSession(item.id)}
-                >
-                  <View style={styles.chatSessionContent}>
-                    <View style={styles.chatSessionIcon}>
-                      <Ionicons
-                        name="chatbubble-ellipses"
-                        size={24}
-                        color="#6B46C1"
-                      />
-                    </View>
-                    <View style={styles.chatSessionInfo}>
-                      <Text style={styles.chatSessionTitle}>{item.title}</Text>
-                      <Text
-                        style={styles.chatSessionLastMessage}
-                        numberOfLines={2}
-                      >
-                        {item.lastMessage}
-                      </Text>
-                      <View style={styles.chatSessionMeta}>
-                        <Text style={styles.chatSessionTime}>
-                          {item.timestamp.toLocaleDateString()}
-                        </Text>
-                        <Text style={styles.chatSessionCount}>
-                          {item.messageCount} messages
-                        </Text>
-                      </View>
-                    </View>
-                    <TouchableOpacity
-                      style={styles.deleteSessionButton}
-                      onPress={() => handleDeleteChatSession(item.id)}
-                    >
-                      <Ionicons
-                        name="trash-outline"
-                        size={20}
-                        color="#EF4444"
-                      />
-                    </TouchableOpacity>
-                  </View>
-                </TouchableOpacity>
-              )}
-              ListEmptyComponent={
-                <View style={styles.emptyChatHistory}>
-                  <Ionicons
-                    name="chatbubbles-outline"
-                    size={48}
-                    color="#D1D5DB"
-                  />
-                  <Text style={styles.emptyChatHistoryText}>
-                    No chat history yet
-                  </Text>
-                  <Text style={styles.emptyChatHistorySubtext}>
-                    Start a conversation to see your chat history here
-                  </Text>
-                </View>
-              }
-            />
-          </View>
+          <Text style={styles.chatHistoryTitle}>Chat History</Text>
         </SafeAreaView>
       </Modal>
-      </SafeAreaView>
-    </>
+    </SafeAreaView>
   );
-};
+}
 
 const styles = StyleSheet.create({
   container: {
@@ -1024,15 +522,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#7C3AED",
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 12,
-    borderWidth: 2,
-    borderColor: "rgba(255, 255, 255, 0.3)",
+    marginRight: 8,
   },
   avatarText: {
     color: "#FFFFFF",
@@ -1428,139 +924,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#f0f0f0",
     padding: 12,
-    margin: 16,
     borderRadius: 12,
-    justifyContent: "space-between",
-  },
-  filePreviewText: {
-    fontSize: 14,
-    color: "#333",
-    flex: 1,
-  },
-
-  // Chat History Modal Styles
-  chatHistoryContainer: {
-    flex: 1,
-    backgroundColor: "#f8f9fa",
-  },
-  chatHistoryHeader: {
-    flexDirection: "row",
+    margin: 6,
     alignItems: "center",
-    justifyContent: "space-between",
-    padding: 16,
-    paddingTop: Platform.OS === "ios" ? 50 : 35,
-    paddingBottom: 20,
+    width: "45%",
   },
-  closeButton: {
-    padding: 4,
-  },
-  chatHistoryTitle: {
-    fontSize: 20,
-    fontFamily: "Lexend",
-    color: "#FFFFFF",
-    fontWeight: "bold",
-  },
-  newChatButton: {
-    padding: 4,
-  },
-  chatHistoryContent: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-    borderTopLeftRadius: 25,
-    borderTopRightRadius: 25,
-    marginTop: -10,
-    paddingTop: 20,
-  },
-  chatSessionsList: {
-    paddingHorizontal: 16,
-    paddingBottom: 20,
-  },
-  chatSessionCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    marginBottom: 12,
-    shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
-    borderWidth: 1,
-    borderColor: "rgba(226, 232, 240, 0.6)",
-  },
-  chatSessionContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 16,
-  },
-  chatSessionIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: "#F3F4F6",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 16,
-  },
-  chatSessionInfo: {
-    flex: 1,
-  },
-  chatSessionTitle: {
-    fontSize: 16,
-    fontFamily: "Inter-Bold",
-    color: "#1E293B",
-    marginBottom: 4,
-  },
-  chatSessionLastMessage: {
-    fontSize: 14,
-    color: "#64748B",
-    fontFamily: "Inter-Regular",
-    marginBottom: 8,
-    lineHeight: 18,
-  },
-  chatSessionMeta: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  chatSessionTime: {
-    fontSize: 12,
-    color: "#94A3B8",
-    fontFamily: "Inter-Medium",
-  },
-  chatSessionCount: {
-    fontSize: 12,
-    color: "#6B46C1",
-    fontFamily: "Inter-Medium",
-    backgroundColor: "#F3F4F6",
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-  deleteSessionButton: {
-    padding: 8,
-    marginLeft: 8,
-  },
-  emptyChatHistory: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingVertical: 60,
-  },
-  emptyChatHistoryText: {
-    fontSize: 18,
-    fontFamily: "Inter-SemiBold",
-    color: "#64748B",
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptyChatHistorySubtext: {
-    fontSize: 14,
-    color: "#94A3B8",
-    fontFamily: "Inter-Regular",
-    textAlign: "center",
-    lineHeight: 20,
-    paddingHorizontal: 40,
-  },
+  promptIcon: { fontSize: 20 },
+  promptTitle: { marginTop: 6, fontSize: 13, textAlign: "center" },
+  chatHistoryContainer: { flex: 1, padding: 20 },
+  chatHistoryTitle: { fontSize: 18, fontWeight: "700" },
 });
 
-export default ChatBot;
+export default function OllamaChatTanstack(): React.ReactElement {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <OllamaChatTanstackInner />
+    </QueryClientProvider>
+  );
+}
