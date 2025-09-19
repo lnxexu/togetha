@@ -8,18 +8,15 @@ import requests
 import os
 from PIL import Image
 import pytesseract
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.parsers import MultiPartParser, FormParser
-from django.conf import settings
-import requests
-import os
+from server.decorators import api_auth_required, parser_classes
+from django.utils import timezone
+from django.db.models import Q
+from rest_framework.authentication import TokenAuthentication, SessionAuthentication
+from .models import Conversation, Message, ChatbotSetting
+from .serializers import ConversationSerializer, MessageSerializer, ChatbotSettingSerializer
+import tempfile
 
 DOCS_FOLDER = "docs"
-
-
 
 from . import rag  # import your rag.py
 
