@@ -2946,7 +2946,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
               ]}
               onPress={toggleSearch}
             >
-              <MaterialIcons name="search" size={22} color="#ffffffff" />
+              <MaterialIcons name="search" size={22} color="#ffffffff"  />
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.headerActionButton}
@@ -3472,8 +3472,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#F8FAFC",
   },
   header: {
-    paddingTop: Platform.OS === "ios" ? 50 : 35,
-    paddingBottom: 24,
+    paddingTop: 20,
+    paddingBottom: 50,
     paddingHorizontal: 24,
     borderBottomLeftRadius: 25,
     borderBottomRightRadius: 25,
@@ -3526,9 +3526,10 @@ const styles = StyleSheet.create({
   headerActionButton: {
     width: 44,
     height: 44,
-    borderRadius: 12,
+    borderRadius: 8,
     justifyContent: "center",
     alignItems: "center",
+    
     backgroundColor: "rgba(255, 255, 255, 0.2)",
   },
   activeSearchButton: {
@@ -3937,9 +3938,9 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 32,
+    paddingHorizontal: 24,
     paddingVertical: 40,
-    minHeight: 400,
+    width: "100%",
   },
   emptyStateIconContainer: {
     width: 100,
@@ -3968,30 +3969,42 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     textAlign: "center",
     lineHeight: 20,
-    maxWidth: 260,
+    maxWidth: "90%",
   },
   emptyStateButtons: {
     flexDirection: "row",
-    gap: 16,
+    flexWrap: "wrap",
+    justifyContent: "center",
+    alignItems: "center",
     marginTop: 8,
+    width: "100%",
   },
   emptyStateNoteButton: {
     backgroundColor: "#6A009C",
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 24,
+    margin: 8,
+    minWidth: 120,
+    flexGrow: 1,
+    maxWidth: 240,
   },
   emptyStateDrawingButton: {
     backgroundColor: "#8B5CF6",
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 24,
+    margin: 8,
+    minWidth: 120,
+    flexGrow: 1,
+    maxWidth: 240,
   },
   emptyStateImportButton: {
     backgroundColor: "#F59E0B",
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 24,
+    margin: 8,
+    minWidth: 120,
+    flexGrow: 1,
+    maxWidth: 240,
   },
 
   fabButton: {

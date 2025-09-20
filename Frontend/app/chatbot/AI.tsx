@@ -248,15 +248,12 @@ function ChatBot(): React.ReactElement {
       <StatusBar barStyle="light-content" backgroundColor="#A855F7" />
       <SafeAreaView style={[styles.container, { paddingTop: insets.top }]}>
         {/* Header */}
-        <LinearGradient
-          colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={[styles.header, { 
-            paddingTop: insets.top,
-            paddingBottom: 20,
-          }]}
-        >
+      <LinearGradient
+        colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.header}
+      >
           <TouchableOpacity 
             style={styles.backButton} 
             onPress={handleGoBack}
@@ -472,14 +469,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     padding: 16,
+    paddingTop: 35,
     borderBottomLeftRadius: 25,
     borderBottomRightRadius: 25,
     shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
-    zIndex: 2000,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+    zIndex: 1000,
   },
   backButton: {
     marginRight: 12,
