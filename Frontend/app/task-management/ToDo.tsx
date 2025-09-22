@@ -630,8 +630,9 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 40,
+    paddingTop: 40, // Increased for better status bar clearance
+    paddingBottom: 50, // Increased for better spacing
+    height: 140, // Fixed height to prevent overlap
     borderBottomLeftRadius: 30,
     borderBottomRightRadius: 30,
     shadowColor: "#000",
@@ -646,16 +647,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 4,
+    marginBottom: 8, // Increased for better spacing
   },
   headerTitleSection: {
     flex: 1,
   },
   title: {
-    fontSize: 34,
+    fontSize: 32, // Slightly reduced for better proportions
     color: "#FFFFFF",
     fontFamily: "Lexend",
     letterSpacing: -0.5,
+    fontWeight: "700", // Added explicit weight
   },
   headerActions: {
     flexDirection: "row",
@@ -990,7 +992,7 @@ const styles = StyleSheet.create({
   },
   dashboardCardWrapper: {
     position: "absolute",
-    top: Platform.OS === "ios" ? 120 : 105,
+    top: Platform.OS === "ios" ? 140 : 125, // Adjusted to match new header height
     left: 0,
     right: 0,
     alignItems: "center",
@@ -999,30 +1001,30 @@ const styles = StyleSheet.create({
   },
   dashboardCardContainer: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 10,
-    marginHorizontal: 20,
+    borderRadius: 20, // Slightly reduced radius for consistency
+    padding: 12, // Increased padding
+    marginHorizontal: 16, // Reduced margin for better width utilization
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 24,
-    elevation: 15,
-    width: "90%",
+    shadowOffset: { width: 0, height: 6 }, // Reduced shadow
+    shadowOpacity: 0.12,
+    shadowRadius: 20,
+    elevation: 12,
+    width: "92%", // Increased width
     borderWidth: 1,
-    borderColor: "rgba(148, 163, 184, 0.1)",
+    borderColor: "rgba(148, 163, 184, 0.08)", // Lighter border
   },
   dashboardRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: 12,
+    gap: 8, // Reduced gap for tighter layout
   },
   dashboardCardItem: {
     flex: 1,
     alignItems: "center",
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-    borderRadius: 16,
+    paddingVertical: 10, // Increased padding for better touch targets
+    paddingHorizontal: 6, // Increased horizontal padding
+    borderRadius: 14, // Slightly reduced radius
   },
   dashboardCardItemWithBorder: {
     borderRightWidth: 1,
@@ -1030,19 +1032,19 @@ const styles = StyleSheet.create({
   },
   activeDashboardCard: {
     backgroundColor: "#F0F4FF",
-    borderWidth: 1,
+    borderWidth: 1.5, // Slightly thicker border
     borderColor: "#8B5CF6",
     shadowColor: "#8B5CF6",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 3 }, // Increased shadow
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 6,
   },
   dashboardNumber: {
-    fontSize: 24,
+    fontSize: 22, // Slightly reduced for better proportions
     fontFamily: "Inter-Bold",
     color: "#1E293B",
-    marginBottom: 4,
+    marginBottom: 2, // Reduced margin for tighter layout
     fontWeight: "800",
   },
   activeDashboardNumber: {
@@ -1050,7 +1052,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   dashboardLabel: {
-    fontSize: 13,
+    fontSize: 12, // Slightly reduced
     fontFamily: "Inter-Medium",
     color: "#64748B",
     textAlign: "center",
@@ -1095,12 +1097,12 @@ const styles = StyleSheet.create({
     paddingBottom: 0, // Removed bottom padding to allow content behind navbar
   },
   contentMatrix: {
-    paddingTop: Platform.OS === "ios" ? 200 : 185,
+    paddingTop: Platform.OS === "ios" ? 220 : 205, // Increased to accommodate new layout
     paddingHorizontal: 20,
     paddingBottom: 0, // Removed bottom padding
   },
   contentList: {
-    paddingTop: Platform.OS === "ios" ? 200 : 185,
+    paddingTop: Platform.OS === "ios" ? 220 : 205, // Increased to accommodate new layout
     paddingHorizontal: 20,
     paddingBottom: 0, // Removed bottom padding
   },
@@ -1108,8 +1110,9 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: 24,
+    padding: 20, // Reduced padding
     backgroundColor: "#F8FAFC",
+    marginTop: 20, // Add top margin for better spacing
   },
   // Modern Filter and Dropdown Styles
   listViewFilters: {
@@ -1201,26 +1204,26 @@ const styles = StyleSheet.create({
   },
   addTaskButton: {
     position: "absolute",
-    right: 24,
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    right: 20, // Reduced from 24 for better alignment
+    width: 60, // Slightly reduced size
+    height: 60,
+    borderRadius: 30,
     backgroundColor: "#8B5CF6",
     justifyContent: "center",
     alignItems: "center",
     shadowColor: "#8B5CF6",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.3,
-    shadowRadius: 24,
-    elevation: 15,
+    shadowOffset: { width: 0, height: 8 }, // Reduced shadow
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 12,
     zIndex: 1000,
-    bottom: Platform.OS === "ios" ? 115 : 110,
+    bottom: Platform.OS === "ios" ? 110 : 105, // Adjusted positioning
   },
   fabRipple: {
     position: "absolute",
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 60, // Match new button size
+    height: 60,
+    borderRadius: 30,
     backgroundColor: "rgba(255,255,255,0.15)",
   },
   // Dashboard styles

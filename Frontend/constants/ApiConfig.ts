@@ -115,7 +115,7 @@ export const API_ENDPOINTS = {
     NOTE_DRAWING_CLEAR: (noteId: string) => `/note_taking/notes/${noteId}/drawing/clear/`,
 
     // Chatbot endpoints
-    CHATBOT_OCR: '/chatbot/extract-text/',
+    CHATBOT_OCR: '/chatbot/extract_text_from_images/',
     CHATBOT_CONVERSATIONS: '/chatbot/conversations/',
     CHATBOT_MESSAGES: '/chatbot/api/messages/',
     

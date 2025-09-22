@@ -26,6 +26,8 @@ import { useAutoSave } from "./hooks/useAutoSave";
 import { noteService, Note as NoteType, SaveStatus } from "./services/noteService";
 import { useNetworkStatus, getNetworkStatusText, getNetworkStatusColor } from "./services/networkService";
 import UnsavedChangesModal from "./components/UnsavedChangesModal";
+import chatbotAPI from "../chatbot/services/chatbotAPIService"; // Add chatbot service
+import RenderHtml from "react-native-render-html"; // Add for markdown rendering
 
 
 const { RichEditor, RichToolbar } = require("react-native-pell-rich-editor");
@@ -414,35 +416,34 @@ const handleSaveAndExit = async () => {
   const getWordMeaning = async (word: string) => {
     setIsLoadingMeaning(true);
     try {
-      // You can integrate with the existing chatbot service here
-      // For now, using a mock implementation
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Use RINA AI service to get word meaning
+      const prompt = `Define the word "${word}" in a clear and concise way. Provide:\n1. The primary meaning\n2. Part of speech (noun, verb, adjective, etc.)\n3. A simple example sentence\n4. Any common synonyms\n\nKeep the response educational and easy to understand.`;
       
-      // Mock response - replace with actual API call
-      const mockMeanings: { [key: string]: string } = {
-        "hello": "A greeting; an expression or gesture of greeting — used interjectionally in greeting, in answering the telephone, or to express surprise.",
-        "world": "The earth with its inhabitants and all things upon it; the universe; a particular group of living things.",
-        "example": "A thing characteristic of its kind or illustrating a general rule; a person or thing regarded in terms of their fitness to be imitated.",
-        "technology": "The application of scientific knowledge for practical purposes, especially in industry.",
-        "innovation": "The action or process of innovating; a new method, idea, product, etc.",
-        "collaborate": "To work jointly on an activity, especially to produce or create something.",
-      };
+      const response = await chatbotAPI.sendMessage(prompt);
       
-      const meaning = mockMeanings[word.toLowerCase()] || 
-        `${word}: A word or term that may have various meanings depending on context. This is a placeholder definition - integrate with a real dictionary API for accurate meanings.`;
-      
-      setWordMeaning(meaning);
-      
-      // TODO: Replace with actual RINA/Dictionary API integration
-      // Example of how you might integrate with existing chatbot service:
-      /*
-      const prompt = `Define the word "${word}" in a concise and clear way. Provide the meaning, pronunciation if relevant, and a simple example of usage.`;
-      const response = await chatbotService.sendMessage(prompt);
-      setWordMeaning(response);
-      */
+      if (response && response.content) {
+        setWordMeaning(response.content);
+      } else {
+        // Fallback to basic definition
+        setWordMeaning(`${word}: Unable to get detailed definition from RINA. Please check your connection and try again.`);
+      }
       
     } catch (error) {
-      setWordMeaning("Sorry, couldn't fetch the meaning of this word. Please try again.");
+      console.error('Error getting word meaning from RINA:', error);
+      // Fallback with common words dictionary
+      const commonWords: { [key: string]: string } = {
+        "hello": "**Hello** (interjection)\n\nA greeting used when meeting someone or answering the phone.\n\n*Example: Hello, how are you today?*\n\n*Synonyms: hi, hey, greetings*",
+        "world": "**World** (noun)\n\nThe earth and all the people and things on it; the universe.\n\n*Example: The world is full of amazing places to explore.*\n\n*Synonyms: earth, globe, planet*",
+        "study": "**Study** (verb/noun)\n\n1. (verb) To learn about something by reading, practicing, or attending classes\n2. (noun) The act of learning or a room for learning\n\n*Example: I need to study for my exam tomorrow.*\n\n*Synonyms: learn, research, examine*",
+        "note": "**Note** (noun/verb)\n\n1. (noun) A brief written record or comment\n2. (verb) To notice or write down something important\n\n*Example: Please take notes during the lecture.*\n\n*Synonyms: record, memo, annotation*",
+        "learn": "**Learn** (verb)\n\nTo gain knowledge or skill through study, experience, or teaching.\n\n*Example: Students learn best when they are engaged.*\n\n*Synonyms: study, discover, master*",
+        "understand": "**Understand** (verb)\n\nTo comprehend the meaning or importance of something.\n\n*Example: Do you understand the instructions?*\n\n*Synonyms: comprehend, grasp, realize*"
+      };
+      
+      const meaning = commonWords[word.toLowerCase()] || 
+        `**${word}** \n\nSorry, RINA couldn't fetch the meaning right now. This might be due to network issues. Please check your connection and try again, or consider looking up this word in a dictionary.`;
+      
+      setWordMeaning(meaning);
     } finally {
       setIsLoadingMeaning(false);
     }
@@ -566,17 +567,108 @@ const handleSaveAndExit = async () => {
     }
   };
 
-  const handleAskRina = (text: string) => {
-    // Show word meaning modal instead of alert
-    const cleanWord = text.replace(/[^\w]/g, '').toLowerCase();
-    if (cleanWord.length > 0) {
-      setSelectedWord(cleanWord);
-      setShowWordMeaningModal(true);
-      getWordMeaning(cleanWord);
-      // Add haptic feedback
-      if (Platform.OS === 'ios') {
-        Vibration.vibrate(10);
+  const handleAskRina = async (text: string) => {
+    const cleanText = text.trim();
+    if (cleanText.length === 0) return;
+    
+    // If it's a single word, show word meaning modal
+    if (cleanText.split(' ').length === 1) {
+      const cleanWord = cleanText.replace(/[^\w]/g, '').toLowerCase();
+      if (cleanWord.length > 0) {
+        setSelectedWord(cleanWord);
+        setShowWordMeaningModal(true);
+        getWordMeaning(cleanWord);
+        // Add haptic feedback
+        if (Platform.OS === 'ios') {
+          Vibration.vibrate(10);
+        }
       }
+      return;
+    }
+    
+    // For longer text, provide AI assistance through alert with multiple options
+    Alert.alert(
+      "Ask RINA",
+      `What would you like RINA to help you with regarding:\n\"${cleanText.length > 50 ? cleanText.substring(0, 50) + '...' : cleanText}\"`,
+      [
+        {
+          text: "Explain this",
+          onPress: () => askRinaForHelp(cleanText, "explain")
+        },
+        {
+          text: "Summarize",
+          onPress: () => askRinaForHelp(cleanText, "summarize")
+        },
+        {
+          text: "Give examples",
+          onPress: () => askRinaForHelp(cleanText, "examples")
+        },
+        {
+          text: "Study tips",
+          onPress: () => askRinaForHelp(cleanText, "study")
+        },
+        {
+          text: "Cancel",
+          style: "cancel"
+        }
+      ]
+    );
+  };
+  
+  const askRinaForHelp = async (text: string, action: string) => {
+    try {
+      let prompt = "";
+      
+      switch (action) {
+        case "explain":
+          prompt = `Please explain this concept in simple terms: "${text}". Break it down so it's easy to understand, and provide any important context.`;
+          break;
+        case "summarize":
+          prompt = `Please provide a concise summary of this content: "${text}". Include the key points and main ideas.`;
+          break;
+        case "examples":
+          prompt = `Please provide practical examples related to: "${text}". Give real-world applications or scenarios that help illustrate the concept.`;
+          break;
+        case "study":
+          prompt = `Please provide study tips and techniques for learning about: "${text}". Include effective methods for understanding and remembering this topic.`;
+          break;
+        default:
+          prompt = `Please help me understand: "${text}". Provide a clear explanation and any relevant information.`;
+      }
+      
+      const response = await chatbotAPI.sendMessage(prompt);
+      
+      if (response && response.content) {
+        // Show the AI response in a modal or alert
+        Alert.alert(
+          "RINA's Response",
+          response.content,
+          [
+            {
+              text: "Add to Note",
+              onPress: () => {
+                // Add RINA's response to the note content
+                const aiContent = `\\n\\n**RINA's Insight:**\\n${response.content}\\n`;
+                setContent(prev => prev + aiContent);
+                if (richTextRef.current) {
+                  richTextRef.current.insertHTML(aiContent);
+                }
+                showSuccessToast("RINA's response added to your note!");
+              }
+            },
+            {
+              text: "Close",
+              style: "cancel"
+            }
+          ]
+        );
+      } else {
+        Alert.alert("Error", "RINA couldn't provide a response. Please try again.");
+      }
+      
+    } catch (error) {
+      console.error('Error asking RINA for help:', error);
+      Alert.alert("Error", "Unable to connect to RINA. Please check your internet connection and try again.");
     }
   };
 
@@ -1344,10 +1436,25 @@ const handleSaveAndExit = async () => {
                 {isLoadingMeaning ? (
                   <View style={styles.wordMeaningLoading}>
                     <MaterialIcons name="sync" size={24} color="#8B5CF6" />
-                    <Text style={styles.wordMeaningLoadingText}>Looking up meaning...</Text>
+                    <Text style={styles.wordMeaningLoadingText}>RINA is looking up the meaning...</Text>
                   </View>
                 ) : (
-                  <Text style={styles.wordMeaningText}>{wordMeaning}</Text>
+                  <ScrollView style={styles.wordMeaningScrollView}>
+                    <RenderHtml
+                      contentWidth={isTablet ? 400 : 280}
+                      source={{ html: wordMeaning.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>') }}
+                      baseStyle={{
+                        fontSize: 14,
+                        color: '#374151',
+                        lineHeight: 20,
+                      }}
+                      tagsStyles={{
+                        strong: { fontWeight: 'bold', color: '#1F2937' },
+                        em: { fontStyle: 'italic', color: '#6B7280' },
+                        br: { height: 8 }
+                      }}
+                    />
+                  </ScrollView>
                 )}
               </View>
               
@@ -2374,6 +2481,10 @@ const styles = StyleSheet.create({
     fontFamily: "Inter-Medium",
     color: "#8B5CF6",
     marginLeft: 8,
+  },
+  wordMeaningScrollView: {
+    maxHeight: 200,
+    marginVertical: 8,
   },
 });
 

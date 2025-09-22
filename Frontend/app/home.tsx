@@ -1266,8 +1266,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 24,
-    paddingTop: 10,
-    paddingBottom: 20,
+    paddingTop: 40, // Increased for better spacing from status bar
+    paddingBottom: 30, // Increased for better spacing
+    height: 140, // Fixed height to prevent content overlap
     zIndex: 1,
   },
   mainContentContainer: {
@@ -1275,7 +1276,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
-    marginTop: 120, // Reduced for better spacing
+    marginTop: 140, // Increased to match header height
     shadowColor: "#1E293B",
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.1,
@@ -1298,7 +1299,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     flex: 1,
-    paddingTop: 20,
   },
   profilePicture: {
     width: 44,
@@ -1360,11 +1360,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingTop: 20,
-    paddingBottom: 120, // Space for NavBar
+    paddingTop: 24, // Increased for better spacing from rounded container
+    paddingBottom: 100, // Reduced space for NavBar
   },
   section: {
-    marginBottom: 24, // Reduced from 32
+    marginBottom: 28, // Increased for better section separation
     position: "relative",
   },
   sectionHeader: {
@@ -1372,16 +1372,16 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     backgroundColor: "transparent",
-    paddingHorizontal: 24,
-    marginBottom: 16,
+    paddingHorizontal: 20, // Reduced to match card padding
+    marginBottom: 18, // Increased for better spacing
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 22, // Slightly larger for better hierarchy
     fontFamily: "Inter-Bold",
     color: "#1E293B",
-    lineHeight: 24,
+    lineHeight: 26,
     position: "relative",
-    paddingLeft: 12,
+    paddingLeft: 0, // Remove left padding for cleaner alignment
   },
   seeAllText: {
     fontSize: 14,
@@ -1425,20 +1425,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   emptyContainer: {
-    height: 180,
+    height: 160, // Reduced height for better proportions
     justifyContent: "center",
     alignItems: "center",
-    marginHorizontal: 24,
+    marginHorizontal: 20, // Reduced margin to match other elements
     backgroundColor: "#FFFFFF",
-    borderRadius: 24,
+    borderRadius: 20, // Reduced radius for consistency
     shadowColor: "#1E293B",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 3,
     borderWidth: 1,
-    borderColor: "rgba(226, 232, 240, 0.6)",
-    padding: 20,
+    borderColor: "rgba(226, 232, 240, 0.5)",
+    padding: 18,
   },
   emptyText: {
     color: "#94A3B8",
@@ -1473,27 +1473,27 @@ const styles = StyleSheet.create({
   quickCardsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    paddingHorizontal: 24,
+    paddingHorizontal: 20, // Reduced padding
     justifyContent: "space-between",
+    alignItems: "flex-start",
   },
   quickCard: {
-    width: (width - 64) / 2, // Two cards per row with padding
-    height: 150, // Fixed height for consistent 2x2 grid
+    width: (width - 56) / 2, // Two cards per row with optimized padding
+    height: 140, // Slightly reduced height for better proportions
     backgroundColor: "#FFFFFF",
-    borderRadius: 20,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    padding: 20,
+    borderRadius: 24, // More consistent radius
+    padding: 18, // Slightly reduced padding
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 16,
+    marginBottom: 12, // Reduced margin for tighter layout
+    marginHorizontal: 2, // Add small horizontal margin
     shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 4 }, // Reduced shadow for cleaner look
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 5,
     borderWidth: 1,
-    borderColor: "rgba(226, 232, 240, 0.6)",
+    borderColor: "rgba(226, 232, 240, 0.5)",
   },
   tasksCard: {
     backgroundColor: "#F0FDF4", // Soft green background for tasks
@@ -1512,30 +1512,30 @@ const styles = StyleSheet.create({
     borderColor: "rgba(139, 92, 246, 0.2)",
   },
   cardIcon: {
-    width: 54,
-    height: 54,
-    borderRadius: 18,
+    width: 48, // Reduced size
+    height: 48,
+    borderRadius: 16, // Adjusted radius
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 12, // Reduced margin
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 }, // Reduced shadow
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
   },
   cardValue: {
-    fontSize: 28,
+    fontSize: 26, // Slightly reduced
     fontFamily: "Inter-Bold",
     color: "#1E293B",
-    marginBottom: 6,
-    marginTop: 12,
+    marginBottom: 4, // Reduced margin
+    marginTop: 10, // Reduced top margin
   },
   cardTitle: {
-    fontSize: 15,
+    fontSize: 14, // Slightly reduced
     color: "#64748B",
     fontFamily: "Inter-SemiBold",
     textAlign: "center",
-    lineHeight: 18,
+    lineHeight: 17, // Adjusted line height
   },
   cardSubtitle: {
     fontSize: 12,
@@ -1546,12 +1546,12 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   cardActionText: {
-    fontSize: 17,
+    fontSize: 16, // Reduced size
     color: "#1E293B",
     fontFamily: "Inter-Bold",
     textAlign: "center",
-    lineHeight: 20,
-    marginTop: 12,
+    lineHeight: 19,
+    marginTop: 8, // Reduced margin
   },
   quickAccessCardHorizontal: {
     backgroundColor: "#FFFFFF",
@@ -1594,27 +1594,28 @@ const styles = StyleSheet.create({
     color: "#1E293B",
   },
   horizontalScrollContainer: {
-    paddingLeft: 24,
-    paddingBottom: 24, // Add some padding at the bottom for better spacing
-    paddingTop: 8, // Add padding at the top for better spacing
+    paddingLeft: 20, // Reduced to match section header padding
+    paddingRight: 20, // Add right padding for consistency
+    paddingBottom: 16, // Reduced for tighter layout
+    paddingTop: 4, // Reduced top padding
   },
   firstCard: {
     marginLeft: 0,
   },
   taskCardHorizontal: {
     backgroundColor: "#FFFFFF",
-    width: width * 0.7,
-    marginRight: 16,
+    width: width * 0.75, // Slightly wider for better content display
+    marginRight: 14, // Reduced margin between cards
     borderRadius: 20,
-    padding: 20,
+    padding: 18, // Slightly reduced padding
     shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 4 }, // Reduced shadow
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 6,
     position: "relative", // Enable positioning for child elements
     borderWidth: 1,
-    borderColor: "rgba(226, 232, 240, 0.6)",
+    borderColor: "rgba(226, 232, 240, 0.5)",
   },
 
   borderLeft: {
@@ -1819,36 +1820,36 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: "rgba(248, 250, 252, 0.95)",
-    borderTopLeftRadius: 25,
-    borderTopRightRadius: 25,
+    backgroundColor: "rgba(248, 250, 252, 0.98)", // Slightly more opaque
+    borderTopLeftRadius: 24, // Slightly reduced radius
+    borderTopRightRadius: 24,
     shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
+    shadowOffset: { width: 0, height: -3 }, // Stronger shadow
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 8, // Increased elevation for better separation
     zIndex: 1000,
   },
   // Horizontal Folders Styles
   foldersHorizontalContainer: {
-    paddingLeft: 24,
-    paddingRight: 12,
-    paddingBottom: 4,
+    paddingLeft: 20, // Match section header padding
+    paddingRight: 20, // Add consistent right padding
+    paddingBottom: 8, // Increased for better spacing
   },
   folderCardHorizontal: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 20,
-    padding: 18,
-    marginRight: 12,
+    borderRadius: 18, // Slightly reduced radius for consistency
+    padding: 16, // Reduced padding
+    marginRight: 12, // Consistent margin
     shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    elevation: 8,
-    borderWidth: 2,
-    borderColor: "rgba(139, 92, 246, 0.15)",
-    width: 160,
-    minHeight: 120,
+    shadowOffset: { width: 0, height: 4 }, // Reduced shadow
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 6,
+    borderWidth: 1, // Reduced border width
+    borderColor: "rgba(139, 92, 246, 0.12)", // Lighter border
+    width: 150, // Slightly reduced width
+    minHeight: 110, // Reduced height
     position: "relative",
     overflow: "hidden",
   },
@@ -1856,12 +1857,12 @@ const styles = StyleSheet.create({
     marginLeft: 0,
   },
   folderIconHorizontal: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
+    width: 48, // Reduced size
+    height: 48,
+    borderRadius: 14, // Adjusted radius
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: 10, // Reduced margin
     alignSelf: "center",
   },
   folderInfoHorizontal: {

@@ -35,6 +35,7 @@ urlpatterns = [
     path('notifications/', include('notifications.urls')),
     path('activity_logs/', include('logs.urls')),
     path('scheduler/', include('scheduler.urls')),
+    path('usage/', include('usage_tracking.urls')),
 
     # Auth API URLs
     path('api-token-auth/', auth_view.obtain_auth_token, name='api-token-auth'),

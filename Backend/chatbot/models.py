@@ -106,3 +106,28 @@ class DocumentChunk(models.Model):
 
     def __str__(self):
         return f"{self.document_name} [{self.id}]"
+
+
+class ConversationFile(models.Model):
+    """Files attached to conversations"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name='attached_files')
+    message = models.ForeignKey(Message, on_delete=models.CASCADE, related_name='attached_files', null=True, blank=True)
+    
+    file_name = models.CharField(max_length=255)
+    file_path = models.CharField(max_length=500)
+    file_type = models.CharField(max_length=50)  # pdf, image, doc, etc.
+    file_size = models.IntegerField()  # in bytes
+    
+    # For tracking processing status
+    is_processed = models.BooleanField(default=False)
+    processing_status = models.CharField(max_length=50, default='pending')  # pending, processing, completed, failed
+    extracted_text = models.TextField(blank=True, null=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    def __str__(self):
+        return f"{self.file_name} - {self.conversation.title}"
+    
+    class Meta:
+        ordering = ['-created_at']

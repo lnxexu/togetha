@@ -5,8 +5,10 @@ import { ActivityIndicator, View, AppState, Platform, StatusBar } from "react-na
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import AppNavigator from "./app/navigation/AppNavigator";
 import Toast from "react-native-toast-message";
-import { TaskProvider } from './app/context/TaskContext';
+import { TaskProvider } from './app/contexts/TaskContext';
 import { TaskNotificationChecker } from "./app/notifications/components/TaskNotificationChecker";
+import { ChatHeadProvider } from './app/contexts/ChatHeadContext';
+import { GlobalChatHead } from './app/components/GlobalChatHead';
 
 // import { LogsProvider } from './app/logs/services/logProvider';
 
@@ -64,11 +66,14 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
+      <ChatHeadProvider>
         <TaskProvider>
           <AppNavigator />
           <TaskNotificationChecker />
+          <GlobalChatHead />
           <Toast />
         </TaskProvider>
+      </ChatHeadProvider>
     </SafeAreaProvider>
   );
 }
