@@ -70,7 +70,7 @@ const ToDo: React.FC = () => {
 
   // Compute FAB bottom dynamically: place it just above the navbar (navbar includes safe area padding)
   // Add a small extra offset so the FAB sits clearly above the navbar
-  const fabExtraOffset = 0; // smaller offset to position FAB lower, closer to navbar
+  const fabExtraOffset = 5; // smaller offset to position FAB lower, closer to navbar
   const defaultNavbarHeight = isLandscape ? 48 : Platform.OS === "ios" ? 64 : 56;
   const fabBottom = Math.max(insets.bottom, 0) + (navbarHeight || defaultNavbarHeight) + fabExtraOffset;
   

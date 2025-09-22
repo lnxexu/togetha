@@ -1,8 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import React from "react";
-import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { Image, StyleSheet, Text, TouchableOpacity, View, Animated, Easing, Dimensions } from "react-native";
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { RootStackParamList } from "./navigation/AppNavigator";
 
@@ -18,6 +19,37 @@ export default function Navbar({ activeRoute = "Home", onLayoutHeight }: NavbarP
   const navigation = useNavigation<NavigationProp>();
   const insets = useSafeAreaInsets();
 
+  // Animated horizontal shimmer to create a subtle 'liquid' moving background
+  const { width } = Dimensions.get('window');
+  const gradientWidth = width * 2; // make it wide so sliding looks continuous
+  const translate = useRef(new Animated.Value(0)).current;
+  // Animated version of LinearGradient so we can animate its translateX
+  const AnimatedLinearGradient = Animated.createAnimatedComponent(LinearGradient);
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(translate, {
+          toValue: -width,
+          duration: 7000,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(translate, {
+          toValue: 0,
+          duration: 7000,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    loop.start();
+    return () => loop.stop();
+  }, [translate, width]);
+
+  const [navHeight, setNavHeight] = useState<number>(0);
+
   return (
     <View
       onLayout={(e) => {
@@ -30,7 +62,32 @@ export default function Navbar({ activeRoute = "Home", onLayoutHeight }: NavbarP
         { paddingBottom: insets.bottom },
       ]}
     >
-      <View style={styles.navbar}>
+      {/* animated gradient behind the navbar */}
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.gradientWrapper,
+          { height: (navHeight || 64) + insets.bottom, width: '100%' },
+        ]}
+      >
+        <AnimatedLinearGradient
+          colors={["#667eea", "#764ba2", "#f093fb"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={[
+            styles.gradient,
+            { width: gradientWidth, transform: [{ translateX: translate }] },
+          ]}
+        />
+      </Animated.View>
+
+      <View
+        style={styles.navbar}
+        onLayout={(e) => {
+          const h = e.nativeEvent.layout.height;
+          if (h && h !== navHeight) setNavHeight(h);
+        }}
+      >
         <TouchableOpacity
           style={styles.navItem}
           onPress={() => navigation.navigate("Home")}
@@ -134,7 +191,7 @@ export default function Navbar({ activeRoute = "Home", onLayoutHeight }: NavbarP
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "transparent",
     borderTopWidth: 1,
     borderTopColor: "#E5E7EB",
     // Consistent clean appearance - no shadows
@@ -143,8 +200,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-around",
     alignItems: "center",
-    paddingVertical: 16,
+    paddingVertical: 5,
     paddingHorizontal: 16,
+    backgroundColor: "rgba(255,255,255,0.85)", // slightly translucent so gradient peeks through
+    zIndex: 1,
   },
   navItem: {
     alignItems: "center",
@@ -169,5 +228,15 @@ const styles = StyleSheet.create({
   },
   activeChatbotIcon: {
     tintColor: "#AD00FF",
+  },
+  gradientWrapper: {
+    position: 'absolute',
+    left: 0,
+    bottom: 0,
+    overflow: 'hidden',
+    zIndex: 0,
+  },
+  gradient: {
+    height: '100%',
   },
 });

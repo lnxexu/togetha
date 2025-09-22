@@ -236,9 +236,9 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
 
   // Compute FAB bottom dynamically to match ToDo screen positioning
   const isLandscape = windowWidth > windowHeight;
-  const fabExtraOffset = 0; // keep same offset as ToDo
+  const fabExtraOffset = 5; // keep same offset as ToDo
   const defaultNavbarHeight = isLandscape ? 48 : Platform.OS === "ios" ? 64 : 56;
-  const fabBottom = Math.max(insets.bottom, 0) + (navbarHeight || defaultNavbarHeight) + fabExtraOffset;
+  const fabBottom = Math.max(insets.bottom, 5) + (navbarHeight || defaultNavbarHeight) + fabExtraOffset;
   const [showDrawingSetupModal, setShowDrawingSetupModal] = useState(false);
   const [drawingTitle, setDrawingTitle] = useState("");
   const [selectedSize, setSelectedSize] = useState("medium");
