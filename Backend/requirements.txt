@@ -14,3 +14,4 @@ qrcode[pil]
 cryptography
 bcrypt
 pytesseract
+requests
