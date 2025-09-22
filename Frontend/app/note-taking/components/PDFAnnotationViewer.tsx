@@ -121,11 +121,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     translateX: 0,
     translateY: 0,
   });
-  // For kinetic (inertial) pan
-  const panVelocityRef = useRef({ vx: 0, vy: 0 });
-  const lastPanTimeRef = useRef<number | null>(null);
-  const lastPanPosRef = useRef<{ x: number; y: number } | null>(null);
-  const inertiaAnimRef = useRef<Animated.ValueXY | null>(null);
   
   // Canvas-like container dimensions
   const [containerSize, setContainerSize] = useState({ width: screenWidth, height: screenHeight - 300 });
@@ -135,12 +130,13 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   // Gesture handling refs - from DrawingEditor approach
   const gestureStartZoomRef = useRef(1);
   const gestureStartDistanceRef = useRef(0);
-  const gestureStartCenterRef = useRef({ x: 0, y: 0 });
-  const gestureStartTranslateRef = useRef({ x: 0, y: 0 });
-  const gestureModeRef = useRef<"pinch" | "pan" | null>(null);
+  // Track latest zoom in a ref so panResponder sees updates
+  const currentZoomRef = useRef(currentZoom);
+  useEffect(() => { currentZoomRef.current = currentZoom; }, [currentZoom]);
 
-  // Viewport size for clamping (visible area of ScrollView)
-  const [viewportSize, setViewportSize] = useState({ width: screenWidth, height: screenHeight - 300 });
+  // For panning when zoomed
+  const gestureStartTranslateRef = useRef({ x: 0, y: 0 });
+  const gestureStartTouchRef = useRef({ x: 0, y: 0 });
 
   // Scale constants
   const MIN_PDF_SCALE = 0.5;
@@ -168,39 +164,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     }
     
     lastTapRef.current = now;
-  };
-  // Enhanced double-tap with focal zoom (toggle between fit and 2x); supply tap coordinates
-  const handleDoubleTapAt = (x: number, y: number) => {
-    const now = Date.now();
-    const delta = now - lastTapRef.current;
-    lastTapRef.current = now;
-    if (delta < 280) { // double tap detected
-      setPdfTransform(prev => {
-        if (prev.scale !== 1) {
-          setCurrentZoom(1);
-          return { scale: 1, translateX: 0, translateY: 0 };
-        }
-        const targetScale = 2; // zoom in level
-        // Compute focal translation so tapped point moves toward center
-        const viewportW = viewportSize.width;
-        const viewportH = viewportSize.height;
-        // Current content dimensions
-        const contentW = containerSize.width;
-        const contentH = containerSize.height;
-        // Relative position inside viewport
-        const relX = x / viewportW; // 0..1
-        const relY = y / viewportH; // 0..1
-        // After scaling, desired content offset so that tapped point is centered
-        const scaledW = contentW * targetScale;
-        const scaledH = contentH * targetScale;
-        // Ideal translations (negative moves content left/up) before clamping
-        let translateX = -(relX * scaledW - viewportW / 2);
-        let translateY = -(relY * scaledH - viewportH / 2);
-        const clamped = clampTranslate(targetScale, translateX, translateY);
-        setCurrentZoom(targetScale);
-        return { scale: targetScale, translateX: clamped.translateX, translateY: clamped.translateY };
-      });
-    }
   };
 
   // Direct PDF annotation state
@@ -296,7 +259,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
             console.log('URL normalization check:', {
               sourceHost: sourceUrl.hostname,
               sourcePort,
-              apiHost: apiUrl.hostname,
+              apiHost: apiUrl.hostname, 
               apiPort,
               API_URL
             });
@@ -925,19 +888,13 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const handleZoomIn = () => {
     const newZoom = Math.min(currentZoom * 1.25, MAX_PDF_SCALE); // Max zoom 3x
     setCurrentZoom(newZoom);
-    setPdfTransform(prev => {
-      const { translateX, translateY } = clampTranslate(newZoom, prev.translateX, prev.translateY);
-      return { ...prev, scale: newZoom, translateX, translateY };
-    });
+    setPdfTransform(prev => ({ ...prev, scale: newZoom }));
   };
 
   const handleZoomOut = () => {
     const newZoom = Math.max(currentZoom * 0.8, MIN_PDF_SCALE); // Min zoom 0.5x
     setCurrentZoom(newZoom);
-    setPdfTransform(prev => {
-      const { translateX, translateY } = clampTranslate(newZoom, prev.translateX, prev.translateY);
-      return { ...prev, scale: newZoom, translateX, translateY };
-    });
+    setPdfTransform(prev => ({ ...prev, scale: newZoom }));
   };
 
   const resetZoom = () => {
@@ -945,140 +902,140 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     setPdfTransform({ scale: 1, translateX: 0, translateY: 0 });
   };
 
-  // Keep content within bounds when scaled/translated
-  const clampTranslate = (scale: number, translateX: number, translateY: number) => {
-    const contentWidth = containerSize.width || screenWidth;
-    const contentHeight = containerSize.height || (screenHeight - 300);
-    const viewportW = viewportSize.width;
-    const viewportH = viewportSize.height;
-    const scaledWidth = contentWidth * scale;
-    const scaledHeight = contentHeight * scale;
-    if (scaledWidth <= viewportW) {
-      translateX = (viewportW - scaledWidth) / 2;
-    } else {
-      const minX = -(scaledWidth - viewportW);
-      const maxX = 0;
-      translateX = Math.min(Math.max(translateX, minX), maxX);
-    }
-    if (scaledHeight <= viewportH) {
-      translateY = (viewportH - scaledHeight) / 2;
-    } else {
-      const minY = -(scaledHeight - viewportH);
-      const maxY = 0;
-      translateY = Math.min(Math.max(translateY, minY), maxY);
-    }
-    return { translateX, translateY };
-  };
-
-  // Re-clamp if sizes change
-  useEffect(() => {
-    setPdfTransform(prev => {
-      const { translateX, translateY } = clampTranslate(prev.scale, prev.translateX, prev.translateY);
-      return { ...prev, translateX, translateY };
-    });
-  }, [containerSize.width, containerSize.height, viewportSize.width, viewportSize.height]);
-
-  // Enhanced pan responder: two-finger pinch OR pan; single finger only when drawing
+  // Pan responder for pinch-to-zoom gestures and drawing - DrawingEditor approach
   const panResponder = PanResponder.create({
-    onStartShouldSetPanResponder: (evt) => {
-      if (evt.nativeEvent.touches.length === 2) return true;
-      return selectedTool !== null && evt.nativeEvent.touches.length === 1;
+    onStartShouldSetPanResponder: (evt, gestureState) => {
+      const touches = evt.nativeEvent.touches || [];
+      // Start responder for multi-touch (pinch), when a tool is selected (drawing),
+      // or when we're zoomed in and want to pan the content with one finger.
+      if (touches.length === 2) return true;
+      if (selectedTool !== null) return true;
+      if (currentZoomRef.current > 1 && touches.length === 1) return true;
+      return false;
     },
-    onMoveShouldSetPanResponder: (evt) => {
-      if (evt.nativeEvent.touches.length === 2) return true;
-      return selectedTool !== null && evt.nativeEvent.touches.length === 1;
+    onMoveShouldSetPanResponder: (evt, gestureState) => {
+      const touches = evt.nativeEvent.touches || [];
+      if (touches.length === 2) return true; // pinch
+      // If drawing tool selected, handle single-touch move
+      if (selectedTool !== null && touches.length === 1) return true;
+      // If zoomed in, allow single-finger pan
+      if (currentZoomRef.current > 1 && touches.length === 1) return true;
+      return false;
     },
-    onMoveShouldSetPanResponderCapture: (evt) => {
-      return evt.nativeEvent.touches.length === 2 || (selectedTool !== null && evt.nativeEvent.touches.length === 1);
+    onMoveShouldSetPanResponderCapture: (evt, gestureState) => {
+      const touches = evt.nativeEvent.touches || [];
+      if (touches.length === 2) return true;
+      if (selectedTool !== null && touches.length === 1) return true;
+      if (currentZoomRef.current > 1 && touches.length === 1) return true;
+      return false;
     },
-    onPanResponderGrant: (evt) => {
-      if (evt.nativeEvent.touches.length === 2) {
-        const touches = evt.nativeEvent.touches;
-        const t1 = touches[0];
-        const t2 = touches[1];
-        const centerX = (t1.pageX + t2.pageX) / 2;
-        const centerY = (t1.pageY + t2.pageY) / 2;
-        gestureStartZoomRef.current = currentZoom;
+
+    onPanResponderGrant: (evt, gestureState) => {
+      const touches = evt.nativeEvent.touches || [];
+      if (touches.length === 2) {
+        // Pinch-to-zoom gesture
+        gestureStartZoomRef.current = currentZoomRef.current;
         gestureStartDistanceRef.current = getDistance(touches);
-        gestureStartCenterRef.current = { x: centerX, y: centerY };
-        gestureStartTranslateRef.current = { x: pdfTransform.translateX, y: pdfTransform.translateY };
-        gestureModeRef.current = null;
-      } else if (evt.nativeEvent.touches.length === 1 && selectedTool) {
-        const touch = evt.nativeEvent.touches[0];
+      } else if (touches.length === 1 && selectedTool) {
+        // Single touch drawing gesture
+        const touch = touches[0];
         const { locationX, locationY } = touch;
+
         if (selectedTool === 'note' || selectedTool === 'text') {
+          // Handle note/text placement
           const coords = screenToPDFCoordinates(locationX, locationY);
           setNotePosition({ x: coords.normalizedX, y: coords.normalizedY });
           setShowNoteModal(true);
+        } else if (selectedTool === 'highlight') {
+          // For highlight tool, we'll start drawing a freehand highlight
+          setIsDrawing(true);
+          setCurrentPath(`M${locationX},${locationY}`);
         } else {
+          // Start drawing path for pen, brush, pencil, freehand highlight, eraser
           setIsDrawing(true);
           setCurrentPath(`M${locationX},${locationY}`);
         }
+      } else if (touches.length === 1 && currentZoomRef.current > 1 && selectedTool === null) {
+        // Start panning when zoomed in and no drawing tool selected
+        const touch = touches[0];
+        gestureStartTranslateRef.current = { x: pdfTransform.translateX, y: pdfTransform.translateY };
+        gestureStartTouchRef.current = { x: touch.pageX, y: touch.pageY };
       }
     },
-    onPanResponderMove: (evt) => {
-      if (evt.nativeEvent.touches.length === 2) {
-        const touches = evt.nativeEvent.touches;
+
+    onPanResponderMove: (evt, gestureState) => {
+      const touches = evt.nativeEvent.touches || [];
+      if (touches.length === 2) {
+        // Handle pinch-to-zoom
         const currentDistance = getDistance(touches);
         const startDistance = gestureStartDistanceRef.current;
-        const t1 = touches[0];
-        const t2 = touches[1];
-        const centerX = (t1.pageX + t2.pageX) / 2;
-        const centerY = (t1.pageY + t2.pageY) / 2;
-        let nextScale = currentZoom;
+
         if (startDistance > 0) {
-          const rawScale = currentDistance / startDistance;
-          nextScale = Math.max(MIN_PDF_SCALE, Math.min(MAX_PDF_SCALE, gestureStartZoomRef.current * rawScale));
+          const scale = currentDistance / startDistance;
+          const newZoom = Math.max(MIN_PDF_SCALE, Math.min(MAX_PDF_SCALE, gestureStartZoomRef.current * scale));
+
+          // Ensure both states update synchronously for immediate UI feedback
+          setCurrentZoom(newZoom);
+          setPdfTransform(prev => ({ 
+            ...prev, 
+            scale: newZoom 
+          }));
+
+          console.log('Pinch zoom sync:', { newZoom, uiZoom: Math.round(newZoom * 100) + '%' });
         }
-        if (!gestureModeRef.current) {
-          const scaleDelta = Math.abs(nextScale - gestureStartZoomRef.current);
-          gestureModeRef.current = scaleDelta > 0.02 ? 'pinch' : 'pan';
-        }
-        if (gestureModeRef.current === 'pinch') {
-          setCurrentZoom(nextScale);
-          setPdfTransform(prev => {
-            const { translateX, translateY } = clampTranslate(nextScale, prev.translateX, prev.translateY);
-            return { ...prev, scale: nextScale, translateX, translateY };
-          });
-        } else {
-          const deltaX = centerX - gestureStartCenterRef.current.x;
-          const deltaY = centerY - gestureStartCenterRef.current.y;
-          const proposedX = gestureStartTranslateRef.current.x + deltaX;
-          const proposedY = gestureStartTranslateRef.current.y + deltaY;
-          setPdfTransform(prev => {
-            const { translateX, translateY } = clampTranslate(prev.scale, proposedX, proposedY);
-            return { ...prev, translateX, translateY };
-          });
-        }
-      } else if (evt.nativeEvent.touches.length === 1 && isDrawing && selectedTool) {
-        const touch = evt.nativeEvent.touches[0];
+      } else if (touches.length === 1 && isDrawing && selectedTool) {
+        // Handle drawing
+        const touch = touches[0];
         const { locationX, locationY } = touch;
+
         if (selectedTool === 'pen' || selectedTool === 'brush' || selectedTool === 'pencil' || selectedTool === 'highlight' || selectedTool === 'eraser') {
           setCurrentPath(prev => `${prev} L${locationX},${locationY}`);
         }
+      } else if (touches.length === 1 && currentZoomRef.current > 1 && selectedTool === null) {
+        // Handle panning when zoomed in
+        const touch = touches[0];
+        const dx = touch.pageX - gestureStartTouchRef.current.x;
+        const dy = touch.pageY - gestureStartTouchRef.current.y;
+
+        const scale = pdfTransform.scale || 1;
+        // Calculate maximum pan offset based on scaled content (center-origin approximation)
+        const maxOffsetX = (containerSize.width * (scale - 1)) / 2;
+        const maxOffsetY = (containerSize.height * (scale - 1)) / 2;
+
+        let newTranslateX = gestureStartTranslateRef.current.x + dx;
+        let newTranslateY = gestureStartTranslateRef.current.y + dy;
+
+        // Clamp translation to reasonable bounds
+        newTranslateX = Math.max(-maxOffsetX, Math.min(maxOffsetX, newTranslateX));
+        newTranslateY = Math.max(-maxOffsetY, Math.min(maxOffsetY, newTranslateY));
+
+        setPdfTransform(prev => ({ ...prev, translateX: newTranslateX, translateY: newTranslateY }));
       }
     },
+
     onPanResponderRelease: (evt) => {
-      if (evt.nativeEvent.touches.length === 0) {
-        if (isDrawing && currentPath && selectedTool) {
-          if (selectedTool === 'highlight') {
-            addFreehandHighlight(currentPath);
-          } else if (selectedTool === 'pen' || selectedTool === 'brush' || selectedTool === 'pencil') {
-            addPenAnnotation(currentPath, selectedTool);
-          } else if (selectedTool === 'eraser') {
-            partialEraseAnnotations(currentPath);
-          }
-          setIsDrawing(false);
-          setCurrentPath('');
+      // On release finalize drawing or reset gesture trackers
+      if (isDrawing && currentPath && selectedTool) {
+        if (selectedTool === "highlight") {
+          addFreehandHighlight(currentPath);
+        } else if (selectedTool === "pen" || selectedTool === "brush" || selectedTool === "pencil") {
+          addPenAnnotation(currentPath, selectedTool);
+        } else if (selectedTool === "eraser") {
+          partialEraseAnnotations(currentPath);
         }
-        gestureStartDistanceRef.current = 0;
-        gestureModeRef.current = null;
+        setIsDrawing(false);
+        setCurrentPath("");
       }
+
+      // Reset gesture tracking
+      gestureStartDistanceRef.current = 0;
+      gestureStartTouchRef.current = { x: 0, y: 0 };
     },
     onPanResponderTerminate: () => {
+      // Reset gesture tracking
       gestureStartDistanceRef.current = 0;
-      gestureModeRef.current = null;
-    }
+      gestureStartTouchRef.current = { x: 0, y: 0 };
+    },
   });
 
   // ---------------------------------------------------------------------------
@@ -2180,39 +2137,6 @@ return (
               <MaterialIcons name="zoom-in" size={20} color="#64748b" />
             </TouchableOpacity>
 
-            {/* Zoom Slider */}
-            <View style={styles.zoomSliderContainer}>
-              <View
-                style={styles.zoomSliderTrack}
-                onLayout={(e) => {
-                  // store width if needed later
-                }}
-                {...PanResponder.create({
-                  onStartShouldSetPanResponder: () => true,
-                  onPanResponderMove: (evt, gesture) => {
-                    const sliderWidth = 120; // fixed width
-                    const locationX = Math.min(Math.max(0, gesture.dx + (gesture.x0 % sliderWidth)), sliderWidth);
-                    const ratio = locationX / sliderWidth;
-                    const newScale = MIN_PDF_SCALE + ratio * (MAX_PDF_SCALE - MIN_PDF_SCALE);
-                    setCurrentZoom(newScale);
-                    setPdfTransform(prev => {
-                      const { translateX, translateY } = clampTranslate(newScale, prev.translateX, prev.translateY);
-                      return { ...prev, scale: newScale, translateX, translateY };
-                    });
-                  },
-                }).panHandlers}
-              >
-                <View
-                  style={[
-                    styles.zoomSliderThumb,
-                    {
-                      left: ((currentZoom - MIN_PDF_SCALE) / (MAX_PDF_SCALE - MIN_PDF_SCALE)) * 120 - 10,
-                    },
-                  ]}
-                />
-              </View>
-            </View>
-
             {/* Divider */}
             <View style={styles.toolbarDivider} />
 
@@ -2372,23 +2296,21 @@ return (
               bounces={true}
               bouncesZoom={true}
               directionalLockEnabled={false}
-              canCancelContentTouches={false}
-              scrollEnabled={false}
-              nestedScrollEnabled={false}
-              onScroll={() => {}}
-              scrollEventThrottle={16}
-              onLayout={(e) => {
-                const { width, height } = e.nativeEvent.layout;
-                setViewportSize({ width, height });
+              canCancelContentTouches={selectedTool === null && currentZoom <= 1}
+              scrollEnabled={selectedTool === null && currentZoom <= 1}
+              nestedScrollEnabled={true}
+              onScroll={(event) => {
+                const { contentOffset } = event.nativeEvent;
+                setPdfScrollOffset({ x: contentOffset.x, y: contentOffset.y });
+                console.log('PDF scroll offset:', contentOffset);
               }}
+              scrollEventThrottle={16}
             >
               {/* PDF and Annotation Transform Container */}
               <Animated.View 
                 style={[
                   styles.pdfTransformContainer,
                   {
-                    width: containerSize.width,
-                    height: containerSize.height,
                     transform: [
                       { scale: pdfTransform.scale },
                       { translateX: pdfTransform.translateX },
@@ -2407,7 +2329,7 @@ return (
                   <Pdf
                     ref={pdfRef}
                     source={currentSource}
-                    style={[styles.pdf, { height: containerSize.height }]}
+                    style={[styles.pdf]}
                     onLoadComplete={onPdfLoadComplete}
                     onPageChanged={onPageChanged}
                     onLoadProgress={onPdfLoadProgress}
@@ -2416,10 +2338,7 @@ return (
                       console.log('PDF internal scale changed:', scale);
                       // Update our zoom states to stay synchronized with PDF component
                       setCurrentZoom(scale);
-                      setPdfTransform(prev => {
-                        const { translateX, translateY } = clampTranslate(scale, prev.translateX, prev.translateY);
-                        return { ...prev, scale, translateX, translateY };
-                      });
+                      setPdfTransform(prev => ({ ...prev, scale }));
                     }}
                     enablePaging={false}
                     horizontal={false}
@@ -2442,19 +2361,9 @@ return (
                 )}
                 
                 {/* Annotation Layer - Now part of the same transform container with touch enabled */}
-                <View
-                  style={StyleSheet.absoluteFillObject}
-                  pointerEvents={selectedTool ? 'auto' : 'box-none'}
-                  onStartShouldSetResponder={(e) => {
-                    // Allow capturing taps when no tool to support double-tap zoom
-                    return selectedTool === null; 
-                  }}
-                  onResponderRelease={(e) => {
-                    if (selectedTool === null) {
-                      const { locationX, locationY } = e.nativeEvent;
-                      handleDoubleTapAt(locationX, locationY);
-                    }
-                  }}
+                <View 
+                  style={StyleSheet.absoluteFillObject} 
+                  pointerEvents={selectedTool ? "auto" : "box-none"}
                   {...panResponder.panHandlers}
                 >
                   {renderAnnotations()}
@@ -3213,34 +3122,6 @@ mainContainer: {
     color: "#64748b",
     fontFamily: "Inter-SemiBold",
   },
-  zoomSliderContainer: {
-    width: 140,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginHorizontal: 8,
-  },
-  zoomSliderTrack: {
-    width: 120,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#E5E7EB',
-    position: 'relative',
-    justifyContent: 'center',
-  },
-  zoomSliderThumb: {
-    position: 'absolute',
-    top: -7,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#667eea',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 3,
-  },
 
   // PDF scroll and zoom styles
   pdfScrollView: {
@@ -3415,6 +3296,8 @@ mainContainer: {
     paddingVertical: 20,
   },
   pdfTransformContainer: {
+    width: screenWidth,
+    height: screenHeight * 3, // Increased for multi-page PDFs
     backgroundColor: '#F3F4F6', // keep transform container matching viewer background
   },
 });
