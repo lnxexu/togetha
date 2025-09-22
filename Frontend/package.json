@@ -48,6 +48,7 @@
     "react-native-blob-util": "^0.22.2",
     "react-native-fs": "^2.20.0",
     "react-native-gesture-handler": "~2.24.0",
+    "react-native-markdown-display": "^7.0.2",
     "react-native-pdf": "^6.7.7",
     "react-native-pell-rich-editor": "^1.10.0",
     "react-native-reanimated": "~3.17.4",

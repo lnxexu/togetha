@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import { NotificationUtils } from '../utils/NotificationUtils';
 import { NotificationService } from '../services/notificationService';
-import { useTaskContext } from '../../context/TaskContext';
+import { useTaskContext } from '../../contexts/TaskContext';
 
 export const TaskNotificationChecker = () => {
   const { tasks } = useTaskContext();

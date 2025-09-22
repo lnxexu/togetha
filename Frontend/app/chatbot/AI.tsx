@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   ScrollView,
   StatusBar,
@@ -11,19 +11,24 @@ import {
   KeyboardAvoidingView,
   Modal,
   Platform,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
-import axios from "axios";
 import { useMutation, QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as DocumentPicker from "expo-document-picker";
 import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
-const API_URL = "http://192.168.1.187:8000/chatbot/chat/";
-const PDF_UPLOAD_URL = "http://192.168.1.187:8000/chatbot/upload_pdf/";
+import Markdown from "react-native-markdown-display";
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import chatbotAPI, { 
+  Conversation, 
+  Message as APIMessage, 
+  ConversationFile,
+  ChatResponse 
+} from "./services/chatbotAPIService";
+import { useChatHead } from "../contexts/ChatHeadContext";
 
 type Role = "user" | "assistant";
 
@@ -31,26 +36,19 @@ interface Message {
   id?: string;
   role: Role;
   content: string;
-  text?: string;
-  isUser?: boolean;
   timestamp?: Date;
-}
-
-interface ChatSession {
-  id: string;
-  title: string;
-  lastMessage: string;
-  timestamp: Date;
-  messageCount: number;
+  created_at?: string;
 }
 
 interface BackendResponse {
   content: string;
   source: string;
+  conversation_id: string;
+  message_id: string;
 }
 
 interface MutationVariables {
-  updatedMessages: Message[];
+  messageContent: string;
 }
 
 type ChatBotNavigationProp = any;
@@ -63,54 +61,384 @@ const queryClient = new QueryClient();
 
 function ChatBot(): React.ReactElement {
   const navigation = useNavigation();
-  const insets = useSafeAreaInsets();
+  const scrollViewRef = useRef<ScrollView>(null);
+  const { setActiveConversation, setHasActiveConversation, disableChatHead, enableChatHead } = useChatHead();
   
-  const [token, setToken] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "1",
-      role: "assistant",
-      content: "Hello! How can I assist you today?",
-    },
-  ]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [currentConversation, setCurrentConversation] = useState<Conversation | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [lastAttempt, setLastAttempt] = useState<Message[] | null>(null);
   const [showChatHistory, setShowChatHistory] = useState(false);
+  const [showChatOptions, setShowChatOptions] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
+  const [retryCount, setRetryCount] = useState(0);
+  const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
+  const [editingContent, setEditingContent] = useState("");
+  const [pendingFiles, setPendingFiles] = useState<any[]>([]);
+  const [showFilePreview, setShowFilePreview] = useState(false);
+  const [previewFile, setPreviewFile] = useState<any>(null);
+  const [attachmentMenuVisible, setAttachmentMenuVisible] = useState(false);
 
   useEffect(() => {
-    const getToken = async () => {
-      const authToken = await AsyncStorage.getItem("authToken");
-      setToken(authToken);
+    loadConversations();
+    restoreActiveConversation();
+    
+    // Disable chat head while on the main chat interface to prevent conflicts
+    disableChatHead();
+    
+    // Re-enable when component unmounts
+    return () => {
+      enableChatHead();
     };
-    getToken();
-  }, []);
+  }, [disableChatHead, enableChatHead]);
 
-  const fetchOllamaMessage = async ({ updatedMessages }: MutationVariables): Promise<BackendResponse> => {
+  // Update chat head context when current conversation changes
+  useEffect(() => {
+    if (currentConversation) {
+      setActiveConversation(currentConversation.id);
+      // Save active conversation to storage
+      saveActiveConversation(currentConversation.id);
+    } else {
+      setActiveConversation(null);
+      // Clear active conversation from storage
+      clearActiveConversation();
+    }
+  }, [currentConversation, setActiveConversation]);
+
+  const saveActiveConversation = async (conversationId: string) => {
     try {
-      const authToken = await AsyncStorage.getItem("authToken");
-      if (!authToken) throw new Error("No auth token found");
-
-      const response = await axios.post(
-        API_URL,
-        { messages: updatedMessages },
-        {
-          headers: {
-            Authorization: `Token ${authToken}`,
-          },
-        }
-      );
-
-      return response.data as BackendResponse;
-    } catch (err: any) {
-      console.error("Chat request failed:", err.response?.data || err.message);
-      throw err;
+      await AsyncStorage.setItem('activeConversationId', conversationId);
+    } catch (error) {
+      console.warn('Failed to save active conversation:', error);
     }
   };
 
-  const mutation = useMutation<BackendResponse, unknown, MutationVariables>({
+  const clearActiveConversation = async () => {
+    try {
+      await AsyncStorage.removeItem('activeConversationId');
+    } catch (error) {
+      console.warn('Failed to clear active conversation:', error);
+    }
+  };
+
+  const restoreActiveConversation = async () => {
+    try {
+      const savedConversationId = await AsyncStorage.getItem('activeConversationId');
+      if (savedConversationId) {
+        // Load the saved conversation
+        loadConversation(savedConversationId);
+      }
+    } catch (error) {
+      console.warn('Failed to restore active conversation:', error);
+    }
+  };
+
+  const loadConversations = async (silent = false) => {
+    try {
+      if (!silent) setErrorMessage(null);
+      const conversationList = await chatbotAPI.getConversations();
+      setConversations(conversationList);
+      setIsOnline(true);
+      setRetryCount(0);
+    } catch (error: any) {
+      if (!silent) {
+        setIsOnline(false);
+        setErrorMessage(error.message || "Failed to load conversations");
+      }
+      
+      // Auto-retry logic only if not already retrying
+      if (retryCount < 2 && !silent) {
+        setTimeout(() => {
+          setRetryCount(prev => prev + 1);
+          loadConversations(true); // Silent retry
+        }, 3000 * (retryCount + 1)); // Exponential backoff
+      }
+    }
+  };
+
+  const loadConversation = async (conversationId: string) => {
+    try {
+      const conversation = await chatbotAPI.getConversation(conversationId);
+      setCurrentConversation(conversation);
+      
+      // Update chat head context with active conversation
+      setActiveConversation(conversationId);
+      
+      // Convert API messages to local format
+      const formattedMessages: Message[] = conversation.messages.map(msg => ({
+        id: msg.id,
+        role: msg.message_type === 'user' ? 'user' : 'assistant',
+        content: msg.content,
+        created_at: msg.created_at
+      }));
+      
+      setMessages(formattedMessages);
+      setShowChatHistory(false);
+    } catch (error) {
+      console.error("Error loading conversation:", error);
+      Alert.alert("Error", "Failed to load conversation");
+    }
+  };
+
+  const createNewConversation = async () => {
+    try {
+      const newConversation = await chatbotAPI.createConversation({
+        title: "New Conversation"
+      });
+      setCurrentConversation(newConversation);
+      setMessages([]);
+      setShowChatOptions(false);
+      
+      // Update chat head context with new active conversation
+      setActiveConversation(newConversation.id);
+      
+
+      
+      await loadConversations();
+    } catch (error) {
+      console.error("Error creating conversation:", error);
+      Alert.alert("Error", "Failed to create new conversation");
+    }
+  };
+
+  const deleteConversation = async (conversationId: string) => {
+    try {
+      await chatbotAPI.deleteConversation(conversationId);
+      
+      // If we deleted the current conversation, clear it
+      if (currentConversation?.id === conversationId) {
+        setCurrentConversation(null);
+        setMessages([]);
+        // Remove chat head when no active conversation
+        setActiveConversation(null);
+      }
+      
+      await loadConversations();
+    } catch (error) {
+      console.error("Error deleting conversation:", error);
+      Alert.alert("Error", "Failed to delete conversation");
+    }
+  };
+
+  const updateConversationTitle = async (conversationId: string, newTitle: string) => {
+    try {
+      await chatbotAPI.updateConversation(conversationId, { title: newTitle });
+      await loadConversations();
+      
+      // Update current conversation if it's the one being edited
+      if (currentConversation?.id === conversationId) {
+        setCurrentConversation({ ...currentConversation, title: newTitle });
+      }
+    } catch (error) {
+      console.error("Error updating conversation title:", error);
+      Alert.alert("Error", "Failed to update conversation title");
+    }
+  };
+
+  const deleteMessage = async (messageId: string, messageIndex: number) => {
+    try {
+      if (messageId) {
+        await chatbotAPI.deleteMessage(messageId);
+      }
+      
+      // Remove message from local state
+      setMessages(prev => prev.filter((_, index) => index !== messageIndex));
+      
+      Alert.alert("Success", "Message deleted successfully");
+    } catch (error) {
+      console.error("Error deleting message:", error);
+      Alert.alert("Error", "Failed to delete message");
+    }
+  };
+
+  const resetCurrentConversation = () => {
+    if (!currentConversation) return;
+    
+    Alert.alert(
+      "Reset Conversation",
+      "Are you sure you want to reset this conversation? All messages will be cleared.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Reset",
+          style: "destructive",
+          onPress: () => {
+            setMessages([]);
+            setShowChatOptions(false);
+          }
+        }
+      ]
+    );
+  };
+
+  const deleteCurrentConversation = () => {
+    if (!currentConversation) return;
+    
+    Alert.alert(
+      "Delete Conversation",
+      "Are you sure you want to delete this conversation? This action cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            deleteConversation(currentConversation.id);
+            setShowChatOptions(false);
+          }
+        }
+      ]
+    );
+  };
+
+  const confirmDeleteMessage = (messageId: string, messageIndex: number) => {
+    Alert.alert(
+      "Delete Message",
+      "Are you sure you want to delete this message? This action cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: () => deleteMessage(messageId, messageIndex) }
+      ]
+    );
+  };
+
+  const startEditMessage = (messageIndex: number, content: string) => {
+    setEditingMessageIndex(messageIndex);
+    setEditingContent(content);
+  };
+
+  const cancelEditMessage = () => {
+    setEditingMessageIndex(null);
+    setEditingContent("");
+  };
+
+  const saveEditMessage = async (messageIndex: number) => {
+    if (!editingContent.trim()) return;
+    
+    // Update the message content locally
+    const updatedMessages = [...messages];
+    updatedMessages[messageIndex].content = editingContent.trim();
+    
+    // Remove all messages after the edited message (like Perplexity)
+    const messagesUpToEdit = updatedMessages.slice(0, messageIndex + 1);
+    setMessages(messagesUpToEdit);
+    
+    // Clear edit state
+    setEditingMessageIndex(null);
+    setEditingContent("");
+    
+    // If the edited message was a user message, regenerate response
+    if (messagesUpToEdit[messageIndex].role === "user") {
+      setLoading(true);
+      setErrorMessage(null);
+      
+      try {
+        const response = await mutation.mutateAsync({ messageContent: editingContent.trim() });
+        
+        // Add AI response
+        const aiMessage: Message = {
+          role: "assistant",
+          content: response.content,
+          timestamp: new Date()
+        };
+        
+        setMessages(prev => [...prev, aiMessage]);
+        
+        // Auto-scroll to bottom
+        setTimeout(() => {
+          scrollViewRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+        
+      } catch (err: any) {
+        const errorMsg = err?.message || "Error regenerating response. Please try again.";
+        setErrorMessage(errorMsg);
+        
+        // Add error message to chat
+        setMessages(prev => [...prev, { 
+          role: "assistant", 
+          content: `[Error] ${errorMsg}` 
+        }]);
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
+  const generateConversationTitle = async (conversationId: string, firstPrompt: string) => {
+    try {
+      // Create a smart title from the first prompt
+      let smartTitle = firstPrompt.trim();
+      
+      // Remove common question words and clean up
+      smartTitle = smartTitle
+        .replace(/^(what|how|why|when|where|who|can you|could you|please|help me|i need)/i, '')
+        .replace(/[?!.]+$/, '')
+        .trim();
+      
+      // Capitalize first letter and limit length
+      if (smartTitle.length > 0) {
+        smartTitle = smartTitle.charAt(0).toUpperCase() + smartTitle.slice(1);
+        if (smartTitle.length > 40) {
+          smartTitle = smartTitle.substring(0, 37) + '...';
+        }
+      } else {
+        smartTitle = 'New Conversation';
+      }
+      
+      // Update the conversation title
+      await updateConversationTitle(conversationId, smartTitle);
+      
+    } catch (error) {
+      console.warn('Failed to generate conversation title:', error);
+      // Don't throw - title generation failure shouldn't break the conversation
+    }
+  };
+
+  const fetchOllamaMessage = async ({ messageContent }: MutationVariables): Promise<BackendResponse> => {
+    try {
+      // Format all messages properly for the API (including conversation history)
+      const formattedMessages = messages.map(msg => ({
+        role: msg.role,
+        content: msg.content
+      }));
+      
+      // Add the new user message
+      formattedMessages.push({ role: "user", content: messageContent });
+      
+      console.log(`Sending ${formattedMessages.length} messages to backend`);
+      
+      const response = await chatbotAPI.sendMessage(
+        messageContent, 
+        currentConversation?.id, 
+        formattedMessages
+      );
+      
+      return {
+        content: response.content,
+        source: response.source,
+        conversation_id: response.conversation_id,
+        message_id: response.message_id
+      };
+    } catch (err: any) {
+      console.error("fetchOllamaMessage error:", err);
+      // Re-throw with more specific error message
+      throw new Error(err.message || "Failed to send message. Please check your connection and try again.");
+    }
+  };
+
+  const mutation = useMutation<BackendResponse, Error, MutationVariables>({
     mutationFn: fetchOllamaMessage,
+    onError: (error) => {
+      // Only set error message, don't log as it's already logged in fetchOllamaMessage
+      setErrorMessage(error.message);
+    },
+    onSuccess: (data) => {
+      setErrorMessage(null);
+      setIsOnline(true);
+      setRetryCount(0);
+    }
   });
 
   const suggestedPrompts = [
@@ -118,6 +446,7 @@ function ChatBot(): React.ReactElement {
     { id: "2", text: "Create practice questions", icon: "📘", description: "Generate quiz questions from your study materials" },
     { id: "3", text: "Summarize documents", icon: "📄", description: "Get concise summaries of lengthy texts" },
     { id: "4", text: "Explain with examples", icon: "💡", description: "Provide real-world examples for better understanding" },
+    { id: "5", text: "Extract text from images", icon: "📷", description: "Upload images to extract and analyze text content" },
   ];
 
   const handleGoBack = () => {
@@ -133,48 +462,161 @@ function ChatBot(): React.ReactElement {
   };
 
   const handleSend = async () => {
-    if (!input.trim()) return;
+    if (!input.trim() && pendingFiles.length === 0) return;
     
-    const updatedMessages: Message[] = [...messages, { role: "user", content: input }];
-    setMessages(updatedMessages);
-    setLastAttempt(updatedMessages);
+    // Check if we're online
+    if (!isOnline) {
+      Alert.alert(
+        "Connection Error", 
+        "You appear to be offline. Please check your internet connection and try again.",
+        [
+          { text: "Retry", onPress: () => loadConversations() },
+          { text: "Cancel", style: "cancel" }
+        ]
+      );
+      return;
+    }
+    
     setErrorMessage(null);
     setLoading(true);
+    
+    // Build message content
+    let messageContent = input.trim();
+    
+    // Add file attachments info
+    if (pendingFiles.length > 0) {
+      const fileList = pendingFiles.map(file => {
+        const isImage = file.mimeType?.startsWith('image/');
+        const icon = isImage ? '📷' : '📄';
+        return `${icon} ${file.name}`;
+      }).join('\n');
+      messageContent = messageContent ? `${messageContent}\n\n${fileList}` : fileList;
+    }
+    
+    // Add user message to local state immediately
+    const userMessage: Message = { 
+      role: "user", 
+      content: messageContent,
+      timestamp: new Date()
+    };
+    const updatedMessages = [...messages, userMessage];
+    setMessages(updatedMessages);
+    
+    // Clear input and pending files
     setInput("");
+    const filesToUpload = [...pendingFiles];
+    setPendingFiles([]);
+    setAttachmentMenuVisible(false);
+
+    // Auto-scroll to bottom when user sends message
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 100);
 
     try {
-      const aiReply = await mutation.mutateAsync({ updatedMessages });
-      const replyContent =
-        aiReply.source === "rag"
-          ? `${aiReply.content} (from RAG)`
-          : aiReply.content;
+      // Handle file uploads and OCR processing
+      for (const file of filesToUpload) {
+        try {
+          // If it's an image, try OCR first
+          if (file.mimeType?.startsWith('image/')) {
+            try {
+              const ocrResponse = await chatbotAPI.extractTextFromImage(file);
+              if (ocrResponse.text) {
+                // Add extracted text to message content
+                messageContent += `\n\n**Text from ${file.name}:**\n${ocrResponse.text}`;
+              }
+            } catch (ocrError) {
+              console.warn("OCR failed for image, uploading as regular file:", ocrError);
+            }
+          }
+          // Upload file regardless of OCR success/failure
+          await chatbotAPI.uploadFile(file, currentConversation?.id);
+        } catch (fileError) {
+          console.error("File upload error:", fileError);
+          // Continue with the message even if file upload fails
+        }
+      }
+      
+      const response = await mutation.mutateAsync({ messageContent });
+      
+      // Add AI response to local state
+      const aiMessage: Message = {
+        role: "assistant",
+        content: response.content,
+        timestamp: new Date()
+      };
+      
+      setMessages([...updatedMessages, aiMessage]);
+      
+      // Update current conversation if we got an ID back
+      if (response.conversation_id && !currentConversation) {
+        try {
+          const newConversation = await chatbotAPI.getConversation(response.conversation_id);
+          setCurrentConversation(newConversation);
+          await loadConversations(); // Refresh conversation list
+        } catch (convError) {
+          console.warn("Failed to load conversation details, but message was sent successfully");
+        }
+      }
 
-      setMessages((prev) => [...prev, { role: "assistant", content: replyContent }]);
+      // Generate title if this is the first AI response (conversation has 2 messages)
+      if (updatedMessages.length === 1 && response.conversation_id) {
+        try {
+          await generateConversationTitle(response.conversation_id, messageContent);
+        } catch (titleError) {
+          console.warn("Failed to generate title, but conversation continues normally");
+        }
+      }
+      
+      // Auto-scroll to bottom
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+      
     } catch (err: any) {
-      const msg = err?.message ? String(err.message) : "Error communicating with AI.";
-      setErrorMessage(msg);
-      setMessages((prev) => [...prev, { role: "assistant", content: "[Error] " + msg }]);
+      // Error already handled by mutation, just remove the message from UI if send failed
+      setMessages(messages); // Revert to original messages
+      
+      const errorMsg = err?.message || "Error communicating with AI. Please try again.";
+      
+      // Add error message to chat
+      setMessages((prev) => [...prev, { 
+        role: "assistant", 
+        content: `[Error] ${errorMsg}` 
+      }]);
+      
+      // Show alert for serious errors
+      if (errorMsg.includes("authentication") || errorMsg.includes("login")) {
+        Alert.alert(
+          "Authentication Error",
+          "Your session has expired. Please login again.",
+          [{ text: "OK" }]
+        );
+      }
     } finally {
       setLoading(false);
     }
   };
 
   const handleRetry = async () => {
-    if (!lastAttempt) return;
+    if (messages.length === 0) return;
+    
+    // Get the last user message
+    const lastUserMessage = [...messages].reverse().find(m => m.role === "user");
+    if (!lastUserMessage) return;
+    
     setErrorMessage(null);
     setLoading(true);
+    
     try {
-      const aiReply = await mutation.mutateAsync({ updatedMessages: lastAttempt });
-      const replyContent =
-        aiReply.source === "rag"
-          ? `${aiReply.content} (from RAG)`
-          : aiReply.content;
-
+      const response = await mutation.mutateAsync({ messageContent: lastUserMessage.content });
+      
+      // Remove any error messages and add new response
       setMessages((prev) => {
         const withoutError = prev.filter(
           (m) => !(m.role === "assistant" && m.content.startsWith("[Error]"))
         );
-        return [...withoutError, { role: "assistant", content: replyContent }];
+        return [...withoutError, { role: "assistant", content: response.content }];
       });
     } catch (err: any) {
       const msg = err?.message ? String(err.message) : "Error communicating with AI.";
@@ -184,63 +626,76 @@ function ChatBot(): React.ReactElement {
     }
   };
 
-  const handleFileImport = async () => {
+  const removePendingFile = (index: number) => {
+    setPendingFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleFileImport = async (type: 'file' | 'image' | 'camera') => {
     try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: "application/pdf",
-        copyToCacheDirectory: true,
-      });
+      let result;
+      
+      if (type === 'image') {
+        result = await DocumentPicker.getDocumentAsync({
+          type: "image/*",
+          copyToCacheDirectory: true,
+        });
+      } else if (type === 'camera') {
+        // For camera, we'll use the same image picker for now
+        // In a real implementation, you'd use ImagePicker.launchCameraAsync
+        result = await DocumentPicker.getDocumentAsync({
+          type: "image/*",
+          copyToCacheDirectory: true,
+        });
+      } else {
+        result = await DocumentPicker.getDocumentAsync({
+          type: "*/*",
+          copyToCacheDirectory: true,
+        });
+      }
 
       if (result.canceled) return;
 
       const file = result.assets[0];
+      setPendingFiles(prev => [...prev, file]);
+      setAttachmentMenuVisible(false);
 
-      setMessages((prev) => [
-        ...prev,
-        { role: "user", content: `📄 Uploaded PDF: ${file.name}` },
-      ]);
-
-      const formData = new FormData();
-      formData.append("file", {
-        uri: file.uri,
-        name: file.name,
-        type: file.mimeType ?? "application/pdf",
-      } as any);
-
-      await axios.post(PDF_UPLOAD_URL, formData, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-          Authorization: `Token ${token}`,
-        },
-      });
-
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: "✅ PDF uploaded successfully!" },
-      ]);
     } catch (err) {
-      console.error("PDF upload error:", err);
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: "❌ Failed to upload PDF." },
-      ]);
+      console.error("File selection error:", err);
+      Alert.alert("Error", "Failed to select file. Please try again.");
     }
   };
 
+
+
   const handleSummarize = () => {
-    setInput("Summarize the content we've discussed");
+    const lastAssistantMessage = [...messages].reverse().find(m => m.role === "assistant");
+    if (lastAssistantMessage) {
+      setInput("Please provide a summary of your previous response.");
+    } else {
+      setInput("Summarize the content we've discussed");
+    }
   };
 
   const handleExplain = () => {
-    setInput("Explain this in simpler terms");
+    const lastAssistantMessage = [...messages].reverse().find(m => m.role === "assistant");
+    if (lastAssistantMessage) {
+      setInput("Please explain your previous response in simpler terms.");
+    } else {
+      setInput("Explain this in simpler terms");
+    }
   };
 
   const handleGenerateQuiz = () => {
-    setInput("Generate quiz questions based on our conversation");
+    const lastAssistantMessage = [...messages].reverse().find(m => m.role === "assistant");
+    if (lastAssistantMessage) {
+      setInput("Generate quiz questions based on your previous response.");
+    } else {
+      setInput("Generate quiz questions based on our conversation");
+    }
   };
 
   const handleOCR = () => {
-    setInput("Extract text from the uploaded image");
+    setInput("Please extract text from the uploaded images.");
   };
 
   return (
@@ -279,15 +734,68 @@ function ChatBot(): React.ReactElement {
           >
             <MaterialIcons name="history" size={24} color="#FFFFFF" />
           </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.menuButton} 
+            onPress={() => setShowChatOptions(!showChatOptions)}
+            accessibilityLabel="Chat options"
+            accessibilityHint="Manage chat conversations"
+          >
+            <Ionicons name="ellipsis-vertical" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
         </LinearGradient>
 
-        {/* Messages */}
+        {/* Chat Options Dropdown */}
+        {showChatOptions && (
+          <View style={styles.chatOptionsContainer}>
+            <TouchableOpacity style={styles.chatOption} onPress={createNewConversation}>
+              <Ionicons name="add" size={20} color="#6B46C1" />
+              <Text style={styles.chatOptionText}>New Chat</Text>
+            </TouchableOpacity>
+            
+            {currentConversation && (
+              <>
+                <TouchableOpacity 
+                  style={styles.chatOption} 
+                  onPress={deleteCurrentConversation}
+                >
+                  <Ionicons name="trash" size={20} color="#EF4444" />
+                  <Text style={[styles.chatOptionText, { color: "#EF4444" }]}>Delete Conversation</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.chatOption} 
+                  onPress={resetCurrentConversation}
+                >
+                  <Ionicons name="refresh" size={20} color="#F59E0B" />
+                  <Text style={[styles.chatOptionText, { color: "#F59E0B" }]}>Reset Conversation</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        )}
+
         <KeyboardAvoidingView
           style={styles.keyboardAvoidingView}
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
         >
-          <ScrollView style={styles.messagesContainer}>
-            {messages.length === 1 && (
+          {/* Messages */}
+          <ScrollView 
+            ref={scrollViewRef}
+            style={styles.messagesContainer}
+            contentContainerStyle={styles.messagesContentContainer}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            onTouchStart={() => {
+              setShowChatOptions(false);
+              setAttachmentMenuVisible(false);
+            }}
+            onScrollBeginDrag={() => {
+              setAttachmentMenuVisible(false);
+            }}
+          >
+            {messages.length === 0 && (
               <View style={styles.welcomeContainer}>
                 <Text style={styles.welcomeTitle}>Welcome to Rina!</Text>
                 <Text style={styles.welcomeSubtitle}>
@@ -320,18 +828,106 @@ function ChatBot(): React.ReactElement {
                   msg.role === "user" ? styles.userMessage : styles.aiMessage,
                 ]}
               >
-                <Text
-                  style={msg.role === "user" ? styles.userMessageText : styles.aiMessageText}
-                >
-                  {msg.content}
-                </Text>
+                {editingMessageIndex === idx ? (
+                  // Edit mode
+                  <View style={styles.editMessageContainer}>
+                    <TextInput
+                      style={styles.editMessageInput}
+                      value={editingContent}
+                      onChangeText={setEditingContent}
+                      multiline
+                      autoFocus
+                      placeholder="Edit your message..."
+                      placeholderTextColor="#94A3B8"
+                    />
+                    <View style={styles.editMessageActions}>
+                      <TouchableOpacity
+                        style={styles.editCancelButton}
+                        onPress={cancelEditMessage}
+                      >
+                        <Ionicons name="close" size={16} color="#DC2626" />
+                        <Text style={styles.editCancelText}>Cancel</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.editSaveButton}
+                        onPress={() => saveEditMessage(idx)}
+                        disabled={!editingContent.trim()}
+                      >
+                        <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                        <Text style={styles.editSaveText}>Save</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : (
+                  // Normal message display
+                  <View style={styles.messageContent}>
+                    {msg.role === "user" ? (
+                      <Text
+                        style={[styles.userMessageText, { flex: 1 }]}
+                      >
+                        {msg.content}
+                      </Text>
+                    ) : (
+                      <Markdown
+                        style={{
+                          body: styles.aiMessageText,
+                          heading1: styles.markdownH1,
+                          heading2: styles.markdownH2,
+                          heading3: styles.markdownH3,
+                          strong: styles.markdownStrong,
+                          em: styles.markdownEm,
+                          bullet_list: styles.markdownList,
+                          ordered_list: styles.markdownList,
+                          list_item: styles.markdownListItem,
+                          table: styles.markdownTable,
+                          tr: styles.markdownTableRow,
+                          td: styles.markdownTableCell,
+                          th: styles.markdownTableHeader,
+                          code_inline: styles.markdownCodeInline,
+                          code_block: styles.markdownCodeBlock,
+                        }}
+                      >
+                        {msg.content}
+                      </Markdown>
+                    )}
+                    {msg.role === "user" && (
+                      <View style={styles.messageActions}>
+                        <TouchableOpacity
+                          style={styles.editButton}
+                          onPress={() => startEditMessage(idx, msg.content)}
+                          accessibilityLabel="Edit message"
+                          accessibilityHint="Edit this user message"
+                        >
+                          <Ionicons name="pencil" size={16} color="rgba(255, 255, 255, 0.8)" />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.deleteButton}
+                          onPress={() => confirmDeleteMessage(msg.id || '', idx)}
+                          accessibilityLabel="Delete message"
+                          accessibilityHint="Delete this user message"
+                        >
+                          <Ionicons name="close-circle" size={16} color="rgba(255, 255, 255, 0.8)" />
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                )}
               </View>
             ))}
 
             {loading && (
-              <View style={styles.loadingRow}>
-                <ActivityIndicator color="#6B21A8" />
-                <Text style={styles.loadingText}>Thinking…</Text>
+              <View style={styles.loadingContainer}>
+                <View style={styles.loadingBubble}>
+                  <View style={styles.loadingContent}>
+                    <ActivityIndicator color="#6B46C1" size="small" />
+                    <Text style={styles.loadingText}>Rina is thinking...</Text>
+                  </View>
+                  <View style={styles.loadingDots}>
+                    <View style={[styles.loadingDot, styles.loadingDot1]} />
+                    <View style={[styles.loadingDot, styles.loadingDot2]} />
+                    <View style={[styles.loadingDot, styles.loadingDot3]} />
+                  </View>
+                </View>
               </View>
             )}
           </ScrollView>
@@ -397,39 +993,102 @@ function ChatBot(): React.ReactElement {
 
             {/* Input Area */}
             <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.textInput}
-                value={input}
-                onChangeText={setInput}
-                placeholder="Ask me anything about your studies..."
-                placeholderTextColor="#94A3B8"
-                multiline
-                maxLength={1000}
-                accessibilityLabel="Message input"
-                accessibilityHint="Type your message to send to Rina"
-              />
-              <TouchableOpacity
-                style={styles.attachButton}
-                onPress={handleFileImport}
-                accessibilityLabel="Attach file"
-                accessibilityHint="Import and upload a document or image"
-              >
-                <Ionicons name="attach" size={24} color="#6B46C1" />
-              </TouchableOpacity>
+              {/* Pending Files Display */}
+              {pendingFiles.length > 0 && (
+                <View style={styles.pendingFilesContainer}>
+                  <ScrollView 
+                    horizontal 
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.pendingFilesScroll}
+                  >
+                    {pendingFiles.map((file, index) => (
+                      <View key={index} style={styles.pendingFileItem}>
+                        <View style={styles.pendingFileContent}>
+                          <Ionicons 
+                            name={file.mimeType?.startsWith('image/') ? 'image' : 'document'} 
+                            size={16} 
+                            color="#6B46C1" 
+                          />
+                          <Text style={styles.pendingFileName} numberOfLines={1}>
+                            {file.name}
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          style={styles.removePendingFile}
+                          onPress={() => removePendingFile(index)}
+                        >
+                          <Ionicons name="close-circle" size={16} color="#DC2626" />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
 
-              {/* Send Button */}
-              <TouchableOpacity
-                style={[
-                  styles.sendButton,
-                  input.trim() === "" && styles.sendButtonDisabled,
-                ]}
-                onPress={handleSend}
-                disabled={input.trim() === ""}
-                accessibilityLabel="Send message"
-                accessibilityHint="Send your message to Rina"
-              >
-                <Ionicons name="send" size={20} color="#fff" />
-              </TouchableOpacity>
+              <View style={styles.inputRow}>
+                <View style={styles.inputWrapper}>
+                  <TextInput
+                    style={styles.textInput}
+                    value={input}
+                    onChangeText={setInput}
+                    placeholder="Ask me anything about your studies..."
+                    placeholderTextColor="#94A3B8"
+                    multiline
+                    maxLength={1000}
+                    accessibilityLabel="Message input"
+                    accessibilityHint="Type your message to send to Rina"
+                  />
+                  <TouchableOpacity
+                    style={styles.attachButton}
+                    onPress={() => setAttachmentMenuVisible(!attachmentMenuVisible)}
+                    accessibilityLabel="Attach file"
+                    accessibilityHint="Import and upload a document or image"
+                  >
+                    <Ionicons name="attach" size={24} color="#6B46C1" />
+                  </TouchableOpacity>
+
+                  {/* Attachment Menu */}
+                  {attachmentMenuVisible && (
+                    <View style={styles.attachmentMenu}>
+                      <TouchableOpacity
+                        style={styles.attachmentOption}
+                        onPress={() => handleFileImport('file')}
+                      >
+                        <Ionicons name="document" size={20} color="#6B46C1" />
+                        <Text style={styles.attachmentOptionText}>Document</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.attachmentOption}
+                        onPress={() => handleFileImport('image')}
+                      >
+                        <Ionicons name="image" size={20} color="#6B46C1" />
+                        <Text style={styles.attachmentOptionText}>Image</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.attachmentOption}
+                        onPress={() => handleFileImport('camera')}
+                      >
+                        <Ionicons name="camera" size={20} color="#6B46C1" />
+                        <Text style={styles.attachmentOptionText}>Camera</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+
+                {/* Send Button */}
+                <TouchableOpacity
+                  style={[
+                    styles.sendButton,
+                    (input.trim() === "" && pendingFiles.length === 0) && styles.sendButtonDisabled,
+                  ]}
+                  onPress={handleSend}
+                  disabled={input.trim() === "" && pendingFiles.length === 0}
+                  accessibilityLabel="Send message"
+                  accessibilityHint="Send your message to Rina"
+                >
+                  <Ionicons name="send" size={20} color="#fff" />
+                </TouchableOpacity>
+              </View>
             </View>
           </SafeAreaView>
         </KeyboardAvoidingView>
@@ -441,12 +1100,87 @@ function ChatBot(): React.ReactElement {
           onRequestClose={() => setShowChatHistory(false)}
         >
           <SafeAreaView style={styles.chatHistoryContainer}>
-            <Text style={styles.chatHistoryTitle}>Chat History</Text>
+            <View style={styles.chatHistoryHeader}>
+              <Text style={styles.chatHistoryTitle}>Chat History</Text>
+              <TouchableOpacity 
+                style={styles.closeButton} 
+                onPress={() => setShowChatHistory(false)}
+              >
+                <Ionicons name="close" size={24} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView style={styles.chatHistoryList}>
+              {conversations.map((conversation) => (
+                <View key={conversation.id} style={styles.chatSessionItem}>
+                  <TouchableOpacity 
+                    style={styles.chatSessionContent}
+                    onPress={() => loadConversation(conversation.id)}
+                  >
+                    <Text style={styles.chatSessionTitle}>{conversation.title}</Text>
+                    <Text style={styles.chatSessionLastMessage} numberOfLines={2}>
+                      {conversation.last_message?.content || "No messages yet"}
+                    </Text>
+                    <Text style={styles.chatSessionTime}>
+                      {new Date(conversation.updated_at).toLocaleDateString()} • {conversation.message_count} messages
+                    </Text>
+                  </TouchableOpacity>
+                  
+                  <View style={styles.chatSessionActions}>
+                    <TouchableOpacity 
+                      style={styles.actionButtonSmall}
+                      onPress={() => {
+                        Alert.prompt(
+                          "Edit Title",
+                          "Enter new title:",
+                          [
+                            { text: "Cancel", style: "cancel" },
+                            { 
+                              text: "Save", 
+                              onPress: (text) => text && updateConversationTitle(conversation.id, text)
+                            }
+                          ],
+                          "plain-text",
+                          conversation.title
+                        );
+                      }}
+                    >
+                      <Ionicons name="pencil" size={16} color="#6B46C1" />
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity 
+                      style={styles.actionButtonSmall}
+                      onPress={() => {
+                        Alert.alert(
+                          "Delete Conversation",
+                          "Are you sure you want to delete this conversation?",
+                          [
+                            { text: "Cancel", style: "cancel" },
+                            { text: "Delete", style: "destructive", onPress: () => deleteConversation(conversation.id) }
+                          ]
+                        );
+                      }}
+                    >
+                      <Ionicons name="trash" size={16} color="#DC2626" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+              
+              {conversations.length === 0 && (
+                <View style={styles.emptyChatHistory}>
+                  <Text style={styles.emptyChatText}>No chat history yet</Text>
+                  <Text style={styles.emptyChatSubtext}>Start a conversation to see your chats here</Text>
+                </View>
+              )}
+            </ScrollView>
+            
             <TouchableOpacity 
-              style={styles.closeButton} 
-              onPress={() => setShowChatHistory(false)}
+              style={styles.newChatButton} 
+              onPress={createNewConversation}
             >
-              <Text style={styles.closeButtonText}>Close</Text>
+              <Ionicons name="add" size={24} color="#FFFFFF" />
+              <Text style={styles.newChatButtonText}>New Chat</Text>
             </TouchableOpacity>
           </SafeAreaView>
         </Modal>
@@ -468,10 +1202,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
     flexDirection: "row",
     alignItems: "center",
     padding: 16,
@@ -528,9 +1258,8 @@ const styles = StyleSheet.create({
   },
   messagesContainer: {
     flex: 1,
-    padding: 16,
-    paddingTop: 120, // Account for header
-    paddingBottom: 20,
+    paddingHorizontal: 16,
+    paddingTop: 16,
   },
   messageBubble: {
     padding: 16,
@@ -574,43 +1303,200 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     fontSize: 16,
   },
-  loadingRow: {
+  messageContent: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    width: "100%",
+  },
+  messageActions: {
     flexDirection: "row",
     alignItems: "center",
+    marginLeft: 8,
+  },
+  editButton: {
+    marginRight: 4,
+    padding: 4,
+    borderRadius: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    minWidth: 24,
+    minHeight: 24,
+    alignItems: "center",
     justifyContent: "center",
+  },
+  deleteButton: {
+    padding: 4,
+    borderRadius: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    minWidth: 24,
+    minHeight: 24,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  editMessageContainer: {
+    width: "100%",
+  },
+  editMessageInput: {
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.3)",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 16,
+    color: "#FFFFFF",
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    minHeight: 40,
+    maxHeight: 120,
+  },
+  editMessageActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    marginTop: 12,
+    gap: 8,
+  },
+  editCancelButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: "rgba(220, 38, 38, 0.2)",
+    borderWidth: 1,
+    borderColor: "rgba(220, 38, 38, 0.4)",
+  },
+  editCancelText: {
+    color: "#DC2626",
+    fontSize: 12,
+    fontWeight: "600",
+    marginLeft: 4,
+  },
+  editSaveButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: "rgba(34, 197, 94, 0.8)",
+  },
+  editSaveText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "600",
+    marginLeft: 4,
+  },
+  loadingContainer: {
+    paddingHorizontal: 20,
     paddingVertical: 16,
   },
+  loadingBubble: {
+    backgroundColor: "#FFFFFF",
+    alignSelf: "flex-start",
+    borderRadius: 20,
+    borderBottomLeftRadius: 8,
+    padding: 16,
+    maxWidth: "85%",
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  loadingContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+  },
   loadingText: {
-    color: "#666",
+    color: "#64748B",
     fontSize: 14,
     fontStyle: "italic",
     marginLeft: 8,
   },
-  errorBanner: {
-    backgroundColor: "#FEE2E2",
-    padding: 12,
-    marginHorizontal: 16,
-    borderRadius: 8,
+  loadingDots: {
     flexDirection: "row",
+    justifyContent: "center",
     alignItems: "center",
-    justifyContent: "space-between",
+    gap: 4,
+  },
+  loadingDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#CBD5E1",
+  },
+  loadingDot1: {
+    opacity: 0.4,
+  },
+  loadingDot2: {
+    opacity: 0.7,
+  },
+  loadingDot3: {
+    opacity: 1,
+  },
+  errorContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  errorBanner: {
+    backgroundColor: "#FEF2F2",
+    borderLeftWidth: 4,
+    borderLeftColor: "#DC2626",
+    borderRadius: 8,
+    padding: 16,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    shadowColor: "#DC2626",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  errorIcon: {
+    marginRight: 12,
+    marginTop: 2,
+  },
+  errorContent: {
+    flex: 1,
+  },
+  errorTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#DC2626",
+    marginBottom: 4,
   },
   errorText: {
-    color: "#DC2626",
-    flex: 1,
+    color: "#991B1B",
     fontSize: 14,
+    lineHeight: 18,
+    marginBottom: 4,
+  },
+  errorHint: {
+    color: "#7F1D1D",
+    fontSize: 12,
+    fontStyle: "italic",
+    lineHeight: 16,
   },
   retryButton: {
     backgroundColor: "#DC2626",
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    marginLeft: 8,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginLeft: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    shadowColor: "#DC2626",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   retryText: {
     color: "#FFFFFF",
     fontSize: 12,
-    fontWeight: "bold",
+    fontWeight: "600",
+    marginLeft: 4,
   },
   actionsContainer: {
     backgroundColor: "#FFFFFF",
@@ -650,10 +1536,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   inputContainer: {
-    flexDirection: "row",
-    padding: 16,
     backgroundColor: "#FFFFFF",
-    alignItems: "flex-end",
     borderTopWidth: 1,
     borderTopColor: "#E2E8F0",
     shadowColor: "#1E293B",
@@ -665,13 +1548,67 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 8,
   },
-  textInput: {
+  touchOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 999,
+  },
+  pendingFilesContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+  pendingFilesScroll: {
+    maxHeight: 60,
+  },
+  pendingFileItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F8FAFC",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    maxWidth: 150,
+  },
+  pendingFileContent: {
+    flexDirection: "row",
+    alignItems: "center",
     flex: 1,
+  },
+  pendingFileName: {
+    fontSize: 12,
+    color: "#1E293B",
+    marginLeft: 4,
+    flex: 1,
+  },
+  removePendingFile: {
+    marginLeft: 4,
+    padding: 2,
+  },
+  inputRow: {
+    flexDirection: "row",
+    padding: 16,
+    alignItems: "flex-end",
+    gap: 12,
+  },
+  inputWrapper: {
+    flex: 1,
+    position: "relative",
+  },
+  textInput: {
     borderWidth: 2,
     borderColor: "#E2E8F0",
     borderRadius: 25,
     paddingHorizontal: 20,
     paddingVertical: 14,
+    paddingRight: 56, // Space for attachment button
     maxHeight: 120,
     fontSize: 16,
     backgroundColor: "#F8FAFC",
@@ -679,21 +1616,53 @@ const styles = StyleSheet.create({
     color: "#1E293B",
   },
   attachButton: {
-    marginLeft: 12,
-    padding: 12,
-    borderRadius: 25,
+    position: "absolute",
+    right: 8,
+    bottom: 8,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: "#F8FAFC",
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: "#E2E8F0",
-    minWidth: 48,
     alignItems: "center",
     justifyContent: "center",
+  },
+  attachmentMenu: {
+    position: "absolute",
+    bottom: 50,
+    right: 0,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+    zIndex: 1000,
+    minWidth: 140,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    paddingVertical: 4,
+  },
+  attachmentOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 0.5,
+    borderBottomColor: "#F1F5F9",
+  },
+  attachmentOptionText: {
+    marginLeft: 10,
+    fontSize: 14,
+    color: "#1E293B",
+    fontWeight: "500",
   },
   sendButton: {
     backgroundColor: "#6B46C1",
     borderRadius: 25,
     padding: 12,
-    marginLeft: 8,
     minWidth: 48,
     alignItems: "center",
     justifyContent: "center",
@@ -779,21 +1748,25 @@ const styles = StyleSheet.create({
   // Chat History Modal
   chatHistoryContainer: {
     flex: 1,
-    padding: 20,
     backgroundColor: "#F8FAFC",
+  },
+  chatHistoryHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 20,
+    backgroundColor: "#6B46C1",
   },
   chatHistoryTitle: {
     fontSize: 24,
     fontWeight: "bold",
-    color: "#1E293B",
-    marginBottom: 20,
+    color: "#FFFFFF",
   },
   closeButton: {
-    backgroundColor: "#6B46C1",
-    padding: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    padding: 8,
     borderRadius: 8,
     alignItems: "center",
-    marginTop: 20,
   },
   closeButtonText: {
     color: "#FFFFFF",
@@ -801,6 +1774,207 @@ const styles = StyleSheet.create({
   },
   safeAreaBottom: {
     backgroundColor: "#ffffffff",
+  },
+
+  // Chat Options Dropdown Styles
+  chatOptionsContainer: {
+    position: "absolute",
+    top: 100,
+    right: 16,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+    zIndex: 1000,
+    minWidth: 200,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    paddingVertical: 8,
+  },
+  chatOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 0.5,
+    borderBottomColor: "#F1F5F9",
+  },
+  chatOptionText: {
+    marginLeft: 8,
+    fontSize: 14,
+    color: "#1E293B",
+    fontWeight: "500",
+  },
+
+  // Messages Container
+  messagesContentContainer: {
+    paddingBottom: 20,
+  },
+
+  // Markdown Styles
+  markdownH1: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: "#1E293B",
+    marginVertical: 8,
+  },
+  markdownH2: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#1E293B",
+    marginVertical: 6,
+  },
+  markdownH3: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#1E293B",
+    marginVertical: 4,
+  },
+  markdownStrong: {
+    fontWeight: "bold",
+    color: "#1E293B",
+  },
+  markdownEm: {
+    fontStyle: "italic",
+    color: "#1E293B",
+  },
+  markdownList: {
+    marginVertical: 4,
+  },
+  markdownListItem: {
+    marginVertical: 2,
+    color: "#1E293B",
+  },
+  markdownTable: {
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 8,
+    marginVertical: 8,
+  },
+  markdownTableRow: {
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+  markdownTableCell: {
+    padding: 8,
+    borderRightWidth: 1,
+    borderRightColor: "#F1F5F9",
+  },
+  markdownTableHeader: {
+    padding: 8,
+    backgroundColor: "#F8FAFC",
+    fontWeight: "600",
+    borderRightWidth: 1,
+    borderRightColor: "#E2E8F0",
+  },
+  markdownCodeInline: {
+    backgroundColor: "#F1F5F9",
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderRadius: 4,
+    fontFamily: "monospace",
+    fontSize: 14,
+  },
+  markdownCodeBlock: {
+    backgroundColor: "#F8FAFC",
+    padding: 12,
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: "#6B46C1",
+    fontFamily: "monospace",
+    fontSize: 14,
+    marginVertical: 8,
+  },
+
+  // Chat History Modal Styles
+  chatHistoryList: {
+    flex: 1,
+    paddingHorizontal: 16,
+  },
+  chatSessionItem: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    marginVertical: 8,
+    padding: 16,
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
+  },
+  chatSessionContent: {
+    flex: 1,
+  },
+  chatSessionTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#1E293B",
+    marginBottom: 4,
+  },
+  chatSessionLastMessage: {
+    fontSize: 14,
+    color: "#64748B",
+    marginBottom: 8,
+    lineHeight: 20,
+  },
+  chatSessionTime: {
+    fontSize: 12,
+    color: "#94A3B8",
+  },
+  chatSessionActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    marginTop: 12,
+    gap: 8,
+  },
+  actionButtonSmall: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  emptyChatHistory: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 60,
+  },
+  emptyChatText: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#64748B",
+    marginBottom: 8,
+  },
+  emptyChatSubtext: {
+    fontSize: 14,
+    color: "#94A3B8",
+    textAlign: "center",
+  },
+  newChatButton: {
+    backgroundColor: "#6B46C1",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+    margin: 16,
+    borderRadius: 12,
+    shadowColor: "#6B46C1",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  newChatButtonText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "600",
+    marginLeft: 8,
   },
 });
 

@@ -105,7 +105,8 @@ INSTALLED_APPS = [
     'notifications',
     'users',
     'logs',
-    'scheduler', 
+    'scheduler',
+    'usage_tracking',
 ]
 
 

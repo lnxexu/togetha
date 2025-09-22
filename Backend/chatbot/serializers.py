@@ -1,15 +1,25 @@
 from rest_framework import serializers
-from .models import Conversation, Message, ChatbotSetting
+from .models import Conversation, Message, ChatbotSetting, ConversationFile
+
+class ConversationFileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ConversationFile
+        fields = ['id', 'file_name', 'file_type', 'file_size', 'is_processed', 
+                  'processing_status', 'created_at']
+        read_only_fields = ['id', 'created_at']
 
 class MessageSerializer(serializers.ModelSerializer):
+    attached_files = ConversationFileSerializer(many=True, read_only=True)
+    
     class Meta:
         model = Message
         fields = ['id', 'content', 'message_type', 'created_at', 'model_used', 
-                  'tokens_used', 'was_helpful', 'feedback']
+                  'tokens_used', 'was_helpful', 'feedback', 'attached_files']
         read_only_fields = ['id', 'created_at']
 
 class ConversationSerializer(serializers.ModelSerializer):
     messages = MessageSerializer(many=True, read_only=True)
+    attached_files = ConversationFileSerializer(many=True, read_only=True)
     message_count = serializers.SerializerMethodField()
     last_message = serializers.SerializerMethodField()
     
@@ -17,7 +27,7 @@ class ConversationSerializer(serializers.ModelSerializer):
         model = Conversation
         fields = ['id', 'title', 'created_at', 'updated_at', 
                   'is_archived', 'is_pinned', 'icon', 'summary',
-                  'messages', 'message_count', 'last_message']
+                  'messages', 'attached_files', 'message_count', 'last_message']
         read_only_fields = ['id', 'created_at', 'updated_at']
     
     def get_message_count(self, obj):

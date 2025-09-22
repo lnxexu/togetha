@@ -1,5 +1,6 @@
 from functools import wraps
-from rest_framework.decorators import api_view, authentication_classes, permission_classes, parser_classes
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.decorators import parser_classes as drf_parser_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.authentication import TokenAuthentication, SessionAuthentication
 from rest_framework.response import Response
@@ -18,3 +19,6 @@ def api_auth_required(methods=None):
             return view_func(request, *args, **kwargs)
         return wrapped_view
     return decorator
+
+# Expose parser_classes decorator for use in other modules
+parser_classes = drf_parser_classes
