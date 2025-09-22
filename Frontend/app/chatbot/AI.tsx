@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
-  SafeAreaView,
   ScrollView,
   StatusBar,
   Text,
@@ -14,6 +13,7 @@ import {
   Platform,
   Alert,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useMutation, QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -694,10 +694,14 @@ function ChatBot(): React.ReactElement {
     }
   };
 
+  const handleOCR = () => {
+    setInput("Please extract text from the uploaded images.");
+  };
+
   return (
     <>
+    <View style={styles.rootContainer}>
       <StatusBar barStyle="light-content" backgroundColor="#A855F7" />
-      <SafeAreaView style={styles.container}>
         {/* Header */}
       <LinearGradient
         colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
@@ -928,31 +932,17 @@ function ChatBot(): React.ReactElement {
             )}
           </ScrollView>
 
-          {errorMessage && (
-            <View style={styles.errorContainer}>
+          <SafeAreaView edges={["bottom"]} style={styles.safeAreaBottom}>
+            {errorMessage && (
               <View style={styles.errorBanner}>
-                <View style={styles.errorIcon}>
-                  <Ionicons name="alert-circle" size={20} color="#DC2626" />
-                </View>
-                <View style={styles.errorContent}>
-                  <Text style={styles.errorTitle}>Connection Issue</Text>
-                  <Text style={styles.errorText}>{errorMessage}</Text>
-                  <Text style={styles.errorHint}>
-                    {errorMessage.includes("authentication") 
-                      ? "Please check your login credentials" 
-                      : "Check your internet connection and try again"}
-                  </Text>
-                </View>
+                <Text style={styles.errorText}>{errorMessage}</Text>
                 <TouchableOpacity onPress={handleRetry} style={styles.retryButton}>
-                  <Ionicons name="refresh" size={16} color="#FFFFFF" />
                   <Text style={styles.retryText}>Retry</Text>
                 </TouchableOpacity>
               </View>
-            </View>
-          )}
+            )}
 
-          {/* Action Buttons */}
-          {messages.length > 0 && (
+            {/* Action Buttons */}
             <View style={styles.actionsContainer}>
               <ScrollView
                 horizontal
@@ -988,46 +978,36 @@ function ChatBot(): React.ReactElement {
                   <Ionicons name="help-circle" size={16} color="#6B46C1" />
                   <Text style={styles.actionButtonText}>Generate Quiz</Text>
                 </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.actionButton} 
+                  onPress={handleOCR}
+                  accessibilityLabel="Extract text"
+                  accessibilityHint="Extract text from uploaded images"
+                >
+                  <Ionicons name="scan" size={16} color="#6B46C1" />
+                  <Text style={styles.actionButtonText}>Extract Text</Text>
+                </TouchableOpacity>
               </ScrollView>
             </View>
-          )}
 
-          {/* Input Area */}
-          <View style={styles.inputContainer}>
-            {/* Touch overlay for dismissing attachment menu */}
-            {attachmentMenuVisible && (
-              <TouchableOpacity
-                style={styles.touchOverlay}
-                activeOpacity={1}
-                onPress={() => setAttachmentMenuVisible(false)}
-              />
-            )}
-            
-            {/* Pending Files Display */}
-            {pendingFiles.length > 0 && (
-              <View style={styles.pendingFilesContainer}>
-                <ScrollView 
-                  horizontal 
-                  showsHorizontalScrollIndicator={false}
-                  style={styles.pendingFilesScroll}
-                >
-                  {pendingFiles.map((file, index) => {
-                    const isImage = file.mimeType?.startsWith('image/');
-                    return (
-                      <TouchableOpacity
-                        key={`file-${index}`}
-                        style={styles.pendingFileItem}
-                        onLongPress={() => {
-                          setPreviewFile(file);
-                          setShowFilePreview(true);
-                        }}
-                        delayLongPress={500}
-                      >
+            {/* Input Area */}
+            <View style={styles.inputContainer}>
+              {/* Pending Files Display */}
+              {pendingFiles.length > 0 && (
+                <View style={styles.pendingFilesContainer}>
+                  <ScrollView 
+                    horizontal 
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.pendingFilesScroll}
+                  >
+                    {pendingFiles.map((file, index) => (
+                      <View key={index} style={styles.pendingFileItem}>
                         <View style={styles.pendingFileContent}>
                           <Ionicons 
-                            name={isImage ? "image" : "document"} 
+                            name={file.mimeType?.startsWith('image/') ? 'image' : 'document'} 
                             size={16} 
-                            color={"#6B46C1"} 
+                            color="#6B46C1" 
                           />
                           <Text style={styles.pendingFileName} numberOfLines={1}>
                             {file.name}
@@ -1036,110 +1016,81 @@ function ChatBot(): React.ReactElement {
                         <TouchableOpacity
                           style={styles.removePendingFile}
                           onPress={() => removePendingFile(index)}
-                          accessibilityLabel={`Remove ${file.name}`}
                         >
-                          <Ionicons name="close" size={14} color="#64748B" />
+                          <Ionicons name="close-circle" size={16} color="#DC2626" />
                         </TouchableOpacity>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-              </View>
-            )}
-            
-            <View style={styles.inputRow}>
-              <View style={styles.inputWrapper}>
-                <TextInput
-                  style={styles.textInput}
-                  value={input}
-                  onChangeText={setInput}
-                  placeholder="Ask me anything about your studies..."
-                  placeholderTextColor="#94A3B8"
-                  multiline
-                  maxLength={1000}
-                  textAlignVertical="top"
-                  returnKeyType="send"
-                  blurOnSubmit={false}
-                  onSubmitEditing={() => {
-                    if (input.trim() || pendingFiles.length > 0) {
-                      handleSend();
-                    }
-                  }}
-                  onFocus={() => {
-                    setAttachmentMenuVisible(false);
-                    // Auto-scroll to bottom when input is focused
-                    setTimeout(() => {
-                      scrollViewRef.current?.scrollToEnd({ animated: true });
-                    }, 300);
-                  }}
-                  accessibilityLabel="Message input"
-                  accessibilityHint="Type your message to send to Rina, or press send when done"
-                />
-                
-                {/* Single Attachment Button */}
-                <TouchableOpacity
-                  style={styles.attachButton}
-                  onPress={() => setAttachmentMenuVisible(!attachmentMenuVisible)}
-                  accessibilityLabel="Attachment options"
-                  accessibilityHint="Choose file, image, or camera options"
-                  activeOpacity={0.7}
-                >
-                  <Ionicons 
-                    name={attachmentMenuVisible ? "close" : "add"} 
-                    size={20} 
-                    color="#6B46C1" 
-                  />
-                </TouchableOpacity>
-                
-                {/* Attachment Menu */}
-                {attachmentMenuVisible && (
-                  <View style={styles.attachmentMenu}>
-                    <TouchableOpacity
-                      style={styles.attachmentOption}
-                      onPress={() => handleFileImport('file')}
-                      activeOpacity={0.7}
-                    >
-                      <Ionicons name="document" size={20} color="#6B46C1" />
-                      <Text style={styles.attachmentOptionText}>File</Text>
-                    </TouchableOpacity>
-                    
-                    <TouchableOpacity
-                      style={styles.attachmentOption}
-                      onPress={() => handleFileImport('image')}
-                      activeOpacity={0.7}
-                    >
-                      <Ionicons name="image" size={20} color="#6B46C1" />
-                      <Text style={styles.attachmentOptionText}>Photo</Text>
-                    </TouchableOpacity>
-                    
-                    <TouchableOpacity
-                      style={styles.attachmentOption}
-                      onPress={() => handleFileImport('camera')}
-                      activeOpacity={0.7}
-                    >
-                      <Ionicons name="camera" size={20} color="#6B46C1" />
-                      <Text style={styles.attachmentOptionText}>Camera</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </View>
+                      </View>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
 
-              {/* Send Button */}
-              <TouchableOpacity
-                style={[
-                  styles.sendButton,
-                  (!input.trim() && pendingFiles.length === 0) && styles.sendButtonDisabled,
-                ]}
-                onPress={handleSend}
-                disabled={!input.trim() && pendingFiles.length === 0}
-                accessibilityLabel="Send message"
-                accessibilityHint="Send your message to Rina"
-                activeOpacity={0.8}
-              >
-                <Ionicons name="send" size={20} color="#fff" />
-              </TouchableOpacity>
+              <View style={styles.inputRow}>
+                <View style={styles.inputWrapper}>
+                  <TextInput
+                    style={styles.textInput}
+                    value={input}
+                    onChangeText={setInput}
+                    placeholder="Ask me anything about your studies..."
+                    placeholderTextColor="#94A3B8"
+                    multiline
+                    maxLength={1000}
+                    accessibilityLabel="Message input"
+                    accessibilityHint="Type your message to send to Rina"
+                  />
+                  <TouchableOpacity
+                    style={styles.attachButton}
+                    onPress={() => setAttachmentMenuVisible(!attachmentMenuVisible)}
+                    accessibilityLabel="Attach file"
+                    accessibilityHint="Import and upload a document or image"
+                  >
+                    <Ionicons name="attach" size={24} color="#6B46C1" />
+                  </TouchableOpacity>
+
+                  {/* Attachment Menu */}
+                  {attachmentMenuVisible && (
+                    <View style={styles.attachmentMenu}>
+                      <TouchableOpacity
+                        style={styles.attachmentOption}
+                        onPress={() => handleFileImport('file')}
+                      >
+                        <Ionicons name="document" size={20} color="#6B46C1" />
+                        <Text style={styles.attachmentOptionText}>Document</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.attachmentOption}
+                        onPress={() => handleFileImport('image')}
+                      >
+                        <Ionicons name="image" size={20} color="#6B46C1" />
+                        <Text style={styles.attachmentOptionText}>Image</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.attachmentOption}
+                        onPress={() => handleFileImport('camera')}
+                      >
+                        <Ionicons name="camera" size={20} color="#6B46C1" />
+                        <Text style={styles.attachmentOptionText}>Camera</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+
+                {/* Send Button */}
+                <TouchableOpacity
+                  style={[
+                    styles.sendButton,
+                    (input.trim() === "" && pendingFiles.length === 0) && styles.sendButtonDisabled,
+                  ]}
+                  onPress={handleSend}
+                  disabled={input.trim() === "" && pendingFiles.length === 0}
+                  accessibilityLabel="Send message"
+                  accessibilityHint="Send your message to Rina"
+                >
+                  <Ionicons name="send" size={20} color="#fff" />
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
+          </SafeAreaView>
         </KeyboardAvoidingView>
 
         {/* Chat History Modal */}
@@ -1233,78 +1184,16 @@ function ChatBot(): React.ReactElement {
             </TouchableOpacity>
           </SafeAreaView>
         </Modal>
-        
-        {/* File Preview Modal */}
-        <Modal
-          visible={showFilePreview}
-          transparent={true}
-          animationType="fade"
-          onRequestClose={() => setShowFilePreview(false)}
-        >
-          <View style={styles.filePreviewModalContainer}>
-            <View style={styles.filePreviewModal}>
-              <View style={styles.filePreviewHeader}>
-                <Text style={styles.filePreviewTitle}>File Preview</Text>
-                <TouchableOpacity
-                  style={styles.filePreviewCloseButton}
-                  onPress={() => setShowFilePreview(false)}
-                >
-                  <Ionicons name="close" size={24} color="#666" />
-                </TouchableOpacity>
-              </View>
-              
-              {previewFile && (
-                <View style={styles.filePreviewContent}>
-                  <View style={styles.filePreviewIconContainer}>
-                    <Ionicons 
-                      name={previewFile.mimeType?.startsWith('image/') ? "image" : "document"} 
-                      size={48} 
-                      color="#6B46C1" 
-                    />
-                  </View>
-                  
-                  <Text style={styles.filePreviewName}>{previewFile.name}</Text>
-                  
-                  <View style={styles.filePreviewDetails}>
-                    <Text style={styles.filePreviewDetailText}>
-                      <Text style={styles.filePreviewDetailLabel}>Type: </Text>
-                      {previewFile.mimeType || 'Unknown'}
-                    </Text>
-                    
-                    {previewFile.size && (
-                      <Text style={styles.filePreviewDetailText}>
-                        <Text style={styles.filePreviewDetailLabel}>Size: </Text>
-                        {(previewFile.size / 1024 / 1024).toFixed(2)} MB
-                      </Text>
-                    )}
-                    
-                    {previewFile.uri && (
-                      <Text style={styles.filePreviewDetailText}>
-                        <Text style={styles.filePreviewDetailLabel}>Path: </Text>
-                        {previewFile.uri.length > 50 ? `...${previewFile.uri.slice(-50)}` : previewFile.uri}
-                      </Text>
-                    )}
-                  </View>
-                  
-                  <View style={styles.filePreviewActions}>
-                    <TouchableOpacity
-                      style={styles.filePreviewActionButton}
-                      onPress={() => setShowFilePreview(false)}
-                    >
-                      <Text style={styles.filePreviewActionText}>Close</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
-            </View>
-          </View>
-        </Modal>
-      </SafeAreaView>
+      </View>
     </>
   );
 }
 
 const styles = StyleSheet.create({
+    rootContainer: {
+    flex: 1,
+    backgroundColor: "#ffffffff",
+  },
   container: {
     flex: 1,
     backgroundColor: "#F8FAFC",
@@ -1316,7 +1205,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     padding: 16,
-    paddingTop: 35,
+    paddingTop: 40,
     borderBottomLeftRadius: 25,
     borderBottomRightRadius: 25,
     shadowColor: "#1E293B",
@@ -1883,27 +1772,143 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontWeight: "bold",
   },
+  safeAreaBottom: {
+    backgroundColor: "#ffffffff",
+  },
+
+  // Chat Options Dropdown Styles
+  chatOptionsContainer: {
+    position: "absolute",
+    top: 100,
+    right: 16,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+    zIndex: 1000,
+    minWidth: 200,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    paddingVertical: 8,
+  },
+  chatOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 0.5,
+    borderBottomColor: "#F1F5F9",
+  },
+  chatOptionText: {
+    marginLeft: 8,
+    fontSize: 14,
+    color: "#1E293B",
+    fontWeight: "500",
+  },
+
+  // Messages Container
+  messagesContentContainer: {
+    paddingBottom: 20,
+  },
+
+  // Markdown Styles
+  markdownH1: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: "#1E293B",
+    marginVertical: 8,
+  },
+  markdownH2: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#1E293B",
+    marginVertical: 6,
+  },
+  markdownH3: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#1E293B",
+    marginVertical: 4,
+  },
+  markdownStrong: {
+    fontWeight: "bold",
+    color: "#1E293B",
+  },
+  markdownEm: {
+    fontStyle: "italic",
+    color: "#1E293B",
+  },
+  markdownList: {
+    marginVertical: 4,
+  },
+  markdownListItem: {
+    marginVertical: 2,
+    color: "#1E293B",
+  },
+  markdownTable: {
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 8,
+    marginVertical: 8,
+  },
+  markdownTableRow: {
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+  markdownTableCell: {
+    padding: 8,
+    borderRightWidth: 1,
+    borderRightColor: "#F1F5F9",
+  },
+  markdownTableHeader: {
+    padding: 8,
+    backgroundColor: "#F8FAFC",
+    fontWeight: "600",
+    borderRightWidth: 1,
+    borderRightColor: "#E2E8F0",
+  },
+  markdownCodeInline: {
+    backgroundColor: "#F1F5F9",
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderRadius: 4,
+    fontFamily: "monospace",
+    fontSize: 14,
+  },
+  markdownCodeBlock: {
+    backgroundColor: "#F8FAFC",
+    padding: 12,
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: "#6B46C1",
+    fontFamily: "monospace",
+    fontSize: 14,
+    marginVertical: 8,
+  },
+
+  // Chat History Modal Styles
   chatHistoryList: {
     flex: 1,
-    padding: 16,
+    paddingHorizontal: 16,
   },
   chatSessionItem: {
     backgroundColor: "#FFFFFF",
-    marginBottom: 12,
     borderRadius: 12,
+    marginVertical: 8,
     padding: 16,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
     shadowColor: "#1E293B",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
   },
   chatSessionContent: {
     flex: 1,
-    marginRight: 12,
   },
   chatSessionTitle: {
     fontSize: 16,
@@ -1914,8 +1919,8 @@ const styles = StyleSheet.create({
   chatSessionLastMessage: {
     fontSize: 14,
     color: "#64748B",
-    marginBottom: 4,
-    lineHeight: 18,
+    marginBottom: 8,
+    lineHeight: 20,
   },
   chatSessionTime: {
     fontSize: 12,
@@ -1923,6 +1928,8 @@ const styles = StyleSheet.create({
   },
   chatSessionActions: {
     flexDirection: "row",
+    justifyContent: "flex-end",
+    marginTop: 12,
     gap: 8,
   },
   actionButtonSmall: {
@@ -1948,7 +1955,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#94A3B8",
     textAlign: "center",
-    lineHeight: 20,
   },
   newChatButton: {
     backgroundColor: "#6B46C1",
@@ -1959,217 +1965,16 @@ const styles = StyleSheet.create({
     margin: 16,
     borderRadius: 12,
     shadowColor: "#6B46C1",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   newChatButtonText: {
     color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "600",
     marginLeft: 8,
-  },
-  
-  // Chat Options Dropdown
-  chatOptionsContainer: {
-    position: "absolute",
-    top: 80,
-    right: 16,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
-    zIndex: 1000,
-    minWidth: 150,
-  },
-  chatOption: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F1F5F9",
-  },
-  chatOptionText: {
-    marginLeft: 8,
-    fontSize: 14,
-    color: "#1E293B",
-    fontWeight: "500",
-  },
-  
-  // Additional styles for better scrolling
-  messagesContentContainer: {
-    flexGrow: 1,
-    paddingBottom: 20,
-  },
-  
-  // Markdown styles for AI responses
-  markdownH1: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#1E293B",
-    marginVertical: 8,
-  },
-  markdownH2: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#1E293B",
-    marginVertical: 6,
-  },
-  markdownH3: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#1E293B",
-    marginVertical: 4,
-  },
-  markdownStrong: {
-    fontWeight: "bold",
-    color: "#1E293B",
-  },
-  markdownEm: {
-    fontStyle: "italic",
-    color: "#475569",
-  },
-  markdownList: {
-    marginVertical: 4,
-  },
-  markdownListItem: {
-    marginVertical: 2,
-    color: "#1E293B",
-  },
-  markdownTable: {
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    borderRadius: 8,
-    marginVertical: 8,
-  },
-  markdownTableRow: {
-    borderBottomWidth: 1,
-    borderBottomColor: "#F1F5F9",
-  },
-  markdownTableCell: {
-    padding: 8,
-    borderRightWidth: 1,
-    borderRightColor: "#F1F5F9",
-    color: "#1E293B",
-  },
-  markdownTableHeader: {
-    padding: 8,
-    backgroundColor: "#F8FAFC",
-    fontWeight: "600",
-    color: "#1E293B",
-    borderRightWidth: 1,
-    borderRightColor: "#E2E8F0",
-  },
-  markdownCodeInline: {
-    backgroundColor: "#F1F5F9",
-    color: "#6B46C1",
-    paddingHorizontal: 4,
-    paddingVertical: 2,
-    borderRadius: 4,
-    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
-  },
-  markdownCodeBlock: {
-    backgroundColor: "#F8FAFC",
-    padding: 12,
-    borderRadius: 8,
-    borderLeftWidth: 4,
-    borderLeftColor: "#6B46C1",
-    marginVertical: 8,
-    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
-    color: "#1E293B",
-  },
-  
-  // File Preview Modal Styles
-  filePreviewModalContainer: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  filePreviewModal: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 0,
-    width: "90%",
-    maxWidth: 400,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  filePreviewHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: "#E2E8F0",
-  },
-  filePreviewTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#1E293B",
-  },
-  filePreviewCloseButton: {
-    padding: 4,
-  },
-  filePreviewContent: {
-    padding: 20,
-    alignItems: "center",
-  },
-  filePreviewIconContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: "#F8FAFC",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  filePreviewName: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#1E293B",
-    textAlign: "center",
-    marginBottom: 16,
-  },
-  filePreviewDetails: {
-    width: "100%",
-    backgroundColor: "#F8FAFC",
-    borderRadius: 8,
-    padding: 16,
-    marginBottom: 20,
-  },
-  filePreviewDetailText: {
-    fontSize: 14,
-    color: "#64748B",
-    marginBottom: 8,
-  },
-  filePreviewDetailLabel: {
-    fontWeight: "600",
-    color: "#374151",
-  },
-  filePreviewActions: {
-    flexDirection: "row",
-    justifyContent: "center",
-    width: "100%",
-  },
-  filePreviewActionButton: {
-    backgroundColor: "#6B46C1",
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  filePreviewActionText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "600",
   },
 });
 
