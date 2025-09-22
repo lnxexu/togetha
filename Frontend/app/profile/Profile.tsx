@@ -27,6 +27,24 @@ import { ProgressCard, ProgressChart } from "./components/ProgressComponents";
 import { API_URL } from "../../constants/ApiConfig";
 import * as ImagePicker from "expo-image-picker";
 
+// Lightweight skeleton component for profile loading
+const Skeleton: React.FC<{ style?: any; width?: number | string; height?: number | string; circle?: boolean }> = ({ style, width = '100%', height = 16, circle = false }) => {
+  return (
+    <View
+      style={[
+        {
+          backgroundColor: '#e9e9ef',
+          borderRadius: circle ? 999 : 8,
+          width,
+          height,
+          overflow: 'hidden',
+        },
+        style,
+      ]}
+    />
+  );
+};
+
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 const Profile: React.FC = () => {
@@ -139,14 +157,62 @@ const Profile: React.FC = () => {
   };
 
   if (loading && !userData) {
+    // Show skeleton layout while fetching profile
     return (
-      <View style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#6A009C" />
-          <Text style={styles.loadingText}>Loading profile...</Text>
+      <SafeAreaWrapper disableTopSafeArea={true}>
+        <View style={styles.rootContainer}>
+          <LinearGradient
+            colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.header}
+          >
+            <View style={styles.headerTop}>
+              <View style={styles.titleSection}>
+                <Skeleton width={200} height={32} style={{ backgroundColor: '#ffffff20' }} />
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Skeleton width={36} height={36} circle style={{ marginRight: 8, backgroundColor: '#ffffff20' }} />
+                <Skeleton width={36} height={36} circle style={{ backgroundColor: '#ffffff20' }} />
+              </View>
+            </View>
+
+            <View style={[styles.profileSection, { marginTop: 8 }]}>
+              <View style={styles.profilePicContainer}>
+                <Skeleton width={'100%'} height={'100%'} circle />
+              </View>
+              <View style={styles.userInfo}>
+                <Skeleton width={180} height={24} style={{ marginBottom: 8 }} />
+                <Skeleton width={120} height={18} style={{ marginBottom: 6 }} />
+                <Skeleton width={140} height={14} />
+              </View>
+            </View>
+          </LinearGradient>
+
+          <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+            <View style={{ paddingHorizontal: 8, paddingTop: 8 }}>
+              <Skeleton width={160} height={22} style={{ marginBottom: 12 }} />
+
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
+                <Skeleton width={'30%'} height={90} />
+                <Skeleton width={'30%'} height={90} />
+                <Skeleton width={'30%'} height={90} />
+              </View>
+
+              <View style={{ marginTop: 20 }}>
+                <Skeleton width={200} height={20} style={{ marginBottom: 12 }} />
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <View key={i} style={{ marginBottom: 12 }}>
+                    <Skeleton width={'100%'} height={56} />
+                  </View>
+                ))}
+              </View>
+            </View>
+          </ScrollView>
+
+          <Navbar activeRoute="Profile" />
         </View>
-        <Navbar activeRoute="Profile" />
-      </View>
+      </SafeAreaWrapper>
     );
   }
 
@@ -327,14 +393,15 @@ const Profile: React.FC = () => {
   };
 
   return (
-    <SafeAreaWrapper style={styles.container} includeNavBar={true}>
-      {/* Header */}
-      <LinearGradient
-        colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={styles.header}
-      >
+  <SafeAreaWrapper disableTopSafeArea={true}>
+      <View style={styles.rootContainer}>
+        {/* Header */}
+        <LinearGradient
+          colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.header}
+        >
         <View style={styles.headerTop}>
           <View style={styles.titleSection}>
             <Text style={styles.settingsTitle}>Settings</Text>
@@ -676,19 +743,20 @@ const Profile: React.FC = () => {
       </ScrollView>
 
       <Navbar activeRoute="Profile" />
+      </View>
     </SafeAreaWrapper>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  rootContainer: {
     flex: 1,
     backgroundColor: "#f8f9fa",
   },
   header: {
     paddingHorizontal: 24,
-    paddingTop: 20,
-    paddingBottom: 40,
+    paddingTop: 40,
+    paddingBottom: 50,
     borderBottomLeftRadius: 25,
     borderBottomRightRadius: 25,
     shadowColor: "#1E293B",
@@ -780,8 +848,6 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 24,
     paddingTop: 20,
-
-    marginBottom: 100, // Adjusted for Navbar height
   },
   sectionTitle: {
     fontSize: 20,
@@ -880,6 +946,10 @@ const styles = StyleSheet.create({
     fontFamily: "Inter-Regular",
     flex: 2,
     marginRight: 12,
+  },
+  container: {
+    flex: 1,
+    backgroundColor: "#f8f9fa",
   },
   loadingContainer: {
     flex: 1,

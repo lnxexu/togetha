@@ -30,6 +30,7 @@ import {
   FlatList,
   TextInput,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -58,9 +59,20 @@ const ToDo: React.FC = () => {
   const [showQuickFilters, setShowQuickFilters] = useState(false);
   
   // Google Calendar date tasks modal state
+  const [navbarHeight, setNavbarHeight] = useState<number>(0);
+
+  const insets = useSafeAreaInsets();
+
+  // Date Tasks Modal state (restored)
   const [showDateTasksModal, setShowDateTasksModal] = useState(false);
   const [dateTasksModalDate, setDateTasksModalDate] = useState<Date | null>(null);
   const [dateTasksModalTasks, setDateTasksModalTasks] = useState<Task[]>([]);
+
+  // Compute FAB bottom dynamically: place it just above the navbar (navbar includes safe area padding)
+  // Add a small extra offset so the FAB sits clearly above the navbar
+  const fabExtraOffset = 0; // smaller offset to position FAB lower, closer to navbar
+  const defaultNavbarHeight = isLandscape ? 48 : Platform.OS === "ios" ? 64 : 56;
+  const fabBottom = Math.max(insets.bottom, 0) + (navbarHeight || defaultNavbarHeight) + fabExtraOffset;
   
   // More vert menu state
   const [showMoreVertMenu, setShowMoreVertMenu] = useState(false);
@@ -317,9 +329,10 @@ const ToDo: React.FC = () => {
   };
 
   return (
-    <>
+  <SafeAreaWrapper disableTopSafeArea={true}>
+      <View style={styles.rootContainer}> 
+    
       <StatusBar barStyle="light-content" backgroundColor="#7C3AED" />
-      <SafeAreaWrapper style={styles.container} includeNavBar={true}>
         {/* Offline Indicator */}
         <OfflineIndicator style={{ top: 10 }} />
         
@@ -593,24 +606,21 @@ const ToDo: React.FC = () => {
 
       {/* Enhanced Floating Action Button with better positioning */}
       <TouchableOpacity
-        style={[
-          styles.addTaskButton,
-          { bottom: Platform.OS === "ios" ? 110 : 105 } // Better positioning to avoid navbar
-        ]}
+        style={[styles.addTaskButton, { bottom: fabBottom }]}
         onPress={() => handleAddTask()}
       >
         <MaterialIcons name="add" size={32} color="#FFFFFF" />
         <View style={styles.fabRipple} />
       </TouchableOpacity>
 
-      <Navbar activeRoute="ToDo" />
-      </SafeAreaWrapper>
-    </>
+  <Navbar activeRoute="ToDo" onLayoutHeight={(h) => setNavbarHeight(h)} />
+      </View>
+    </SafeAreaWrapper>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  rootContainer: {
     flex: 1,
     backgroundColor: "#F8FAFC",
   },
@@ -1201,12 +1211,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     shadowColor: "#8B5CF6",
-    shadowOffset: { width: 0, height: 8 }, // Reduced shadow
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 12,
-    zIndex: 1000,
-    bottom: Platform.OS === "ios" ? 110 : 105, // Adjusted positioning
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.3,
+    shadowRadius: 24,
+    elevation: 15,
+    zIndex: 2000,
   },
   fabRipple: {
     position: "absolute",

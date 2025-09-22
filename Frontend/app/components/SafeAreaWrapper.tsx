@@ -8,6 +8,7 @@ interface SafeAreaWrapperProps {
   backgroundColor?: string;
   includeNavBar?: boolean;
   style?: any;
+  disableTopSafeArea?: boolean;
 }
 
 /**
@@ -20,6 +21,7 @@ export const SafeAreaWrapper: React.FC<SafeAreaWrapperProps> = ({
   backgroundColor = '#FFFFFF',
   includeNavBar = true,
   style = {}
+  , disableTopSafeArea = false
 }) => {
   const currentInsets = useSafeAreaInsets();
   const stableInsets = useRef<EdgeInsets>(currentInsets);
@@ -37,14 +39,15 @@ export const SafeAreaWrapper: React.FC<SafeAreaWrapperProps> = ({
   const finalInsets = Platform.OS === 'android' 
     ? {
         ...stableInsets.current,
-        bottom: Math.max(stableInsets.current.bottom, 48) // Minimum space for Android nav bar
+        bottom: Math.max(stableInsets.current.bottom, 12) // Reduced minimum space for Android nav bar (smaller safe area)
       }
     : stableInsets.current;
 
   const containerStyle = {
     ...styles.container,
     backgroundColor,
-    paddingTop: finalInsets.top,
+    // allow caller to opt-out of top safe area padding (useful when header is absolute)
+    paddingTop: disableTopSafeArea ? 0 : finalInsets.top,
     paddingBottom: includeNavBar ? 0 : finalInsets.bottom, // Let NavBar handle bottom padding
     ...style
   };

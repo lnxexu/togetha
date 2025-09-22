@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 import {
   View,
   StyleSheet,
@@ -22,10 +22,12 @@ import { MaterialIcons, Ionicons, MaterialCommunityIcons } from "@expo/vector-ic
 import Svg, { Rect, Circle, Path, Text as SvgText } from "react-native-svg";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as FileSystem from "expo-file-system";
+import { getLocalPDFPathEnhanced } from '../utils/pdfUtils';
 import { PDFDocument as PDFLibDocument, rgb as pdfLibRgb } from "pdf-lib";
 import * as Sharing from "expo-sharing";
 import { drawingAPI, PDFSaveOptions } from '../services/drawingAPI';
 import { embedAnnotationsInPDF, saveAnnotationsDirectlyToPDF, createPDFBackup, PDFAnnotation } from '../utils/pdfUtils';
+import { API_URL } from '@/constants/ApiConfig';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
@@ -111,12 +113,21 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
-  // PDF transformation state for zoom/pan synchronization
+  // Enhanced PDF transformation state for better zoom/pan handling
   const [pdfTransform, setPdfTransform] = useState({
     scale: 1,
     translateX: 0,
     translateY: 0,
   });
+  
+  // Canvas-like container dimensions and transform
+  const [containerSize, setContainerSize] = useState({ width: screenWidth, height: screenHeight - 300 });
+  const [pdfContainer, setPdfContainer] = useState<View | null>(null);
+  const pdfContainerRef = useRef<View>(null);
+  
+  // Pinch-to-zoom state
+  const [initialPinchDistance, setInitialPinchDistance] = useState(0);
+  const [initialScale, setInitialScale] = useState(1);
 
   // Direct PDF annotation state
   const [isSavingToPDF, setIsSavingToPDF] = useState(false);
@@ -144,10 +155,10 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const [pdfPageDimensions, setPdfPageDimensions] = useState({ width: 595, height: 842 }); // Default A4 size in points
   const [pdfViewerBounds, setPdfViewerBounds] = useState({ width: screenWidth, height: screenHeight - 300 });
 
-  // Create source object for PDF loading (now always local)
-  const enhancedSource = React.useMemo(() => {
-    return source;
-  }, [source]);
+  // Local source state for PDF loading. If a remote URL is provided we'll
+  // download it and replace this with the local file URI so the native
+  // PDF viewer can access it reliably.
+  const [currentSource, setCurrentSource] = useState<{ uri: string }>(source);
 
   // Helper function to update annotations with callback
   const updateAnnotations = useCallback((newAnnotations: Annotation[] | ((prev: Annotation[]) => Annotation[])) => {
@@ -183,9 +194,123 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     
     console.log("PDFAnnotationViewer initialized with local source:", source);
 
-    validatePDFSource();
+    // If source is remote, download it to local storage first then validate
+    (async () => {
+      try {
+        if (source?.uri && (source.uri.startsWith('http://') || source.uri.startsWith('https://'))) {
+          console.log('Remote PDF source detected, downloading to local storage:', source.uri);
+          setIsLoading(true);
+          
+          // Normalize URL to use configured API_URL (Django's build_absolute_uri might use different host)
+          let downloadUrl = source.uri;
+          try {
+            const sourceUrl = new URL(source.uri);
+            const apiUrl = new URL(API_URL);
+            
+            // Get actual port numbers (default to 80 for http, 443 for https if not specified)
+            const getActualPort = (url: URL) => {
+              if (url.port) return url.port;
+              return url.protocol === 'https:' ? '443' : '80';
+            };
+            
+            const sourcePort = getActualPort(sourceUrl);
+            const apiPort = getActualPort(apiUrl);
+            
+            console.log('URL normalization check:', {
+              sourceHost: sourceUrl.hostname,
+              sourcePort,
+              apiHost: apiUrl.hostname, 
+              apiPort,
+              API_URL
+            });
+            
+            // If the source URL is from the same backend but different host (e.g., Django using 192.168.x.x)
+            // replace it with our configured API_URL
+            const isPrivateIP = sourceUrl.hostname.startsWith('192.168.') || 
+                               sourceUrl.hostname.startsWith('10.0.') ||
+                               sourceUrl.hostname.startsWith('172.') ||
+                               sourceUrl.hostname === 'localhost' ||
+                               sourceUrl.hostname === '127.0.0.1';
+            
+            if (sourcePort === apiPort && isPrivateIP && sourceUrl.hostname !== apiUrl.hostname) {
+              downloadUrl = API_URL + sourceUrl.pathname + sourceUrl.search;
+              console.log('✅ Normalized URL from', source.uri, 'to', downloadUrl);
+            } else {
+              console.log('❌ URL normalization skipped - not matching criteria');
+            }
+          } catch (urlParseError) {
+            console.warn('Could not parse URL for normalization:', urlParseError);
+          }
+          
+          try {
+            // Get auth headers if this is a backend URL
+            let fetchHeaders: HeadersInit | undefined;
+            if (downloadUrl.includes(API_URL) || downloadUrl.includes('192.168.') || downloadUrl.includes('localhost')) {
+              const token = await AsyncStorage.getItem('authToken');
+              if (token) {
+                fetchHeaders = {
+                  'Authorization': `Token ${token}`,
+                  'Accept': 'application/pdf'
+                };
+                console.log('Using auth headers for backend PDF download');
+              }
+            }
 
-    // Animate UI entrance
+            const result = await getLocalPDFPathEnhanced(downloadUrl, fileName, (progress) => {
+              console.log('Download progress:', progress);
+            }, fetchHeaders);
+            // Replace source with local file URI for the PDF viewer
+            // Note: FileSystem.documentDirectory paths are file:// URIs on native
+            const localUri = result.uri;
+            setCurrentSource({ uri: localUri });
+            console.log('Downloaded PDF to local path and updated currentSource:', localUri);
+          } catch (err) {
+            console.error('Failed to download remote PDF before loading:', err);
+            setHasError(true);
+            setIsLoading(false);
+            
+            // Show a more helpful error dialog with options
+            const errorMessage = err instanceof Error ? err.message : String(err);
+            const isNetworkError = errorMessage.includes('404') || errorMessage.includes('not available');
+            const urlInfo = downloadUrl !== source.uri ? 
+              `\nOriginal URL: ${source.uri}\nNormalized URL: ${downloadUrl}` : 
+              `\nURL: ${downloadUrl}`;
+            
+            Alert.alert(
+              'PDF Download Failed', 
+              `Unable to download PDF: ${errorMessage}${urlInfo}\n\nThis might be because:\n• The file doesn't exist on the server\n• Network connection issues\n• Server authentication required`,
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Retry',
+                  onPress: () => {
+                    // Retry the download
+                    setHasError(false);
+                    setIsLoading(true);
+                    // Re-run the same logic
+                  }
+                },
+                {
+                  text: 'Open in Browser',
+                  onPress: () => {
+                    // Try to open the URL in browser as fallback
+                    import('expo-web-browser').then((WebBrowser) => {
+                      WebBrowser.openBrowserAsync(source.uri).catch(console.error);
+                    });
+                  }
+                }
+              ]
+            );
+            return;
+          }
+        }
+
+        // Validate the (now local) source
+        await validatePDFSource();
+      } catch (err) {
+        console.error('Error preparing PDF source:', err);
+      }
+    })();    // Animate UI entrance
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -217,32 +342,40 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
   const validatePDFSource = async () => {
     try {
-      console.log("Validating local PDF source:", source.uri);
+      console.log("Validating PDF source:", currentSource?.uri);
 
-      // For local files, check if file exists
-      const fileInfo = await FileSystem.getInfoAsync(source.uri);
-      console.log("PDF file info:", fileInfo);
-      if (!fileInfo.exists) {
-        console.error("PDF file not found at:", source.uri);
-        setHasError(true);
-        Alert.alert("File Not Found", `PDF file not found at: ${source.uri}`);
-        return;
-      }
-      // Check file size
-      if (fileInfo.size === 0) {
-        console.error("PDF file is empty");
-        setHasError(true);
-        Alert.alert(
-          "Invalid File",
-          "The PDF file appears to be empty or corrupted"
+      const uriToCheck = currentSource?.uri || source?.uri;
+
+      // Only call FileSystem.getInfoAsync for local file URIs
+      if (uriToCheck && (uriToCheck.startsWith('file://') || uriToCheck.startsWith(FileSystem.documentDirectory || ''))) {
+        // For local files, check if file exists
+        const fileInfo = await FileSystem.getInfoAsync(uriToCheck);
+        console.log("PDF file info:", fileInfo);
+        if (!fileInfo.exists) {
+          console.error("PDF file not found at:", uriToCheck);
+          setHasError(true);
+          Alert.alert("File Not Found", `PDF file not found at: ${uriToCheck}`);
+          return;
+        }
+        // Check file size
+        if (fileInfo.size === 0) {
+          console.error("PDF file is empty");
+          setHasError(true);
+          Alert.alert(
+            "Invalid File",
+            "The PDF file appears to be empty or corrupted"
+          );
+          return;
+        }
+        console.log(
+          "PDF validation successful. File size:",
+          fileInfo.size,
+          "bytes"
         );
-        return;
+      } else {
+        // For remote URLs we won't call FileSystem.getInfoAsync (not supported)
+        console.log('Skipping FileSystem info check for non-local URI:', uriToCheck);
       }
-      console.log(
-        "PDF validation successful. File size:",
-        fileInfo.size,
-        "bytes"
-      );
     } catch (error) {
       console.error("Error validating PDF file:", error);
       setHasError(true);
@@ -698,6 +831,17 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     }
   };
 
+  // Helper function to calculate distance between two touches for pinch gesture
+  const getDistance = (touches: any[]) => {
+    if (touches.length < 2) return 0;
+    const touch1 = touches[0];
+    const touch2 = touches[1];
+    return Math.sqrt(
+      Math.pow(touch2.pageX - touch1.pageX, 2) + 
+      Math.pow(touch2.pageY - touch1.pageY, 2)
+    );
+  };
+
   const handleFolderSelect = (folder: any | null) => {
     if (folder) {
       setSelectedFolderId(folder.id);
@@ -709,62 +853,43 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     setShowFolderModal(false);
   };
 
-  // Zoom control functions - now working with PDF ref
+  // Zoom control functions - now working with unified transform
   const handleZoomIn = () => {
-    const newZoom = Math.min(zoomLevel * 1.25, 3); // Max zoom 3x
-    setZoomLevel(newZoom);
-    setPdfTransform(prev => ({ ...prev, scale: newZoom }));
-    
-    // Try to control PDF zoom via ref if methods are available
-    if (pdfRef.current) {
-      try {
-        // Some PDF libraries support setNativeProps for zoom
-        (pdfRef.current as any).setNativeProps?.({ zoom: newZoom });
-      } catch (error) {
-        console.log('PDF zoom control not available via ref:', error);
-      }
-    }
+    const newScale = Math.min(pdfTransform.scale * 1.25, 3); // Max zoom 3x
+    setPdfTransform(prev => ({ ...prev, scale: newScale }));
+    setZoomLevel(newScale);
+    console.log('Zoom in - new scale:', newScale);
   };
 
   const handleZoomOut = () => {
-    const newZoom = Math.max(zoomLevel * 0.8, 0.5); // Min zoom 0.5x
-    setZoomLevel(newZoom);
-    setPdfTransform(prev => ({ ...prev, scale: newZoom }));
-    
-    // Try to control PDF zoom via ref if methods are available
-    if (pdfRef.current) {
-      try {
-        // Some PDF libraries support setNativeProps for zoom
-        (pdfRef.current as any).setNativeProps?.({ zoom: newZoom });
-      } catch (error) {
-        console.log('PDF zoom control not available via ref:', error);
-      }
-    }
+    const newScale = Math.max(pdfTransform.scale * 0.8, 0.5); // Min zoom 0.5x
+    setPdfTransform(prev => ({ ...prev, scale: newScale }));
+    setZoomLevel(newScale);
+    console.log('Zoom out - new scale:', newScale);
   };
 
   const resetZoom = () => {
-    setZoomLevel(1);
     setPdfTransform({ scale: 1, translateX: 0, translateY: 0 });
-    
-    // Try to reset PDF zoom via ref if methods are available
-    if (pdfRef.current) {
-      try {
-        // Some PDF libraries support setNativeProps for zoom
-        (pdfRef.current as any).setNativeProps?.({ zoom: 1 });
-      } catch (error) {
-        console.log('PDF zoom reset not available via ref:', error);
-      }
-    }
+    setZoomLevel(1);
+    console.log('Zoom reset to 1x');
   };
 
-  // Pan responder for drawing and annotations
-const panResponder = PanResponder.create({
-    onStartShouldSetPanResponder: () => selectedTool !== null,
-    onMoveShouldSetPanResponder: () => selectedTool !== null,
+  // Pan responder for drawing, annotations, panning, and pinch-to-zoom
+  const panResponder = PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: () => true,
 
     onPanResponderGrant: (evt) => {
-      const { locationX, locationY } = evt.nativeEvent;
+      const { locationX, locationY, touches } = evt.nativeEvent;
       const pressure = (evt.nativeEvent as any).force || 1;
+      
+      // Handle pinch gesture start
+      if (touches && touches.length === 2) {
+        const distance = getDistance(touches);
+        setInitialPinchDistance(distance);
+        setInitialScale(pdfTransform.scale);
+        return;
+      }
       
       if (selectedTool === "note") {
         // Convert to normalized coordinates for consistent positioning
@@ -779,19 +904,46 @@ const panResponder = PanResponder.create({
       } else if (selectedTool === "highlight" || selectedTool === "eraser" || 
                  selectedTool === "pen" || selectedTool === "brush" || selectedTool === "pencil") {
         setIsDrawing(true);
-        // Use screen coordinates for path data, will be normalized later
+        // Use container coordinates for path data, will be normalized later
         setCurrentPath(`M${locationX},${locationY}:${pressure}`);
+      } else if (!selectedTool) {
+        // No tool selected - enable panning
+        // Store initial pan state for relative movement
+        (panResponder as any).initialTransform = { ...pdfTransform };
+        (panResponder as any).initialTouch = { x: locationX, y: locationY };
       }
     },
 
-    onPanResponderMove: (evt) => {
+    onPanResponderMove: (evt, gestureState) => {
+      const { locationX, locationY, touches } = evt.nativeEvent;
+      const pressure = (evt.nativeEvent as any).force || 1;
+      const { dx, dy } = gestureState;
+      
+      // Handle pinch gesture
+      if (touches && touches.length === 2 && initialPinchDistance > 0) {
+        const currentDistance = getDistance(touches);
+        const scale = (currentDistance / initialPinchDistance) * initialScale;
+        
+        // Clamp scale to min/max values
+        const clampedScale = Math.max(0.5, Math.min(3, scale));
+        
+        setPdfTransform(prev => ({ ...prev, scale: clampedScale }));
+        setZoomLevel(clampedScale);
+        return;
+      }
+      
       if (isDrawing && (selectedTool === "highlight" || selectedTool === "eraser" || 
                         selectedTool === "pen" || selectedTool === "brush" || selectedTool === "pencil")) {
-        const { locationX, locationY } = evt.nativeEvent;
-        const pressure = (evt.nativeEvent as any).force || 1;
-        
-        // Use screen coordinates for path data, will be normalized later
+        // Use container coordinates for path data, will be normalized later
         setCurrentPath((prev) => `${prev} L${locationX},${locationY}:${pressure}`);
+      } else if (!selectedTool && touches && touches.length === 1 && (panResponder as any).initialTransform) {
+        // Handle panning when no tool is selected and only one touch
+        const initialTransform = (panResponder as any).initialTransform;
+        setPdfTransform({
+          scale: initialTransform.scale,
+          translateX: initialTransform.translateX + dx,
+          translateY: initialTransform.translateY + dy,
+        });
       }
     },
 
@@ -807,6 +959,11 @@ const panResponder = PanResponder.create({
         setIsDrawing(false);
         setCurrentPath("");
       }
+      // Clear pan and pinch state
+      (panResponder as any).initialTransform = null;
+      (panResponder as any).initialTouch = null;
+      setInitialPinchDistance(0);
+      setInitialScale(1);
     },
   });
 
@@ -824,24 +981,26 @@ const panResponder = PanResponder.create({
   // ---------------------------------------------------------------------------
   // Convert screen coordinates to PDF page coordinates (0-1 normalized percentages)
   const screenToPDFCoordinates = (screenX: number, screenY: number) => {
-    // Get the current PDF viewer dimensions - these should match the actual PDF container size
-    const viewerWidth = pdfViewerBounds.width || screenWidth;
-    const viewerHeight = pdfViewerBounds.height || (screenHeight - 300);
+    // Get the current container dimensions
+    const viewerWidth = containerSize.width || screenWidth;
+    const viewerHeight = containerSize.height || (screenHeight - 300);
     
-    // Account for current PDF zoom/scale when converting coordinates
-    // We need to normalize based on the actual PDF page content, not just the viewer
-    const effectiveViewerWidth = viewerWidth / (pdfScale || 1);
-    const effectiveViewerHeight = viewerHeight / (pdfScale || 1);
+    // Account for current transform (scale and translation)
+    const { scale, translateX, translateY } = pdfTransform;
     
-    // Convert screen coordinates to normalized coordinates (0-1) relative to PDF page
-    const normalizedX = Math.max(0, Math.min(1, screenX / effectiveViewerWidth));
-    const normalizedY = Math.max(0, Math.min(1, screenY / effectiveViewerHeight));
+    // Reverse the transform to get the original coordinates
+    const originalX = (screenX - translateX) / scale;
+    const originalY = (screenY - translateY) / scale;
     
-    console.log("screenToPDF (percentage-based):", {
+    // Convert to normalized coordinates (0-1) relative to PDF page
+    const normalizedX = Math.max(0, Math.min(1, originalX / viewerWidth));
+    const normalizedY = Math.max(0, Math.min(1, originalY / viewerHeight));
+    
+    console.log("screenToPDF (unified transform):", {
       screen: { x: screenX, y: screenY },
-      viewer: { width: viewerWidth, height: viewerHeight },
-      effective: { width: effectiveViewerWidth, height: effectiveViewerHeight },
-      scale: pdfScale,
+      container: { width: viewerWidth, height: viewerHeight },
+      transform: { scale, translateX, translateY },
+      original: { x: originalX, y: originalY },
       normalized: { x: normalizedX, y: normalizedY }
     });
     
@@ -853,20 +1012,21 @@ const panResponder = PanResponder.create({
 
   // Convert normalized PDF coordinates (0-1 percentages) back to current screen coordinates
   const pdfToScreenCoordinates = (normalizedX: number, normalizedY: number) => {
-    // Get the current PDF viewer dimensions
-    const viewerWidth = pdfViewerBounds.width || screenWidth;
-    const viewerHeight = pdfViewerBounds.height || (screenHeight - 300);
+    // Get the current container dimensions
+    const viewerWidth = containerSize.width || screenWidth;
+    const viewerHeight = containerSize.height || (screenHeight - 300);
     
-    // Convert normalized coordinates (percentages) to screen coordinates
-    // Apply current PDF zoom level for proper positioning
-  // Positions track zoom so they stay anchored to underlying PDF content
-  const screenX = normalizedX * viewerWidth * (pdfScale || 1);
-  const screenY = normalizedY * viewerHeight * (pdfScale || 1);
+    // Apply the current transform
+    const { scale, translateX, translateY } = pdfTransform;
     
-    console.log("pdfToScreen (percentage-based):", {
+    // Convert normalized coordinates to screen coordinates with transform
+    const screenX = (normalizedX * viewerWidth * scale) + translateX;
+    const screenY = (normalizedY * viewerHeight * scale) + translateY;
+    
+    console.log("pdfToScreen (unified transform):", {
       normalized: { x: normalizedX, y: normalizedY },
-      viewer: { width: viewerWidth, height: viewerHeight },
-      scale: pdfScale,
+      container: { width: viewerWidth, height: viewerHeight },
+      transform: { scale, translateX, translateY },
       screen: { x: screenX, y: screenY }
     });
     
@@ -943,21 +1103,30 @@ const panResponder = PanResponder.create({
     const parts = cleanPath.split(/([ML])/);
     let normalizedPath = '';
     
+    // Get current container dimensions for conversion
+    const containerWidth = containerSize.width || screenWidth;
+    const containerHeight = containerSize.height || (screenHeight - 300);
+    
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
       if (part === 'M' || part === 'L') {
         normalizedPath += part;
       } else if (part && part.trim()) {
-        // This is a coordinate pair - convert to normalized coordinates
+        // This is a coordinate pair - convert container coordinates to normalized (0-1) coordinates
         const coords = part.trim().split(',');
         if (coords.length === 2) {
-          const screenX = parseFloat(coords[0]);
-          const screenY = parseFloat(coords[1]);
+          const containerX = parseFloat(coords[0]);
+          const containerY = parseFloat(coords[1]);
           
-          // Convert screen coordinates to normalized (0-1) coordinates
-          const convertedCoords = screenToPDFCoordinates(screenX, screenY);
+          // Convert container coordinates to normalized (0-1) coordinates
+          const normalizedX = containerX / containerWidth;
+          const normalizedY = containerY / containerHeight;
           
-          normalizedPath += `${convertedCoords.normalizedX.toFixed(6)},${convertedCoords.normalizedY.toFixed(6)}`;
+          // Clamp to 0-1 range
+          const clampedX = Math.max(0, Math.min(1, normalizedX));
+          const clampedY = Math.max(0, Math.min(1, normalizedY));
+          
+          normalizedPath += `${clampedX.toFixed(6)},${clampedY.toFixed(6)}`;
         } else {
           normalizedPath += part;
         }
@@ -970,6 +1139,10 @@ const panResponder = PanResponder.create({
   const convertNormalizedPathToScreen = (path: string): string => {
     if (!path) return '';
     
+    // Get current container dimensions
+    const containerWidth = containerSize.width || screenWidth;
+    const containerHeight = containerSize.height || (screenHeight - 300);
+    
     const parts = path.split(/([ML])/);
     let screenPath = '';
     
@@ -978,7 +1151,7 @@ const panResponder = PanResponder.create({
       if (part === 'M' || part === 'L') {
         screenPath += part;
       } else if (part && part.trim()) {
-        // This is a coordinate pair - convert normalized coordinates to screen coordinates
+        // This is a coordinate pair - convert normalized coordinates to container coordinates
         const coords = part.trim().split(',');
         if (coords.length === 2) {
           const normalizedX = parseFloat(coords[0]);
@@ -986,10 +1159,11 @@ const panResponder = PanResponder.create({
           
           // Validate normalized coordinates are within expected range (0-1)
           if (normalizedX >= 0 && normalizedX <= 1 && normalizedY >= 0 && normalizedY <= 1) {
-            // Convert normalized coordinates to current screen coordinates
-            const screenCoords = pdfToScreenCoordinates(normalizedX, normalizedY);
+            // Convert normalized coordinates to container coordinates (no additional transform needed)
+            const screenX = normalizedX * containerWidth;
+            const screenY = normalizedY * containerHeight;
             
-            screenPath += `${screenCoords.screenX.toFixed(2)},${screenCoords.screenY.toFixed(2)}`;
+            screenPath += `${screenX.toFixed(2)},${screenY.toFixed(2)}`;
           } else {
             // If coordinates are out of range, keep them as is (might be legacy data)
             screenPath += part;
@@ -1362,23 +1536,22 @@ const panResponder = PanResponder.create({
   };
 
   const renderAnnotations = () => {
-    // Rendering converts stored percentage-based data back into current
-    // screen pixel positions factoring in current zoom (pdfScale) and
-    // viewer bounds. Paths are re-hydrated via convertNormalizedPathToScreen.
+    // Since annotations are now rendered in the same transform container as the PDF,
+    // we can use simpler coordinate conversion without additional transform calculations
     const pageAnnotations = annotations.filter(
       (ann) => ann.page === currentPage
     );
 
-    // Get current PDF viewer dimensions - use bounds if available
-    const pdfViewerWidth = pdfViewerBounds.width || screenWidth;
-    const pdfViewerHeight = pdfViewerBounds.height || (screenHeight - 300);
+    // Get current container dimensions for coordinate conversion
+    const containerWidth = containerSize.width || screenWidth;
+    const containerHeight = containerSize.height || (screenHeight - 300);
 
     return (
       <Svg
         style={StyleSheet.absoluteFillObject}
-        width={pdfViewerWidth}
-        height={pdfViewerHeight}
-        viewBox={`0 0 ${pdfViewerWidth} ${pdfViewerHeight}`}
+        width={containerWidth}
+        height={containerHeight}
+        viewBox={`0 0 ${containerWidth} ${containerHeight}`}
       >
         {pageAnnotations.map((annotation) => {
           const getPenStyle = (penType: string, baseWidth: number) => {
@@ -1423,7 +1596,7 @@ const panResponder = PanResponder.create({
               // Check if it's a freehand highlight (has path) or traditional highlight (rectangle)
               if (annotation.path) {
                 const screenPath = convertNormalizedPathToScreen(annotation.path);
-                const highlightStrokeWidth = (annotation.strokeWidth || 12) * (SCALE_STROKES_WITH_ZOOM ? (pdfScale || 1) : 1);
+                const highlightStrokeWidth = (annotation.strokeWidth || 12) * (SCALE_STROKES_WITH_ZOOM ? 1 : 1);
                 return (
                   <Path
                     key={annotation.id}
@@ -1438,17 +1611,16 @@ const panResponder = PanResponder.create({
                   />
                 );
               } else {
-                // Traditional rectangle highlight - convert percentage coordinates to screen coordinates
-                const screenCoords = pdfToScreenCoordinates(annotation.x, annotation.y);
-                // Convert percentage width/height to screen pixels; keep size stable if scaling disabled
-                const zoomFactor = SCALE_STROKES_WITH_ZOOM ? (pdfScale || 1) : 1;
-                const screenWidth_rect = (annotation.width || 0.15) * pdfViewerWidth * zoomFactor;
-                const screenHeight_rect = (annotation.height || 0.025) * pdfViewerHeight * zoomFactor;
+                // Traditional rectangle highlight - convert percentage coordinates to container coordinates
+                const screenX = annotation.x * containerWidth;
+                const screenY = annotation.y * containerHeight;
+                const screenWidth_rect = (annotation.width || 0.15) * containerWidth;
+                const screenHeight_rect = (annotation.height || 0.025) * containerHeight;
                 return (
                   <Rect
                     key={annotation.id}
-                    x={screenCoords.screenX}
-                    y={screenCoords.screenY}
+                    x={screenX}
+                    y={screenY}
                     width={screenWidth_rect}
                     height={screenHeight_rect}
                     fill={annotation.color}
@@ -1461,8 +1633,8 @@ const panResponder = PanResponder.create({
             case "pen":
             case "brush":
             case "pencil":
-              // Convert percentage-based path back to screen coordinates with zoom scaling
-              const baseStroke = (annotation.strokeWidth || 3) * (SCALE_STROKES_WITH_ZOOM ? (pdfScale || 1) : 1);
+              // Convert percentage-based path to container coordinates
+              const baseStroke = (annotation.strokeWidth || 3) * (SCALE_STROKES_WITH_ZOOM ? 1 : 1);
               const penStyle = getPenStyle(annotation.type, baseStroke);
               const penScreenPath = convertNormalizedPathToScreen(annotation.path || "");
               return (
@@ -1481,11 +1653,10 @@ const panResponder = PanResponder.create({
               );
 
             case "note":
-              // Convert percentage coordinates to screen coordinates with zoom scaling
-              const noteScreenCoords = pdfToScreenCoordinates(annotation.x, annotation.y);
-              const noteScreenX = noteScreenCoords.screenX;
-              const noteScreenY = noteScreenCoords.screenY;
-              const noteRadius = 12 * (SCALE_STROKES_WITH_ZOOM ? (pdfScale || 1) : 1);
+              // Convert percentage coordinates to container coordinates
+              const noteScreenX = annotation.x * containerWidth;
+              const noteScreenY = annotation.y * containerHeight;
+              const noteRadius = 12 * (SCALE_STROKES_WITH_ZOOM ? 1 : 1);
               return (
                 <React.Fragment key={annotation.id}>
                   <Circle
@@ -1505,9 +1676,9 @@ const panResponder = PanResponder.create({
                   />
                   <SvgText
                     x={noteScreenX}
-                    y={noteScreenY + 4 * (SCALE_STROKES_WITH_ZOOM ? (pdfScale || 1) : 1)}
+                    y={noteScreenY + 4 * (SCALE_STROKES_WITH_ZOOM ? 1 : 1)}
                     textAnchor="middle"
-                    fontSize={10 * (SCALE_STROKES_WITH_ZOOM ? (pdfScale || 1) : 1)}
+                    fontSize={10 * (SCALE_STROKES_WITH_ZOOM ? 1 : 1)}
                     fill="white"
                   >
                     📝
@@ -1516,15 +1687,16 @@ const panResponder = PanResponder.create({
               );
 
             case "text":
-              // Convert percentage coordinates to screen coordinates with zoom scaling
-              const textScreenCoords = pdfToScreenCoordinates(annotation.x, annotation.y);
+              // Convert percentage coordinates to container coordinates
+              const textScreenX = annotation.x * containerWidth;
+              const textScreenY = annotation.y * containerHeight;
               return (
                 <SvgText
                   key={annotation.id}
-                  x={textScreenCoords.screenX}
-                  y={textScreenCoords.screenY}
+                  x={textScreenX}
+                  y={textScreenY}
                   fill={annotation.color}
-                  fontSize={14 * (SCALE_STROKES_WITH_ZOOM ? (pdfScale || 1) : 1)}
+                  fontSize={14 * (SCALE_STROKES_WITH_ZOOM ? 1 : 1)}
                   fontWeight="bold"
                   onPress={() => {
                     Alert.alert("Text", annotation.text, [
@@ -1549,7 +1721,7 @@ const panResponder = PanResponder.create({
         {isDrawing && currentPath && (
           (() => {
             const cleanPath = cleanPathFromPressure(currentPath);
-            const baseStrokeWidth = strokeWidth * (SCALE_STROKES_WITH_ZOOM ? (pdfScale || 1) : 1);
+            const baseStrokeWidth = strokeWidth * (SCALE_STROKES_WITH_ZOOM ? 1 : 1);
             
             switch (selectedTool) {
               case "highlight":
@@ -1868,7 +2040,7 @@ return (
               onPress={resetZoom}
               activeOpacity={0.8}
             >
-              <Text style={styles.zoomText}>{Math.round(zoomLevel * 100)}%</Text>
+              <Text style={styles.zoomText}>{Math.round(pdfTransform.scale * 100)}%</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.zoomButton}
@@ -2026,41 +2198,64 @@ return (
             </LinearGradient>
           </View>
         ) : (
-          <View style={{ flex: 1 }} {...panResponder.panHandlers}>
-            {Platform.OS !== 'web' && Pdf ? (
-              <Pdf
-                ref={pdfRef}
-                source={enhancedSource}
-                style={styles.pdf}
-                onLoadComplete={onPdfLoadComplete}
-                onPageChanged={onPageChanged}
-                onScaleChanged={onPdfScaleChanged}
-                enablePaging={true}
-                horizontal={false}
-              />
-            ) : (
-              <View style={styles.webPdfPlaceholder}>
-                <MaterialIcons name="description" size={64} color="#9CA3AF" />
-                <Text style={styles.webPdfText}>PDF viewing not supported on web</Text>
-                <Text style={styles.webPdfSubtext}>Please use the mobile app to view and annotate PDFs</Text>
-              </View>
-            )}
-            
-            {/* Annotation overlay - positioned directly over the PDF.
-                When SCALE_STROKES_WITH_ZOOM is false we only scale positions (already handled in pdfToScreenCoordinates)
-                and keep stroke widths constant for readability. If set true, we mirror pdfScale with a transform so
-                thickness grows naturally. */}
-            <View
-              style={[
-                StyleSheet.absoluteFillObject,
-                SCALE_STROKES_WITH_ZOOM && {
-                  transform: [{ scale: pdfScale || 1 }],
-                  transformOrigin: 'top left',
-                },
-              ]}
-              pointerEvents="none"
+          <View style={{ flex: 1 }}>
+            {/* Unified PDF and Annotation Container with Transform */}
+            <View 
+              style={styles.pdfCanvasContainer}
+              ref={pdfContainerRef}
+              onLayout={(event) => {
+                const { width, height } = event.nativeEvent.layout;
+                setContainerSize({ width, height });
+                console.log('PDF container size:', { width, height });
+              }}
             >
-              {renderAnnotations()}
+              {/* PDF and Annotation Transform Container */}
+              <Animated.View 
+                style={[
+                  styles.pdfTransformContainer,
+                  {
+                    transform: [
+                      { scale: pdfTransform.scale },
+                      { translateX: pdfTransform.translateX },
+                      { translateY: pdfTransform.translateY },
+                    ],
+                  }
+                ]}
+                {...panResponder.panHandlers}
+              >
+                {/* PDF Viewer */}
+                {Platform.OS !== 'web' && Pdf ? (
+                  <Pdf
+                    ref={pdfRef}
+                    source={currentSource}
+                    style={[styles.pdf, { 
+                      width: containerSize.width, 
+                      height: containerSize.height 
+                    }]}
+                    onLoadComplete={onPdfLoadComplete}
+                    onPageChanged={onPageChanged}
+                    onScaleChanged={(scale: number) => {
+                      console.log('PDF internal scale changed:', scale);
+                      setPdfScale(scale);
+                      // Don't update transform here as we handle it manually
+                    }}
+                    enablePaging={true}
+                    horizontal={false}
+                    scale={1} // Lock PDF internal scaling, we handle it via transform
+                  />
+                ) : (
+                  <View style={styles.webPdfPlaceholder}>
+                    <MaterialIcons name="description" size={64} color="#9CA3AF" />
+                    <Text style={styles.webPdfText}>PDF viewing not supported on web</Text>
+                    <Text style={styles.webPdfSubtext}>Please use the mobile app to view and annotate PDFs</Text>
+                  </View>
+                )}
+                
+                {/* Annotation Layer - Now part of the same transform container */}
+                <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+                  {renderAnnotations()}
+                </View>
+              </Animated.View>
             </View>
           </View>
         )}
@@ -2397,7 +2592,7 @@ mainContainer: {
     flex: 1,
     width: "100%",
     height: "100%",
-    backgroundColor: "#ffffff",
+    backgroundColor: "#F3F4F6", // subtle viewer background
   },
   toolbarScrollContainer: {
     backgroundColor: "#F8FAFC",
@@ -2971,6 +3166,19 @@ mainContainer: {
     marginTop: 8,
     textAlign: 'center',
     lineHeight: 20,
+  },
+  
+  // PDF Canvas Container styles
+  pdfCanvasContainer: {
+    flex: 1,
+    backgroundColor: '#F3F4F6', // subtle background behind PDF and annotations
+    overflow: 'hidden',
+  },
+  pdfTransformContainer: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#F3F4F6', // keep transform container matching viewer background
   },
 });
 

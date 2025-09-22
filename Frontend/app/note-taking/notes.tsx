@@ -1,3 +1,4 @@
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useFocusEffect, useRoute, RouteProp } from "@react-navigation/native";
 import React, { useState, useEffect, useCallback, useMemo } from "react";
@@ -204,7 +205,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
   const [selectedNotes, setSelectedNotes] = useState<string[]>([]);
   const [showSortNotesModal, setShowSortNotesModal] = useState(false);
   const [isSelectMode, setIsSelectMode] = useState(false);
-  const { width: windowWidth } = useWindowDimensions();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
   // Fix 3: Either use folderCounts or use _ to indicate unused variable
   const [folderCounts, setFolderCounts] = useState<Record<string, number>>({});
@@ -230,6 +231,14 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
   const [showDocumentPreviewModal, setShowDocumentPreviewModal] =
     useState(false);
   const [showAddOptionsMenu, setShowAddOptionsMenu] = useState(false);
+  const insets = useSafeAreaInsets();
+  const [navbarHeight, setNavbarHeight] = useState<number>(0);
+
+  // Compute FAB bottom dynamically to match ToDo screen positioning
+  const isLandscape = windowWidth > windowHeight;
+  const fabExtraOffset = 0; // keep same offset as ToDo
+  const defaultNavbarHeight = isLandscape ? 48 : Platform.OS === "ios" ? 64 : 56;
+  const fabBottom = Math.max(insets.bottom, 0) + (navbarHeight || defaultNavbarHeight) + fabExtraOffset;
   const [showDrawingSetupModal, setShowDrawingSetupModal] = useState(false);
   const [drawingTitle, setDrawingTitle] = useState("");
   const [selectedSize, setSelectedSize] = useState("medium");
@@ -2923,7 +2932,9 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
   );
 
   return (
-    <SafeAreaWrapper style={styles.container} includeNavBar={true}>
+  <SafeAreaWrapper disableTopSafeArea={true}>
+      <View style={styles.rootContainer}> 
+    
       <StatusBar barStyle="light-content" backgroundColor="#7C3AED" />
 
       {/* Fixed Header - outside of content container */}
@@ -3391,10 +3402,12 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
       )}
 
       {/* Main Add Button */}
+      {/* Main Add Button */}
       <TouchableOpacity
         style={[
           styles.fabButton,
           showAddOptionsMenu && styles.fabButtonRotated,
+          { bottom: Math.max(insets.bottom, 0) + (navbarHeight || (Platform.OS === "ios" ? 64 : 56)) + 0 },
         ]}
         onPress={() => setShowAddOptionsMenu(!showAddOptionsMenu)}
         activeOpacity={0.8}
@@ -3405,8 +3418,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
           color="#fff"
         />
       </TouchableOpacity>
-
-      <Navbar activeRoute="Notes" />
+  <Navbar activeRoute="Notes" onLayoutHeight={(h) => setNavbarHeight(h)} />
       {renderCreateFolderModal()}
       {renderDrawingSetupModal()}
       {renderSortNotesModal()}
@@ -3517,17 +3529,18 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
           </TouchableOpacity>
         </Modal>
       )}
+    </View>
     </SafeAreaWrapper>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+    rootContainer: {
     flex: 1,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#ffffffff",
   },
   header: {
-    paddingTop: 20,
+    paddingTop: 40,
     paddingBottom: 50,
     paddingHorizontal: 24,
     borderBottomLeftRadius: 25,
@@ -4077,14 +4090,12 @@ const styles = StyleSheet.create({
     shadowRadius: 24,
     elevation: 15,
     zIndex: 1000,
-    bottom: Platform.OS === "ios" ? 115 : 110,
   },
   textFab: {
     backgroundColor: "#9C27B0",
   },
   drawingFab: {
     backgroundColor: "#2563EB",
-    bottom: 170,
     right: 24,
   },
   modalContainer: {

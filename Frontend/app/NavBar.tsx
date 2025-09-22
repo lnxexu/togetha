@@ -1,38 +1,35 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import React, { useRef, useEffect } from "react";
-import { Image, StyleSheet, Text, TouchableOpacity, View, Platform } from "react-native";
-import { useSafeAreaInsets, EdgeInsets } from "react-native-safe-area-context";
+import React from "react";
+import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { RootStackParamList } from "./navigation/AppNavigator";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 interface NavbarProps {
   activeRoute?: keyof RootStackParamList;
+  // Optional callback so parent can measure navbar height and position elements above it
+  onLayoutHeight?: (height: number) => void;
 }
 
-export default function Navbar({ activeRoute = "Home" }: NavbarProps) {
+export default function Navbar({ activeRoute = "Home", onLayoutHeight }: NavbarProps) {
   const navigation = useNavigation<NavigationProp>();
-  const currentInsets = useSafeAreaInsets();
-  const stableInsets = useRef<EdgeInsets>(currentInsets);
-  const isFirstRender = useRef(true);
-
-  // Maintain stable bottom insets to prevent navigation bar transparency issues
-  useEffect(() => {
-    if (isFirstRender.current && currentInsets.bottom > 0) {
-      stableInsets.current = currentInsets;
-      isFirstRender.current = false;
-    }
-  }, [currentInsets]);
-
-  // Calculate consistent bottom padding for Android navigation bar
-  const safeBottomPadding = Platform.OS === 'android' 
-    ? Math.max(stableInsets.current.bottom, 20) + 10 // Ensure minimum spacing above Android nav bar
-    : stableInsets.current.bottom + 20; // iOS safe area + padding
+  const insets = useSafeAreaInsets();
 
   return (
-    <View style={[styles.container, { bottom: safeBottomPadding }]}>
+    <View
+      onLayout={(e) => {
+        if (typeof onLayoutHeight === "function") {
+          onLayoutHeight(e.nativeEvent.layout.height);
+        }
+      }}
+      style={[
+        styles.container,
+        { paddingBottom: insets.bottom },
+      ]}
+    >
       <View style={styles.navbar}>
         <TouchableOpacity
           style={styles.navItem}
@@ -137,37 +134,22 @@ export default function Navbar({ activeRoute = "Home" }: NavbarProps) {
 
 const styles = StyleSheet.create({
   container: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    alignItems: "center",
-    paddingHorizontal: 16,
-    zIndex: 1000, // Ensure navbar is always on top
-    elevation: 10, // Android elevation
+    backgroundColor: "#FFFFFF",
+    borderTopWidth: 1,
+    borderTopColor: "#E5E7EB",
+    // Consistent clean appearance - no shadows
   },
   navbar: {
     flexDirection: "row",
     justifyContent: "space-around",
     alignItems: "center",
-    backgroundColor: "#ffffffff",
-    borderRadius: 30,
-    paddingVertical: 12,
-    width: "100%",
-    maxWidth: 400,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 4, // Increased shadow for better visibility
-    },
-    shadowOpacity: 0.15, // Slightly more opacity
-    shadowRadius: 8, // Increased radius
-    elevation: 8, // Increased elevation for Android
-    borderWidth: 1,
-    borderColor: "#f0f0f0",
+    paddingVertical: 16,
+    paddingHorizontal: 16,
   },
   navItem: {
     alignItems: "center",
-    width: 60,
+    flex: 1,
+    paddingVertical: 8,
   },
   navText: {
     fontSize: 11,
@@ -180,9 +162,10 @@ const styles = StyleSheet.create({
     fontFamily: "Inter-Medium",
   },
   chatbotIcon: {
-    width: 50,
-    height: 30,
+    width: 34,
+    height: 34,
     tintColor: "#7F8C8D",
+    alignSelf: "center",
   },
   activeChatbotIcon: {
     tintColor: "#AD00FF",

@@ -139,7 +139,7 @@ export default function Home() {
   useEffect(() => {
     // Check if we're coming from login for special animation
     const fromLogin = WelcomeAnimationUtils.isFromLogin();
-    
+
     if (fromLogin) {
       // Start entrance animations when component mounts from login
       const welcomeAnimation = WelcomeAnimationUtils.createWelcomeAnimation(
@@ -149,7 +149,7 @@ export default function Home() {
         contentFadeAnim,
         fromLogin
       );
-      
+
       welcomeAnimation.start();
     } else {
       // No animations from other pages - set values immediately
@@ -382,50 +382,49 @@ export default function Home() {
   };
 
   const handleTaskAction = async (action: string, taskId: string) => {
-  try {
-    switch (action) {
-      case 'view':
-        navigation.navigate('TaskDetails', { taskId });
-        break;
-      case 'edit':
-        navigation.navigate('editTaskId', { editTaskId: taskId });
-        break;
-      case 'complete':
-        await taskService.markTaskComplete(taskId);
-        // Refresh the tasks
-        fetchTasks();
-        Alert.alert('Success', 'Task marked as completed');
-        break;
-      case 'delete':
-        Alert.alert(
-          'Delete Task',
-          'Are you sure you want to delete this task?',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Delete',
-              style: 'destructive',
-              onPress: async () => {
-                await taskService.deleteTask(taskId);
-                fetchTasks();
-                Alert.alert('Success', 'Task deleted successfully');
+    try {
+      switch (action) {
+        case "view":
+          navigation.navigate("TaskDetails", { taskId });
+          break;
+        case "edit":
+          navigation.navigate("editTaskId", { editTaskId: taskId });
+          break;
+        case "complete":
+          await taskService.markTaskComplete(taskId);
+          // Refresh the tasks
+          fetchTasks();
+          Alert.alert("Success", "Task marked as completed");
+          break;
+        case "delete":
+          Alert.alert(
+            "Delete Task",
+            "Are you sure you want to delete this task?",
+            [
+              { text: "Cancel", style: "cancel" },
+              {
+                text: "Delete",
+                style: "destructive",
+                onPress: async () => {
+                  await taskService.deleteTask(taskId);
+                  fetchTasks();
+                  Alert.alert("Success", "Task deleted successfully");
+                },
               },
-            },
-          ]
-        );
-        break;
+            ]
+          );
+          break;
+      }
+    } catch (error) {
+      console.error("Error handling task action:", error);
+      Alert.alert("Error", "Failed to perform action");
+    } finally {
+      setShowTaskOptions(null);
     }
-  } catch (error) {
-    console.error('Error handling task action:', error);
-    Alert.alert('Error', 'Failed to perform action');
-  } finally {
-    setShowTaskOptions(null);
-  }
-};
+  };
 
   // Fetch priority tasks with optimized performance
   useEffect(() => {
-
     const fetchTasks = async () => {
       try {
         setLoadingTasks(true);
@@ -630,13 +629,16 @@ export default function Home() {
           if (notesResponse.ok) {
             const notes = await notesResponse.json();
             // Count notes per folder
-            notesCounts = notes.reduce((counts: Record<string, number>, note: any) => {
-              const folderId = note.folder ? note.folder.toString() : null;
-              if (folderId) {
-                counts[folderId] = (counts[folderId] || 0) + 1;
-              }
-              return counts;
-            }, {});
+            notesCounts = notes.reduce(
+              (counts: Record<string, number>, note: any) => {
+                const folderId = note.folder ? note.folder.toString() : null;
+                if (folderId) {
+                  counts[folderId] = (counts[folderId] || 0) + 1;
+                }
+                return counts;
+              },
+              {}
+            );
           }
 
           // Transform folders data to match the expected format with accurate counts
@@ -754,15 +756,18 @@ export default function Home() {
   };
 
   return (
-    <SafeAreaWrapper style={styles.container} includeNavBar={true}>
-      <StatusBar barStyle="light-content" backgroundColor="#7C3AED" />
+    <SafeAreaWrapper disableTopSafeArea={true}>
+      <View style={styles.rootContainer}>
+        <StatusBar barStyle="light-content" backgroundColor="#7C3AED" />
 
-      {/* Header positioned behind content */}
-      <Animated.View style={[
-        {
-          transform: [{ translateY: headerSlideAnim }],
-        }
-      ]}>
+        {/* Header positioned behind content */}
+        <Animated.View
+          style={[
+            {
+              transform: [{ translateY: headerSlideAnim }],
+            },
+          ]}
+        >
         <LinearGradient
           colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
           start={{ x: 0, y: 0 }}
@@ -771,1143 +776,776 @@ export default function Home() {
         >
           <View style={styles.headerContent}>
             <View style={styles.headerLeftSection}>
-                <TouchableOpacity
-                  style={styles.profilePicture}
-                  onPress={() => navigation.navigate("EditProfile")}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.profilePlaceholder}>
-                    <Text style={styles.profileInitial}>
-                      {username.charAt(0).toUpperCase()}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-  
-                <View style={styles.headerGreeting}>
-                  <Text style={styles.welcomeText}>{getGreeting()},</Text>
-                  <Text style={styles.nameText}>{username}! 👋</Text>
-                </View>
-              </View>
-
               <TouchableOpacity
-                style={styles.notificationIcon}
-                onPress={() => navigation.navigate("Notifications")}
+                style={styles.profilePicture}
+                onPress={() => navigation.navigate("EditProfile")}
+                activeOpacity={0.7}
               >
-                <Ionicons
-                  name="notifications"
-                  size={22}
-                  color="#fcfcfcff"
-                  elevation={10}
-                  shadowColor="#2c2c2cff"
-                  shadowOffset={{ width: 0, height: 2 }}
-                  shadowOpacity={0.8}
-                  shadowRadius={8}
-                />
-                <View style={styles.notificationDot} />
+                <View style={styles.profilePlaceholder}>
+                  <Text style={styles.profileInitial}>
+                    {username.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
               </TouchableOpacity>
+
+              <View style={styles.headerGreeting}>
+                <Text style={styles.welcomeText}>{getGreeting()},</Text>
+                <Text style={styles.nameText}>{username}! 👋</Text>
+              </View>
             </View>
-          </LinearGradient>
-        </Animated.View>
-        
-        {/* Main Content Container positioned above header */}
-        <Animated.View style={[
+
+            <TouchableOpacity
+              style={styles.notificationIcon}
+              onPress={() => navigation.navigate("Notifications")}
+            >
+              <Ionicons
+                name="notifications"
+                size={22}
+                color="#fcfcfcff"
+                elevation={10}
+                shadowColor="#2c2c2cff"
+                shadowOffset={{ width: 0, height: 2 }}
+                shadowOpacity={0.8}
+                shadowRadius={8}
+              />
+              <View style={styles.notificationDot} />
+            </TouchableOpacity>
+          </View>
+        </LinearGradient>
+      </Animated.View>
+
+      {/* Main Content Container positioned above header */}
+      <Animated.View
+        style={[
           styles.mainContentContainer,
           {
             opacity: fadeAnim,
             transform: [{ translateY: slideAnim }],
+          },
+        ]}
+      >
+        <ScrollView
+          style={styles.content}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={loading}
+              onRefresh={async () => {
+                // Refresh all data sources
+                setLoading(true);
+
+                // Clear cache to force fresh data
+                await AsyncStorage.multiRemove([
+                  "username",
+                  "notesCount",
+                  "priorityTasks",
+                  "notesFolders",
+                  "todayTasksCount",
+                ]);
+
+                // Re-run all the fetch useEffects and refresh notes count
+                const token = await AsyncStorage.getItem("authToken");
+                if (!token) {
+                  navigation.navigate("Login");
+                  return;
+                }
+
+                // Explicitly refresh notes count
+                await notesCountUtils.refreshCount();
+
+                // The useEffects will run automatically
+                setLoading(false);
+              }}
+              colors={["#6A009C"]}
+              tintColor="#6A009C"
+            />
           }
-        ]}>
-          <ScrollView
-            style={styles.content}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.scrollContent}
-            refreshControl={
-              <RefreshControl
-                refreshing={loading}
-                onRefresh={async () => {
-                  // Refresh all data sources
-                  setLoading(true);
-
-                  // Clear cache to force fresh data
-                  await AsyncStorage.multiRemove([
-                    "username",
-                    "notesCount",
-                    "priorityTasks",
-                    "notesFolders",
-                    "todayTasksCount",
-                  ]);
-
-                  // Re-run all the fetch useEffects and refresh notes count
-                  const token = await AsyncStorage.getItem("authToken");
-                  if (!token) {
-                    navigation.navigate("Login");
-                    return;
-                  }
-
-                  // Explicitly refresh notes count
-                  await notesCountUtils.refreshCount();
-
-                  // The useEffects will run automatically
-                  setLoading(false);
-                }}
-                colors={["#6A009C"]}
-                tintColor="#6A009C"
-              />
-            }
+        >
+          {/* Quick Stats & Actions */}
+          <Animated.View
+            style={[
+              styles.section,
+              {
+                opacity: contentFadeAnim,
+                transform: [{ translateY: slideAnim }],
+              },
+            ]}
           >
-            {/* Quick Stats & Actions */}
-            <Animated.View style={[
-              styles.section,
-              {
-                opacity: contentFadeAnim,
-                transform: [{ translateY: slideAnim }],
-              }
-            ]}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Quick Overview</Text>
-              </View>
-              {loadingQuickAccess ? (
-                <SkeletonLoader type="dashboard" />
-              ) : (
-                <View style={styles.quickCardsGrid}>
-                  {/* Quick Stats */}
-                  <View style={[styles.quickCard, styles.tasksCard]}>
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={32}
-                      color="#10B981"
-                    />
-                    <Text style={styles.cardValue}>
-                      {todayTasksCount.completed}/{todayTasksCount.total}
-                    </Text>
-                    <Text style={styles.cardTitle}>Tasks Today</Text>
-                    <Text style={styles.cardSubtitle}>Focus on your tasks</Text>
-                  </View>
-
-                  <View style={[styles.quickCard, styles.notesCard]}>
-                    <Ionicons name="document-text" size={32} color="#3B82F6" />
-                    <Text style={styles.cardValue}>{notesCount}</Text>
-                    <Text style={styles.cardTitle}>Notes Created</Text>
-                    <Text style={styles.cardSubtitle}>
-                      Keep track of your notes
-                    </Text>
-                  </View>
-
-                  {/* Quick Actions */}
-                  <TouchableOpacity
-                    onPress={() => navigation.navigate("Notes")}
-                    activeOpacity={0.7}
-                  >
-                    <View style={[styles.quickCard, styles.newNoteCard]}>
-                      <Ionicons name="add-circle" size={32} color="#F59E0B" />
-                      <Text style={styles.cardActionText}>New Note</Text>
-                      <Text style={styles.cardSubtitle}>Create a new note</Text>
-                    </View>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    onPress={() => navigation.navigate("RINA")}
-                    activeOpacity={0.7}
-                  >
-                    <View style={[styles.quickCard, styles.rinaCard]}>
-                      <Ionicons
-                        name="chatbubble-ellipses"
-                        size={32}
-                        color="#8B5CF6"
-                      />
-                      <Text style={styles.cardActionText}>Ask RINA</Text>
-                      <Text style={styles.cardSubtitle}>
-                        Get help from RINA
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Quick Overview</Text>
+            </View>
+            {loadingQuickAccess ? (
+              <SkeletonLoader type="dashboard" />
+            ) : (
+              <View style={styles.quickCardsGrid}>
+                {/* Quick Stats */}
+                <View style={[styles.quickCard, styles.tasksCard]}>
+                  <Ionicons name="checkmark-circle" size={32} color="#10B981" />
+                  <Text style={styles.cardValue}>
+                    {todayTasksCount.completed}/{todayTasksCount.total}
+                  </Text>
+                  <Text style={styles.cardTitle}>Tasks Today</Text>
+                  <Text style={styles.cardSubtitle}>Focus on your tasks</Text>
                 </View>
-              )}
-            </Animated.View>
 
-            {/* Priority Tasks */}
-            <Animated.View style={[
-              styles.section,
-              {
-                opacity: contentFadeAnim,
-                transform: [{ translateY: slideAnim }],
-              }
-            ]}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Today's Focus</Text>
+                <View style={[styles.quickCard, styles.notesCard]}>
+                  <Ionicons name="document-text" size={32} color="#3B82F6" />
+                  <Text style={styles.cardValue}>{notesCount}</Text>
+                  <Text style={styles.cardTitle}>Notes Created</Text>
+                  <Text style={styles.cardSubtitle}>
+                    Keep track of your notes
+                  </Text>
+                </View>
+
+                {/* Quick Actions */}
                 <TouchableOpacity
-                  onPress={() =>
-                    navigation.navigate("AllItemsView", { viewType: "urgent-tasks" })
-                  }
+                  onPress={() => navigation.navigate("Notes")}
+                  activeOpacity={0.7}
                 >
-                  <Text style={styles.seeAllText}>See All</Text>
+                  <View style={[styles.quickCard, styles.newNoteCard]}>
+                    <Ionicons name="add-circle" size={32} color="#F59E0B" />
+                    <Text style={styles.cardActionText}>New Note</Text>
+                    <Text style={styles.cardSubtitle}>Create a new note</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => navigation.navigate("RINA")}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.quickCard, styles.rinaCard]}>
+                    <Ionicons
+                      name="chatbubble-ellipses"
+                      size={32}
+                      color="#8B5CF6"
+                    />
+                    <Text style={styles.cardActionText}>Ask RINA</Text>
+                    <Text style={styles.cardSubtitle}>Get help from RINA</Text>
+                  </View>
                 </TouchableOpacity>
               </View>
-              {loadingTasks ? (
-                <SkeletonLoader type="tasks" count={3} />
-              ) : tasksError ? (
-                <View style={styles.errorContainer}>
-                  <Text style={styles.errorText}>{tasksError}</Text>
-                  <TouchableOpacity
-                    style={styles.retryButton}
-                    onPress={() =>
-                      navigation.navigate("AddTask", {
-                        quadrant: "urgent-important",
-                      })
-                    }
-                  >
-                    <Text style={styles.retryText}>View All Tasks</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : priorityTasks.length === 0 ? (
-                <View style={styles.emptyContainer}>
-                  <MaterialIcons name="task-alt" size={48} color="#CBD5E0" />
-                  <Text style={styles.emptyText}>No priority tasks yet</Text>
-                  <TouchableOpacity
-                    style={styles.addButton}
-                    onPress={() =>
-                      navigation.navigate("AddTask", {
-                        quadrant: "urgent-important",
-                      })
-                    }
-                  >
-                    <Text style={styles.addButtonText}>Add a Task</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.horizontalScrollContainer}
+            )}
+          </Animated.View>
+
+          {/* Priority Tasks */}
+          <Animated.View
+            style={[
+              styles.section,
+              {
+                opacity: contentFadeAnim,
+                transform: [{ translateY: slideAnim }],
+              },
+            ]}
+          >
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Today's Focus</Text>
+              <TouchableOpacity
+                onPress={() =>
+                  navigation.navigate("AllItemsView", {
+                    viewType: "urgent-tasks",
+                  })
+                }
+              >
+                <Text style={styles.seeAllText}>See All</Text>
+              </TouchableOpacity>
+            </View>
+            {loadingTasks ? (
+              <SkeletonLoader type="tasks" count={3} />
+            ) : tasksError ? (
+              <View style={styles.errorContainer}>
+                <Text style={styles.errorText}>{tasksError}</Text>
+                <TouchableOpacity
+                  style={styles.retryButton}
+                  onPress={() =>
+                    navigation.navigate("AddTask", {
+                      quadrant: "urgent-important",
+                    })
+                  }
                 >
-                  {priorityTasks.map((task, index) => (
-                    <View key={task.id} style={styles.taskCardWrapper}>
-                      <TouchableOpacity
-                        style={[
-                          styles.taskCardHorizontal,
-                          index === 0 && styles.firstCard,
-                        ]}
-                        activeOpacity={0.8}
-                        onPress={() =>
-                          navigation.navigate("TaskDetails", {
-                            taskId: task.id,
-                          })
-                        }
-                      >
-                        <View style={styles.borderLeft} />
-                        <View style={styles.taskHeader}>
-                          <View style={styles.taskInfo}>
-                            <Text style={styles.taskTitle} numberOfLines={2}>
-                              {task.title}
-                            </Text>
-                            <Text style={styles.taskCategory}>
-                              {task.category}
-                            </Text>
-                          </View>
+                  <Text style={styles.retryText}>View All Tasks</Text>
+                </TouchableOpacity>
+              </View>
+            ) : priorityTasks.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <MaterialIcons name="task-alt" size={48} color="#CBD5E0" />
+                <Text style={styles.emptyText}>No priority tasks yet</Text>
+                <TouchableOpacity
+                  style={styles.addButton}
+                  onPress={() =>
+                    navigation.navigate("AddTask", {
+                      quadrant: "urgent-important",
+                    })
+                  }
+                >
+                  <Text style={styles.addButtonText}>Add a Task</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.horizontalScrollContainer}
+              >
+                {priorityTasks.map((task, index) => (
+                  <View key={task.id} style={styles.taskCardWrapper}>
+                    <TouchableOpacity
+                      style={[
+                        styles.taskCardHorizontal,
+                        index === 0 && styles.firstCard,
+                      ]}
+                      activeOpacity={0.8}
+                      onPress={() =>
+                        navigation.navigate("TaskDetails", {
+                          taskId: task.id,
+                        })
+                      }
+                    >
+                      <View style={styles.borderLeft} />
+                      <View style={styles.taskHeader}>
+                        <View style={styles.taskInfo}>
+                          <Text style={styles.taskTitle} numberOfLines={2}>
+                            {task.title}
+                          </Text>
+                          <Text style={styles.taskCategory}>
+                            {task.category}
+                          </Text>
+                        </View>
+                        <View
+                          style={[
+                            styles.priorityBadge,
+                            {
+                              backgroundColor: getPriorityColor(task.priority),
+                            },
+                          ]}
+                        >
+                          <Text style={styles.priorityText}>
+                            {task.priority}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.taskBody}>
+                        <Text style={styles.taskTime}>{task.time}</Text>
+                      </View>
+
+                      <View style={styles.taskDivider} />
+
+                      <View style={styles.taskFooter}>
+                        <View style={styles.statusContainer}>
                           <View
                             style={[
-                              styles.priorityBadge,
+                              styles.statusDot,
                               {
-                                backgroundColor: getPriorityColor(
-                                  task.priority
-                                ),
+                                backgroundColor:
+                                  task.status === "Completed"
+                                    ? "#10B981"
+                                    : task.status === "In Progress"
+                                    ? "#F59E0B"
+                                    : "#EF4444",
+                              },
+                            ]}
+                          />
+                          <Text
+                            style={[
+                              styles.taskStatus,
+                              {
+                                color:
+                                  task.status === "Completed"
+                                    ? "#10B981"
+                                    : task.status === "In Progress"
+                                    ? "#F59E0B"
+                                    : "#EF4444",
                               },
                             ]}
                           >
-                            <Text style={styles.priorityText}>
-                              {task.priority}
-                            </Text>
-                          </View>
+                            {task.status}
+                          </Text>
                         </View>
 
-                        <View style={styles.taskBody}>
-                          <Text style={styles.taskTime}>{task.time}</Text>
-                        </View>
+                        <TouchableOpacity
+                          style={styles.taskAction}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            setShowTaskOptions(
+                              showTaskOptions === task.id ? null : task.id
+                            );
+                          }}
+                        >
+                          <MaterialIcons
+                            name="more-vert"
+                            size={18}
+                            color="#9CA3AF"
+                          />
+                        </TouchableOpacity>
+                      </View>
+                    </TouchableOpacity>
 
-                        <View style={styles.taskDivider} />
+                    {/* Task Options Menu */}
+                    {showTaskOptions === task.id && (
+                      <View style={styles.taskOptionsMenu}>
+                        <TouchableOpacity
+                          style={styles.taskOption}
+                          onPress={() => handleTaskAction("view", task.id)}
+                        >
+                          <MaterialIcons
+                            name="visibility"
+                            size={16}
+                            color="#4F46E5"
+                          />
+                          <Text style={styles.taskOptionText}>
+                            View Details
+                          </Text>
+                        </TouchableOpacity>
 
-                        <View style={styles.taskFooter}>
-                          <View style={styles.statusContainer}>
-                            <View
-                              style={[
-                                styles.statusDot,
-                                {
-                                  backgroundColor:
-                                    task.status === "Completed"
-                                      ? "#10B981"
-                                      : task.status === "In Progress"
-                                      ? "#F59E0B"
-                                      : "#EF4444",
-                                },
-                              ]}
-                            />
-                            <Text
-                              style={[
-                                styles.taskStatus,
-                                {
-                                  color:
-                                    task.status === "Completed"
-                                      ? "#10B981"
-                                      : task.status === "In Progress"
-                                      ? "#F59E0B"
-                                      : "#EF4444",
-                                },
-                              ]}
-                            >
-                              {task.status}
-                            </Text>
-                          </View>
+                        <TouchableOpacity
+                          style={styles.taskOption}
+                          onPress={() => handleTaskAction("edit", task.id)}
+                        >
+                          <MaterialIcons
+                            name="edit"
+                            size={16}
+                            color="#059669"
+                          />
+                          <Text style={styles.taskOptionText}>Edit Task</Text>
+                        </TouchableOpacity>
 
-                          <TouchableOpacity
-                            style={styles.taskAction}
-                            onPress={(e) => {
-                              e.stopPropagation();
-                              setShowTaskOptions(
-                                showTaskOptions === task.id ? null : task.id
-                              );
-                            }}
+                        <TouchableOpacity
+                          style={styles.taskOption}
+                          onPress={() => handleTaskAction("complete", task.id)}
+                        >
+                          <MaterialIcons
+                            name="check-circle"
+                            size={16}
+                            color="#10B981"
+                          />
+                          <Text style={styles.taskOptionText}>
+                            Mark Complete
+                          </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[styles.taskOption, styles.deleteOption]}
+                          onPress={() => handleTaskAction("delete", task.id)}
+                        >
+                          <MaterialIcons
+                            name="delete"
+                            size={16}
+                            color="#EF4444"
+                          />
+                          <Text
+                            style={[
+                              styles.taskOptionText,
+                              styles.deleteOptionText,
+                            ]}
                           >
-                            <MaterialIcons
-                              name="more-vert"
-                              size={18}
-                              color="#9CA3AF"
-                            />
-                          </TouchableOpacity>
-                        </View>
-                      </TouchableOpacity>
+                            Delete
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+          </Animated.View>
 
-                      {/* Task Options Menu */}
-                      {showTaskOptions === task.id && (
-                        <View style={styles.taskOptionsMenu}>
-                          <TouchableOpacity
-                            style={styles.taskOption}
-                            onPress={() => handleTaskAction("view", task.id)}
-                          >
-                            <MaterialIcons
-                              name="visibility"
-                              size={16}
-                              color="#4F46E5"
-                            />
-                            <Text style={styles.taskOptionText}>
-                              View Details
-                            </Text>
-                          </TouchableOpacity>
-
-                          <TouchableOpacity
-                            style={styles.taskOption}
-                            onPress={() => handleTaskAction("edit", task.id)}
-                          >
-                            <MaterialIcons
-                              name="edit"
-                              size={16}
-                              color="#059669"
-                            />
-                            <Text style={styles.taskOptionText}>Edit Task</Text>
-                          </TouchableOpacity>
-
-                          <TouchableOpacity
-                            style={styles.taskOption}
-                            onPress={() =>
-                              handleTaskAction("complete", task.id)
-                            }
-                          >
-                            <MaterialIcons
-                              name="check-circle"
-                              size={16}
-                              color="#10B981"
-                            />
-                            <Text style={styles.taskOptionText}>
-                              Mark Complete
-                            </Text>
-                          </TouchableOpacity>
-
-                          <TouchableOpacity
-                            style={[styles.taskOption, styles.deleteOption]}
-                            onPress={() => handleTaskAction("delete", task.id)}
-                          >
-                            <MaterialIcons
-                              name="delete"
-                              size={16}
-                              color="#EF4444"
-                            />
-                            <Text
-                              style={[
-                                styles.taskOptionText,
-                                styles.deleteOptionText,
-                              ]}
-                            >
-                              Delete
-                            </Text>
-                          </TouchableOpacity>
-                        </View>
-                      )}
-                    </View>
-                  ))}
-                </ScrollView>
-              )}
-            </Animated.View>
-
-            {/* Notes Folders */}
-            <Animated.View style={[
+          {/* Notes Folders */}
+          <Animated.View
+            style={[
               styles.section,
               {
                 opacity: contentFadeAnim,
                 transform: [{ translateY: slideAnim }],
-              }
-            ]}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Notes Folders</Text>
-                <TouchableOpacity onPress={() => navigation.navigate("Notes")}>
-                  <Text style={styles.seeAllText}>See All</Text>
+              },
+            ]}
+          >
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Notes Folders</Text>
+              <TouchableOpacity onPress={() => navigation.navigate("Notes")}>
+                <Text style={styles.seeAllText}>See All</Text>
+              </TouchableOpacity>
+            </View>
+            {loadingFolders ? (
+              <SkeletonLoader type="notes" count={3} />
+            ) : foldersError ? (
+              <View style={styles.errorContainer}>
+                <Text style={styles.errorText}>{foldersError}</Text>
+              </View>
+            ) : notesFolders.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <MaterialIcons name="folder" size={48} color="#CBD5E0" />
+                <Text style={styles.emptyText}>No folders yet</Text>
+                <TouchableOpacity
+                  style={styles.addButton}
+                  onPress={() => navigation.navigate("NoteEditor")}
+                >
+                  <Text style={styles.addButtonText}>Create Note</Text>
                 </TouchableOpacity>
               </View>
-              {loadingFolders ? (
-                <SkeletonLoader type="notes" count={3} />
-              ) : foldersError ? (
-                <View style={styles.errorContainer}>
-                  <Text style={styles.errorText}>{foldersError}</Text>
-                </View>
-              ) : notesFolders.length === 0 ? (
-<View style={styles.emptyContainer}>
-  <MaterialIcons name="folder" size={48} color="#CBD5E0" />
-  <Text style={styles.emptyText}>No folders yet</Text>
-  <TouchableOpacity
-    style={styles.addButton}
-    onPress={() => navigation.navigate("NoteEditor")}
-  >
-    <Text style={styles.addButtonText}>Create Note</Text>
-  </TouchableOpacity>
-</View>
-              ) : (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.foldersHorizontalContainer}
-                >
-                  {notesFolders.map((folder, index) => (
-                    <TouchableOpacity
-                      key={folder.id}
+            ) : (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.foldersHorizontalContainer}
+              >
+                {notesFolders.map((folder, index) => (
+                  <TouchableOpacity
+                    key={folder.id}
+                    style={[
+                      styles.folderCardHorizontal,
+                      { backgroundColor: "#FFFFFF" },
+                      index === 0 && styles.firstFolderCard,
+                    ]}
+                    activeOpacity={0.8}
+                    onPress={() =>
+                      navigation.navigate("Notes", {
+                        folderId: folder.id.toString(),
+                        folderName: folder.name,
+                      })
+                    }
+                  >
+                    {/* Colored left border accent */}
+                    <View
                       style={[
-                        styles.folderCardHorizontal,
-                        { backgroundColor: '#FFFFFF' },
-                        index === 0 && styles.firstFolderCard,
+                        styles.folderBorderAccent,
+                        { backgroundColor: folder.color },
                       ]}
-                      activeOpacity={0.8}
-                      onPress={() => navigation.navigate("Notes", { 
-                        folderId: folder.id.toString(), 
-                        folderName: folder.name 
-                      })}
+                    />
+                    <View
+                      style={[
+                        styles.folderIconHorizontal,
+                        { backgroundColor: `${folder.color}25` },
+                      ]}
                     >
-                      {/* Colored left border accent */}
-                      <View
-                        style={[
-                          styles.folderBorderAccent,
-                          { backgroundColor: folder.color },
-                        ]}
+                      <MaterialIcons
+                        name="folder"
+                        size={28}
+                        color={folder.color}
                       />
-                      <View
-                        style={[
-                          styles.folderIconHorizontal,
-                          { backgroundColor: `${folder.color}25` },
-                        ]}
+                    </View>
+                    <View style={styles.folderInfoHorizontal}>
+                      <Text
+                        style={styles.folderTitleHorizontal}
+                        numberOfLines={1}
                       >
-                        <MaterialIcons
-                          name="folder"
-                          size={28}
-                          color={folder.color}
-                        />
-                      </View>
-                      <View style={styles.folderInfoHorizontal}>
-                        <Text style={styles.folderTitleHorizontal} numberOfLines={1}>
-                          {folder.name}
-                        </Text>
-                        <Text style={styles.folderCountHorizontal}>
-                          {folder.count}{" "}
-                          {folder.count === 1 ? "note" : "notes"}
-                        </Text>
-                      </View>
-                      <View style={styles.folderArrowContainer}>
-                        <MaterialIcons
-                          name="arrow-forward-ios"
-                          size={16}
-                          color={folder.color}
-                        />
-                      </View>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              )}
-            </Animated.View>
+                        {folder.name}
+                      </Text>
+                      <Text style={styles.folderCountHorizontal}>
+                        {folder.count} {folder.count === 1 ? "note" : "notes"}
+                      </Text>
+                    </View>
+                    <View style={styles.folderArrowContainer}>
+                      <MaterialIcons
+                        name="arrow-forward-ios"
+                        size={16}
+                        color={folder.color}
+                      />
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+          </Animated.View>
 
-            {/* Bottom spacing reduced for NavBar */}
-            <View style={{ height: 20 }} />
-          </ScrollView>
-        </Animated.View>
+          {/* Bottom spacing reduced for NavBar */}
+          <View style={{ height: 20 }} />
+        </ScrollView>
+      </Animated.View>
 
-        {/* Navigation Bar - positioned to overlay content */}
-        <View style={styles.navbarContainer}>
-          <Navbar activeRoute="Home" />
-        </View>
+      {/* Navigation Bar - consistent clean styling */}
+      <Navbar activeRoute="Home" />
+      </View>
     </SafeAreaWrapper>
   );
 }
 
 const styles = StyleSheet.create({
+  // Root and layout
+  rootContainer: {
+    flex: 1,
+    backgroundColor: "#F6F7FB",
+  },
   container: {
     flex: 1,
-    backgroundColor: "#ffffffff",
+    backgroundColor: "transparent",
   },
+
+  // Header / hero
   header: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 24,
-    paddingTop: 20,
-    paddingBottom: 50,
-    zIndex: 1,
-  },
-  
-  mainContentContainer: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    marginTop: 140, // Increased to match header height
-    shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 10,
+    paddingHorizontal: 20,
+    paddingTop: 70,
+    paddingBottom: "100%",
     zIndex: 1000,
-    overflow: "hidden",
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    shadowColor: "#0b1020",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+    elevation: 6,
   },
+
   headerContent: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    flex: 1,
-  },
-  headerGreeting: {
-    flex: 1,
-    paddingLeft: 12,
   },
   headerLeftSection: {
     flexDirection: "row",
     alignItems: "center",
-    flex: 1,
   },
   profilePicture: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 52,
+    height: 52,
+    borderRadius: 14,
     overflow: "hidden",
-  },
-  profilePlaceholder: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    backgroundColor: "rgba(255,255,255,0.14)",
     justifyContent: "center",
     alignItems: "center",
-    borderWidth: 2,
-    borderColor: "rgba(255, 255, 255, 0.3)",
+  },
+  profilePlaceholder: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    justifyContent: "center",
+    alignItems: "center",
   },
   profileInitial: {
     fontSize: 18,
-    fontFamily: "Inter-Bold",
     color: "#FFFFFF",
-    textTransform: "uppercase",
+    fontWeight: "700",
+  },
+  headerGreeting: {
+    marginLeft: 12,
   },
   welcomeText: {
-    fontSize: 16,
-    fontFamily: "Lexend",
-    color: "#ffffffff",
-    lineHeight: 20,
+    fontSize: 13,
+    color: "rgba(255,255,255,0.9)",
+    fontFamily: "Lexend"
   },
   nameText: {
-    fontSize: 28,
+    fontSize: 22,
+    color: "#FFFFFF",
     fontFamily: "Lexend",
-    color: "#ffffffff",
-    marginTop: 4,
-    lineHeight: 32,
-  },
-  descriptionText: {
-    fontSize: 14,
-    fontFamily: "Lexend",
-    color: "#ffffffff",
-    marginTop: 8,
-    lineHeight: 20,
-    opacity: 0.9,
+    marginTop: 2,
   },
   notificationIcon: {
-    padding: 8,
+    padding: 6,
+    marginLeft: 8,
   },
-
   notificationDot: {
     position: "absolute",
-    top: 8,
-    right: 8,
+    top: 6,
+    right: 6,
     width: 8,
     height: 8,
-    borderRadius: 4,
-    backgroundColor: "#EF4444",
+    borderRadius: 6,
+    backgroundColor: "#FF5252",
+    borderWidth: 1,
+    borderColor: "#FFFFFF",
   },
-  content: {
+
+  // Main content container that sits above the header
+  mainContentContainer: {
     flex: 1,
+    backgroundColor: "#F6F7FB",
+    marginTop: 140,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingTop: 18,
+    zIndex: 1,
   },
+
+  content: { flex: 1 },
   scrollContent: {
-    paddingTop: 24, // Increased for better spacing from rounded container
-    paddingBottom: 100, // Reduced space for NavBar
+    paddingTop: 8,
+    paddingBottom: 28,
+    paddingHorizontal: 18,
   },
-  section: {
-    marginBottom: 28, // Increased for better section separation
-    position: "relative",
-  },
+
+  // Sections
+  section: { marginBottom: 20 },
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    backgroundColor: "transparent",
-    paddingHorizontal: 20, // Reduced to match card padding
-    marginBottom: 18, // Increased for better spacing
-  },
-  sectionTitle: {
-    fontSize: 22, // Slightly larger for better hierarchy
-    fontFamily: "Inter-Bold",
-    color: "#1E293B",
-    lineHeight: 26,
-    position: "relative",
-    paddingLeft: 0, // Remove left padding for cleaner alignment
-  },
-  seeAllText: {
-    fontSize: 14,
-    fontFamily: "Inter-Medium",
-    color: "#6A009C",
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    backgroundColor: "#F1E6FF",
-    borderRadius: 12,
-    overflow: "hidden",
-  },
-  loaderContainer: {
-    height: 150,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  errorContainer: {
-    height: 150,
-    justifyContent: "center",
-    alignItems: "center",
-    marginHorizontal: 24,
-    backgroundColor: "#FEF2F2",
-    borderRadius: 16,
-  },
-  errorText: {
-    color: "#EF4444",
-    fontFamily: "Inter-Medium",
-    fontSize: 16,
-    marginBottom: 8,
-  },
-  retryButton: {
-    marginTop: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    backgroundColor: "#6A009C",
-    borderRadius: 8,
-  },
-  retryText: {
-    color: "#FFFFFF",
-    fontFamily: "Inter-Medium",
-    fontSize: 14,
-  },
-  emptyContainer: {
-    height: 160, // Reduced height for better proportions
-    justifyContent: "center",
-    alignItems: "center",
-    marginHorizontal: 20, // Reduced margin to match other elements
-    backgroundColor: "#FFFFFF",
-    borderRadius: 20, // Reduced radius for consistency
-    shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: "rgba(226, 232, 240, 0.5)",
-    padding: 18,
-  },
-  emptyText: {
-    color: "#94A3B8",
-    fontFamily: "Inter-Medium",
-    fontSize: 16,
-    marginTop: 12,
-    marginBottom: 16,
-    textAlign: "center",
-  },
-  addButton: {
-    marginTop: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    backgroundColor: "#8B5CF6",
-    borderRadius: 12,
-    shadowColor: "#8B5CF6",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  addButtonText: {
-    color: "#FFFFFF",
-    fontFamily: "Inter-Regular",
-    fontSize: 15,
-  },
-  quickAccessGrid: {
-    flexDirection: "row",
-    paddingHorizontal: 24,
-    justifyContent: "space-between",
-  },
-  quickCardsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    paddingHorizontal: 20, // Reduced padding
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-  },
-  quickCard: {
-    width: (width - 56) / 2, // Two cards per row with optimized padding
-    height: 140, // Slightly reduced height for better proportions
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24, // More consistent radius
-    padding: 18, // Slightly reduced padding
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 12, // Reduced margin for tighter layout
-    marginHorizontal: 2, // Add small horizontal margin
-    shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 4 }, // Reduced shadow for cleaner look
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 5,
-    borderWidth: 1,
-    borderColor: "rgba(226, 232, 240, 0.5)",
-  },
-  tasksCard: {
-    backgroundColor: "#F0FDF4", // Soft green background for tasks
-    borderColor: "rgba(16, 185, 129, 0.2)",
-  },
-  notesCard: {
-    backgroundColor: "#EFF6FF", // Soft blue background for notes
-    borderColor: "rgba(59, 130, 246, 0.2)",
-  },
-  newNoteCard: {
-    backgroundColor: "#FFFBEB", // Soft amber background for new note
-    borderColor: "rgba(245, 158, 11, 0.2)",
-  },
-  rinaCard: {
-    backgroundColor: "#F5F3FF", // Soft purple background for RINA
-    borderColor: "rgba(139, 92, 246, 0.2)",
-  },
-  cardIcon: {
-    width: 48, // Reduced size
-    height: 48,
-    borderRadius: 16, // Adjusted radius
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 12, // Reduced margin
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 }, // Reduced shadow
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-  },
-  cardValue: {
-    fontSize: 26, // Slightly reduced
-    fontFamily: "Inter-Bold",
-    color: "#1E293B",
-    marginBottom: 4, // Reduced margin
-    marginTop: 10, // Reduced top margin
-  },
-  cardTitle: {
-    fontSize: 14, // Slightly reduced
-    color: "#64748B",
-    fontFamily: "Inter-SemiBold",
-    textAlign: "center",
-    lineHeight: 17, // Adjusted line height
-  },
-  cardSubtitle: {
-    fontSize: 12,
-    color: "#9CA3AF",
-    fontFamily: "Inter-Regular",
-    textAlign: "center",
-    lineHeight: 16,
-    marginTop: 4,
-  },
-  cardActionText: {
-    fontSize: 16, // Reduced size
-    color: "#1E293B",
-    fontFamily: "Inter-Bold",
-    textAlign: "center",
-    lineHeight: 19,
-    marginTop: 8, // Reduced margin
-  },
-  quickAccessCardHorizontal: {
-    backgroundColor: "#FFFFFF",
-    width: width * 0.35,
-    marginRight: 16,
-    borderRadius: 20,
-    padding: 20,
-    alignItems: "center",
-    shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    elevation: 6,
-    borderWidth: 1,
-    borderColor: "rgba(226, 232, 240, 0.6)",
-  },
-  quickAccessIcon: {
-    width: 54,
-    height: 54,
-    borderRadius: 18,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-  },
-  quickAccessTitle: {
-    fontSize: 14,
-    color: "#64748B",
-    fontFamily: "Inter-Medium",
-    textAlign: "center",
-    marginBottom: 8,
-    lineHeight: 18,
-  },
-  quickAccessCount: {
-    fontSize: 18,
-    fontFamily: "Inter-Bold",
-    color: "#1E293B",
-  },
-  horizontalScrollContainer: {
-    paddingLeft: 20, // Reduced to match section header padding
-    paddingRight: 20, // Add right padding for consistency
-    paddingBottom: 16, // Reduced for tighter layout
-    paddingTop: 4, // Reduced top padding
-  },
-  firstCard: {
-    marginLeft: 0,
-  },
-  taskCardHorizontal: {
-    backgroundColor: "#FFFFFF",
-    width: width * 0.75, // Slightly wider for better content display
-    marginRight: 14, // Reduced margin between cards
-    borderRadius: 20,
-    padding: 18, // Slightly reduced padding
-    shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 4 }, // Reduced shadow
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 6,
-    position: "relative", // Enable positioning for child elements
-    borderWidth: 1,
-    borderColor: "rgba(226, 232, 240, 0.5)",
-  },
-
-  borderLeft: {
-    position: "absolute",
-    height: 70, // Cover more of the card height
-    width: 6,
-    backgroundColor: "#6A009C",
-    left: 0,
-    top: 20, // Align with taskTitle's vertical position
-    borderTopLeftRadius: 3,
-    borderBottomLeftRadius: 3,
-    shadowColor: "#000",
-    shadowOffset: { width: 1, height: 0 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-  },
-
-  taskTitle: {
-    fontSize: 18,
-    fontFamily: "Inter-Bold",
-    color: "#1E293B",
-    marginBottom: 6,
-    lineHeight: 22,
-  },
-  taskCategory: {
-    fontSize: 14,
-    color: "#6A009C",
-    fontFamily: "Inter-Medium",
-    backgroundColor: "#EDE7F6", // Light background for category
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
-    alignSelf: "flex-start",
-  },
-  priorityBadge: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    minWidth: 70,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#D1D5DB", // Light border for badge
-  },
-
-  taskHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
     marginBottom: 12,
   },
-  taskInfo: {
-    flex: 1,
-    paddingRight: 12,
+  sectionTitle: { fontSize: 18, color: "#0f1724", fontWeight: "700" },
+  seeAllText: {
+    fontSize: 13,
+    color: "#6C2BD9",
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: "rgba(108,43,217,0.08)",
   },
 
-  taskCardWrapper: {
-    position: "relative",
+  // Loaders / empty / errors
+  loaderContainer: { height: 140, justifyContent: "center", alignItems: "center" },
+  errorContainer: {
+    minHeight: 120,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 16,
+    borderRadius: 14,
+    backgroundColor: "#FFF6F6",
   },
+  errorText: { color: "#D9534F", fontSize: 14, fontWeight: "600" },
+  retryButton: { marginTop: 8 },
+  retryText: { color: "#6C2BD9", fontWeight: "700" },
+
+  emptyContainer: {
+    minHeight: 140,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 18,
+    borderRadius: 16,
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#0b1020",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
+    elevation: 3,
+  },
+  emptyText: { color: "#6B7280", fontSize: 15, marginTop: 10, textAlign: "center" },
+  addButton: {
+    marginTop: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    backgroundColor: "#6C2BD9",
+    borderRadius: 12,
+  },
+  addButtonText: { color: "#FFFFFF", fontWeight: "700" },
+
+  // Quick cards grid - modern rounded cards with soft shadows
+  quickCardsGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
+  quickCard: {
+    width: (width - 54) / 2,
+    minHeight: 140,
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 14,
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#0b1020",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.03,
+    shadowRadius: 18,
+    elevation: 4,
+    borderWidth: 0,
+    justifyContent: "space-between",
+    alignItems: "center", // center card inner content
+
+  },
+  tasksCard: { backgroundColor: "#F7FFFA" },
+  notesCard: { backgroundColor: "#F6FBFF" },
+  newNoteCard: { backgroundColor: "#FFFBF1" },
+  rinaCard: { backgroundColor: "#FBF8FF" },
+  cardValue: { fontSize: 26, fontWeight: "800", color: "#0f1724" },
+  cardTitle: { fontSize: 13, color: "#6B7280" },
+  cardSubtitle: { fontSize: 12, color: "#9CA3AF" },
+  cardActionText: { fontSize: 16, fontWeight: "700", color: "#0f1724" },
+
+  // Horizontal lists and cards
+  horizontalScrollContainer: { paddingLeft: 6, paddingBottom: 12, paddingTop: 6 },
+  taskCardHorizontal: {
+    backgroundColor: "#FFFFFF",
+    width: width * 0.74,
+    marginRight: 14,
+    borderRadius: 14,
+    padding: 14,
+    shadowColor: "#0b1020",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.03,
+    shadowRadius: 18,
+    elevation: 4,
+    borderWidth: 0,
+  },
+  firstCard: { marginLeft: 6 },
+  borderLeft: {
+    position: "absolute",
+    height: 64,
+    width: 6,
+    left: 0,
+    top: 18,
+    borderTopLeftRadius: 6,
+    borderBottomLeftRadius: 6,
+  },
+  taskTitle: { fontSize: 16, fontWeight: "800", color: "#0f1724", marginBottom: 6 },
+  taskCategory: {
+    fontSize: 12,
+    color: "#6C2BD9",
+    backgroundColor: "rgba(108,43,217,0.08)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    alignSelf: "flex-start",
+  },
+  priorityBadge: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, minWidth: 64, alignItems: "center" },
+  priorityText: { fontSize: 11, color: "#FFFFFF", fontWeight: "800", textTransform: "uppercase" },
+  taskHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 },
+  taskInfo: { flex: 1, paddingRight: 8 },
+  taskBody: { marginBottom: 10 },
+  taskTime: { fontSize: 13, color: "#6B7280" },
+  taskDivider: { height: 1, backgroundColor: "#EEF2F7", marginVertical: 8 },
+  taskFooter: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  statusContainer: { flexDirection: "row", alignItems: "center" },
+  statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
+  taskStatus: { fontSize: 13, color: "#374151", fontWeight: "600" },
+  taskAction: { padding: 8, borderRadius: 10, backgroundColor: "#F3F4F6" },
+  taskCardWrapper: { position: "relative" },
 
   taskOptionsMenu: {
     position: "absolute",
-    top: 60,
-    right: 10,
+    top: 56,
+    right: 8,
     backgroundColor: "#FFFFFF",
     borderRadius: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-    shadowColor: "#1E293B",
+    paddingVertical: 6,
+    paddingHorizontal: 6,
+    shadowColor: "#0b1020",
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 10,
-    borderWidth: 1,
-    borderColor: "rgba(226, 232, 240, 0.6)",
-    zIndex: 1000,
-    minWidth: 140,
-  },
-
-  taskOption: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    marginVertical: 2,
-  },
-
-  taskOptionText: {
-    fontSize: 14,
-    fontFamily: "Inter-Medium",
-    color: "#374151",
-    marginLeft: 8,
-  },
-
-  deleteOption: {
-    backgroundColor: "#FEF2F2",
-  },
-
-  deleteOptionText: {
-    color: "#EF4444",
-  },
-
-  taskBody: {
-    marginBottom: 16,
-  },
-  taskTime: {
-    fontSize: 14,
-    color: "#64748B",
-    fontFamily: "Inter-Medium",
-  },
-
-  priorityText: {
-    fontSize: 11,
-    color: "#FFFFFF",
-    fontFamily: "Inter-Bold",
-    textTransform: "uppercase",
-  },
-  taskDivider: {
-    height: 1,
-    backgroundColor: "#c9ccceff",
-    marginVertical: 8,
-    marginHorizontal: 5, // extend to card edges
-    opacity: 0.9,
-  },
-  taskFooter: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  statusContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 8,
-  },
-  taskStatus: {
-    fontSize: 13,
-    fontFamily: "Inter-Medium",
-  },
-  taskAction: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: "#F8FAFC",
-  },
-  foldersContainer: {
-    paddingHorizontal: 24,
-  },
-  foldersGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  folderCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 5,
-    borderWidth: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  folderContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-  },
-  folderIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 16,
-  },
-  folderInfo: {
-    flex: 1,
-  },
-  folderTitle: {
-    fontSize: 16,
-    fontFamily: "Inter-Bold",
-    color: "#1E293B",
-    marginBottom: 4,
-    lineHeight: 20,
-  },
-  folderCount: {
-    fontSize: 14,
-    color: "#64748B",
-    fontFamily: "Inter-Medium",
-  },
-  navbarContainer: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: "rgba(248, 250, 252, 0.98)", // Slightly more opaque
-    borderTopLeftRadius: 24, // Slightly reduced radius
-    borderTopRightRadius: 24,
-    shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: -3 }, // Stronger shadow
-    shadowOpacity: 0.12,
-    shadowRadius: 10,
-    elevation: 8, // Increased elevation for better separation
-    zIndex: 1000,
-  },
-  // Horizontal Folders Styles
-  foldersHorizontalContainer: {
-    paddingLeft: 20, // Match section header padding
-    paddingRight: 20, // Add consistent right padding
-    paddingBottom: 8, // Increased for better spacing
-  },
-folderCardHorizontal: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 18, // Slightly reduced radius for consistency
-    padding: 16, // Reduced padding
-    marginRight: 12, // Consistent margin
-    shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 6 },
-    // soften the shadow so it appears as an outer elevation rather than a dark inner band
     shadowOpacity: 0.06,
-    shadowRadius: 10,
-    elevation: 4,
-    borderWidth: 2,
-    borderColor: "rgba(139, 92, 246, 0.15)",
+    shadowRadius: 12,
+    elevation: 6,
+    minWidth: 150,
+  },
+  taskOption: { flexDirection: "row", alignItems: "center", paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8 },
+  taskOptionText: { fontSize: 14, color: "#374151", marginLeft: 10, fontWeight: "600" },
+  deleteOption: { backgroundColor: "#FFF5F5" },
+  deleteOptionText: { color: "#E11D48", fontWeight: "700" },
+
+  // Folders
+  foldersHorizontalContainer: { paddingLeft: 6, paddingRight: 6, paddingBottom: 8 },
+  folderCardHorizontal: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    padding: 14,
+    marginRight: 12,
     width: 160,
-    minHeight: 120,
+    minHeight: 110,
+    shadowColor: "#0b1020",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.03,
+    shadowRadius: 14,
+    elevation: 3,
     position: "relative",
-    // allow shadow to render outside the card bounds to avoid clipped inner shadow
-    overflow: Platform.OS === 'android' ? 'hidden' : 'visible',
+    overflow: Platform.OS === "android" ? "hidden" : "visible",
   },
-  firstFolderCard: {
-    marginLeft: 0,
-  },
-  folderIconHorizontal: {
-    width: 48, // Reduced size
-    height: 48,
-    borderRadius: 14, // Adjusted radius
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 10, // Reduced margin
-    alignSelf: "center",
-  },
-  folderInfoHorizontal: {
-    flex: 1,
-    alignItems: "center",
-  },
-  folderTitleHorizontal: {
-    fontSize: 14,
-    fontFamily: "Inter-Bold",
-    color: "#1E293B",
-    marginBottom: 4,
-    lineHeight: 18,
-    textAlign: "center",
-  },
-  folderCountHorizontal: {
-    fontSize: 12,
-    color: "#64748B",
-    fontFamily: "Inter-Medium",
-    textAlign: "center",
-  },
-  folderArrowContainer: {
-    position: "absolute",
-    top: 12,
-    right: 12,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: "rgba(255, 255, 255, 0.8)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  folderBorderAccent: {
-    position: "absolute",
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 4,
-    borderTopLeftRadius: 20,
-    borderBottomLeftRadius: 20,
-    zIndex: 1,
-  },
+  firstFolderCard: { marginLeft: 6 },
+  folderBorderAccent: { position: "absolute", left: 0, top: 0, bottom: 0, width: 6, borderTopLeftRadius: 14, borderBottomLeftRadius: 14 },
+  folderIconHorizontal: { width: 44, height: 44, borderRadius: 12, justifyContent: "center", alignItems: "center", alignSelf: "center", marginBottom: 8 },
+  folderInfoHorizontal: { flex: 1, alignItems: "center" },
+  folderTitleHorizontal: { fontSize: 14, fontWeight: "700", color: "#0f1724", textAlign: "center" },
+  folderCountHorizontal: { fontSize: 12, color: "#6B7280", marginTop: 4 },
+  folderArrowContainer: { position: "absolute", top: 10, right: 10, width: 28, height: 28, borderRadius: 14, backgroundColor: "rgba(255,255,255,0.9)", justifyContent: "center", alignItems: "center" },
 });
 function fetchTasks() {
   throw new Error("Function not implemented.");
 }
-
