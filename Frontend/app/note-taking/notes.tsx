@@ -184,6 +184,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
   const [newFolderName, setNewFolderName] = useState("");
   const [selectedFolderColor, setSelectedFolderColor] = useState("#667EEA");
   const [showMoreVertMenu, setShowMoreVertMenu] = useState(false);
+  const [showStatsModal, setShowStatsModal] = useState(false);
   const [showSearchBar, setShowSearchBar] = useState(false);
   const [activeNoteOptions, setActiveNoteOptions] = useState<string | null>(
     null
@@ -2946,7 +2947,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
               ]}
               onPress={toggleSearch}
             >
-              <MaterialIcons name="search" size={22} color="#ffffffff" />
+              <MaterialIcons name="search" size={22} color="#ffffffff"  />
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.headerActionButton}
@@ -3323,11 +3324,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
                 style={[styles.moreVertMenuItem, styles.moreVertMenuItemLast]}
                 onPress={() => {
                   setShowMoreVertMenu(false);
-                  Alert.alert(
-                    "Notes Statistics",
-                    `Total Notes: ${notes.length}\nFolders: ${folders.length}\nFiltered Notes: ${notesViewData.length}`,
-                    [{ text: "OK", style: "default" }]
-                  );
+                  setShowStatsModal(true);
                 }}
               >
                 <MaterialIcons name="analytics" size={20} color="#64748B" />
@@ -3462,6 +3459,64 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
           />
         </Modal>
       )}
+
+      {/* Statistics Modal */}
+      {showStatsModal && (
+        <Modal
+          visible={showStatsModal}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setShowStatsModal(false)}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setShowStatsModal(false)}
+          >
+            <View style={styles.statsModalContent}>
+              <View style={styles.statsHeader}>
+                <Text style={styles.statsModalTitle}>Notes Statistics</Text>
+                <Text style={styles.statsSubtitle}>
+                  Quick overview of your notes and folders
+                </Text>
+              </View>
+
+              <View style={styles.statsGrid}>
+                <View style={styles.statCard}>
+                  <View style={[styles.statIconContainer, { backgroundColor: "#F3E8FF" }]}>
+                    <MaterialIcons name="note-alt" size={20} color="#7C3AED" />
+                  </View>
+                  <Text style={styles.statsValueLarge}>{notes.length}</Text>
+                  <Text style={styles.statLabelSmall}>Total notes</Text>
+                </View>
+
+                <View style={styles.statCard}>
+                  <View style={[styles.statIconContainer, { backgroundColor: "#E6F6FF" }]}>
+                    <MaterialIcons name="folder" size={20} color="#0369A1" />
+                  </View>
+                  <Text style={styles.statsValueLarge}>{folders.length}</Text>
+                  <Text style={styles.statLabelSmall}>Folders</Text>
+                </View>
+
+                <View style={styles.statCard}>
+                  <View style={[styles.statIconContainer, { backgroundColor: "#FFF7ED" }]}>
+                    <MaterialIcons name="filter-list" size={20} color="#D97706" />
+                  </View>
+                  <Text style={styles.statsValueLarge}>{notesViewData.length}</Text>
+                  <Text style={styles.statLabelSmall}>Filtered notes</Text>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={styles.statsCloseButton}
+                onPress={() => setShowStatsModal(false)}
+              >
+                <Text style={styles.statsCloseButtonText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+      )}
     </SafeAreaWrapper>
   );
 }
@@ -3472,8 +3527,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#F8FAFC",
   },
   header: {
-    paddingTop: Platform.OS === "ios" ? 50 : 35,
-    paddingBottom: 24,
+    paddingTop: 20,
+    paddingBottom: 50,
     paddingHorizontal: 24,
     borderBottomLeftRadius: 25,
     borderBottomRightRadius: 25,
@@ -3526,9 +3581,10 @@ const styles = StyleSheet.create({
   headerActionButton: {
     width: 44,
     height: 44,
-    borderRadius: 12,
+    borderRadius: 8,
     justifyContent: "center",
     alignItems: "center",
+    
     backgroundColor: "rgba(255, 255, 255, 0.2)",
   },
   activeSearchButton: {
@@ -3937,9 +3993,9 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 32,
+    paddingHorizontal: 24,
     paddingVertical: 40,
-    minHeight: 400,
+    width: "100%",
   },
   emptyStateIconContainer: {
     width: 100,
@@ -3968,30 +4024,42 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     textAlign: "center",
     lineHeight: 20,
-    maxWidth: 260,
+    maxWidth: "90%",
   },
   emptyStateButtons: {
     flexDirection: "row",
-    gap: 16,
+    flexWrap: "wrap",
+    justifyContent: "center",
+    alignItems: "center",
     marginTop: 8,
+    width: "100%",
   },
   emptyStateNoteButton: {
     backgroundColor: "#6A009C",
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 24,
+    margin: 8,
+    minWidth: 120,
+    flexGrow: 1,
+    maxWidth: 240,
   },
   emptyStateDrawingButton: {
     backgroundColor: "#8B5CF6",
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 24,
+    margin: 8,
+    minWidth: 120,
+    flexGrow: 1,
+    maxWidth: 240,
   },
   emptyStateImportButton: {
     backgroundColor: "#F59E0B",
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 24,
+    margin: 8,
+    minWidth: 120,
+    flexGrow: 1,
+    maxWidth: 240,
   },
 
   fabButton: {
@@ -4041,6 +4109,106 @@ const styles = StyleSheet.create({
     shadowRadius: 25,
     elevation: 25,
     paddingTop: 8,
+  },
+
+  // Statistics modal styles
+  statsModalContent: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 20,
+    margin: 24,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 20,
+    alignItems: "stretch",
+  },
+  statsModalTitle: {
+    fontSize: 20,
+    fontFamily: "Inter-Bold",
+    color: "#1F2937",
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  statsHeader: {
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  statsSubtitle: {
+    fontSize: 13,
+    color: "#6B7280",
+    fontFamily: "Inter-Regular",
+    textAlign: "center",
+    marginTop: 4,
+  },
+  statsGrid: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 12,
+    marginTop: 8,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    paddingVertical: 18,
+    paddingHorizontal: 12,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  statIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  statsValueLarge: {
+    fontSize: 28,
+    fontFamily: "Inter-Bold",
+    color: "#0F172A",
+    marginBottom: 4,
+  },
+  statLabelSmall: {
+    fontSize: 12,
+    color: "#9CA3AF",
+    fontFamily: "Inter-Regular",
+  },
+  statsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+  statsLabel: {
+    fontSize: 16,
+    color: "#4B5563",
+    fontFamily: "Inter-Regular",
+  },
+  statsValue: {
+    fontSize: 16,
+    color: "#0F172A",
+    fontFamily: "Inter-SemiBold",
+  },
+  statsCloseButton: {
+    marginTop: 16,
+    backgroundColor: "#8B5CF6",
+    paddingVertical: 10,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  statsCloseButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontFamily: "Inter-Medium",
   },
   modalHeader: {
     flexDirection: "row",

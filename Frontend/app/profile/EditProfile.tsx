@@ -19,6 +19,7 @@ import * as ImagePicker from "expo-image-picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_URL } from "@/constants/ApiConfig";
 import { Picker } from "@react-native-picker/picker";
+import { LinearGradient } from "expo-linear-gradient";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -228,8 +229,13 @@ const EditProfile: React.FC = () => {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
+      <LinearGradient
+        colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.header}
+      >        
+      <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
@@ -248,8 +254,8 @@ const EditProfile: React.FC = () => {
             color="#6A009C"
           />
         </TouchableOpacity>
-      </View>
-
+        </LinearGradient>
+        
       {/* Content */}
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.profilePictureSection}>
@@ -522,7 +528,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 24,
-    color: "#6A009C",
+    color: "#ffffffff",
     fontFamily: "Inter-Bold",
   },
   actionButton: {

@@ -450,16 +450,6 @@ const ToDo: React.FC = () => {
                 <Text style={styles.moreVertMenuText}>View All Completed</Text>
               </TouchableOpacity>
               
-              <TouchableOpacity
-                style={[styles.moreVertMenuItem, styles.moreVertMenuItemLast]}
-                onPress={() => {
-                  setShowMoreVertMenu(false);
-                  navigation.navigate("TaskSettings" as any);
-                }}
-              >
-                <MaterialIcons name="settings" size={20} color="#64748B" />
-                <Text style={styles.moreVertMenuText}>Task Settings</Text>
-              </TouchableOpacity>
             </View>
           </TouchableOpacity>
         </Modal>
@@ -630,9 +620,8 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     paddingHorizontal: 20,
-    paddingTop: 40, // Increased for better status bar clearance
-    paddingBottom: 50, // Increased for better spacing
-    height: 140, // Fixed height to prevent overlap
+    paddingTop: 40,
+    paddingBottom: 50,
     borderBottomLeftRadius: 30,
     borderBottomRightRadius: 30,
     shadowColor: "#000",

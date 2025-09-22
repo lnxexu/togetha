@@ -1168,16 +1168,16 @@ export default function Home() {
                   <Text style={styles.errorText}>{foldersError}</Text>
                 </View>
               ) : notesFolders.length === 0 ? (
-                <View style={styles.emptyContainer}>
-                  <MaterialIcons name="folder" size={48} color="#CBD5E0" />
-                  <Text style={styles.emptyText}>No folders yet</Text>
-                  <TouchableOpacity
-                    style={styles.addButton}
-                    onPress={() => navigation.navigate("Notes")}
-                  >
-                    <Text style={styles.addButtonText}>Create Note</Text>
-                  </TouchableOpacity>
-                </View>
+<View style={styles.emptyContainer}>
+  <MaterialIcons name="folder" size={48} color="#CBD5E0" />
+  <Text style={styles.emptyText}>No folders yet</Text>
+  <TouchableOpacity
+    style={styles.addButton}
+    onPress={() => navigation.navigate("NoteEditor")}
+  >
+    <Text style={styles.addButtonText}>Create Note</Text>
+  </TouchableOpacity>
+</View>
               ) : (
                 <ScrollView
                   horizontal
@@ -1189,7 +1189,7 @@ export default function Home() {
                       key={folder.id}
                       style={[
                         styles.folderCardHorizontal,
-                        { backgroundColor: `${folder.color}15` },
+                        { backgroundColor: '#FFFFFF' },
                         index === 0 && styles.firstFolderCard,
                       ]}
                       activeOpacity={0.8}
@@ -1266,11 +1266,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 24,
-    paddingTop: 40, // Increased for better spacing from status bar
-    paddingBottom: 30, // Increased for better spacing
-    height: 140, // Fixed height to prevent content overlap
+    paddingTop: 20,
+    paddingBottom: 50,
     zIndex: 1,
   },
+  
   mainContentContainer: {
     flex: 1,
     backgroundColor: "#FFFFFF",
@@ -1452,9 +1452,9 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingVertical: 12,
     paddingHorizontal: 24,
-    backgroundColor: "#6A009C",
+    backgroundColor: "#8B5CF6",
     borderRadius: 12,
-    shadowColor: "#6A009C",
+    shadowColor: "#8B5CF6",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
@@ -1462,8 +1462,8 @@ const styles = StyleSheet.create({
   },
   addButtonText: {
     color: "#FFFFFF",
-    fontFamily: "Inter-SemiBold",
-    fontSize: 16,
+    fontFamily: "Inter-Regular",
+    fontSize: 15,
   },
   quickAccessGrid: {
     flexDirection: "row",
@@ -1836,22 +1836,24 @@ const styles = StyleSheet.create({
     paddingRight: 20, // Add consistent right padding
     paddingBottom: 8, // Increased for better spacing
   },
-  folderCardHorizontal: {
+folderCardHorizontal: {
     backgroundColor: "#FFFFFF",
     borderRadius: 18, // Slightly reduced radius for consistency
     padding: 16, // Reduced padding
     marginRight: 12, // Consistent margin
     shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 4 }, // Reduced shadow
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 6,
-    borderWidth: 1, // Reduced border width
-    borderColor: "rgba(139, 92, 246, 0.12)", // Lighter border
-    width: 150, // Slightly reduced width
-    minHeight: 110, // Reduced height
+    shadowOffset: { width: 0, height: 6 },
+    // soften the shadow so it appears as an outer elevation rather than a dark inner band
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 4,
+    borderWidth: 2,
+    borderColor: "rgba(139, 92, 246, 0.15)",
+    width: 160,
+    minHeight: 120,
     position: "relative",
-    overflow: "hidden",
+    // allow shadow to render outside the card bounds to avoid clipped inner shadow
+    overflow: Platform.OS === 'android' ? 'hidden' : 'visible',
   },
   firstFolderCard: {
     marginLeft: 0,
