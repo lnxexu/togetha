@@ -77,6 +77,7 @@ const ANNOTATION_COLORS = [
 // Configuration: control whether visual thickness / font sizes scale with PDF zoom.
 // When false, annotations remain visually stable (positions still follow zoom via coordinate conversion)
 // preventing highlights, pen strokes, note bubbles from becoming thicker when zooming.
+// This matches the DrawingCanvas implementation for consistent behavior.
 const SCALE_STROKES_WITH_ZOOM = false;
 
 const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
@@ -104,30 +105,59 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [notePosition, setNotePosition] = useState({ x: 0, y: 0 });
-  const [pdfScale, setPdfScale] = useState(1);
-  const [zoomLevel, setZoomLevel] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const fadeAnim = useState(new Animated.Value(0))[0];
   const slideAnim = useState(new Animated.Value(-50))[0];
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-
-  // Enhanced PDF transformation state for better zoom/pan handling
+  
+  // Single zoom state - simplified approach from DrawingEditor
+  const [currentZoom, setCurrentZoom] = useState(1); // Track PDF zoom level
+  
+  // PDF transformation state with pan support
   const [pdfTransform, setPdfTransform] = useState({
     scale: 1,
     translateX: 0,
     translateY: 0,
   });
   
-  // Canvas-like container dimensions and transform
+  // Canvas-like container dimensions
   const [containerSize, setContainerSize] = useState({ width: screenWidth, height: screenHeight - 300 });
-  const [pdfContainer, setPdfContainer] = useState<View | null>(null);
   const pdfContainerRef = useRef<View>(null);
+  const pdfScrollRef = useRef<ScrollView>(null);
   
-  // Pinch-to-zoom state
-  const [initialPinchDistance, setInitialPinchDistance] = useState(0);
-  const [initialScale, setInitialScale] = useState(1);
+  // Gesture handling refs - from DrawingEditor approach
+  const gestureStartZoomRef = useRef(1);
+  const gestureStartDistanceRef = useRef(0);
+
+  // Scale constants
+  const MIN_PDF_SCALE = 0.5;
+  const MAX_PDF_SCALE = 3.0; // Match DrawingEditor limit
+
+  // Helper function to calculate distance between two touches - from DrawingEditor
+  const getDistance = (touches: any[]) => {
+    if (touches.length < 2) return 0;
+    const touch1 = touches[0];
+    const touch2 = touches[1];
+    const dx = touch2.pageX - touch1.pageX;
+    const dy = touch2.pageY - touch1.pageY;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  // Handle double tap to reset zoom - from DrawingEditor
+  const lastTapRef = useRef(0);
+  const handleDoubleTap = () => {
+    const now = Date.now();
+    const timeSinceLastTap = now - lastTapRef.current;
+    
+    if (timeSinceLastTap < 300 && timeSinceLastTap > 0) {
+      setCurrentZoom(1);
+      setPdfTransform({ scale: 1, translateX: 0, translateY: 0 });
+    }
+    
+    lastTapRef.current = now;
+  };
 
   // Direct PDF annotation state
   const [isSavingToPDF, setIsSavingToPDF] = useState(false);
@@ -150,6 +180,9 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   // PDF viewport tracking
   const [pdfDimensions, setPdfDimensions] = useState({ width: screenWidth, height: screenHeight - 300 });
   const [scrollOffset, setScrollOffset] = useState({ x: 0, y: 0 });
+  
+  // Scroll tracking for annotation positioning
+  const [pdfScrollOffset, setPdfScrollOffset] = useState({ x: 0, y: 0 });
   
   // Actual PDF page dimensions (from the PDF file itself)
   const [pdfPageDimensions, setPdfPageDimensions] = useState({ width: 595, height: 842 }); // Default A4 size in points
@@ -714,12 +747,17 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       setPdfPageDimensions({ width, height });
     }
     
-    // Update PDF viewer bounds for accurate coordinate conversion
+    // Update container size based on number of pages
     const viewerWidth = screenWidth;
-    const viewerHeight = screenHeight - 300; // Account for header and toolbar
-    setPdfViewerBounds({ width: viewerWidth, height: viewerHeight });
+    const estimatedPageHeight = (screenHeight - 300) * 0.8; // Estimate page height
+    const totalHeight = Math.max(screenHeight - 300, numberOfPages * estimatedPageHeight + (numberOfPages - 1) * 10); // Add spacing between pages
     
-    console.log("PDF viewer bounds set:", { width: viewerWidth, height: viewerHeight });
+    setContainerSize({ width: viewerWidth, height: totalHeight });
+    
+    // Update PDF viewer bounds for accurate coordinate conversion
+    setPdfViewerBounds({ width: viewerWidth, height: totalHeight });
+    
+    console.log("PDF viewer bounds set for", numberOfPages, "pages:", { width: viewerWidth, height: totalHeight });
     console.log(
       "PDF loaded successfully:",
       numberOfPages,
@@ -770,13 +808,10 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   };
 
   const onPdfScaleChanged = (scale: number) => {
-    console.log('PDF Scale Changed:', scale);
-    setPdfScale(scale);
-    setZoomLevel(scale);
+    console.log('PDF internal scale changed:', scale);
+    // Update our zoom states to stay synchronized with PDF component
+    setCurrentZoom(scale);
     setPdfTransform(prev => ({ ...prev, scale }));
-    
-    // Force re-render of annotations to match the new PDF scale
-    updateAnnotations(prev => [...prev]);
   };
 
   // Tag management functions
@@ -831,17 +866,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     }
   };
 
-  // Helper function to calculate distance between two touches for pinch gesture
-  const getDistance = (touches: any[]) => {
-    if (touches.length < 2) return 0;
-    const touch1 = touches[0];
-    const touch2 = touches[1];
-    return Math.sqrt(
-      Math.pow(touch2.pageX - touch1.pageX, 2) + 
-      Math.pow(touch2.pageY - touch1.pageY, 2)
-    );
-  };
-
   const handleFolderSelect = (folder: any | null) => {
     if (folder) {
       setSelectedFolderId(folder.id);
@@ -853,117 +877,117 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     setShowFolderModal(false);
   };
 
-  // Zoom control functions - now working with unified transform
+  // Zoom control functions - simplified DrawingEditor approach
   const handleZoomIn = () => {
-    const newScale = Math.min(pdfTransform.scale * 1.25, 3); // Max zoom 3x
-    setPdfTransform(prev => ({ ...prev, scale: newScale }));
-    setZoomLevel(newScale);
-    console.log('Zoom in - new scale:', newScale);
+    const newZoom = Math.min(currentZoom * 1.25, MAX_PDF_SCALE); // Max zoom 3x
+    setCurrentZoom(newZoom);
+    setPdfTransform(prev => ({ ...prev, scale: newZoom }));
   };
 
   const handleZoomOut = () => {
-    const newScale = Math.max(pdfTransform.scale * 0.8, 0.5); // Min zoom 0.5x
-    setPdfTransform(prev => ({ ...prev, scale: newScale }));
-    setZoomLevel(newScale);
-    console.log('Zoom out - new scale:', newScale);
+    const newZoom = Math.max(currentZoom * 0.8, MIN_PDF_SCALE); // Min zoom 0.5x
+    setCurrentZoom(newZoom);
+    setPdfTransform(prev => ({ ...prev, scale: newZoom }));
   };
 
   const resetZoom = () => {
+    setCurrentZoom(1);
     setPdfTransform({ scale: 1, translateX: 0, translateY: 0 });
-    setZoomLevel(1);
-    console.log('Zoom reset to 1x');
   };
 
-  // Pan responder for drawing, annotations, panning, and pinch-to-zoom
+  // Pan responder for pinch-to-zoom gestures and drawing - DrawingEditor approach
   const panResponder = PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder: () => true,
+    onStartShouldSetPanResponder: (evt, gestureState) => {
+      // Handle if we have a selected tool or multi-touch
+      return selectedTool !== null || evt.nativeEvent.touches.length === 2;
+    },
+    onMoveShouldSetPanResponder: (evt, gestureState) => {
+      // Handle multi-touch gestures (pinch-to-zoom) or single touch with selected tool
+      return evt.nativeEvent.touches.length === 2 || (selectedTool !== null && evt.nativeEvent.touches.length === 1);
+    },
+    onMoveShouldSetPanResponderCapture: (evt, gestureState) => {
+      // Capture pinch gestures or drawing gestures
+      return evt.nativeEvent.touches.length === 2 || (selectedTool !== null && evt.nativeEvent.touches.length === 1);
+    },
 
-    onPanResponderGrant: (evt) => {
-      const { locationX, locationY, touches } = evt.nativeEvent;
-      const pressure = (evt.nativeEvent as any).force || 1;
-      
-      // Handle pinch gesture start
-      if (touches && touches.length === 2) {
-        const distance = getDistance(touches);
-        setInitialPinchDistance(distance);
-        setInitialScale(pdfTransform.scale);
-        return;
-      }
-      
-      if (selectedTool === "note") {
-        // Convert to normalized coordinates for consistent positioning
-        const coords = screenToPDFCoordinates(locationX, locationY);
-        setNotePosition({ x: coords.normalizedX, y: coords.normalizedY });
-        setShowNoteModal(true);
-      } else if (selectedTool === "text") {
-        // Convert to normalized coordinates for consistent positioning
-        const coords = screenToPDFCoordinates(locationX, locationY);
-        setNotePosition({ x: coords.normalizedX, y: coords.normalizedY });
-        setShowNoteModal(true);
-      } else if (selectedTool === "highlight" || selectedTool === "eraser" || 
-                 selectedTool === "pen" || selectedTool === "brush" || selectedTool === "pencil") {
-        setIsDrawing(true);
-        // Use container coordinates for path data, will be normalized later
-        setCurrentPath(`M${locationX},${locationY}:${pressure}`);
-      } else if (!selectedTool) {
-        // No tool selected - enable panning
-        // Store initial pan state for relative movement
-        (panResponder as any).initialTransform = { ...pdfTransform };
-        (panResponder as any).initialTouch = { x: locationX, y: locationY };
+    onPanResponderGrant: (evt, gestureState) => {
+      if (evt.nativeEvent.touches.length === 2) {
+        // Pinch-to-zoom gesture
+        gestureStartZoomRef.current = currentZoom;
+        gestureStartDistanceRef.current = getDistance(evt.nativeEvent.touches);
+      } else if (evt.nativeEvent.touches.length === 1 && selectedTool) {
+        // Single touch drawing gesture
+        const touch = evt.nativeEvent.touches[0];
+        const { locationX, locationY } = touch;
+        
+        if (selectedTool === 'note' || selectedTool === 'text') {
+          // Handle note/text placement
+          const coords = screenToPDFCoordinates(locationX, locationY);
+          setNotePosition({ x: coords.normalizedX, y: coords.normalizedY });
+          setShowNoteModal(true);
+        } else if (selectedTool === 'highlight') {
+          // For highlight tool, we'll start drawing a freehand highlight
+          setIsDrawing(true);
+          setCurrentPath(`M${locationX},${locationY}`);
+        } else {
+          // Start drawing path for pen, brush, pencil, freehand highlight, eraser
+          setIsDrawing(true);
+          setCurrentPath(`M${locationX},${locationY}`);
+        }
       }
     },
 
     onPanResponderMove: (evt, gestureState) => {
-      const { locationX, locationY, touches } = evt.nativeEvent;
-      const pressure = (evt.nativeEvent as any).force || 1;
-      const { dx, dy } = gestureState;
-      
-      // Handle pinch gesture
-      if (touches && touches.length === 2 && initialPinchDistance > 0) {
-        const currentDistance = getDistance(touches);
-        const scale = (currentDistance / initialPinchDistance) * initialScale;
+      if (evt.nativeEvent.touches.length === 2) {
+        // Handle pinch-to-zoom
+        const currentDistance = getDistance(evt.nativeEvent.touches);
+        const startDistance = gestureStartDistanceRef.current;
         
-        // Clamp scale to min/max values
-        const clampedScale = Math.max(0.5, Math.min(3, scale));
+        if (startDistance > 0) {
+          const scale = currentDistance / startDistance;
+          const newZoom = Math.max(MIN_PDF_SCALE, Math.min(MAX_PDF_SCALE, gestureStartZoomRef.current * scale));
+          
+          // Ensure both states update synchronously for immediate UI feedback
+          setCurrentZoom(newZoom);
+          setPdfTransform(prev => ({ 
+            ...prev, 
+            scale: newZoom 
+          }));
+          
+          console.log('Pinch zoom sync:', { newZoom, uiZoom: Math.round(newZoom * 100) + '%' });
+        }
+      } else if (evt.nativeEvent.touches.length === 1 && isDrawing && selectedTool) {
+        // Handle drawing
+        const touch = evt.nativeEvent.touches[0];
+        const { locationX, locationY } = touch;
         
-        setPdfTransform(prev => ({ ...prev, scale: clampedScale }));
-        setZoomLevel(clampedScale);
-        return;
-      }
-      
-      if (isDrawing && (selectedTool === "highlight" || selectedTool === "eraser" || 
-                        selectedTool === "pen" || selectedTool === "brush" || selectedTool === "pencil")) {
-        // Use container coordinates for path data, will be normalized later
-        setCurrentPath((prev) => `${prev} L${locationX},${locationY}:${pressure}`);
-      } else if (!selectedTool && touches && touches.length === 1 && (panResponder as any).initialTransform) {
-        // Handle panning when no tool is selected and only one touch
-        const initialTransform = (panResponder as any).initialTransform;
-        setPdfTransform({
-          scale: initialTransform.scale,
-          translateX: initialTransform.translateX + dx,
-          translateY: initialTransform.translateY + dy,
-        });
+        if (selectedTool === 'pen' || selectedTool === 'brush' || selectedTool === 'pencil' || selectedTool === 'highlight' || selectedTool === 'eraser') {
+          setCurrentPath(prev => `${prev} L${locationX},${locationY}`);
+        }
       }
     },
 
     onPanResponderRelease: (evt) => {
-      if (isDrawing) {
-        if (selectedTool === "highlight") {
-          addFreehandHighlight(currentPath);
-        } else if (selectedTool === "pen" || selectedTool === "brush" || selectedTool === "pencil") {
-          addPenAnnotation(currentPath, selectedTool);
-        } else if (selectedTool === "eraser") {
-          partialEraseAnnotations(currentPath);
+      if (evt.nativeEvent.touches.length === 0) {
+        // Handle drawing completion
+        if (isDrawing && currentPath && selectedTool) {
+          if (selectedTool === "highlight") {
+            addFreehandHighlight(currentPath);
+          } else if (selectedTool === "pen" || selectedTool === "brush" || selectedTool === "pencil") {
+            addPenAnnotation(currentPath, selectedTool);
+          } else if (selectedTool === "eraser") {
+            partialEraseAnnotations(currentPath);
+          }
+          setIsDrawing(false);
+          setCurrentPath("");
         }
-        setIsDrawing(false);
-        setCurrentPath("");
+        // Reset gesture tracking
+        gestureStartDistanceRef.current = 0;
       }
-      // Clear pan and pinch state
-      (panResponder as any).initialTransform = null;
-      (panResponder as any).initialTouch = null;
-      setInitialPinchDistance(0);
-      setInitialScale(1);
+    },
+    onPanResponderTerminate: () => {
+      // Reset gesture tracking
+      gestureStartDistanceRef.current = 0;
     },
   });
 
@@ -985,19 +1009,27 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     const viewerWidth = containerSize.width || screenWidth;
     const viewerHeight = containerSize.height || (screenHeight - 300);
     
-    // Account for current transform (scale and translation)
+    // Account for current transform (scale and translation) and scroll offset
     const { scale, translateX, translateY } = pdfTransform;
     
-    // Reverse the transform to get the original coordinates
-    const originalX = (screenX - translateX) / scale;
-    const originalY = (screenY - translateY) / scale;
+    // Adjust for scroll offset to maintain annotation position during scroll
+    const adjustedX = screenX + pdfScrollOffset.x;
+    const adjustedY = screenY + pdfScrollOffset.y;
+    
+    // Since both PDF and annotations are in the same transform container,
+    // we need to reverse the transform to get coordinates in the original container space
+    const originalX = (adjustedX - translateX) / scale;
+    const originalY = (adjustedY - translateY) / scale;
     
     // Convert to normalized coordinates (0-1) relative to PDF page
+    // The original coordinates are already in the container space
     const normalizedX = Math.max(0, Math.min(1, originalX / viewerWidth));
     const normalizedY = Math.max(0, Math.min(1, originalY / viewerHeight));
     
-    console.log("screenToPDF (unified transform):", {
+    console.log("screenToPDF (unified transform + scroll):", {
       screen: { x: screenX, y: screenY },
+      scroll: pdfScrollOffset,
+      adjusted: { x: adjustedX, y: adjustedY },
       container: { width: viewerWidth, height: viewerHeight },
       transform: { scale, translateX, translateY },
       original: { x: originalX, y: originalY },
@@ -1016,23 +1048,23 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     const viewerWidth = containerSize.width || screenWidth;
     const viewerHeight = containerSize.height || (screenHeight - 300);
     
-    // Apply the current transform
-    const { scale, translateX, translateY } = pdfTransform;
+    // Since annotations are in the same transform container as the PDF,
+    // we don't need to apply the transform here - the transform is applied
+    // at the container level, so we just convert normalized to container coordinates
+    const containerX = normalizedX * viewerWidth;
+    const containerY = normalizedY * viewerHeight;
     
-    // Convert normalized coordinates to screen coordinates with transform
-    const screenX = (normalizedX * viewerWidth * scale) + translateX;
-    const screenY = (normalizedY * viewerHeight * scale) + translateY;
-    
-    console.log("pdfToScreen (unified transform):", {
+    console.log("pdfToScreen (unified transform + scroll):", {
       normalized: { x: normalizedX, y: normalizedY },
       container: { width: viewerWidth, height: viewerHeight },
-      transform: { scale, translateX, translateY },
-      screen: { x: screenX, y: screenY }
+      containerCoords: { x: containerX, y: containerY },
+      scroll: pdfScrollOffset,
+      note: "Transform and scroll applied at container level"
     });
     
     return {
-      screenX: screenX,
-      screenY: screenY
+      screenX: containerX,
+      screenY: containerY
     };
   };
 
@@ -1112,7 +1144,9 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       if (part === 'M' || part === 'L') {
         normalizedPath += part;
       } else if (part && part.trim()) {
-        // This is a coordinate pair - convert container coordinates to normalized (0-1) coordinates
+        // This is a coordinate pair
+        // The path coordinates come from locationX/locationY in touch events,
+        // which are relative to the container (already transformed)
         const coords = part.trim().split(',');
         if (coords.length === 2) {
           const containerX = parseFloat(coords[0]);
@@ -1144,12 +1178,12 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     const containerHeight = containerSize.height || (screenHeight - 300);
     
     const parts = path.split(/([ML])/);
-    let screenPath = '';
+    let containerPath = '';
     
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
       if (part === 'M' || part === 'L') {
-        screenPath += part;
+        containerPath += part;
       } else if (part && part.trim()) {
         // This is a coordinate pair - convert normalized coordinates to container coordinates
         const coords = part.trim().split(',');
@@ -1159,22 +1193,24 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
           
           // Validate normalized coordinates are within expected range (0-1)
           if (normalizedX >= 0 && normalizedX <= 1 && normalizedY >= 0 && normalizedY <= 1) {
-            // Convert normalized coordinates to container coordinates (no additional transform needed)
-            const screenX = normalizedX * containerWidth;
-            const screenY = normalizedY * containerHeight;
+            // Convert normalized coordinates to container coordinates
+            // Since annotations are in the same transform container as the PDF,
+            // the transform will be applied at the container level, so we just need container coordinates
+            const containerX = normalizedX * containerWidth;
+            const containerY = normalizedY * containerHeight;
             
-            screenPath += `${screenX.toFixed(2)},${screenY.toFixed(2)}`;
+            containerPath += `${containerX.toFixed(2)},${containerY.toFixed(2)}`;
           } else {
             // If coordinates are out of range, keep them as is (might be legacy data)
-            screenPath += part;
+            containerPath += part;
           }
         } else {
-          screenPath += part;
+          containerPath += part;
         }
       }
     }
     
-    return screenPath;
+    return containerPath;
   };
 
   const scalePathForZoom = (path: string, scale: number): string => {
@@ -1595,12 +1631,13 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
             case "highlight":
               // Check if it's a freehand highlight (has path) or traditional highlight (rectangle)
               if (annotation.path) {
-                const screenPath = convertNormalizedPathToScreen(annotation.path);
-                const highlightStrokeWidth = (annotation.strokeWidth || 12) * (SCALE_STROKES_WITH_ZOOM ? 1 : 1);
+                const containerPath = convertNormalizedPathToScreen(annotation.path);
+                // Don't scale stroke width since the transform container handles all scaling
+                const highlightStrokeWidth = annotation.strokeWidth || 12;
                 return (
                   <Path
                     key={annotation.id}
-                    d={screenPath}
+                    d={containerPath}
                     stroke={annotation.color}
                     strokeWidth={highlightStrokeWidth}
                     fill="none"
@@ -1612,17 +1649,17 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
                 );
               } else {
                 // Traditional rectangle highlight - convert percentage coordinates to container coordinates
-                const screenX = annotation.x * containerWidth;
-                const screenY = annotation.y * containerHeight;
-                const screenWidth_rect = (annotation.width || 0.15) * containerWidth;
-                const screenHeight_rect = (annotation.height || 0.025) * containerHeight;
+                const containerX = annotation.x * containerWidth;
+                const containerY = annotation.y * containerHeight;
+                const containerWidth_rect = (annotation.width || 0.15) * containerWidth;
+                const containerHeight_rect = (annotation.height || 0.025) * containerHeight;
                 return (
                   <Rect
                     key={annotation.id}
-                    x={screenX}
-                    y={screenY}
-                    width={screenWidth_rect}
-                    height={screenHeight_rect}
+                    x={containerX}
+                    y={containerY}
+                    width={containerWidth_rect}
+                    height={containerHeight_rect}
                     fill={annotation.color}
                     opacity={0.4}
                     onPress={() => deleteAnnotation(annotation.id)}
@@ -1634,13 +1671,14 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
             case "brush":
             case "pencil":
               // Convert percentage-based path to container coordinates
-              const baseStroke = (annotation.strokeWidth || 3) * (SCALE_STROKES_WITH_ZOOM ? 1 : 1);
+              // Don't scale stroke width since the transform container handles all scaling
+              const baseStroke = annotation.strokeWidth || 3;
               const penStyle = getPenStyle(annotation.type, baseStroke);
-              const penScreenPath = convertNormalizedPathToScreen(annotation.path || "");
+              const penContainerPath = convertNormalizedPathToScreen(annotation.path || "");
               return (
                 <Path
                   key={annotation.id}
-                  d={penScreenPath}
+                  d={penContainerPath}
                   stroke={annotation.color}
                   strokeWidth={penStyle.strokeWidth}
                   strokeLinecap={penStyle.strokeLinecap}
@@ -1654,14 +1692,15 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
             case "note":
               // Convert percentage coordinates to container coordinates
-              const noteScreenX = annotation.x * containerWidth;
-              const noteScreenY = annotation.y * containerHeight;
-              const noteRadius = 12 * (SCALE_STROKES_WITH_ZOOM ? 1 : 1);
+              const noteContainerX = annotation.x * containerWidth;
+              const noteContainerY = annotation.y * containerHeight;
+              // Don't scale radius since the transform container handles all scaling
+              const noteRadius = 12;
               return (
                 <React.Fragment key={annotation.id}>
                   <Circle
-                    cx={noteScreenX}
-                    cy={noteScreenY}
+                    cx={noteContainerX}
+                    cy={noteContainerY}
                     r={noteRadius}
                     fill={annotation.color}
                     onPress={() => {
@@ -1675,10 +1714,10 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
                     }}
                   />
                   <SvgText
-                    x={noteScreenX}
-                    y={noteScreenY + 4 * (SCALE_STROKES_WITH_ZOOM ? 1 : 1)}
+                    x={noteContainerX}
+                    y={noteContainerY + 4}
                     textAnchor="middle"
-                    fontSize={10 * (SCALE_STROKES_WITH_ZOOM ? 1 : 1)}
+                    fontSize={10}
                     fill="white"
                   >
                     📝
@@ -1688,15 +1727,15 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
             case "text":
               // Convert percentage coordinates to container coordinates
-              const textScreenX = annotation.x * containerWidth;
-              const textScreenY = annotation.y * containerHeight;
+              const textContainerX = annotation.x * containerWidth;
+              const textContainerY = annotation.y * containerHeight;
               return (
                 <SvgText
                   key={annotation.id}
-                  x={textScreenX}
-                  y={textScreenY}
+                  x={textContainerX}
+                  y={textContainerY}
                   fill={annotation.color}
-                  fontSize={14 * (SCALE_STROKES_WITH_ZOOM ? 1 : 1)}
+                  fontSize={14}
                   fontWeight="bold"
                   onPress={() => {
                     Alert.alert("Text", annotation.text, [
@@ -1721,7 +1760,8 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         {isDrawing && currentPath && (
           (() => {
             const cleanPath = cleanPathFromPressure(currentPath);
-            const baseStrokeWidth = strokeWidth * (SCALE_STROKES_WITH_ZOOM ? 1 : 1);
+            // Don't scale stroke width since the transform container handles all scaling
+            const baseStrokeWidth = strokeWidth;
             
             switch (selectedTool) {
               case "highlight":
@@ -2040,7 +2080,7 @@ return (
               onPress={resetZoom}
               activeOpacity={0.8}
             >
-              <Text style={styles.zoomText}>{Math.round(pdfTransform.scale * 100)}%</Text>
+              <Text style={styles.zoomText}>{Math.round(currentZoom * 100)}%</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.zoomButton}
@@ -2198,16 +2238,26 @@ return (
             </LinearGradient>
           </View>
         ) : (
-          <View style={{ flex: 1 }}>
-            {/* Unified PDF and Annotation Container with Transform */}
-            <View 
+          <View style={{ flex: 1 }}>            
+            {/* PDF ScrollView Container */}
+            <ScrollView
               style={styles.pdfCanvasContainer}
-              ref={pdfContainerRef}
-              onLayout={(event) => {
-                const { width, height } = event.nativeEvent.layout;
-                setContainerSize({ width, height });
-                console.log('PDF container size:', { width, height });
+              contentContainerStyle={styles.pdfScrollViewContent}
+              ref={pdfScrollRef}
+              showsVerticalScrollIndicator={true}
+              showsHorizontalScrollIndicator={true}
+              bounces={true}
+              bouncesZoom={true}
+              directionalLockEnabled={false}
+              canCancelContentTouches={selectedTool === null}
+              scrollEnabled={selectedTool === null}
+              nestedScrollEnabled={true}
+              onScroll={(event) => {
+                const { contentOffset } = event.nativeEvent;
+                setPdfScrollOffset({ x: contentOffset.x, y: contentOffset.y });
+                console.log('PDF scroll offset:', contentOffset);
               }}
+              scrollEventThrottle={16}
             >
               {/* PDF and Annotation Transform Container */}
               <Animated.View 
@@ -2221,27 +2271,39 @@ return (
                     ],
                   }
                 ]}
-                {...panResponder.panHandlers}
+                onLayout={(event) => {
+                  const { width, height } = event.nativeEvent.layout;
+                  setContainerSize({ width, height });
+                  console.log('PDF container size:', { width, height });
+                }}
               >
                 {/* PDF Viewer */}
                 {Platform.OS !== 'web' && Pdf ? (
                   <Pdf
                     ref={pdfRef}
                     source={currentSource}
-                    style={[styles.pdf, { 
-                      width: containerSize.width, 
-                      height: containerSize.height 
-                    }]}
+                    style={[styles.pdf]}
                     onLoadComplete={onPdfLoadComplete}
                     onPageChanged={onPageChanged}
+                    onLoadProgress={onPdfLoadProgress}
+                    onError={onPdfError}
                     onScaleChanged={(scale: number) => {
                       console.log('PDF internal scale changed:', scale);
-                      setPdfScale(scale);
-                      // Don't update transform here as we handle it manually
+                      // Update our zoom states to stay synchronized with PDF component
+                      setCurrentZoom(scale);
+                      setPdfTransform(prev => ({ ...prev, scale }));
                     }}
-                    enablePaging={true}
+                    enablePaging={false}
                     horizontal={false}
-                    scale={1} // Lock PDF internal scaling, we handle it via transform
+                    fitPolicy={0}
+                    spacing={10}
+                    enableDoubleTapZoom={false}
+                    enableRTL={false}
+                    enableAnnotationRendering={true}
+                    enableAntialiasing={true}
+                    fitWidth={true}
+                    maxScale={3.0}
+                    minScale={0.5}
                   />
                 ) : (
                   <View style={styles.webPdfPlaceholder}>
@@ -2251,12 +2313,17 @@ return (
                   </View>
                 )}
                 
-                {/* Annotation Layer - Now part of the same transform container */}
-                <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+                {/* Annotation Layer - Now part of the same transform container with touch enabled */}
+                <View 
+                  style={StyleSheet.absoluteFillObject} 
+                  pointerEvents={selectedTool ? "auto" : "box-none"}
+                  {...panResponder.panHandlers}
+                >
                   {renderAnnotations()}
                 </View>
               </Animated.View>
-            </View>
+
+            </ScrollView>
           </View>
         )}
 
@@ -2590,8 +2657,8 @@ mainContainer: {
   },
   pdf: {
     flex: 1,
-    width: "100%",
-    height: "100%",
+    width: screenWidth,
+    height: screenHeight * 3, // Increased to ensure multi-page support
     backgroundColor: "#F3F4F6", // subtle viewer background
   },
   toolbarScrollContainer: {
@@ -3174,10 +3241,16 @@ mainContainer: {
     backgroundColor: '#F3F4F6', // subtle background behind PDF and annotations
     overflow: 'hidden',
   },
+  pdfScrollViewContent: {
+    flexGrow: 1,
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+    minHeight: screenHeight * 3, // Increased for multi-page support
+    paddingVertical: 20,
+  },
   pdfTransformContainer: {
-    flex: 1,
-    width: '100%',
-    height: '100%',
+    width: screenWidth,
+    height: screenHeight * 3, // Increased for multi-page PDFs
     backgroundColor: '#F3F4F6', // keep transform container matching viewer background
   },
 });

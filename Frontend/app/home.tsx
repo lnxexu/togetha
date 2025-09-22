@@ -1377,7 +1377,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 12,
   },
-  sectionTitle: { fontSize: 18, color: "#0f1724", fontWeight: "700" },
+  sectionTitle: { fontSize: 18, color: "#33333", fontFamily: "Inter-Bold" },
   seeAllText: {
     fontSize: 13,
     color: "#6C2BD9",
@@ -1448,8 +1448,8 @@ const styles = StyleSheet.create({
   newNoteCard: { backgroundColor: "#FFFBF1" },
   rinaCard: { backgroundColor: "#FBF8FF" },
   cardValue: { fontSize: 26, fontWeight: "800", color: "#0f1724" },
-  cardTitle: { fontSize: 13, color: "#6B7280" },
-  cardSubtitle: { fontSize: 12, color: "#9CA3AF" },
+  cardTitle: { fontSize: 13, color: "#6B7280",  fontFamily: "Inter-Regular", textAlign: "center"},
+  cardSubtitle: { fontSize: 12, color: "#9CA3AF", fontFamily: "Inter-Regular", textAlign: "center" },
   cardActionText: { fontSize: 16, fontWeight: "700", color: "#0f1724" },
 
   // Horizontal lists and cards
@@ -1477,7 +1477,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 6,
     borderBottomLeftRadius: 6,
   },
-  taskTitle: { fontSize: 16, fontWeight: "800", color: "#0f1724", marginBottom: 6 },
+  taskTitle: { fontSize: 16, fontFamily: "Inter-Bold", color: "#0f1724", marginBottom: 6 },
   taskCategory: {
     fontSize: 12,
     color: "#6C2BD9",
@@ -1542,7 +1542,7 @@ const styles = StyleSheet.create({
   folderBorderAccent: { position: "absolute", left: 0, top: 0, bottom: 0, width: 6, borderTopLeftRadius: 14, borderBottomLeftRadius: 14 },
   folderIconHorizontal: { width: 44, height: 44, borderRadius: 12, justifyContent: "center", alignItems: "center", alignSelf: "center", marginBottom: 8 },
   folderInfoHorizontal: { flex: 1, alignItems: "center" },
-  folderTitleHorizontal: { fontSize: 14, fontWeight: "700", color: "#0f1724", textAlign: "center" },
+  folderTitleHorizontal: { fontSize: 14, fontFamily: "Inter-Bold", color: "#0f1724", textAlign: "center" },
   folderCountHorizontal: { fontSize: 12, color: "#6B7280", marginTop: 4 },
   folderArrowContainer: { position: "absolute", top: 10, right: 10, width: 28, height: 28, borderRadius: 14, backgroundColor: "rgba(255,255,255,0.9)", justifyContent: "center", alignItems: "center" },
 });
