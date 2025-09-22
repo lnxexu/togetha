@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
 import {
-  SafeAreaView,
   ScrollView,
   StatusBar,
   Text,
@@ -13,6 +12,7 @@ import {
   Modal,
   Platform,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import axios from "axios";
@@ -245,8 +245,8 @@ function ChatBot(): React.ReactElement {
 
   return (
     <>
+    <View style={styles.rootContainer}>
       <StatusBar barStyle="light-content" backgroundColor="#A855F7" />
-      <SafeAreaView style={[styles.container, { paddingTop: insets.top }]}>
         {/* Header */}
       <LinearGradient
         colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
@@ -336,100 +336,102 @@ function ChatBot(): React.ReactElement {
             )}
           </ScrollView>
 
-          {errorMessage && (
-            <View style={styles.errorBanner}>
-              <Text style={styles.errorText}>{errorMessage}</Text>
-              <TouchableOpacity onPress={handleRetry} style={styles.retryButton}>
-                <Text style={styles.retryText}>Retry</Text>
+          <SafeAreaView edges={["bottom"]} style={styles.safeAreaBottom}>
+            {errorMessage && (
+              <View style={styles.errorBanner}>
+                <Text style={styles.errorText}>{errorMessage}</Text>
+                <TouchableOpacity onPress={handleRetry} style={styles.retryButton}>
+                  <Text style={styles.retryText}>Retry</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Action Buttons */}
+            <View style={styles.actionsContainer}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.actionsScrollContent}
+              >
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={handleSummarize}
+                  accessibilityLabel="Summarize content"
+                  accessibilityHint="Generate a summary of the conversation or document"
+                >
+                  <Ionicons name="document-text" size={16} color="#6B46C1" />
+                  <Text style={styles.actionButtonText}>Summarize</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={styles.actionButton} 
+                  onPress={handleExplain}
+                  accessibilityLabel="Explain concepts"
+                  accessibilityHint="Get detailed explanations of concepts"
+                >
+                  <Ionicons name="bulb" size={16} color="#6B46C1" />
+                  <Text style={styles.actionButtonText}>Explain</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={handleGenerateQuiz}
+                  accessibilityLabel="Generate quiz"
+                  accessibilityHint="Create practice questions based on the content"
+                >
+                  <Ionicons name="help-circle" size={16} color="#6B46C1" />
+                  <Text style={styles.actionButtonText}>Generate Quiz</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.actionButton} 
+                  onPress={handleOCR}
+                  accessibilityLabel="Extract text"
+                  accessibilityHint="Extract text from uploaded images"
+                >
+                  <Ionicons name="scan" size={16} color="#6B46C1" />
+                  <Text style={styles.actionButtonText}>Extract Text</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            </View>
+
+            {/* Input Area */}
+            <View style={styles.inputContainer}>
+              <TextInput
+                style={styles.textInput}
+                value={input}
+                onChangeText={setInput}
+                placeholder="Ask me anything about your studies..."
+                placeholderTextColor="#94A3B8"
+                multiline
+                maxLength={1000}
+                accessibilityLabel="Message input"
+                accessibilityHint="Type your message to send to Rina"
+              />
+              <TouchableOpacity
+                style={styles.attachButton}
+                onPress={handleFileImport}
+                accessibilityLabel="Attach file"
+                accessibilityHint="Import and upload a document or image"
+              >
+                <Ionicons name="attach" size={24} color="#6B46C1" />
+              </TouchableOpacity>
+
+              {/* Send Button */}
+              <TouchableOpacity
+                style={[
+                  styles.sendButton,
+                  input.trim() === "" && styles.sendButtonDisabled,
+                ]}
+                onPress={handleSend}
+                disabled={input.trim() === ""}
+                accessibilityLabel="Send message"
+                accessibilityHint="Send your message to Rina"
+              >
+                <Ionicons name="send" size={20} color="#fff" />
               </TouchableOpacity>
             </View>
-          )}
-
-          {/* Action Buttons */}
-          <View style={styles.actionsContainer}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.actionsScrollContent}
-            >
-              <TouchableOpacity
-                style={styles.actionButton}
-                onPress={handleSummarize}
-                accessibilityLabel="Summarize content"
-                accessibilityHint="Generate a summary of the conversation or document"
-              >
-                <Ionicons name="document-text" size={16} color="#6B46C1" />
-                <Text style={styles.actionButtonText}>Summarize</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={styles.actionButton} 
-                onPress={handleExplain}
-                accessibilityLabel="Explain concepts"
-                accessibilityHint="Get detailed explanations of concepts"
-              >
-                <Ionicons name="bulb" size={16} color="#6B46C1" />
-                <Text style={styles.actionButtonText}>Explain</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.actionButton}
-                onPress={handleGenerateQuiz}
-                accessibilityLabel="Generate quiz"
-                accessibilityHint="Create practice questions based on the content"
-              >
-                <Ionicons name="help-circle" size={16} color="#6B46C1" />
-                <Text style={styles.actionButtonText}>Generate Quiz</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={styles.actionButton} 
-                onPress={handleOCR}
-                accessibilityLabel="Extract text"
-                accessibilityHint="Extract text from uploaded images"
-              >
-                <Ionicons name="scan" size={16} color="#6B46C1" />
-                <Text style={styles.actionButtonText}>Extract Text</Text>
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-
-          {/* Input Area */}
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={styles.textInput}
-              value={input}
-              onChangeText={setInput}
-              placeholder="Ask me anything about your studies..."
-              placeholderTextColor="#94A3B8"
-              multiline
-              maxLength={1000}
-              accessibilityLabel="Message input"
-              accessibilityHint="Type your message to send to Rina"
-            />
-            <TouchableOpacity
-              style={styles.attachButton}
-              onPress={handleFileImport}
-              accessibilityLabel="Attach file"
-              accessibilityHint="Import and upload a document or image"
-            >
-              <Ionicons name="attach" size={24} color="#6B46C1" />
-            </TouchableOpacity>
-
-            {/* Send Button */}
-            <TouchableOpacity
-              style={[
-                styles.sendButton,
-                input.trim() === "" && styles.sendButtonDisabled,
-              ]}
-              onPress={handleSend}
-              disabled={input.trim() === ""}
-              accessibilityLabel="Send message"
-              accessibilityHint="Send your message to Rina"
-            >
-              <Ionicons name="send" size={20} color="#fff" />
-            </TouchableOpacity>
-          </View>
+          </SafeAreaView>
         </KeyboardAvoidingView>
 
         {/* Chat History Modal */}
@@ -448,12 +450,16 @@ function ChatBot(): React.ReactElement {
             </TouchableOpacity>
           </SafeAreaView>
         </Modal>
-      </SafeAreaView>
+      </View>
     </>
   );
 }
 
 const styles = StyleSheet.create({
+    rootContainer: {
+    flex: 1,
+    backgroundColor: "#ffffffff",
+  },
   container: {
     flex: 1,
     backgroundColor: "#F8FAFC",
@@ -469,7 +475,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     padding: 16,
-    paddingTop: 35,
+    paddingTop: 40,
     borderBottomLeftRadius: 25,
     borderBottomRightRadius: 25,
     shadowColor: "#1E293B",
@@ -792,6 +798,9 @@ const styles = StyleSheet.create({
   closeButtonText: {
     color: "#FFFFFF",
     fontWeight: "bold",
+  },
+  safeAreaBottom: {
+    backgroundColor: "#ffffffff",
   },
 });
 
