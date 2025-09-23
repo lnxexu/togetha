@@ -448,7 +448,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 10,
     paddingVertical: 20,
-    marginTop: 30,
   },
   helpButtonContainer: {
     flexDirection: "row",

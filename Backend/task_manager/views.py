@@ -6,6 +6,7 @@ from .models import Task
 from .serializers import TaskSerializer
 from server.decorators import api_auth_required
 from logs.views import create_log
+from notifications.views import create_notification
 
 @api_auth_required(['GET', 'POST'])
 def task_list(request):
@@ -72,6 +73,29 @@ def task_list(request):
                 # Log the error but don't fail the task creation
                 print(f"Error creating log: {str(e)}")
             
+            # Create notification for task creation
+            try:
+                # Determine notification message based on due date
+                if task.due_datetime:
+                    due_date_str = task.due_datetime.strftime('%B %d, %Y at %I:%M %p')
+                    notification_message = f"You've successfully created a new task '{task.title}' due on {due_date_str}. We'll remind you when it's approaching!"
+                else:
+                    notification_message = f"You've successfully created a new task '{task.title}'. You can set a due date to get reminders!"
+                
+                create_notification(
+                    user=user,
+                    notification_type='task',
+                    title='New Task Created',
+                    message=notification_message,
+                    related_task=task,
+                    action_id=str(task.id),
+                    priority='medium',
+                    specific_type='task_created'
+                )
+            except Exception as e:
+                # Log the error but don't fail the task creation
+                print(f"Error creating notification: {str(e)}")
+            
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
@@ -127,6 +151,56 @@ def task_detail(request, pk):
                 # Log the error but don't fail the task update
                 print(f"Error creating log: {str(e)}")
             
+            # Create notification for important task updates
+            try:
+                notification_created = False
+                
+                # Notification for task completion
+                if updated_task.completed and not original_completed:
+                    create_notification(
+                        user=user,
+                        notification_type='task',
+                        title='Task Completed! 🎉',
+                        message=f"Congratulations! You've successfully completed the task '{updated_task.title}'. Great job staying productive!",
+                        related_task=updated_task,
+                        action_id=str(updated_task.id),
+                        priority='medium',
+                        specific_type='task_completed'
+                    )
+                    notification_created = True
+                
+                # Notification for task reopening
+                elif not updated_task.completed and original_completed:
+                    create_notification(
+                        user=user,
+                        notification_type='task',
+                        title='Task Reopened',
+                        message=f"Task '{updated_task.title}' has been reopened. Don't forget to complete it!",
+                        related_task=updated_task,
+                        action_id=str(updated_task.id),
+                        priority='medium',
+                        specific_type='task_updated'
+                    )
+                    notification_created = True
+                
+                # Notification for title change (if significant)
+                elif updated_task_title != task_title:
+                    create_notification(
+                        user=user,
+                        notification_type='task',
+                        title='Task Updated',
+                        message=f"Task title has been updated from '{task_title}' to '{updated_task_title}'.",
+                        related_task=updated_task,
+                        action_id=str(updated_task.id),
+                        priority='low',
+                        specific_type='task_updated'
+                    )
+                    notification_created = True
+                    
+            except Exception as e:
+                # Log the error but don't fail the task update
+                print(f"Error creating notification: {str(e)}")
+            
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
@@ -134,6 +208,21 @@ def task_detail(request, pk):
         task_id = task.id
         # Get the appropriate field name (title or name) for the task
         task_title = getattr(task, 'title', getattr(task, 'name', str(task.id)))
+        
+        # Create notification before deleting the task
+        try:
+            create_notification(
+                user=user,
+                notification_type='task',
+                title='Task Deleted',
+                message=f"Task '{task_title}' has been permanently deleted from your task list.",
+                action_id=str(task_id),
+                priority='low',
+                specific_type='task_deleted'
+            )
+        except Exception as e:
+            # Log the error but don't fail the task deletion
+            print(f"Error creating notification: {str(e)}")
         
         task.delete()
         

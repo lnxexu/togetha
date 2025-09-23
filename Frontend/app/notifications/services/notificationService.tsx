@@ -52,21 +52,82 @@ export class NotificationService {
   }
 }
 
-  static async markAsRead(notificationId: string): Promise<void> {
+  static async markAsRead(notificationId: string): Promise<any> {
     try {
-      const response = await fetch(`${this.baseUrl}${API_ENDPOINTS.NOTIFICATION_MARK_READ(notificationId)}`, {
-        method: 'PATCH',
+      const token = await AsyncStorage.getItem('authToken');
+      if (!token) {
+        throw new Error('No auth token found');
+      }
+
+      const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTIFICATIONS}${notificationId}/mark_read/`, {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Token ${token}`,
         },
-        body: JSON.stringify({ isRead: true })
       });
 
       if (!response.ok) {
         throw new Error('Failed to mark notification as read');
       }
+
+      return await response.json();
     } catch (error) {
       console.error('Error marking notification as read:', error);
+      throw error;
+    }
+  }
+
+  static async getNotificationDetail(notificationId: string): Promise<any> {
+    try {
+      const token = await AsyncStorage.getItem('authToken');
+      if (!token) {
+        throw new Error('No auth token found');
+      }
+
+      const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTIFICATIONS}${notificationId}/`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Token ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch notification detail');
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching notification detail:', error);
+      throw error;
+    }
+  }
+
+  static async getUnreadCount(): Promise<number> {
+    try {
+      const token = await AsyncStorage.getItem('authToken');
+      if (!token) {
+        throw new Error('No auth token found');
+      }
+
+      const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTIFICATIONS}unread_count/`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Token ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch unread count');
+      }
+
+      const data = await response.json();
+      return data.unread_count || 0;
+    } catch (error) {
+      console.error('Error fetching unread count:', error);
+      return 0;
     }
   }
 }

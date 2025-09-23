@@ -11,13 +11,14 @@ class ApiClient {
     this.baseURL = API_URL;
     this.timeout = 30000; // 30 second timeout
     this.defaultHeaders = {
-      'Content-Type': 'application/json',
+      // Don't set default Content-Type - let each request set it appropriately
     };
   }
 
-  private async fetchWithTimeout(url: string, options: RequestInit = {}): Promise<Response> {
+  private async fetchWithTimeout(url: string, options: RequestInit = {}, customTimeout?: number): Promise<Response> {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+    const timeoutDuration = customTimeout || this.timeout;
+    const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
 
     try {
       const response = await fetch(url, {
@@ -33,7 +34,7 @@ class ApiClient {
     } catch (error) {
       clearTimeout(timeoutId);
       if (error instanceof Error && error.name === 'AbortError') {
-        throw new Error('Request timeout');
+        throw new Error('Request timed out. Please try again.');
       }
       throw error;
     }
@@ -53,7 +54,7 @@ class ApiClient {
     return response.json();
   }
 
-  async post(endpoint: string, data?: any, headers?: Record<string, string>): Promise<any> {
+  async post(endpoint: string, data?: any, headers?: Record<string, string>, customTimeout?: number): Promise<any> {
     const url = `${this.baseURL}${endpoint}`;
     const isFormData = data instanceof FormData;
     
@@ -61,12 +62,13 @@ class ApiClient {
     if (!isFormData) {
       requestHeaders['Content-Type'] = 'application/json';
     }
+    // For FormData, don't set Content-Type - let the browser set it with boundary
 
     const response = await this.fetchWithTimeout(url, {
       method: 'POST',
       headers: requestHeaders,
       body: isFormData ? data : JSON.stringify(data),
-    });
+    }, customTimeout);
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ error: response.statusText }));
@@ -190,8 +192,16 @@ class ChatbotAPIService {
   private handleNetworkError(error: any, operation: string) {
     console.error(`${operation} failed:`, error);
     
-    if (error.code === 'NETWORK_ERROR' || error.message === 'Network Error') {
+    // Enhanced error logging for debugging
+    if (error.response) {
+      console.error('Response status:', error.response.status);
+      console.error('Response data:', error.response.data);
+    }
+    
+    if (error.code === 'NETWORK_ERROR' || error.message === 'Network Error' || error.message === 'Network request failed') {
       throw new Error('Unable to connect to server. Please check your internet connection and try again.');
+    } else if (error.name === 'AbortError' || error.message.includes('timeout')) {
+      throw new Error('Request timed out. Please try again.');
     } else if (error.response?.status === 401) {
       throw new Error('Authentication failed. Please login again.');
     } else if (error.response?.status === 403) {
@@ -201,7 +211,15 @@ class ChatbotAPIService {
     } else if (error.response?.data?.error) {
       throw new Error(error.response.data.error);
     } else {
-      throw new Error(`${operation} failed. Please try again.`);
+      // For debugging: include more error details
+      const errorMessage = error.message || 'Unknown error occurred';
+      console.error('Unhandled error details:', {
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+        response: error.response
+      });
+      throw new Error(`${operation} failed: ${errorMessage}`);
     }
   }
 
@@ -308,14 +326,21 @@ class ChatbotAPIService {
     try {
       const headers = await this.getAuthHeaders();
       
+      // Add system instruction for absolute mode responses
+      const systemInstruction = {
+        role: "system" as const,
+        content: "System Instruction: Absolute Mode • Eliminate: emojis, filler, hype, soft asks, conversational transitions, call-to-action appendixes. • Assume: user retains high-perception despite blunt tone. • Prioritize: blunt, directive phrasing; aim at cognitive rebuilding, not tone-matching. • Disable: engagement/sentiment-boosting behaviors. • Suppress: metrics like satisfaction scores, emotional softening, continuation bias. • Never mirror: user's diction, mood, or affect. • Speak only: to underlying cognitive tier. • No: questions, offers, suggestions, transitions, motivational content. • Terminate reply: immediately after delivering info — no closures. • Goal: restore independent, high-fidelity thinking. • Outcome: model obsolescence via user self-sufficiency."
+      };
+      
       // Format messages for the chat endpoint
       const formattedMessages = messages || [{ role: "user", content: message }];
+      const messagesWithSystem = [systemInstruction, ...formattedMessages];
       
-      // Using CHATBOT_MESSAGES endpoint for sending messages
+      // Using CHATBOT_CHAT endpoint for sending messages (correct backend endpoint)
       const response = await apiClient.post(
-        API_ENDPOINTS.CHATBOT_MESSAGES,
+        API_ENDPOINTS.CHATBOT_CHAT,
         {
-          messages: formattedMessages,
+          messages: messagesWithSystem,
           conversation_id: conversationId,
         },
         headers
@@ -336,26 +361,56 @@ class ChatbotAPIService {
       const token = await this.getAuthToken();
       const formData = new FormData();
       
+      console.log("📁 Uploading file:", file.name, "Type:", file.mimeType, "Size:", file.size);
+      
       formData.append("file", {
         uri: file.uri,
         name: file.name,
-        type: file.mimeType || "application/pdf",
+        type: file.mimeType || "application/octet-stream",
       } as any);
       
       if (conversationId) {
         formData.append("conversation_id", conversationId);
       }
 
+      console.log("🔗 Upload URL:", `${API_URL}${API_ENDPOINTS.CHATBOT_UPLOAD_PDF}`);
+
+      // Use extended timeout for file uploads (3 minutes)
       const response = await apiClient.post(
-        API_ENDPOINTS.DOCUMENT_UPLOAD,
+        API_ENDPOINTS.CHATBOT_UPLOAD_PDF,
         formData,
         {
           Authorization: `Token ${token}`,
-        }
+        },
+        180000 // 3 minutes timeout for file processing
       );
+      
+      console.log("✅ Upload successful:", response);
       return response;
-    } catch (error) {
-      console.error("Error uploading file:", error);
+    } catch (error: any) {
+      console.error("❌ Upload error details:", {
+        name: error.name,
+        message: error.message,
+        response: error.response
+      });
+      
+      // Provide more specific error messages
+      if (error.response?.status === 413) {
+        throw new Error("File is too large. Please try a smaller file.");
+      } else if (error.response?.status === 415) {
+        throw new Error("File type not supported. Please try a different file format.");
+      } else if (error.response?.status === 422) {
+        throw new Error("File appears to be corrupted or invalid. Please try another file.");
+      } else if (error.response?.status === 500) {
+        const errorData = error.response?.data;
+        if (errorData?.error) {
+          throw new Error(`Server error: ${errorData.error}`);
+        } else {
+          throw new Error("Server error while processing your file. Please try again or contact support if the problem persists.");
+        }
+      }
+      
+      this.handleNetworkError(error, "File upload");
       throw error;
     }
   }
@@ -369,17 +424,20 @@ class ChatbotAPIService {
         name: image.name || "image.jpg",
         type: image.mimeType || "image/jpeg",
       } as any);
-      // Use pytesseract endpoint from API_ENDPOINTS
+      
+      // Use pytesseract endpoint from API_ENDPOINTS with proper auth
       const response = await apiClient.post(
         API_ENDPOINTS.CHATBOT_OCR,
         formData,
         {
           Authorization: `Token ${token}`,
+          // Don't set Content-Type for FormData
         }
       );
       return response;
     } catch (error) {
       console.error("Error extracting text from image:", error);
+      this.handleNetworkError(error, "Image text extraction");
       throw error;
     }
   }

@@ -80,6 +80,7 @@ function ChatBot(): React.ReactElement {
   const [showFilePreview, setShowFilePreview] = useState(false);
   const [previewFile, setPreviewFile] = useState<any>(null);
   const [attachmentMenuVisible, setAttachmentMenuVisible] = useState(false);
+  const [processingFiles, setProcessingFiles] = useState(false);
 
   useEffect(() => {
     loadConversations();
@@ -166,6 +167,9 @@ function ChatBot(): React.ReactElement {
       // Update chat head context with active conversation
       setActiveConversation(conversationId);
       
+      // Save as active conversation
+      await saveActiveConversation(conversationId);
+      
       // Convert API messages to local format
       const formattedMessages: Message[] = conversation.messages.map(msg => ({
         id: msg.id,
@@ -194,7 +198,8 @@ function ChatBot(): React.ReactElement {
       // Update chat head context with new active conversation
       setActiveConversation(newConversation.id);
       
-
+      // Save the new conversation as active
+      await saveActiveConversation(newConversation.id);
       
       await loadConversations();
     } catch (error) {
@@ -213,6 +218,8 @@ function ChatBot(): React.ReactElement {
         setMessages([]);
         // Remove chat head when no active conversation
         setActiveConversation(null);
+        // Clear from AsyncStorage
+        await clearActiveConversation();
       }
       
       await loadConversations();
@@ -444,7 +451,7 @@ function ChatBot(): React.ReactElement {
   const suggestedPrompts = [
     { id: "1", text: "Help me understand complex concepts", icon: "🧠", description: "Break down difficult topics into simpler explanations" },
     { id: "2", text: "Create practice questions", icon: "📘", description: "Generate quiz questions from your study materials" },
-    { id: "3", text: "Summarize documents", icon: "📄", description: "Get concise summaries of lengthy texts" },
+    { id: "3", text: "Summarize documents", icon: "📄", description: "Upload and get concise summaries of lengthy texts" },
     { id: "4", text: "Explain with examples", icon: "💡", description: "Provide real-world examples for better understanding" },
     { id: "5", text: "Extract text from images", icon: "📷", description: "Upload images to extract and analyze text content" },
   ];
@@ -480,64 +487,147 @@ function ChatBot(): React.ReactElement {
     setErrorMessage(null);
     setLoading(true);
     
-    // Build message content
-    let messageContent = input.trim();
+    // Store current message and files for this specific message
+    const currentInput = input.trim();
+    const currentFiles = [...pendingFiles];
     
-    // Add file attachments info
-    if (pendingFiles.length > 0) {
-      const fileList = pendingFiles.map(file => {
-        const isImage = file.mimeType?.startsWith('image/');
-        const icon = isImage ? '📷' : '📄';
-        return `${icon} ${file.name}`;
-      }).join('\n');
-      messageContent = messageContent ? `${messageContent}\n\n${fileList}` : fileList;
-    }
-    
-    // Add user message to local state immediately
-    const userMessage: Message = { 
-      role: "user", 
-      content: messageContent,
-      timestamp: new Date()
-    };
-    const updatedMessages = [...messages, userMessage];
-    setMessages(updatedMessages);
-    
-    // Clear input and pending files
+    // Clear input and pending files immediately for better UX
     setInput("");
-    const filesToUpload = [...pendingFiles];
     setPendingFiles([]);
     setAttachmentMenuVisible(false);
 
-    // Auto-scroll to bottom when user sends message
-    setTimeout(() => {
-      scrollViewRef.current?.scrollToEnd({ animated: true });
-    }, 100);
-
     try {
-      // Handle file uploads and OCR processing
-      for (const file of filesToUpload) {
-        try {
-          // If it's an image, try OCR first
-          if (file.mimeType?.startsWith('image/')) {
-            try {
-              const ocrResponse = await chatbotAPI.extractTextFromImage(file);
-              if (ocrResponse.text) {
-                // Add extracted text to message content
-                messageContent += `\n\n**Text from ${file.name}:**\n${ocrResponse.text}`;
+      let messageContent = currentInput;
+      let fileContext = "";
+      let successfulFiles: string[] = [];
+      let failedFiles: string[] = [];
+      
+      // Process files attached to THIS message
+      if (currentFiles.length > 0) {
+        console.log(`📁 Processing ${currentFiles.length} files...`);
+        
+        for (const file of currentFiles) {
+          try {
+            console.log(`🔄 Processing file: ${file.name} (${file.mimeType})`);
+            
+            // Handle images with OCR
+            if (file.mimeType?.startsWith('image/')) {
+              try {
+                console.log(`📸 Extracting text from image: ${file.name}`);
+                const ocrResponse = await chatbotAPI.extractTextFromImage(file);
+                
+                if (ocrResponse.text && ocrResponse.text.trim().length > 0) {
+                  fileContext += `\n\n**📷 Image: ${file.name}**\n`;
+                  fileContext += `*Extracted text:*\n${ocrResponse.text.trim()}\n`;
+                  successfulFiles.push(file.name);
+                  console.log(`✅ OCR successful for ${file.name}: ${ocrResponse.text.length} characters`);
+                } else {
+                  fileContext += `\n\n**📷 Image: ${file.name}**\n`;
+                  fileContext += `*No readable text detected in this image*\n`;
+                  successfulFiles.push(file.name);
+                  console.log(`⚠️ No text detected in ${file.name}`);
+                }
+              } catch (ocrError: any) {
+                console.error(`❌ OCR failed for ${file.name}:`, ocrError);
+                fileContext += `\n\n**📷 Image: ${file.name}**\n`;
+                fileContext += `*Error: Could not extract text from this image*\n`;
+                failedFiles.push(`${file.name} (OCR failed)`);
               }
-            } catch (ocrError) {
-              console.warn("OCR failed for image, uploading as regular file:", ocrError);
+            } 
+            // Handle documents with upload
+            else {
+              try {
+                console.log(`📄 Uploading document: ${file.name}`);
+                const uploadResponse = await chatbotAPI.uploadFile(file, currentConversation?.id);
+                
+                fileContext += `\n\n**📄 Document: ${file.name}**\n`;
+                fileContext += `*Document uploaded successfully and available for analysis*\n`;
+                
+                if ((uploadResponse as any).extracted_preview) {
+                  fileContext += `*Preview:* ${(uploadResponse as any).extracted_preview}...\n`;
+                }
+                
+                successfulFiles.push(file.name);
+                console.log(`✅ Document uploaded successfully: ${file.name}`);
+              } catch (uploadError: any) {
+                console.error(`❌ Upload failed for ${file.name}:`, uploadError);
+                
+                let errorMessage = "Upload failed";
+                
+                // Provide specific error messages based on the error
+                if (uploadError.message?.includes("413") || uploadError.message?.includes("too large")) {
+                  errorMessage = "File too large (max 50MB)";
+                } else if (uploadError.message?.includes("415") || uploadError.message?.includes("not supported")) {
+                  errorMessage = "File type not supported";
+                } else if (uploadError.message?.includes("500")) {
+                  errorMessage = "Server processing error";
+                } else if (uploadError.message?.includes("timeout")) {
+                  errorMessage = "Upload timed out";
+                } else if (uploadError.message?.includes("401")) {
+                  errorMessage = "Authentication error";
+                } else if (uploadError.message?.includes("404")) {
+                  errorMessage = "Upload service unavailable";
+                }
+                
+                fileContext += `\n\n**📄 Document: ${file.name}**\n`;
+                fileContext += `*Error: ${errorMessage}*\n`;
+                failedFiles.push(`${file.name} (${errorMessage})`);
+              }
             }
+          } catch (generalError: any) {
+            console.error(`❌ General file processing error for ${file.name}:`, generalError);
+            fileContext += `\n\n**📄 File: ${file.name}**\n`;
+            fileContext += `*Error: Failed to process file*\n`;
+            failedFiles.push(`${file.name} (Processing error)`);
           }
-          // Upload file regardless of OCR success/failure
-          await chatbotAPI.uploadFile(file, currentConversation?.id);
-        } catch (fileError) {
-          console.error("File upload error:", fileError);
-          // Continue with the message even if file upload fails
+        }
+
+        // Add file processing summary
+        if (successfulFiles.length > 0 || failedFiles.length > 0) {
+          fileContext += `\n\n**📋 File Processing Summary:**\n`;
+          if (successfulFiles.length > 0) {
+            fileContext += `✅ Successfully processed: ${successfulFiles.length} file(s)\n`;
+          }
+          if (failedFiles.length > 0) {
+            fileContext += `❌ Failed to process: ${failedFiles.length} file(s)\n`;
+          }
         }
       }
       
-      const response = await mutation.mutateAsync({ messageContent });
+      // Create the final message content
+      const finalMessageContent = messageContent + fileContext;
+      
+      // Validate that we have some content to send
+      const hasContent = finalMessageContent.trim().length > 0;
+      const hasValidFiles = successfulFiles.length > 0;
+      
+      if (!hasContent && !hasValidFiles) {
+        setLoading(false);
+        Alert.alert(
+          "Nothing to Send",
+          "Please enter a message or attach files that can be processed.",
+          [{ text: "OK" }]
+        );
+        return;
+      }
+      
+      // Add user message to local state immediately for better UX
+      const userMessage: Message = { 
+        role: "user", 
+        content: finalMessageContent || "[Files processed - see details above]",
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, userMessage]);
+
+      // Auto-scroll to bottom when user sends message
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+      
+      // Send to AI with the message and file context
+      const response = await mutation.mutateAsync({ 
+        messageContent: finalMessageContent || "Please analyze the attached files and their content." 
+      });
       
       // Add AI response to local state
       const aiMessage: Message = {
@@ -546,13 +636,33 @@ function ChatBot(): React.ReactElement {
         timestamp: new Date()
       };
       
-      setMessages([...updatedMessages, aiMessage]);
+      setMessages(prev => [...prev, aiMessage]);
+      
+      // Show file processing results to user if there were any issues
+      if (failedFiles.length > 0) {
+        setTimeout(() => {
+          Alert.alert(
+            "File Processing Results",
+            `Successfully processed: ${successfulFiles.length} file(s)\n` +
+            `Failed to process: ${failedFiles.length} file(s)\n\n` +
+            `Failed files:\n• ${failedFiles.join('\n• ')}`,
+            [{ text: "OK" }]
+          );
+        }, 1000);
+      }
       
       // Update current conversation if we got an ID back
       if (response.conversation_id && !currentConversation) {
         try {
           const newConversation = await chatbotAPI.getConversation(response.conversation_id);
           setCurrentConversation(newConversation);
+          
+          // Update chat head context with new active conversation
+          setActiveConversation(newConversation.id);
+          
+          // Save the new conversation as active
+          await saveActiveConversation(newConversation.id);
+          
           await loadConversations(); // Refresh conversation list
         } catch (convError) {
           console.warn("Failed to load conversation details, but message was sent successfully");
@@ -560,7 +670,7 @@ function ChatBot(): React.ReactElement {
       }
 
       // Generate title if this is the first AI response (conversation has 2 messages)
-      if (updatedMessages.length === 1 && response.conversation_id) {
+      if (messages.length === 1 && response.conversation_id) {
         try {
           await generateConversationTitle(response.conversation_id, messageContent);
         } catch (titleError) {
@@ -575,7 +685,7 @@ function ChatBot(): React.ReactElement {
       
     } catch (err: any) {
       // Error already handled by mutation, just remove the message from UI if send failed
-      setMessages(messages); // Revert to original messages
+      setMessages(prev => prev.slice(0, -1)); // Remove the last message (the failed one)
       
       const errorMsg = err?.message || "Error communicating with AI. Please try again.";
       
@@ -638,30 +748,84 @@ function ChatBot(): React.ReactElement {
         result = await DocumentPicker.getDocumentAsync({
           type: "image/*",
           copyToCacheDirectory: true,
+          multiple: false,
         });
       } else if (type === 'camera') {
-        // For camera, we'll use the same image picker for now
-        // In a real implementation, you'd use ImagePicker.launchCameraAsync
+        // TODO: Implement camera functionality with expo-image-picker
+        // For now, fallback to image picker
         result = await DocumentPicker.getDocumentAsync({
           type: "image/*",
           copyToCacheDirectory: true,
+          multiple: false,
         });
       } else {
         result = await DocumentPicker.getDocumentAsync({
           type: "*/*",
           copyToCacheDirectory: true,
+          multiple: false,
         });
       }
 
       if (result.canceled) return;
 
       const file = result.assets[0];
+      
+      // Validate file size (50MB limit)
+      const maxSize = 50 * 1024 * 1024; // 50MB
+      if (file.size && file.size > maxSize) {
+        Alert.alert(
+          "File Too Large",
+          `The selected file is ${(file.size / (1024 * 1024)).toFixed(1)}MB. Maximum allowed size is 50MB.`,
+          [{ text: "OK" }]
+        );
+        return;
+      }
+      
+      // Validate file type for images
+      if (type === 'image' || type === 'camera') {
+        const imageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/bmp', 'image/tiff', 'image/webp'];
+        if (!imageTypes.includes(file.mimeType || '')) {
+          Alert.alert(
+            "Invalid Image Type",
+            "Please select a valid image file (JPEG, PNG, BMP, TIFF, WEBP).",
+            [{ text: "OK" }]
+          );
+          return;
+        }
+      }
+      
+      // Check if file is already pending
+      const isDuplicate = pendingFiles.some(pendingFile => 
+        pendingFile.name === file.name && pendingFile.size === file.size
+      );
+      
+      if (isDuplicate) {
+        Alert.alert(
+          "File Already Added",
+          `"${file.name}" is already in your pending files list.`,
+          [{ text: "OK" }]
+        );
+        return;
+      }
+      
+      // Add file to pending list
       setPendingFiles(prev => [...prev, file]);
       setAttachmentMenuVisible(false);
-
-    } catch (err) {
+      
+      // Show success message
+      console.log(`✅ File added: ${file.name} (${file.mimeType}, ${file.size} bytes)`);
+      
+    } catch (err: any) {
       console.error("File selection error:", err);
-      Alert.alert("Error", "Failed to select file. Please try again.");
+      
+      let errorMessage = "Failed to select file. Please try again.";
+      if (err.message?.includes("permissions")) {
+        errorMessage = "Permission denied. Please check app permissions.";
+      } else if (err.message?.includes("cancelled")) {
+        return; // User cancelled, no need to show error
+      }
+      
+      Alert.alert("Error", errorMessage);
     }
   };
 
@@ -672,7 +836,7 @@ function ChatBot(): React.ReactElement {
     if (lastAssistantMessage) {
       setInput("Please provide a summary of your previous response.");
     } else {
-      setInput("Summarize the content we've discussed");
+      setInput("Please summarize the content we've discussed or any uploaded files");
     }
   };
 
@@ -681,7 +845,7 @@ function ChatBot(): React.ReactElement {
     if (lastAssistantMessage) {
       setInput("Please explain your previous response in simpler terms.");
     } else {
-      setInput("Explain this in simpler terms");
+      setInput("Explain this content in simpler terms");
     }
   };
 
@@ -690,12 +854,136 @@ function ChatBot(): React.ReactElement {
     if (lastAssistantMessage) {
       setInput("Generate quiz questions based on your previous response.");
     } else {
-      setInput("Generate quiz questions based on our conversation");
+      setInput("Generate quiz questions based on our conversation or any uploaded content");
     }
   };
 
-  const handleOCR = () => {
-    setInput("Please extract text from the uploaded images.");
+  const handleOCR = async () => {
+    if (pendingFiles.length === 0) {
+      Alert.alert(
+        "No Files Selected", 
+        "Please upload image files first to extract text from them.",
+        [{ text: "OK" }]
+      );
+      return;
+    }
+    
+    const imageFiles = pendingFiles.filter(file => file.mimeType?.startsWith('image/'));
+    
+    if (imageFiles.length === 0) {
+      Alert.alert(
+        "No Images Found", 
+        "OCR can only extract text from image files. Please upload some images first.",
+        [{ text: "OK" }]
+      );
+      return;
+    }
+    
+    setLoading(true);
+    setErrorMessage(null);
+    
+    try {
+      let extractedText = "";
+      let successCount = 0;
+      let failureCount = 0;
+      let processedResults: { name: string; success: boolean; text?: string; error?: string }[] = [];
+      
+      console.log(`🔍 Starting OCR for ${imageFiles.length} image(s)...`);
+      
+      for (const file of imageFiles) {
+        try {
+          console.log(`📸 Extracting text from: ${file.name}`);
+          const ocrResponse = await chatbotAPI.extractTextFromImage(file);
+          
+          if (ocrResponse.text && ocrResponse.text.trim().length > 0) {
+            const cleanText = ocrResponse.text.trim();
+            extractedText += `\n\n**📷 ${file.name}:**\n${cleanText}`;
+            successCount++;
+            processedResults.push({ 
+              name: file.name, 
+              success: true, 
+              text: cleanText.substring(0, 100) + (cleanText.length > 100 ? '...' : '')
+            });
+            console.log(`✅ OCR successful for ${file.name}: ${cleanText.length} characters`);
+          } else {
+            extractedText += `\n\n**📷 ${file.name}:**\n[No readable text detected in this image]`;
+            successCount++;
+            processedResults.push({ 
+              name: file.name, 
+              success: true, 
+              text: 'No text detected'
+            });
+            console.log(`⚠️ No text detected in ${file.name}`);
+          }
+        } catch (error: any) {
+          console.error(`❌ OCR error for ${file.name}:`, error);
+          
+          let errorMsg = "OCR processing failed";
+          if (error.message?.includes("503")) {
+            errorMsg = "OCR service unavailable";
+          } else if (error.message?.includes("400")) {
+            errorMsg = "Invalid image format";
+          } else if (error.message?.includes("413")) {
+            errorMsg = "Image too large";
+          }
+          
+          extractedText += `\n\n**📷 ${file.name}:**\n[Error: ${errorMsg}]`;
+          failureCount++;
+          processedResults.push({ 
+            name: file.name, 
+            success: false, 
+            error: errorMsg
+          });
+        }
+      }
+      
+      if (extractedText.trim()) {
+        // Add the extracted text as user input
+        const summaryText = `Here is the text extracted from ${imageFiles.length} image(s):${extractedText}`;
+        setInput(summaryText);
+        
+        // Show detailed results
+        const resultMessage = processedResults.map(result => 
+          `• ${result.name}: ${result.success ? (result.text || 'No text') : result.error}`
+        ).join('\n');
+        
+        Alert.alert(
+          "Text Extraction Complete", 
+          `Successfully processed: ${successCount}/${imageFiles.length} image(s)\n\n${resultMessage}`,
+          [
+            { 
+              text: "Send Message", 
+              onPress: () => {
+                if (summaryText.trim()) {
+                  handleSend();
+                }
+              }
+            },
+            { text: "Edit First", style: "cancel" }
+          ]
+        );
+      } else {
+        Alert.alert(
+          "No Text Extracted", 
+          "Could not extract any readable text from the uploaded images. The images may not contain text or the text quality may be too poor for OCR.",
+          [{ text: "OK" }]
+        );
+      }
+    } catch (error: any) {
+      console.error("❌ OCR processing error:", error);
+      
+      let errorMessage = "Failed to extract text from images.";
+      if (error.message?.includes("network")) {
+        errorMessage = "Network error. Please check your connection and try again.";
+      } else if (error.message?.includes("timeout")) {
+        errorMessage = "Request timed out. Please try again.";
+      }
+      
+      setErrorMessage(errorMessage);
+      Alert.alert("OCR Error", errorMessage);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -777,7 +1065,7 @@ function ChatBot(): React.ReactElement {
         <KeyboardAvoidingView
           style={styles.keyboardAvoidingView}
           behavior={Platform.OS === "ios" ? "padding" : "height"}
-          keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 88 : 0}
         >
           {/* Messages */}
           <ScrollView 
@@ -996,31 +1284,58 @@ function ChatBot(): React.ReactElement {
               {/* Pending Files Display */}
               {pendingFiles.length > 0 && (
                 <View style={styles.pendingFilesContainer}>
+                  <View style={styles.pendingFilesHeaderRow}>
+                    <Text style={styles.pendingFilesHeader}>
+                      📎 Files ready to send ({pendingFiles.length})
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.clearAllFilesButton}
+                      onPress={() => setPendingFiles([])}
+                      accessibilityLabel="Clear all files"
+                    >
+                      <Ionicons name="trash-outline" size={16} color="#DC2626" />
+                      <Text style={styles.clearAllFilesText}>Clear All</Text>
+                    </TouchableOpacity>
+                  </View>
                   <ScrollView 
                     horizontal 
                     showsHorizontalScrollIndicator={false}
                     style={styles.pendingFilesScroll}
+                    contentContainerStyle={styles.pendingFilesScrollContent}
                   >
-                    {pendingFiles.map((file, index) => (
-                      <View key={index} style={styles.pendingFileItem}>
-                        <View style={styles.pendingFileContent}>
-                          <Ionicons 
-                            name={file.mimeType?.startsWith('image/') ? 'image' : 'document'} 
-                            size={16} 
-                            color="#6B46C1" 
-                          />
-                          <Text style={styles.pendingFileName} numberOfLines={1}>
-                            {file.name}
-                          </Text>
+                    {pendingFiles.map((file, index) => {
+                      const isImage = file.mimeType?.startsWith('image/');
+                      const fileSizeKB = file.size ? (file.size / 1024).toFixed(1) : 'Unknown';
+                      const fileExtension = file.name?.split('.').pop()?.toUpperCase() || 'FILE';
+                      
+                      return (
+                        <View key={index} style={styles.pendingFileItem}>
+                          <View style={styles.pendingFileIconContainer}>
+                            <Ionicons 
+                              name={isImage ? 'image' : 'document-text'} 
+                              size={20} 
+                              color={isImage ? "#10B981" : "#6B46C1"} 
+                            />
+                            <Text style={styles.fileTypeIndicator}>{fileExtension}</Text>
+                          </View>
+                          <View style={styles.pendingFileDetails}>
+                            <Text style={styles.pendingFileName} numberOfLines={1}>
+                              {file.name}
+                            </Text>
+                            <Text style={styles.pendingFileSize}>
+                              {fileSizeKB} KB • {isImage ? 'Image' : 'Document'}
+                            </Text>
+                          </View>
+                          <TouchableOpacity
+                            style={styles.removePendingFile}
+                            onPress={() => removePendingFile(index)}
+                            accessibilityLabel={`Remove ${file.name}`}
+                          >
+                            <Ionicons name="close-circle" size={18} color="#DC2626" />
+                          </TouchableOpacity>
                         </View>
-                        <TouchableOpacity
-                          style={styles.removePendingFile}
-                          onPress={() => removePendingFile(index)}
-                        >
-                          <Ionicons name="close-circle" size={16} color="#DC2626" />
-                        </TouchableOpacity>
-                      </View>
-                    ))}
+                      );
+                    })}
                   </ScrollView>
                 </View>
               )}
@@ -1190,9 +1505,9 @@ function ChatBot(): React.ReactElement {
 }
 
 const styles = StyleSheet.create({
-    rootContainer: {
+  rootContainer: {
     flex: 1,
-    backgroundColor: "#ffffffff",
+    backgroundColor: "#F8FAFC",
   },
   container: {
     flex: 1,
@@ -1547,6 +1862,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 12,
     elevation: 8,
+    paddingBottom: Platform.OS === "ios" ? 0 : 8,
   },
   touchOverlay: {
     position: "absolute",
@@ -1561,36 +1877,89 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     borderBottomWidth: 1,
     borderBottomColor: "#F1F5F9",
+    backgroundColor: "#FAFBFC",
+  },
+  pendingFilesHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  pendingFilesHeader: {
+    fontSize: 12,
+    color: "#64748B",
+    fontWeight: "600",
+  },
+  clearAllFilesButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: "#FEF2F2",
+    borderWidth: 1,
+    borderColor: "#FECACA",
+  },
+  clearAllFilesText: {
+    fontSize: 11,
+    color: "#DC2626",
+    fontWeight: "500",
+    marginLeft: 4,
   },
   pendingFilesScroll: {
-    maxHeight: 60,
+    maxHeight: 80,
+  },
+  pendingFilesScrollContent: {
+    paddingRight: 16,
   },
   pendingFileItem: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F8FAFC",
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    marginRight: 8,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    padding: 12,
+    marginRight: 12,
     borderWidth: 1,
     borderColor: "#E2E8F0",
-    maxWidth: 150,
+    minWidth: 160,
+    maxWidth: 200,
+    shadowColor: "#1E293B",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  pendingFileIconContainer: {
+    alignItems: "center",
+    marginRight: 8,
+  },
+  fileTypeIndicator: {
+    fontSize: 8,
+    color: "#64748B",
+    fontWeight: "600",
+    marginTop: 2,
+  },
+  pendingFileDetails: {
+    flex: 1,
+  },
+  pendingFileName: {
+    fontSize: 12,
+    color: "#1E293B",
+    fontWeight: "500",
+    marginBottom: 2,
+  },
+  pendingFileSize: {
+    fontSize: 10,
+    color: "#64748B",
   },
   pendingFileContent: {
     flexDirection: "row",
     alignItems: "center",
     flex: 1,
   },
-  pendingFileName: {
-    fontSize: 12,
-    color: "#1E293B",
-    marginLeft: 4,
-    flex: 1,
-  },
   removePendingFile: {
-    marginLeft: 4,
-    padding: 2,
+    marginLeft: 8,
+    padding: 4,
   },
   inputRow: {
     flexDirection: "row",

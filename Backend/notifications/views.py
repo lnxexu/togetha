@@ -1,7 +1,8 @@
-from rest_framework import viewsets
+from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from django.shortcuts import get_object_or_404
 from .models import Notification
 from .serializers import NotificationSerializer
 
@@ -10,7 +11,19 @@ class NotificationViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        return Notification.objects.filter(user=self.request.user).order_by('-timestamp')
+        return Notification.objects.filter(user=self.request.user).order_by('-scheduled_time', '-timestamp')
+    
+    def retrieve(self, request, *args, **kwargs):
+        """Override retrieve to automatically mark notification as read when viewed"""
+        notification = self.get_object()
+        
+        # Mark as read when notification details are viewed
+        if not notification.read:
+            notification.read = True
+            notification.save()
+        
+        serializer = self.get_serializer(notification)
+        return Response(serializer.data)
     
     @action(detail=False, methods=['post'])
     def mark_all_read(self, request):
@@ -30,14 +43,29 @@ class NotificationViewSet(viewsets.ModelViewSet):
             notification.save()
             return Response({
                 'status': 'success',
-                'message': 'Notification marked as read'
+                'message': 'Notification marked as read',
+                'notification': NotificationSerializer(notification).data
             })
         return Response({
             'status': 'info',
-            'message': 'Notification was already read'
+            'message': 'Notification was already read',
+            'notification': NotificationSerializer(notification).data
         })
+    
+    @action(detail=False, methods=['get'])
+    def unread_count(self, request):
+        """Get count of unread notifications"""
+        count = self.get_queryset().filter(read=False).count()
+        return Response({'unread_count': count})
+    
+    @action(detail=False, methods=['get'])
+    def recent(self, request):
+        """Get recent notifications (last 20)"""
+        recent_notifications = self.get_queryset()[:20]
+        serializer = self.get_serializer(recent_notifications, many=True)
+        return Response(serializer.data)
 
-def create_notification(user, notification_type, title, message, action_id=None, priority='medium'):
+def create_notification(user, notification_type, title, message, related_task=None, action_id=None, priority='medium', specific_type=None):
     """
     Utility function to create notifications from anywhere in the codebase
     """
@@ -46,7 +74,9 @@ def create_notification(user, notification_type, title, message, action_id=None,
         type=notification_type,
         title=title,
         message=message,
+        related_task=related_task,
         action_id=action_id,
-        priority=priority
+        priority=priority,
+        notification_type=specific_type or 'general'
     )
     return notification

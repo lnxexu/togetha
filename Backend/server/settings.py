@@ -11,22 +11,6 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
-# import logging
-
-# logging.basicConfig(
-#     level=logging.DEBUG,
-#     format='%(asctime)s [%(levelname)s] %(message)s',
-#     handlers=[
-#         logging.StreamHandler(),
-#     ]
-# )
-
-# import pytz
-
-# Set timezone to Philippines
-# TIME_ZONE = 'Asia/Manila'
-# USE_TZ = True
-
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -292,7 +276,7 @@ LOGGING = {
     },
 }
 
-TIME_ZONE = 'Asia/Manila' 
+TIME_ZONE = 'UTC' 
 USE_TZ = True
 
 CELERY_BROKER_URL = 'redis://localhost:6379/0'  # Use Redis as the message broker
@@ -304,8 +288,8 @@ CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'  # Use Redis for storing task
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_ACCEPT_CONTENT = ['json']
-CELERY_TIMEZONE = 'Asia/Manila'
-CELERY_ENABLE_UTC = False
+CELERY_TIMEZONE = 'UTC'
+CELERY_ENABLE_UTC = True
 
 # Additional Celery settings for better reliability
 CELERY_TASK_ALWAYS_EAGER = False

@@ -178,18 +178,6 @@ const Dashboard: React.FC = () => {
           </View>
         )}
 
-        {/* Progress Overview - Simple version without SVG */}
-        {progressData && progressSummary.length > 0 && (
-          <View style={styles.overviewSection}>
-            <Text style={styles.sectionTitle}>Progress Summary</Text>
-            <View style={styles.summaryGrid}>
-              {progressSummary.slice(0, 4).map((item, index) => (
-                <ProgressCard key={index} data={item} compact />
-              ))}
-            </View>
-          </View>
-        )}
-
         {/* All Progress Cards */}
         {progressSummary.length > 0 && (
           <View style={styles.allCardsSection}>

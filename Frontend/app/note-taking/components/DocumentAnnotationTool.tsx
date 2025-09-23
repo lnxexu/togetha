@@ -44,6 +44,7 @@ interface DocumentAnnotationProps {
   documentUri: string;
   documentName: string;
   documentType: 'pdf' | 'doc' | 'docx' | 'txt' | 'image';
+  note?: any; // Note data including document_metadata
   onClose?: () => void;
   onAnnotationsChange?: (annotations: Annotation[]) => void;
 }
@@ -64,6 +65,7 @@ const DocumentAnnotationTool: React.FC<DocumentAnnotationProps> = ({
   documentUri,
   documentName,
   documentType,
+  note,
   onClose,
   onAnnotationsChange,
 }) => {
@@ -74,33 +76,49 @@ const DocumentAnnotationTool: React.FC<DocumentAnnotationProps> = ({
   const [noteText, setNoteText] = useState('');
   const [selectedText, setSelectedText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isLoadingAnnotations, setIsLoadingAnnotations] = useState(true);
   const [lastSaveTime, setLastSaveTime] = useState<number>(Date.now());
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Auto-save functionality
   const autoSave = useCallback(async () => {
+    if (annotations.length === 0) return;
+    
     try {
+      setSaveStatus('saving');
+      
       const token = await AsyncStorage.getItem('authToken');
-      if (!token) return;
+      if (!token) {
+        console.log('Auto-save skipped: No auth token');
+        return;
+      }
 
       const response = await fetch(`${API_URL}${API_ENDPOINTS.DOCUMENT_ANNOTATIONS(noteId)}`, {
-        method: 'POST',
+        method: 'PUT',
         headers: {
           'Authorization': `Token ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           annotations: annotations,
-          last_updated: new Date().toISOString(),
         }),
       });
 
       if (response.ok) {
         setLastSaveTime(Date.now());
-        console.log('Document annotations auto-saved');
+        setSaveStatus('saved');
+        setTimeout(() => setSaveStatus('idle'), 2000);
+        console.log('Document annotations auto-saved successfully');
+      } else {
+        const errorData = await response.json();
+        setSaveStatus('error');
+        console.error('Auto-save failed:', errorData.error || 'Unknown error');
       }
     } catch (error) {
+      setSaveStatus('error');
       console.error('Auto-save failed:', error);
     }
   }, [annotations, noteId]);
@@ -172,8 +190,12 @@ const DocumentAnnotationTool: React.FC<DocumentAnnotationProps> = ({
   useEffect(() => {
     const loadAnnotations = async () => {
       try {
+        setIsLoadingAnnotations(true);
         const token = await AsyncStorage.getItem('authToken');
-        if (!token) return;
+        if (!token) {
+          Alert.alert('Error', 'Authentication token not found. Please log in again.');
+          return;
+        }
 
         const response = await fetch(`${API_URL}${API_ENDPOINTS.DOCUMENT_ANNOTATIONS(noteId)}`, {
           method: 'GET',
@@ -185,20 +207,51 @@ const DocumentAnnotationTool: React.FC<DocumentAnnotationProps> = ({
         if (response.ok) {
           const data = await response.json();
           setAnnotations(data.annotations || []);
+        } else {
+          const errorData = await response.json();
+          console.error('Failed to load annotations:', errorData.error || 'Unknown error');
         }
       } catch (error) {
         console.error('Error loading annotations:', error);
+        Alert.alert('Error', 'Failed to load annotations. Please refresh the page.');
+      } finally {
+        setIsLoadingAnnotations(false);
       }
     };
 
     loadAnnotations();
   }, [noteId]);
 
+  // Helper function to get page count from document metadata
+  const getPageCount = (): number => {
+    if (note?.document_metadata?.page_count) {
+      return note.document_metadata.page_count;
+    }
+    // Default to 1 for non-PDF files or when metadata is unavailable
+    return 1;
+  };
+
+  // Helper function to get document info text
+  const getDocumentInfoText = (): string => {
+    const pageCount = getPageCount();
+    if (documentType === 'pdf' && pageCount > 1) {
+      return `${documentType.toUpperCase()} Document (${pageCount} pages)`;
+    }
+    return `${documentType.toUpperCase()} Document`;
+  };
+
   // Save annotation to backend
   const saveAnnotation = async (annotation: Omit<Annotation, 'id' | 'created_at'>) => {
     try {
+      setIsSaving(true);
+      setSaveStatus('saving');
+      
       const token = await AsyncStorage.getItem('authToken');
-      if (!token) return;
+      if (!token) {
+        Alert.alert('Error', 'Authentication token not found. Please log in again.');
+        setSaveStatus('error');
+        return;
+      }
 
       const response = await fetch(`${API_URL}${API_ENDPOINTS.DOCUMENT_ANNOTATIONS(noteId)}`, {
         method: 'POST',
@@ -213,16 +266,34 @@ const DocumentAnnotationTool: React.FC<DocumentAnnotationProps> = ({
       });
 
       if (response.ok) {
-        const savedAnnotation = await response.json();
+        const responseData = await response.json();
+        // Backend returns { message: '...', annotation: ... }
+        const savedAnnotation = responseData.annotation;
         const newAnnotations = [...annotations, savedAnnotation];
         setAnnotations(newAnnotations);
         setLastSaveTime(Date.now());
+        setSaveStatus('saved');
+        
+        // Reset status after 2 seconds
+        setTimeout(() => setSaveStatus('idle'), 2000);
+        
         if (onAnnotationsChange) {
           onAnnotationsChange(newAnnotations);
         }
+        
+        // Show success feedback (less intrusive than alert)
+        console.log('Annotation saved successfully!');
+      } else {
+        const errorData = await response.json();
+        setSaveStatus('error');
+        throw new Error(errorData.error || 'Failed to save annotation');
       }
     } catch (error) {
       console.error('Error saving annotation:', error);
+      setSaveStatus('error');
+      Alert.alert('Error', 'Failed to save annotation. Please try again.');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -246,8 +317,15 @@ const DocumentAnnotationTool: React.FC<DocumentAnnotationProps> = ({
   // Delete annotation
   const deleteAnnotation = async (annotationId: string) => {
     try {
+      setIsSaving(true);
+      setSaveStatus('saving');
+      
       const token = await AsyncStorage.getItem('authToken');
-      if (!token) return;
+      if (!token) {
+        Alert.alert('Error', 'Authentication token not found. Please log in again.');
+        setSaveStatus('error');
+        return;
+      }
 
       const response = await fetch(`${API_URL}${API_ENDPOINTS.DELETE_ANNOTATION(noteId, annotationId)}`, {
         method: 'DELETE',
@@ -260,12 +338,23 @@ const DocumentAnnotationTool: React.FC<DocumentAnnotationProps> = ({
         const newAnnotations = annotations.filter(a => a.id !== annotationId);
         setAnnotations(newAnnotations);
         setLastSaveTime(Date.now());
+        setSaveStatus('saved');
+        setTimeout(() => setSaveStatus('idle'), 2000);
+        
         if (onAnnotationsChange) {
           onAnnotationsChange(newAnnotations);
         }
+      } else {
+        const errorData = await response.json();
+        setSaveStatus('error');
+        Alert.alert('Error', errorData.error || 'Failed to delete annotation');
       }
     } catch (error) {
       console.error('Error deleting annotation:', error);
+      setSaveStatus('error');
+      Alert.alert('Error', 'Failed to delete annotation. Please try again.');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -300,6 +389,28 @@ const DocumentAnnotationTool: React.FC<DocumentAnnotationProps> = ({
         </Text>
         
         <View style={styles.headerActions}>
+          {/* Save Status Indicator */}
+          <View style={styles.saveStatusContainer}>
+            {saveStatus === 'saving' && (
+              <View style={styles.saveStatusItem}>
+                <ActivityIndicator size="small" color="#6366F1" />
+                <Text style={styles.saveStatusText}>Saving...</Text>
+              </View>
+            )}
+            {saveStatus === 'saved' && (
+              <View style={styles.saveStatusItem}>
+                <MaterialIcons name="check-circle" size={16} color="#10B981" />
+                <Text style={[styles.saveStatusText, { color: '#10B981' }]}>Saved</Text>
+              </View>
+            )}
+            {saveStatus === 'error' && (
+              <View style={styles.saveStatusItem}>
+                <MaterialIcons name="error" size={16} color="#EF4444" />
+                <Text style={[styles.saveStatusText, { color: '#EF4444' }]}>Error</Text>
+              </View>
+            )}
+          </View>
+          
           <TouchableOpacity
             style={styles.openDocumentButton}
             onPress={openDocumentInNativeViewer}
@@ -330,7 +441,7 @@ const DocumentAnnotationTool: React.FC<DocumentAnnotationProps> = ({
         </View>
         <View style={styles.documentDetails}>
           <Text style={styles.documentName}>{documentName}</Text>
-          <Text style={styles.documentType}>{documentType.toUpperCase()} Document</Text>
+          <Text style={styles.documentType}>{getDocumentInfoText()}</Text>
         </View>
         <TouchableOpacity
           style={styles.viewDocumentButton}
@@ -398,12 +509,20 @@ const DocumentAnnotationTool: React.FC<DocumentAnnotationProps> = ({
 
       {/* Add New Annotation Button */}
       <TouchableOpacity
-        style={styles.addAnnotationButton}
+        style={[
+          styles.addAnnotationButton,
+          (isSaving || isLoadingAnnotations) && styles.addAnnotationButtonDisabled
+        ]}
         onPress={() => setShowAddNoteModal(true)}
+        disabled={isSaving || isLoadingAnnotations}
       >
-        <MaterialIcons name="add" size={24} color="#FFFFFF" />
+        {isSaving ? (
+          <ActivityIndicator size="small" color="#FFFFFF" />
+        ) : (
+          <MaterialIcons name="add" size={24} color="#FFFFFF" />
+        )}
         <Text style={styles.addAnnotationText}>
-          Add {selectedAnnotationType.charAt(0).toUpperCase() + selectedAnnotationType.slice(1)}
+          {isSaving ? 'Saving...' : `Add ${selectedAnnotationType.charAt(0).toUpperCase() + selectedAnnotationType.slice(1)}`}
         </Text>
       </TouchableOpacity>
 
@@ -413,7 +532,12 @@ const DocumentAnnotationTool: React.FC<DocumentAnnotationProps> = ({
           Annotations ({annotations.length})
         </Text>
         <ScrollView showsVerticalScrollIndicator={false}>
-          {annotations.length === 0 ? (
+          {isLoadingAnnotations ? (
+            <View style={styles.loadingState}>
+              <ActivityIndicator size="large" color="#6366F1" />
+              <Text style={styles.loadingText}>Loading annotations...</Text>
+            </View>
+          ) : annotations.length === 0 ? (
             <View style={styles.emptyState}>
               <MaterialIcons name="note-add" size={48} color="#D1D5DB" />
               <Text style={styles.emptyStateText}>No annotations yet</Text>
@@ -448,8 +572,13 @@ const DocumentAnnotationTool: React.FC<DocumentAnnotationProps> = ({
                   <TouchableOpacity
                     onPress={() => confirmDeleteAnnotation(annotation)}
                     style={styles.deleteButton}
+                    disabled={isSaving}
                   >
-                    <MaterialIcons name="delete-outline" size={20} color="#EF4444" />
+                    <MaterialIcons 
+                      name="delete-outline" 
+                      size={20} 
+                      color={isSaving ? "#D1D5DB" : "#EF4444"} 
+                    />
                   </TouchableOpacity>
                 </View>
                 <Text style={styles.annotationText}>
@@ -558,59 +687,59 @@ const styles = StyleSheet.create({
   documentInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
+    padding: 12,
     backgroundColor: '#FFFFFF',
     marginHorizontal: 16,
-    marginVertical: 12,
-    borderRadius: 12,
+    marginVertical: 8,
+    borderRadius: 8,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
   },
   documentIcon: {
-    marginRight: 16,
+    marginRight: 12,
   },
   documentDetails: {
     flex: 1,
   },
   documentName: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
     color: '#1F2937',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   documentType: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#6B7280',
   },
   viewDocumentButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     backgroundColor: '#EEF2FF',
-    borderRadius: 8,
+    borderRadius: 6,
   },
   viewDocumentText: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#6366F1',
     fontWeight: '500',
     marginRight: 4,
   },
   toolbar: {
     backgroundColor: '#FFFFFF',
-    paddingVertical: 12,
+    paddingVertical: 8,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
   },
   toolbarTitle: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: '#374151',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   toolGroup: {
     flexDirection: 'row',
@@ -619,10 +748,10 @@ const styles = StyleSheet.create({
   typeButton: {
     flexDirection: 'column',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginRight: 8,
-    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    marginRight: 6,
+    borderRadius: 6,
     backgroundColor: '#F9FAFB',
     borderWidth: 1,
     borderColor: '#E5E7EB',
@@ -632,9 +761,9 @@ const styles = StyleSheet.create({
     borderColor: '#6366F1',
   },
   toolLabel: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#374151',
-    marginTop: 4,
+    marginTop: 2,
   },
   toolLabelActive: {
     color: '#FFFFFF',
@@ -644,15 +773,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   colorTitle: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#374151',
-    marginRight: 8,
+    marginRight: 6,
   },
   colorButton: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    marginRight: 8,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    marginRight: 6,
     borderWidth: 2,
     borderColor: 'transparent',
   },
@@ -664,10 +793,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginHorizontal: 16,
-    marginVertical: 12,
-    paddingVertical: 14,
+    marginVertical: 8,
+    paddingVertical: 12,
     backgroundColor: '#6366F1',
-    borderRadius: 12,
+    borderRadius: 8,
   },
   addAnnotationText: {
     color: '#FFFFFF',
@@ -680,78 +809,78 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   annotationsTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
     color: '#1F2937',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   emptyState: {
     alignItems: 'center',
-    paddingVertical: 48,
+    paddingVertical: 32,
   },
   emptyStateText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '500',
     color: '#9CA3AF',
-    marginTop: 16,
+    marginTop: 12,
   },
   emptyStateSubtext: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#9CA3AF',
     textAlign: 'center',
-    marginTop: 8,
+    marginTop: 6,
   },
   annotationItem: {
     backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
   },
   annotationHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   annotationTypeIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   colorIndicator: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 8,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 6,
   },
   annotationType: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#6B7280',
-    marginLeft: 4,
+    marginLeft: 3,
     textTransform: 'capitalize',
   },
   deleteButton: {
-    padding: 4,
+    padding: 3,
   },
   annotationText: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#1F2937',
-    lineHeight: 24,
-  },
-  annotationNote: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginTop: 8,
     lineHeight: 20,
   },
+  annotationNote: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 6,
+    lineHeight: 18,
+  },
   annotationDate: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#9CA3AF',
-    marginTop: 8,
+    marginTop: 6,
   },
   modalOverlay: {
     flex: 1,
@@ -819,6 +948,35 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#FFFFFF',
     fontWeight: '500',
+  },
+  saveStatusContainer: {
+    marginRight: 12,
+    minWidth: 60,
+  },
+  saveStatusItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  saveStatusText: {
+    fontSize: 12,
+    color: '#6366F1',
+    marginLeft: 4,
+    fontWeight: '500',
+  },
+  loadingState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#6B7280',
+    marginTop: 12,
+  },
+  addAnnotationButtonDisabled: {
+    backgroundColor: '#9CA3AF',
+    opacity: 0.6,
   },
 });
 
