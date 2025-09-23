@@ -126,6 +126,20 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const [containerSize, setContainerSize] = useState({ width: screenWidth, height: screenHeight - 300 });
   const pdfContainerRef = useRef<View>(null);
   const pdfScrollRef = useRef<ScrollView>(null);
+
+  // Animated values for smooth pan/zoom transitions during gestures
+  const animatedTranslateX = useRef(new Animated.Value(0)).current;
+  const animatedTranslateY = useRef(new Animated.Value(0)).current;
+  const animatedScale = useRef(new Animated.Value(1)).current;
+
+  // Sync animated values to pdfTransform state with immediate updates for real-time responsiveness
+  useEffect(() => {
+    // Set values immediately without animation for real-time pan/zoom response
+    // This eliminates delays and makes interactions feel more responsive
+    animatedTranslateX.setValue(pdfTransform.translateX);
+    animatedTranslateY.setValue(pdfTransform.translateY);
+    animatedScale.setValue(pdfTransform.scale);
+  }, [pdfTransform.translateX, pdfTransform.translateY, pdfTransform.scale]);
   
   // Gesture handling refs - from DrawingEditor approach
   const gestureStartZoomRef = useRef(1);
@@ -1001,25 +1015,16 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     setShowFolderModal(false);
   };
 
-  // Reset zoom function for double-tap with animation
+  // Reset zoom function for double-tap with immediate response
   const resetZoom = () => {
     if (currentZoom === 1 && pdfTransform.translateX === 0 && pdfTransform.translateY === 0) return;
     
-    // Animate reset transition
-    Animated.timing(
-      new Animated.Value(0),
-      {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: false,
-      }
-    ).start();
-    
+    // Reset immediately without animation for responsive feel
     setCurrentZoom(1);
     setPdfTransform({ scale: 1, translateX: 0, translateY: 0 });
   };
 
-  // Reintroduce zoom buttons functionality (floating + / -) with animations
+  // Zoom buttons functionality with immediate response (no animation delays)
   const handleZoomIn = () => {
     const newZoom = Math.min(currentZoom * 1.25, MAX_PDF_SCALE);
     if (newZoom === currentZoom) return; // Already at max zoom
@@ -1042,17 +1047,8 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     const clampedX = Math.max(-maxOffsetX, Math.min(maxOffsetX, newTranslateX));
     const clampedY = Math.max(-maxOffsetY, Math.min(maxOffsetY, newTranslateY));
 
-    // Animate zoom transition
+    // Update immediately without animation for responsive feel
     setCurrentZoom(newZoom);
-    Animated.timing(
-      new Animated.Value(0),
-      {
-        toValue: 1,
-        duration: 250,
-        useNativeDriver: false,
-      }
-    ).start();
-    
     setPdfTransform(prev => ({ ...prev, scale: newZoom, translateX: clampedX, translateY: clampedY }));
   };
 
@@ -1077,29 +1073,18 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     const clampedX = Math.max(-maxOffsetX, Math.min(maxOffsetX, newTranslateX));
     const clampedY = Math.max(-maxOffsetY, Math.min(maxOffsetY, newTranslateY));
 
-    // Animate zoom transition
+    // Update immediately without animation for responsive feel
     setCurrentZoom(newZoom);
-    Animated.timing(
-      new Animated.Value(0),
-      {
-        toValue: 1,
-        duration: 250,
-        useNativeDriver: false,
-      }
-    ).start();
-    
     setPdfTransform(prev => ({ ...prev, scale: newZoom, translateX: clampedX, translateY: clampedY }));
   };
 
-  // Pan responder for pinch-to-zoom gestures and drawing - DrawingEditor approach
+  // Pan responder for pinch-to-zoom gestures and drawing - optimized for real-time response
   const panResponder = PanResponder.create({
     onStartShouldSetPanResponder: (evt, gestureState) => {
       const touches = evt.nativeEvent.touches || [];
-      console.log('onStartShouldSetPanResponder - touches:', touches.length);
-      // Start responder for multi-touch (pinch), when a tool is selected (drawing),
+      // Start responder immediately for multi-touch (pinch), when a tool is selected (drawing),
       // or when we're zoomed in and want to pan the content with one finger.
       if (touches.length === 2) {
-        console.log('✅ Two touches detected - should handle pinch');
         return true;
       }
       if (selectedTool !== null) return true;
@@ -1108,19 +1093,27 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     },
     onMoveShouldSetPanResponder: (evt, gestureState) => {
       const touches = evt.nativeEvent.touches || [];
+      // Accept move gestures immediately without delay
       if (touches.length === 2) return true; // pinch
-      // If drawing tool selected, handle single-touch move
+      // If drawing tool selected, handle single-touch move immediately
       if (selectedTool !== null && touches.length === 1) return true;
-      // If zoomed in, allow single-finger pan
+      // If zoomed in, allow single-finger pan immediately
       if (currentZoomRef.current > 1 && touches.length === 1) return true;
       return false;
     },
     onMoveShouldSetPanResponderCapture: (evt, gestureState) => {
       const touches = evt.nativeEvent.touches || [];
+      // Capture gestures immediately for real-time response
       if (touches.length === 2) return true;
       if (selectedTool !== null && touches.length === 1) return true;
       if (currentZoomRef.current > 1 && touches.length === 1) return true;
       return false;
+    },
+    // Enable immediate response by setting these to true
+    onShouldBlockNativeResponder: () => true,
+    onStartShouldSetPanResponderCapture: (evt, gestureState) => {
+      const touches = evt.nativeEvent.touches || [];
+      return touches.length === 2 || selectedTool !== null || currentZoomRef.current > 1;
     },
 
     onPanResponderGrant: (evt, gestureState) => {
@@ -1183,8 +1176,9 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
     onPanResponderMove: (evt, gestureState) => {
       const touches = evt.nativeEvent.touches || [];
+      
       if (touches.length === 2) {
-        // Handle pinch-to-zoom
+        // Handle pinch-to-zoom with immediate updates
         const currentDistance = getDistance(touches);
         const startDistance = gestureStartDistanceRef.current;
 
@@ -1214,7 +1208,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
           clampedX = Math.max(-maxOffsetX, Math.min(maxOffsetX, clampedX));
           clampedY = Math.max(-maxOffsetY, Math.min(maxOffsetY, clampedY));
 
-          // Ensure both states update synchronously for immediate UI feedback
+          // Update states immediately for real-time feedback
           setCurrentZoom(newZoom);
           setPdfTransform(prev => ({ 
             ...prev, 
@@ -1222,24 +1216,29 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
             translateX: clampedX,
             translateY: clampedY
           }));
-
-          console.log('Pinch zoom sync:', { newZoom, uiZoom: Math.round(newZoom * 100) + '%' });
+          
+          // Also update animated values directly for immediate visual feedback
+          animatedScale.setValue(newZoom);
+          animatedTranslateX.setValue(clampedX);
+          animatedTranslateY.setValue(clampedY);
         }
       } else if (touches.length === 1 && isDrawing && selectedTool) {
-        // Handle drawing
+        // Handle drawing with real-time path updates
         const touch = touches[0];
         const { locationX, locationY } = touch;
 
         if (selectedTool === 'pen' || selectedTool === 'brush' || selectedTool === 'pencil' || selectedTool === 'highlight' || selectedTool === 'eraser') {
-          // Push to point buffer and update smoothed current path for live preview
+          // Push to point buffer and update path immediately
           currentPointsRef.current.push({ x: locationX, y: locationY });
-          // Limit buffer size to avoid excessive memory use (keep recent 1024)
-          if (currentPointsRef.current.length > 1024) currentPointsRef.current.shift();
-          const smooth = convertPointsToSmoothedPath(currentPointsRef.current, 6);
+          // Limit buffer size to avoid excessive memory use (keep recent 512 for better performance)
+          if (currentPointsRef.current.length > 512) currentPointsRef.current.shift();
+          
+          // Use fewer segments for real-time smoothing to improve performance
+          const smooth = convertPointsToSmoothedPath(currentPointsRef.current, 4);
           setCurrentPath(smooth);
         }
       } else if (touches.length === 1 && currentZoomRef.current > 1 && selectedTool === null) {
-        // Handle panning when zoomed in
+        // Handle panning when zoomed in with immediate updates
         const touch = touches[0];
         const dx = touch.pageX - gestureStartTouchRef.current.x;
         const dy = touch.pageY - gestureStartTouchRef.current.y;
@@ -1256,7 +1255,10 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         newTranslateX = Math.max(-maxOffsetX, Math.min(maxOffsetX, newTranslateX));
         newTranslateY = Math.max(-maxOffsetY, Math.min(maxOffsetY, newTranslateY));
 
+        // Update state and animated values immediately
         setPdfTransform(prev => ({ ...prev, translateX: newTranslateX, translateY: newTranslateY }));
+        animatedTranslateX.setValue(newTranslateX);
+        animatedTranslateY.setValue(newTranslateY);
       }
     },
 
@@ -2547,9 +2549,8 @@ return (
               onScroll={(event) => {
                 const { contentOffset } = event.nativeEvent;
                 setPdfScrollOffset({ x: contentOffset.x, y: contentOffset.y });
-                console.log('PDF scroll offset:', contentOffset);
               }}
-              scrollEventThrottle={16}
+              scrollEventThrottle={1}
             >
               {/* PDF and Annotation Transform Container */}
               <Animated.View 
@@ -2557,9 +2558,9 @@ return (
                   styles.pdfTransformContainer,
                   {
                     transform: [
-                      { scale: pdfTransform.scale },
-                      { translateX: pdfTransform.translateX },
-                      { translateY: pdfTransform.translateY },
+                      { scale: animatedScale },
+                      { translateX: animatedTranslateX },
+                      { translateY: animatedTranslateY },
                     ],
                   }
                 ]}
