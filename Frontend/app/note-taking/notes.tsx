@@ -451,6 +451,27 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
     };
   }, []);
 
+  // Helper: show an error toast that includes an error type label
+  const showTypedErrorToast = (message: string, type: string) => {
+    // Use existing toast utility but include the type so callers can display structured info
+    try {
+      // Only show the friendly message to the user — keep the error type out of the UI
+      showErrorToast(message);
+    } catch (e) {
+      console.warn("Failed to show typed error toast", e);
+    }
+    // Also log for debug/telemetry
+    // Log the message and type for developers, but don't surface the type in the UI
+    console.warn(`Toast error: ${message}`, { errorType: type });
+  };
+
+  // Helper: check if a note title already exists (case-insensitive, trimmed)
+  const isDuplicateNoteTitle = (title?: string) => {
+    if (!title) return false;
+    const normalized = title.trim().toLowerCase();
+    return notes.some((n) => (n.title || "").trim().toLowerCase() === normalized);
+  };
+
   useEffect(() => {
     fetchNotes(false);
   }, [selectedFilterFolder]);
@@ -1126,6 +1147,12 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
 
   const handleConfirmDocumentImport = async (documentInfo: any) => {
     try {
+      // Quick duplicate check using the provided document name
+      const candidateName = documentInfo?.name?.trim() || "";
+      if (candidateName && isDuplicateNoteTitle(candidateName)) {
+        showTypedErrorToast("A note with this title already exists.", "duplicate_name");
+        return;
+      }
       // Create a note with the document information
       const token = await AsyncStorage.getItem("authToken");
       if (!token) {
@@ -1156,8 +1183,17 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
         }
       );
 
-      if (response.ok) {
+        if (response.ok) {
         const result = await response.json();
+          // Server returned a created note - double-check the returned title for duplicates
+          const returnedTitle = result?.title?.trim();
+          if (returnedTitle && isDuplicateNoteTitle(returnedTitle)) {
+            // Optionally, you might want to delete the just-created duplicate on the server.
+            showTypedErrorToast("A note with this title already exists.", "duplicate_name");
+            // Still refresh list to reflect server state
+            fetchNotes(true);
+            return;
+          }
         showSuccessToast("Document imported successfully!");
 
         // Refresh the notes list to show the new document
@@ -1243,10 +1279,18 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
         ? sizeConfig?.landscape
         : sizeConfig?.portrait;
 
+    const finalTitle = drawingTitle && drawingTitle.trim() !== "" ? drawingTitle.trim() : "Untitled Drawing";
+
+    // Duplicate title check
+    if (isDuplicateNoteTitle(finalTitle)) {
+      showTypedErrorToast("A note with this title already exists.", "duplicate_name");
+      return;
+    }
+
     // Navigate to drawing editor with setup preferences
     navigation.navigate("DrawingEditor", {
       initialSetup: {
-        title: drawingTitle || "Untitled Drawing",
+        title: finalTitle,
         size: selectedSize,
         orientation: selectedOrientation,
         template: selectedTemplate,
@@ -1411,103 +1455,126 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
   }, []);
 
   // Add this helper function
-  const updateFolderName = async (folderId: string, newName: string) => {
-    try {
-      const token = await AsyncStorage.getItem("authToken");
-      if (!token) {
-        navigation.navigate("Login");
-        return;
-      }
+const updateFolderName = async (folderId: string, newName: string) => {
+  // Check for duplicate folder name (excluding the current folder)
+  const normalizedNewName = newName.trim().toLowerCase();
+  const isDuplicate = folders.some(
+    (folder) => 
+      folder.id !== folderId && 
+      folder.name.trim().toLowerCase() === normalizedNewName
+  );
 
-      const response = await fetch(
-        `${API_URL}${API_ENDPOINTS.NOTE_FOLDERS}${folderId}/`,
-        {
-          method: "PATCH",
-          headers: {
-            Authorization: `Token ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ name: newName }),
-        }
-      );
+  if (isDuplicate) {
+    showErrorToast("A folder with this name already exists");
+    return;
+  }
 
-      if (!response.ok) {
-        throw new Error("Failed to update folder name");
-      }
-
-      // Update folder in state
-      setFolders(
-        folders.map((folder) =>
-          folder.id === folderId ? { ...folder, name: newName } : folder
-        )
-      );
-
-      showSuccessToast("Folder name updated successfully");
-    } catch (error) {
-      console.error("Error updating folder name:", error);
-      showErrorToast("Failed to update folder name");
-      Alert.alert("Error", "Failed to update folder name. Please try again.");
-    }
-  };
-
-  const handleCreateFolder = async () => {
-    if (newFolderName.trim() === "") {
-      Alert.alert("Error", "Please enter a folder name");
+  try {
+    const token = await AsyncStorage.getItem("authToken");
+    if (!token) {
+      navigation.navigate("Login");
       return;
     }
 
-    try {
-      const token = await AsyncStorage.getItem("authToken");
-      if (!token) {
-        navigation.navigate("Login");
-        return;
-      }
-
-      const folderData = {
-        name: newFolderName.trim(),
-        icon: "folder", // Use default folder icon
-        color: selectedFolderColor,
-      };
-
-      const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTE_FOLDERS}`, {
-        method: "POST",
+    const response = await fetch(
+      `${API_URL}${API_ENDPOINTS.NOTE_FOLDERS}${folderId}/`,
+      {
+        method: "PATCH",
         headers: {
           Authorization: `Token ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(folderData),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to create folder");
+        body: JSON.stringify({ name: newName }),
       }
+    );
 
-      const newFolder = await response.json();
-
-      // Transform to match your Folder interface
-      const createdFolder: Folder = {
-        id: newFolder.id.toString(),
-        name: newFolder.name,
-        icon: newFolder.icon as keyof typeof MaterialIcons.glyphMap,
-        color: newFolder.color,
-      };
-
-      setFolders((prev) => [...prev, createdFolder]);
-
-      // Save the new folder's ID to use for sorting notes
-      setSelectedFolder(createdFolder.id);
-
-      // Close the create folder modal and reset state
-      closeCreateFolderModal();
-
-      // Show toast notification about successful folder creation
-      showSuccessToast(`Folder "${newFolderName}" created successfully`);
-    } catch (error) {
-      console.error("Error creating folder:", error);
-      showErrorToast("Failed to create folder");
-      Alert.alert("Error", "Failed to create folder. Please try again.");
+    if (!response.ok) {
+      throw new Error("Failed to update folder name");
     }
-  };
+
+    // Update folder in state
+    setFolders(
+      folders.map((folder) =>
+        folder.id === folderId ? { ...folder, name: newName } : folder
+      )
+    );
+
+    showSuccessToast("Folder name updated successfully");
+  } catch (error) {
+    console.error("Error updating folder name:", error);
+    showErrorToast("Failed to update folder name");
+    Alert.alert("Error", "Failed to update folder name. Please try again.");
+  }
+};
+const handleCreateFolder = async () => {
+  if (newFolderName.trim() === "") {
+    Alert.alert("Error", "Please enter a folder name");
+    return;
+  }
+
+  // Check for duplicate folder name (case-insensitive, trimmed)
+  const normalizedNewName = newFolderName.trim().toLowerCase();
+  const isDuplicate = folders.some(
+    (folder) => folder.name.trim().toLowerCase() === normalizedNewName
+  );
+
+  if (isDuplicate) {
+    showErrorToast("A folder with this name already exists");
+    return;
+  }
+
+  try {
+    const token = await AsyncStorage.getItem("authToken");
+    if (!token) {
+      navigation.navigate("Login");
+      return;
+    }
+
+    const folderData = {
+      name: newFolderName.trim(),
+      icon: "folder", // Use default folder icon
+      color: selectedFolderColor,
+    };
+
+    const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTE_FOLDERS}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Token ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(folderData),
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to create folder");
+    }
+
+    const newFolder = await response.json();
+
+    // Transform to match your Folder interface
+    const createdFolder: Folder = {
+      id: newFolder.id.toString(),
+      name: newFolder.name,
+      icon: newFolder.icon as keyof typeof MaterialIcons.glyphMap,
+      color: newFolder.color,
+    };
+
+    setFolders((prev) => [...prev, createdFolder]);
+
+    // Save the new folder's ID to use for sorting notes
+    setSelectedFolder(createdFolder.id);
+
+    // Close the create folder modal and reset state
+    closeCreateFolderModal();
+
+    // Show toast notification about successful folder creation
+    showSuccessToast(`Folder "${newFolderName}" created successfully`);
+  } catch (error) {
+    console.error("Error creating folder:", error);
+    showErrorToast("Failed to create folder");
+    Alert.alert("Error", "Failed to create folder. Please try again.");
+  }
+};
 
   // Add new folder delete function
   const handleDeleteFolder = async (folderId: string) => {
