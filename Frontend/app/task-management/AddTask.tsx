@@ -11,6 +11,8 @@ import {
   Alert,
   Platform,
   Dimensions,
+  KeyboardAvoidingView,
+  Keyboard,
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
@@ -273,10 +275,17 @@ const AddTask: React.FC = () => {
 
         {/* Main Content Container positioned above header */}
         <View style={styles.mainContentContainer}>
+          <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 120 : 80}
+          >
           <TouchableOpacity
             activeOpacity={1}
             style={{ flex: 1 }}
             onPress={() => {
+              // Dismiss keyboard and any open pickers when tapping background
+              Keyboard.dismiss();
               if (showPriorityPicker) {
                 setShowPriorityPicker(false);
               }
@@ -294,6 +303,7 @@ const AddTask: React.FC = () => {
             <ScrollView
               style={styles.content}
               showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
             >
               {/* Task Title */}
               <View style={styles.inputGroup}>
@@ -1066,6 +1076,7 @@ const AddTask: React.FC = () => {
               </View>
             </ScrollView>
           </TouchableOpacity>
+          </KeyboardAvoidingView>
         </View>
       </View>
     </View>
