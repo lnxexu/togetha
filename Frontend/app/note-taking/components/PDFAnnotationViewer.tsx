@@ -138,6 +138,13 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const gestureStartTranslateRef = useRef({ x: 0, y: 0 });
   const gestureStartTouchRef = useRef({ x: 0, y: 0 });
 
+  // Buffer points for current freehand drawing so we can generate a smoothed path
+  const currentPointsRef = useRef<{ x: number; y: number }[]>([]);
+  
+  // Midpoint tracking for pinch-to-zoom focal point preservation
+  const gestureMidpointRef = useRef({ x: 0, y: 0 }); // screen coords
+  const gestureMidpointPdfRef = useRef({ x: 0, y: 0 }); // container/pdf coords
+
   // Scale constants
   const MIN_PDF_SCALE = 0.5;
   const MAX_PDF_SCALE = 3.0; // Match DrawingEditor limit
@@ -150,6 +157,54 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     const dx = touch2.pageX - touch1.pageX;
     const dy = touch2.pageY - touch1.pageY;
     return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  // Convert an array of {x,y} points into a smoothed path string using Catmull-Rom
+  // spline sampling. Returns an SVG path using M and L commands (so downstream
+  // normalization still works). The 'segments' parameter controls the samples
+  // between each pair of points (higher = smoother but heavier).
+  const convertPointsToSmoothedPath = (points: { x: number; y: number }[], segments = 8) => {
+    if (!points || points.length === 0) return '';
+    if (points.length === 1) return `M${points[0].x.toFixed(2)},${points[0].y.toFixed(2)}`;
+
+    // Catmull-Rom spline basis function
+    const catmullRom = (p0: any, p1: any, p2: any, p3: any, t: number) => {
+      const t2 = t * t;
+      const t3 = t2 * t;
+      const x = 0.5 * ((-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3 + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (-p0.x + p2.x) * t + 2 * p1.x);
+      const y = 0.5 * ((-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3 + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 + (-p0.y + p2.y) * t + 2 * p1.y);
+      return { x, y };
+    };
+
+    const sampled: { x: number; y: number }[] = [];
+
+    // For each segment between points[i] and points[i+1], sample using surrounding points
+    for (let i = 0; i < points.length - 1; i++) {
+      const p0 = points[i - 1] || points[i];
+      const p1 = points[i];
+      const p2 = points[i + 1];
+      const p3 = points[i + 2] || p2;
+
+      // Include the starting point for the first segment
+      if (i === 0) sampled.push({ x: p1.x, y: p1.y });
+
+      for (let s = 1; s <= segments; s++) {
+        const t = s / segments;
+        const pt = catmullRom(p0, p1, p2, p3, t);
+        sampled.push(pt);
+      }
+    }
+
+    // Build path string (M + L commands) from sampled points
+    const parts: string[] = [];
+    if (sampled.length > 0) {
+      parts.push(`M${sampled[0].x.toFixed(2)},${sampled[0].y.toFixed(2)}`);
+      for (let i = 1; i < sampled.length; i++) {
+        parts.push(`L${sampled[i].x.toFixed(2)},${sampled[i].y.toFixed(2)}`);
+      }
+    }
+
+    return parts.join(' ');
   };
 
   // Handle double tap to reset zoom - from DrawingEditor
@@ -221,6 +276,55 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const pdfRef = useRef<any>(null);
   const annotationStorageKey = `pdf_annotations_${fileName}`;
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Undo / Redo stacks for annotations
+  const undoStackRef = useRef<Annotation[][]>([]);
+  const redoStackRef = useRef<Annotation[][]>([]);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+
+  // Apply annotations without recording history (used by undo/redo)
+  const applyAnnotationsWithoutHistory = async (anns: Annotation[]) => {
+    try {
+      setAnnotations(anns);
+      if (onAnnotationChange) onAnnotationChange(anns);
+      await AsyncStorage.setItem(annotationStorageKey, JSON.stringify(anns));
+      setCanUndo(undoStackRef.current.length > 0);
+      setCanRedo(redoStackRef.current.length > 0);
+    } catch (err) {
+      console.error('Error applying annotations without history:', err);
+    }
+  };
+
+  const handleUndo = async () => {
+    if (undoStackRef.current.length === 0) return;
+    try {
+      const previous = undoStackRef.current.pop() as Annotation[];
+      // Push current state to redo stack
+      redoStackRef.current.push(JSON.parse(JSON.stringify(annotations || [])));
+      await applyAnnotationsWithoutHistory(previous);
+      setHasUnsavedChanges(true);
+      setCanUndo(undoStackRef.current.length > 0);
+      setCanRedo(redoStackRef.current.length > 0);
+    } catch (err) {
+      console.error('Undo failed:', err);
+    }
+  };
+
+  const handleRedo = async () => {
+    if (redoStackRef.current.length === 0) return;
+    try {
+      const next = redoStackRef.current.pop() as Annotation[];
+      // Push current state to undo stack
+      undoStackRef.current.push(JSON.parse(JSON.stringify(annotations || [])));
+      await applyAnnotationsWithoutHistory(next);
+      setHasUnsavedChanges(true);
+      setCanUndo(undoStackRef.current.length > 0);
+      setCanRedo(redoStackRef.current.length > 0);
+    } catch (err) {
+      console.error('Redo failed:', err);
+    }
+  };
 
   // Load annotations when component mounts
   React.useEffect(() => {
@@ -518,6 +622,19 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         return clone;
       });
       
+      // Record history for undo: push current state, clear redo stack
+      try {
+        undoStackRef.current.push(JSON.parse(JSON.stringify(annotations || [])));
+        // Limit undo stack size to avoid unbounded memory growth
+        if (undoStackRef.current.length > 50) undoStackRef.current.shift();
+        // Any new change invalidates the redo stack
+        redoStackRef.current = [];
+        setCanUndo(undoStackRef.current.length > 0);
+        setCanRedo(false);
+      } catch (historyErr) {
+        console.warn('Failed to push to undo stack:', historyErr);
+      }
+
       // Update state first
       updateAnnotations(validatedAnnotations);
       
@@ -884,31 +1001,107 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     setShowFolderModal(false);
   };
 
-  // Zoom control functions - simplified DrawingEditor approach
+  // Reset zoom function for double-tap with animation
+  const resetZoom = () => {
+    if (currentZoom === 1 && pdfTransform.translateX === 0 && pdfTransform.translateY === 0) return;
+    
+    // Animate reset transition
+    Animated.timing(
+      new Animated.Value(0),
+      {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: false,
+      }
+    ).start();
+    
+    setCurrentZoom(1);
+    setPdfTransform({ scale: 1, translateX: 0, translateY: 0 });
+  };
+
+  // Reintroduce zoom buttons functionality (floating + / -) with animations
   const handleZoomIn = () => {
-    const newZoom = Math.min(currentZoom * 1.25, MAX_PDF_SCALE); // Max zoom 3x
+    const newZoom = Math.min(currentZoom * 1.25, MAX_PDF_SCALE);
+    if (newZoom === currentZoom) return; // Already at max zoom
+    
+    // Center-based zoom: adjust translate so the center of the container remains centered
+    const containerW = containerSize.width || screenWidth;
+    const containerH = containerSize.height || (screenHeight - 300);
+    const centerX = containerW / 2;
+    const centerY = containerH / 2;
+
+    const pdfCenterX = (centerX + pdfScrollOffset.x - pdfTransform.translateX) / currentZoom;
+    const pdfCenterY = (centerY + pdfScrollOffset.y - pdfTransform.translateY) / currentZoom;
+
+    const newTranslateX = centerX + pdfScrollOffset.x - pdfCenterX * newZoom;
+    const newTranslateY = centerY + pdfScrollOffset.y - pdfCenterY * newZoom;
+
+    // Clamp
+    const maxOffsetX = (containerW * (newZoom - 1)) / 2;
+    const maxOffsetY = (containerH * (newZoom - 1)) / 2;
+    const clampedX = Math.max(-maxOffsetX, Math.min(maxOffsetX, newTranslateX));
+    const clampedY = Math.max(-maxOffsetY, Math.min(maxOffsetY, newTranslateY));
+
+    // Animate zoom transition
     setCurrentZoom(newZoom);
-    setPdfTransform(prev => ({ ...prev, scale: newZoom }));
+    Animated.timing(
+      new Animated.Value(0),
+      {
+        toValue: 1,
+        duration: 250,
+        useNativeDriver: false,
+      }
+    ).start();
+    
+    setPdfTransform(prev => ({ ...prev, scale: newZoom, translateX: clampedX, translateY: clampedY }));
   };
 
   const handleZoomOut = () => {
-    const newZoom = Math.max(currentZoom * 0.8, MIN_PDF_SCALE); // Min zoom 0.5x
-    setCurrentZoom(newZoom);
-    setPdfTransform(prev => ({ ...prev, scale: newZoom }));
-  };
+    const newZoom = Math.max(currentZoom * 0.8, MIN_PDF_SCALE);
+    if (newZoom === currentZoom) return; // Already at min zoom
+    
+    const containerW = containerSize.width || screenWidth;
+    const containerH = containerSize.height || (screenHeight - 300);
+    const centerX = containerW / 2;
+    const centerY = containerH / 2;
 
-  const resetZoom = () => {
-    setCurrentZoom(1);
-    setPdfTransform({ scale: 1, translateX: 0, translateY: 0 });
+    const pdfCenterX = (centerX + pdfScrollOffset.x - pdfTransform.translateX) / currentZoom;
+    const pdfCenterY = (centerY + pdfScrollOffset.y - pdfTransform.translateY) / currentZoom;
+
+    const newTranslateX = centerX + pdfScrollOffset.x - pdfCenterX * newZoom;
+    const newTranslateY = centerY + pdfScrollOffset.y - pdfCenterY * newZoom;
+
+    // Clamp
+    const maxOffsetX = (containerW * (newZoom - 1)) / 2;
+    const maxOffsetY = (containerH * (newZoom - 1)) / 2;
+    const clampedX = Math.max(-maxOffsetX, Math.min(maxOffsetX, newTranslateX));
+    const clampedY = Math.max(-maxOffsetY, Math.min(maxOffsetY, newTranslateY));
+
+    // Animate zoom transition
+    setCurrentZoom(newZoom);
+    Animated.timing(
+      new Animated.Value(0),
+      {
+        toValue: 1,
+        duration: 250,
+        useNativeDriver: false,
+      }
+    ).start();
+    
+    setPdfTransform(prev => ({ ...prev, scale: newZoom, translateX: clampedX, translateY: clampedY }));
   };
 
   // Pan responder for pinch-to-zoom gestures and drawing - DrawingEditor approach
   const panResponder = PanResponder.create({
     onStartShouldSetPanResponder: (evt, gestureState) => {
       const touches = evt.nativeEvent.touches || [];
+      console.log('onStartShouldSetPanResponder - touches:', touches.length);
       // Start responder for multi-touch (pinch), when a tool is selected (drawing),
       // or when we're zoomed in and want to pan the content with one finger.
-      if (touches.length === 2) return true;
+      if (touches.length === 2) {
+        console.log('✅ Two touches detected - should handle pinch');
+        return true;
+      }
       if (selectedTool !== null) return true;
       if (currentZoomRef.current > 1 && touches.length === 1) return true;
       return false;
@@ -932,10 +1125,30 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
     onPanResponderGrant: (evt, gestureState) => {
       const touches = evt.nativeEvent.touches || [];
+      console.log('onPanResponderGrant - touches:', touches.length);
       if (touches.length === 2) {
+        console.log('🎯 Pinch gesture started');
         // Pinch-to-zoom gesture
         gestureStartZoomRef.current = currentZoomRef.current;
         gestureStartDistanceRef.current = getDistance(touches);
+        
+        // Compute midpoint in screen coordinates
+        const t1 = touches[0];
+        const t2 = touches[1];
+        const midX = (t1.pageX + t2.pageX) / 2;
+        const midY = (t1.pageY + t2.pageY) / 2;
+        gestureMidpointRef.current = { x: midX, y: midY };
+
+        // Convert screen midpoint to container/pdf coordinates (reverse transform)
+        // Adjust for scroll offset
+        const adjustedMidX = midX + pdfScrollOffset.x;
+        const adjustedMidY = midY + pdfScrollOffset.y;
+        const { scale, translateX, translateY } = pdfTransform;
+        const originalX = (adjustedMidX - translateX) / scale;
+        const originalY = (adjustedMidY - translateY) / scale;
+        gestureMidpointPdfRef.current = { x: originalX, y: originalY };
+        
+        console.log('Pinch start - distance:', gestureStartDistanceRef.current, 'midpoint:', { midX, midY });
       } else if (touches.length === 1 && selectedTool) {
         // Single touch drawing gesture
         const touch = touches[0];
@@ -949,11 +1162,16 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         } else if (selectedTool === 'highlight') {
           // For highlight tool, we'll start drawing a freehand highlight
           setIsDrawing(true);
-          setCurrentPath(`M${locationX},${locationY}`);
+          // Initialize point buffer
+          currentPointsRef.current = [{ x: locationX, y: locationY }];
+          const smooth = convertPointsToSmoothedPath(currentPointsRef.current, 6);
+          setCurrentPath(smooth);
         } else {
           // Start drawing path for pen, brush, pencil, freehand highlight, eraser
           setIsDrawing(true);
-          setCurrentPath(`M${locationX},${locationY}`);
+          currentPointsRef.current = [{ x: locationX, y: locationY }];
+          const smooth = convertPointsToSmoothedPath(currentPointsRef.current, 6);
+          setCurrentPath(smooth);
         }
       } else if (touches.length === 1 && currentZoomRef.current > 1 && selectedTool === null) {
         // Start panning when zoomed in and no drawing tool selected
@@ -974,11 +1192,35 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
           const scale = currentDistance / startDistance;
           const newZoom = Math.max(MIN_PDF_SCALE, Math.min(MAX_PDF_SCALE, gestureStartZoomRef.current * scale));
 
+          // Preserve focal point: compute new translateX/translateY so the PDF point
+          // that was under the midpoint stays at the same screen position.
+          const mid = gestureMidpointRef.current;
+          const pdfPoint = gestureMidpointPdfRef.current; // in container coord space
+
+          // New translate so that: screenMid = pdfPoint * newScale + newTranslate
+          // => newTranslate = screenMid - pdfPoint * newScale
+          const newTranslateX = mid.x + pdfScrollOffset.x - (pdfPoint.x * newZoom);
+          const newTranslateY = mid.y + pdfScrollOffset.y - (pdfPoint.y * newZoom);
+
+          // Clamp translation to reasonable bounds (same logic as panning)
+          const containerW = containerSize.width || screenWidth;
+          const containerH = containerSize.height || (screenHeight - 300);
+          const maxOffsetX = (containerW * (newZoom - 1)) / 2;
+          const maxOffsetY = (containerH * (newZoom - 1)) / 2;
+
+          let clampedX = newTranslateX;
+          let clampedY = newTranslateY;
+
+          clampedX = Math.max(-maxOffsetX, Math.min(maxOffsetX, clampedX));
+          clampedY = Math.max(-maxOffsetY, Math.min(maxOffsetY, clampedY));
+
           // Ensure both states update synchronously for immediate UI feedback
           setCurrentZoom(newZoom);
           setPdfTransform(prev => ({ 
             ...prev, 
-            scale: newZoom 
+            scale: newZoom,
+            translateX: clampedX,
+            translateY: clampedY
           }));
 
           console.log('Pinch zoom sync:', { newZoom, uiZoom: Math.round(newZoom * 100) + '%' });
@@ -989,7 +1231,12 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         const { locationX, locationY } = touch;
 
         if (selectedTool === 'pen' || selectedTool === 'brush' || selectedTool === 'pencil' || selectedTool === 'highlight' || selectedTool === 'eraser') {
-          setCurrentPath(prev => `${prev} L${locationX},${locationY}`);
+          // Push to point buffer and update smoothed current path for live preview
+          currentPointsRef.current.push({ x: locationX, y: locationY });
+          // Limit buffer size to avoid excessive memory use (keep recent 1024)
+          if (currentPointsRef.current.length > 1024) currentPointsRef.current.shift();
+          const smooth = convertPointsToSmoothedPath(currentPointsRef.current, 6);
+          setCurrentPath(smooth);
         }
       } else if (touches.length === 1 && currentZoomRef.current > 1 && selectedTool === null) {
         // Handle panning when zoomed in
@@ -1016,13 +1263,19 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     onPanResponderRelease: (evt) => {
       // On release finalize drawing or reset gesture trackers
       if (isDrawing && currentPath && selectedTool) {
+        // If we used point buffer, convert to final smoothed path
+        const finalPath = currentPointsRef.current && currentPointsRef.current.length > 0 ? convertPointsToSmoothedPath(currentPointsRef.current, 6) : currentPath;
+
         if (selectedTool === "highlight") {
-          addFreehandHighlight(currentPath);
+          addFreehandHighlight(finalPath);
         } else if (selectedTool === "pen" || selectedTool === "brush" || selectedTool === "pencil") {
-          addPenAnnotation(currentPath, selectedTool);
+          addPenAnnotation(finalPath, selectedTool);
         } else if (selectedTool === "eraser") {
-          partialEraseAnnotations(currentPath);
+          partialEraseAnnotations(finalPath);
         }
+
+        // Clear point buffer
+        currentPointsRef.current = [];
         setIsDrawing(false);
         setCurrentPath("");
       }
@@ -2045,6 +2298,25 @@ return (
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.toolbarContent}
           >
+            {/* Undo / Redo buttons */}
+            <TouchableOpacity
+              style={[styles.toolButton, !canUndo && { opacity: 0.4 }]}
+              onPress={handleUndo}
+              activeOpacity={0.8}
+              disabled={!canUndo}
+            >
+              <MaterialIcons name="undo" size={20} color={canUndo ? "#64748b" : "#cbd5e1"} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.toolButton, !canRedo && { opacity: 0.4 }]}
+              onPress={handleRedo}
+              activeOpacity={0.8}
+              disabled={!canRedo}
+            >
+              <MaterialIcons name="redo" size={20} color={canRedo ? "#64748b" : "#cbd5e1"} />
+            </TouchableOpacity>
+
             {/* Tools Section */}
             {(["pen", "brush", "pencil", "highlight", "note", "text", "eraser"] as const).map((tool) => (
               <TouchableOpacity
@@ -2111,34 +2383,7 @@ return (
               <View style={[styles.strokePreview, { width: 12, height: 12, backgroundColor: "#64748b" }]} />
             </TouchableOpacity>
 
-            {/* Divider */}
-            <View style={styles.toolbarDivider} />
 
-            {/* Zoom Controls */}
-            <TouchableOpacity
-              style={styles.zoomButton}
-              onPress={handleZoomOut}
-              activeOpacity={0.8}
-            >
-              <MaterialIcons name="zoom-out" size={20} color="#64748b" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.zoomResetButton}
-              onPress={resetZoom}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.zoomText}>{Math.round(currentZoom * 100)}%</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.zoomButton}
-              onPress={handleZoomIn}
-              activeOpacity={0.8}
-            >
-              <MaterialIcons name="zoom-in" size={20} color="#64748b" />
-            </TouchableOpacity>
-
-            {/* Divider */}
-            <View style={styles.toolbarDivider} />
 
             {/* Color Section */}
             {ANNOTATION_COLORS.map((color) => (
@@ -2323,6 +2568,7 @@ return (
                   setContainerSize({ width, height });
                   console.log('PDF container size:', { width, height });
                 }}
+                {...panResponder.panHandlers}
               >
                 {/* PDF Viewer */}
                 {Platform.OS !== 'web' && Pdf ? (
@@ -2334,12 +2580,6 @@ return (
                     onPageChanged={onPageChanged}
                     onLoadProgress={onPdfLoadProgress}
                     onError={onPdfError}
-                    onScaleChanged={(scale: number) => {
-                      console.log('PDF internal scale changed:', scale);
-                      // Update our zoom states to stay synchronized with PDF component
-                      setCurrentZoom(scale);
-                      setPdfTransform(prev => ({ ...prev, scale }));
-                    }}
                     enablePaging={false}
                     horizontal={false}
                     fitPolicy={0}
@@ -2349,8 +2589,9 @@ return (
                     enableAnnotationRendering={true}
                     enableAntialiasing={true}
                     fitWidth={true}
-                    maxScale={3.0}
-                    minScale={0.5}
+                    maxScale={1.0}
+                    minScale={1.0}
+                    scale={1.0}
                   />
                 ) : (
                   <View style={styles.webPdfPlaceholder}>
@@ -2360,11 +2601,10 @@ return (
                   </View>
                 )}
                 
-                {/* Annotation Layer - Now part of the same transform container with touch enabled */}
+                {/* Annotation Layer - Now part of the same transform container */}
                 <View 
                   style={StyleSheet.absoluteFillObject} 
-                  pointerEvents={selectedTool ? "auto" : "box-none"}
-                  {...panResponder.panHandlers}
+                  pointerEvents="box-none"
                 >
                   {renderAnnotations()}
                 </View>
@@ -2375,6 +2615,37 @@ return (
         )}
 
       </View> {/* Close Main Container */}
+
+      {/* Floating zoom controls */}
+      <View style={styles.floatingZoomContainer} pointerEvents="box-none">
+        <Animated.View style={[styles.floatingZoomInner, { opacity: fadeAnim }]}>
+          <TouchableOpacity 
+            style={styles.floatingZoomButton} 
+            onPress={handleZoomIn} 
+            activeOpacity={0.7}
+            disabled={currentZoom >= MAX_PDF_SCALE}
+          >
+            <MaterialIcons name="add" size={24} color={currentZoom >= MAX_PDF_SCALE ? "#9CA3AF" : "#374151"} />
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.floatingZoomButton, styles.floatingZoomButtonMiddle]} 
+            onPress={handleZoomOut} 
+            activeOpacity={0.7}
+            disabled={currentZoom <= MIN_PDF_SCALE}
+          >
+            <MaterialIcons name="remove" size={24} color={currentZoom <= MIN_PDF_SCALE ? "#9CA3AF" : "#374151"} />
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.floatingZoomButton} 
+            onPress={resetZoom} 
+            activeOpacity={0.7}
+          >
+            <MaterialIcons name="center-focus-strong" size={20} color="#6366F1" />
+          </TouchableOpacity>
+        </Animated.View>
+      </View>
 
       {/* Folder Selection Modal */}
       <Modal
@@ -3087,41 +3358,7 @@ mainContainer: {
     flex: 1,
   },
 
-  // Zoom control styles
-  zoomButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#F3F4F6",
-    justifyContent: "center",
-    alignItems: "center",
-    marginHorizontal: 4,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  zoomResetButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 16,
-    backgroundColor: "#F8FAFC",
-    justifyContent: "center",
-    alignItems: "center",
-    marginHorizontal: 4,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    minWidth: 60,
-  },
-  zoomText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#64748b",
-    fontFamily: "Inter-SemiBold",
-  },
+
 
   // PDF scroll and zoom styles
   pdfScrollView: {
@@ -3287,6 +3524,44 @@ mainContainer: {
     flex: 1,
     backgroundColor: '#F3F4F6', // subtle background behind PDF and annotations
     overflow: 'hidden',
+  },
+  // Floating zoom controls - Material Design 3 styled
+  floatingZoomContainer: {
+    position: 'absolute',
+    right: 20,
+    bottom: 50, // Moved lower for better thumb reach
+    zIndex: 50,
+    elevation: 50,
+    alignItems: 'center',
+  },
+  floatingZoomInner: {
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: 28,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 24,
+    elevation: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  floatingZoomButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 26,
+    backgroundColor: 'transparent',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginVertical: 2,
+  },
+  floatingZoomButtonMiddle: {
+    marginVertical: 4,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.08)',
   },
   pdfScrollViewContent: {
     flexGrow: 1,
