@@ -17,6 +17,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
+import { SafeAreaWrapper } from "../components/SafeAreaWrapper";
 
 // Define log interface for better type safety
 interface Log {
@@ -271,7 +272,7 @@ const Logs: React.FC = () => {
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaWrapper backgroundColor="#F8FAFC" includeNavBar={false}>
       <StatusBar barStyle="light-content" backgroundColor="#7C3AED" />
       
       {/* Header */}
@@ -426,7 +427,7 @@ const Logs: React.FC = () => {
           </View>
         </>
       )}
-    </View>
+    </SafeAreaWrapper>
   );
 };
 
@@ -436,7 +437,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#F8FAFC",
   },
   header: {
-    paddingTop: Platform.OS === 'ios' ? 50 : 35,
+    paddingTop: Platform.OS === 'ios' ? 12 : 12,
     paddingBottom: 20,
     paddingHorizontal: 24,
   },
@@ -497,7 +498,7 @@ const styles = StyleSheet.create({
   listContainer: {
     paddingHorizontal: 24,
     paddingTop: 16,
-    paddingBottom: 80, // Extra padding for pagination controls
+    paddingBottom: 12,
   },
   logCard: {
     backgroundColor: "#FFFFFF",
@@ -636,10 +637,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     borderTopWidth: 1,
     borderTopColor: "#E2E8F0",
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
+    position: "relative",
+    marginTop: 12,
   },
   paginationButton: {
     flexDirection: "row",

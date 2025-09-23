@@ -8,13 +8,13 @@ import {
     FlatList,
     Platform,
     RefreshControl,
-    SafeAreaView,
     StatusBar,
     StyleSheet,
     Text,
     TouchableOpacity,
     View,
 } from "react-native";
+import { SafeAreaWrapper } from "./components/SafeAreaWrapper";
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { RootStackParamList } from "./navigation/AppNavigator";
@@ -601,7 +601,7 @@ export default function AllItemsView() {
     };
 
     return (
-        <SafeAreaView style={styles.container}>
+        <SafeAreaWrapper backgroundColor="#F8FAFC">
             <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
 
             {/* Header */}
@@ -686,7 +686,7 @@ export default function AllItemsView() {
                     }
                 />
             )}
-        </SafeAreaView>
+        </SafeAreaWrapper>
     );
 }
 
