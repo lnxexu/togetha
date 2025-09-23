@@ -117,7 +117,10 @@ export const API_ENDPOINTS = {
     // Chatbot endpoints
     CHATBOT_OCR: '/chatbot/extract_text_from_images/',
     CHATBOT_CONVERSATIONS: '/chatbot/conversations/',
-    CHATBOT_MESSAGES: '/chatbot/api/messages/',
+    CHATBOT_MESSAGES: '/chatbot/messages/',
+    CHATBOT_CHAT: '/chatbot/chat/',
+    CHATBOT_UPLOAD_PDF: '/chatbot/upload_pdf/',
+    CHATBOT_EXTRACT_TEXT: '/chatbot/extract_text/',
     
     // Ollama endpoints
     OLLAMA_CHAT: '/api/chat',

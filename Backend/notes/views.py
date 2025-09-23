@@ -781,6 +781,52 @@ def upload_document(request):
                 'error': f'Unsupported file type: {document.content_type}'
             }, status=status.HTTP_400_BAD_REQUEST)
         
+        # Extract document metadata
+        document_metadata = {
+            'file_name': document.name,
+            'file_size': document.size,
+            'content_type': document.content_type,
+            'page_count': 1  # Default for non-PDF files
+        }
+        
+        # Extract PDF-specific metadata
+        if document.content_type == 'application/pdf':
+            try:
+                import PyPDF2
+                import io
+                
+                # Reset file pointer to beginning
+                document.seek(0)
+                
+                # Create a PDF reader from the uploaded file
+                pdf_bytes = document.read()
+                pdf_file = io.BytesIO(pdf_bytes)
+                pdf_reader = PyPDF2.PdfReader(pdf_file)
+                
+                # Extract page count
+                document_metadata['page_count'] = len(pdf_reader.pages)
+                
+                # Extract additional PDF metadata if available
+                if pdf_reader.metadata:
+                    pdf_info = pdf_reader.metadata
+                    if '/Title' in pdf_info:
+                        document_metadata['pdf_title'] = pdf_info['/Title']
+                    if '/Author' in pdf_info:
+                        document_metadata['pdf_author'] = pdf_info['/Author']
+                    if '/Subject' in pdf_info:
+                        document_metadata['pdf_subject'] = pdf_info['/Subject']
+                    if '/Creator' in pdf_info:
+                        document_metadata['pdf_creator'] = pdf_info['/Creator']
+                
+                # Reset file pointer for saving
+                document.seek(0)
+                
+            except Exception as e:
+                # If PDF processing fails, continue with default metadata
+                print(f"Error processing PDF metadata: {e}")
+                document_metadata['page_count'] = 1
+                document_metadata['metadata_error'] = str(e)
+        
         # Create note data
         title = request.data.get('title', document.name)
         content = request.data.get('content', f'Imported document: {document.name}')
@@ -791,7 +837,8 @@ def upload_document(request):
             'title': title,
             'content': content,
             'type': 'document',
-            'document_file': document
+            'document_file': document,
+            'document_metadata': document_metadata
         }
         
         if folder_id:

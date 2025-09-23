@@ -109,7 +109,9 @@ def check_due_tasks(self):
                         message=f"Task '{task.title}' is due today at {task_due_local.strftime('%I:%M %p')}!",
                         notification_type='task_due_today',
                         read=False,
-                        priority='high'
+                        priority='high',
+                        related_task=task,
+                        action_id=str(task.id)
                     )
                     notifications_created += 1
                     logger.info(f"Created 'due today' notification for task: {task.title} (ID: {notification.id}) at {now_local}")
@@ -133,7 +135,9 @@ def check_due_tasks(self):
                         message=f"Task '{task.title}' is due tomorrow at {task_due_local.strftime('%I:%M %p')}",
                         notification_type='task_due_tomorrow',
                         read=False,
-                        priority='medium'
+                        priority='medium',
+                        related_task=task,
+                        action_id=str(task.id)
                     )
                     notifications_created += 1
                     logger.info(f"Created 'due tomorrow' notification for task: {task.title} (ID: {notification.id}) at {now_local}")
@@ -250,7 +254,9 @@ def send_individual_task_reminder(self, task_id):
                 message=f"Reminder: Task '{task.title}' is due at {task_due_local.strftime('%I:%M %p on %B %d, %Y')}",
                 notification_type='task_reminder',
                 read=False,
-                priority='high'
+                priority='high',
+                related_task=task,
+                action_id=str(task.id)
             )
         
         result = f"Reminder sent for task: {task.title} (Notification ID: {notification.id}) at {now_local}"

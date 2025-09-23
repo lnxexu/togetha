@@ -991,7 +991,7 @@ const styles = StyleSheet.create({
   },
   dashboardCardWrapper: {
     position: "absolute",
-    top: Platform.OS === "ios" ? 140 : 125, // Adjusted to match new header height
+    top: Platform.OS === "ios" ? 120 : 105, // Adjusted to match new header height
     left: 0,
     right: 0,
     alignItems: "center",

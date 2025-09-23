@@ -28,6 +28,7 @@ import { useNetworkStatus, getNetworkStatusText, getNetworkStatusColor } from ".
 import UnsavedChangesModal from "./components/UnsavedChangesModal";
 import chatbotAPI from "../chatbot/services/chatbotAPIService"; // Add chatbot service
 import RenderHtml from "react-native-render-html"; // Add for markdown rendering
+import dictionaryService from "./services/dictionaryService"; // Add dictionary service for RINA
 
 
 const { RichEditor, RichToolbar } = require("react-native-pell-rich-editor");
@@ -416,20 +417,34 @@ const handleSaveAndExit = async () => {
   const getWordMeaning = async (word: string) => {
     setIsLoadingMeaning(true);
     try {
-      // Use RINA AI service to get word meaning
-      const prompt = `Define the word "${word}" in a clear and concise way. Provide:\n1. The primary meaning\n2. Part of speech (noun, verb, adjective, etc.)\n3. A simple example sentence\n4. Any common synonyms\n\nKeep the response educational and easy to understand.`;
+      // Use dictionary service (doesn't store in chat history)
+      const result = await dictionaryService.getWordDefinition(word);
       
-      const response = await chatbotAPI.sendMessage(prompt);
-      
-      if (response && response.content) {
-        setWordMeaning(response.content);
+      if (result && result.definition) {
+        // Format the definition nicely
+        let formattedDefinition = `**${result.word}**`;
+        
+        if (result.partOfSpeech) {
+          formattedDefinition += ` (${result.partOfSpeech})`;
+        }
+        
+        formattedDefinition += `\n\n${result.definition}`;
+        
+        if (result.examples && result.examples.length > 0) {
+          formattedDefinition += `\n\n*Example: ${result.examples[0]}*`;
+        }
+        
+        if (result.synonyms && result.synonyms.length > 0) {
+          formattedDefinition += `\n\n*Synonyms: ${result.synonyms.slice(0, 3).join(', ')}*`;
+        }
+        
+        setWordMeaning(formattedDefinition);
       } else {
-        // Fallback to basic definition
-        setWordMeaning(`${word}: Unable to get detailed definition from RINA. Please check your connection and try again.`);
+        setWordMeaning(`Definition for "${word}" not found.`);
       }
       
     } catch (error) {
-      console.error('Error getting word meaning from RINA:', error);
+      console.error('Error getting word meaning from dictionary service:', error);
       // Fallback with common words dictionary
       const commonWords: { [key: string]: string } = {
         "hello": "**Hello** (interjection)\n\nA greeting used when meeting someone or answering the phone.\n\n*Example: Hello, how are you today?*\n\n*Synonyms: hi, hey, greetings*",
@@ -571,7 +586,7 @@ const handleSaveAndExit = async () => {
     const cleanText = text.trim();
     if (cleanText.length === 0) return;
     
-    // If it's a single word, show word meaning modal
+    // If it's a single word, show word meaning modal using dictionary service
     if (cleanText.split(' ').length === 1) {
       const cleanWord = cleanText.replace(/[^\w]/g, '').toLowerCase();
       if (cleanWord.length > 0) {
@@ -617,38 +632,20 @@ const handleSaveAndExit = async () => {
   
   const askRinaForHelp = async (text: string, action: string) => {
     try {
-      let prompt = "";
+      // Use dictionary service for RINA requests to avoid cluttering chat history
+      const response = await dictionaryService.getConceptExplanation(text, action as 'explain' | 'summarize' | 'examples' | 'study');
       
-      switch (action) {
-        case "explain":
-          prompt = `Please explain this concept in simple terms: "${text}". Break it down so it's easy to understand, and provide any important context.`;
-          break;
-        case "summarize":
-          prompt = `Please provide a concise summary of this content: "${text}". Include the key points and main ideas.`;
-          break;
-        case "examples":
-          prompt = `Please provide practical examples related to: "${text}". Give real-world applications or scenarios that help illustrate the concept.`;
-          break;
-        case "study":
-          prompt = `Please provide study tips and techniques for learning about: "${text}". Include effective methods for understanding and remembering this topic.`;
-          break;
-        default:
-          prompt = `Please help me understand: "${text}". Provide a clear explanation and any relevant information.`;
-      }
-      
-      const response = await chatbotAPI.sendMessage(prompt);
-      
-      if (response && response.content) {
+      if (response && response.explanation) {
         // Show the AI response in a modal or alert
         Alert.alert(
           "RINA's Response",
-          response.content,
+          response.explanation,
           [
             {
               text: "Add to Note",
               onPress: () => {
                 // Add RINA's response to the note content
-                const aiContent = `\\n\\n**RINA's Insight:**\\n${response.content}\\n`;
+                const aiContent = `\\n\\n**RINA's Insight:**\\n${response.explanation}\\n`;
                 setContent(prev => prev + aiContent);
                 if (richTextRef.current) {
                   richTextRef.current.insertHTML(aiContent);

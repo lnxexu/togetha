@@ -1,6 +1,7 @@
 from django.urls import path
 from .views import (
     ChatView, 
+    FileUploadView,
     PDFUploadView, 
     ConversationViewSet, 
     MessageViewSet,
@@ -12,8 +13,10 @@ from .views import (
 
 urlpatterns = [
     path("chat/", ChatView.as_view(), name="chat"),
-    path("upload_pdf/", PDFUploadView.as_view(), name="upload_pdf"),
-    path("extract_text/", extract_text_from_images, name="extract_text"),
+    path("upload_pdf/", FileUploadView.as_view(), name="upload_pdf"),  # Updated to use FileUploadView
+    path("upload_file/", FileUploadView.as_view(), name="upload_file"),  # New generic file upload endpoint
+    path("extract_text_from_images/", extract_text_from_images, name="extract_text_from_images"),
+    path("extract_text/", extract_text_from_images, name="extract_text"),  # Backward compatibility
     
     # Conversation management
     path("conversations/", ConversationViewSet.as_view(), name="conversations_list"),
