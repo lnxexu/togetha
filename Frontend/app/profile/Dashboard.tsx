@@ -18,6 +18,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { progressService, ProgressData, ProgressSummary } from './services/progressService';
 import { ProgressCard } from './components/ProgressComponents';
+import { SafeAreaWrapper } from '../components/SafeAreaWrapper';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -74,6 +75,7 @@ const Dashboard: React.FC = () => {
 
   if (loading && !progressData) {
     return (
+  <SafeAreaWrapper>
       <View style={styles.container}>
         <LinearGradient
           colors={['#A855F7', '#8B5CF6', '#7C3AED']}
@@ -98,10 +100,12 @@ const Dashboard: React.FC = () => {
           <Text style={styles.loadingText}>Loading dashboard...</Text>
         </View>
       </View>
+      </SafeAreaWrapper>
     );
   }
 
   return (
+    <SafeAreaWrapper>
     <View style={styles.container}>
       {/* Header */}
       <LinearGradient
@@ -249,6 +253,7 @@ const Dashboard: React.FC = () => {
         <View style={styles.bottomPadding} />
       </ScrollView>
     </View>
+    </SafeAreaWrapper>
   );
 };
 

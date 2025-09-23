@@ -20,6 +20,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_URL } from "@/constants/ApiConfig";
 import { Picker } from "@react-native-picker/picker";
 import { LinearGradient } from "expo-linear-gradient";
+import { SafeAreaWrapper } from "../components/SafeAreaWrapper";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -212,11 +213,13 @@ const EditProfile: React.FC = () => {
   // Show loading state if userData is not loaded
   if (!userData) {
     return (
+      <SafeAreaWrapper>
       <View style={styles.container}>
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>Loading...</Text>
         </View>
       </View>
+      </SafeAreaWrapper>
     );
   }
 
@@ -227,6 +230,7 @@ const EditProfile: React.FC = () => {
   };
 
   return (
+    <SafeAreaWrapper>
     <View style={styles.container}>
       {/* Header */}
       <LinearGradient
@@ -489,6 +493,7 @@ const EditProfile: React.FC = () => {
         )}
       </ScrollView>
     </View>
+    </SafeAreaWrapper>
   );
 };
 

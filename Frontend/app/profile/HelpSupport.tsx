@@ -16,6 +16,7 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { LinearGradient } from "expo-linear-gradient";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import { utilityService } from "./services/utilityService";
+import { SafeAreaWrapper } from "../components/SafeAreaWrapper";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -179,6 +180,7 @@ const HelpSupport: React.FC = () => {
   };
 
   return (
+    <SafeAreaWrapper>
     <View style={styles.container}>
       {/* Header */}
       <LinearGradient
@@ -372,6 +374,7 @@ const HelpSupport: React.FC = () => {
         <View style={styles.bottomPadding} />
       </ScrollView>
     </View>
+    </SafeAreaWrapper>
   );
 };
 

@@ -17,6 +17,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { RootStackParamList } from "../navigation/AppNavigator";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
+import { SafeAreaWrapper } from "../components/SafeAreaWrapper";
 
 const About: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
@@ -89,7 +90,7 @@ const About: React.FC = () => {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaWrapper>
       {/* Header */}
       <LinearGradient
         colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
@@ -321,7 +322,7 @@ const About: React.FC = () => {
 
         <View style={styles.bottomPadding} />
       </ScrollView>
-    </View>
+    </SafeAreaWrapper>
   );
 };
 

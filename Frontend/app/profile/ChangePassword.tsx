@@ -34,6 +34,7 @@ import { showSuccessToast, showErrorToast } from "../utils/ToastUtils";
 import { getEnhancedSafeAreaConfig, getStatusBarConfig, getSafeAreaContainerStyle, getPlatformShadow } from "../utils/SafeAreaUtils";
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import EnhancedLoadingScreen from '../components/EnhancedLoadingScreen';
+import { SafeAreaWrapper } from "../components/SafeAreaWrapper";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -256,6 +257,7 @@ const ChangePassword: React.FC = () => {
   const passwordStrength = getPasswordStrength(newPassword);
 
   return (
+    <SafeAreaWrapper>
     <LinearGradient
       colors={OnboardingColors.background.gradient as [string, string]}
       style={styles.container}
@@ -635,6 +637,7 @@ const ChangePassword: React.FC = () => {
 
       <Toast />
     </LinearGradient>
+    </SafeAreaWrapper>
   );
 };
 

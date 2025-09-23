@@ -15,6 +15,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { userService, UserProfile } from './services/userService';
+import { SafeAreaWrapper } from '../components/SafeAreaWrapper';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -90,15 +91,18 @@ const ManageProfile: React.FC = () => {
     // Show loading state if userData is not loaded
     if (!userData) {
         return (
+            <SafeAreaWrapper>
             <View style={styles.container}>
                 <View style={styles.loadingContainer}>
                     <Text style={styles.loadingText}>Loading...</Text>
                 </View>
             </View>
+            </SafeAreaWrapper>
         );
     };
 
     return (
+        <SafeAreaWrapper>
         <View style={styles.container}>
             {/* Header */}
             <View style={styles.header}>
@@ -275,6 +279,7 @@ const ManageProfile: React.FC = () => {
                 </View>
             </ScrollView>
         </View>
+        </SafeAreaWrapper>
     );
 };
 

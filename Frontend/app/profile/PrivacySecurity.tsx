@@ -13,6 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
+import { SafeAreaWrapper } from '../components/SafeAreaWrapper';
 
 interface PrivacySettings {
   dataCollection: boolean;
@@ -158,6 +159,7 @@ const PrivacySecurity: React.FC = () => {
   );
 
   return (
+    <SafeAreaWrapper>
     <View style={styles.container}>
       {/* Header */}
       <LinearGradient
@@ -301,6 +303,7 @@ const PrivacySecurity: React.FC = () => {
         <View style={styles.bottomPadding} />
       </ScrollView>
     </View>
+    </SafeAreaWrapper>
   );
 };
 

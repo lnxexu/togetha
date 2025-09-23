@@ -13,6 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
+import { SafeAreaWrapper } from '../components/SafeAreaWrapper';
 
 interface StorageInfo {
   totalSpace: number;
@@ -247,6 +248,7 @@ const StorageData: React.FC = () => {
   const usagePercentage = (storageInfo.usedSpace / storageInfo.totalSpace) * 100;
 
   return (
+    <SafeAreaWrapper>
     <View style={styles.container}>
       {/* Header */}
       <LinearGradient
@@ -458,6 +460,7 @@ const StorageData: React.FC = () => {
         <View style={styles.bottomPadding} />
       </ScrollView>
     </View>
+    </SafeAreaWrapper>
   );
 };
 
