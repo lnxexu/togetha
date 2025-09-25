@@ -14,11 +14,11 @@ def init_db():
     """Ensure the SQLite DB and chunks table exist with proper schema."""
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    
+
     # Check if table exists and get its schema
     cur.execute("PRAGMA table_info(chunks)")
     columns = [row[1] for row in cur.fetchall()]
-    
+
     if not columns:
         # Create new table with full schema
         cur.execute("""
@@ -27,6 +27,7 @@ def init_db():
                 user_id INTEGER,
                 conversation_id TEXT,
                 document_name TEXT,
+                page_num INTEGER,
                 chunk_text TEXT,
                 embedding BLOB,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -34,35 +35,38 @@ def init_db():
         """)
     else:
         # Add missing columns to existing table
-        if 'user_id' not in columns:
+        if "user_id" not in columns:
             cur.execute("ALTER TABLE chunks ADD COLUMN user_id INTEGER DEFAULT 1")
-        if 'conversation_id' not in columns:
+        if "conversation_id" not in columns:
             cur.execute("ALTER TABLE chunks ADD COLUMN conversation_id TEXT DEFAULT ''")
-        if 'document_name' not in columns:
+        if "document_name" not in columns:
             cur.execute("ALTER TABLE chunks ADD COLUMN document_name TEXT DEFAULT ''")
-        if 'created_at' not in columns:
+        if "page_num" not in columns:
+            cur.execute("ALTER TABLE chunks ADD COLUMN page_num INTEGER DEFAULT -1")
+        if "created_at" not in columns:
             cur.execute("ALTER TABLE chunks ADD COLUMN created_at TIMESTAMP DEFAULT '1970-01-01 00:00:00'")
-    
+
     # Create indexes
     try:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_user_id ON chunks(user_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_conversation_id ON chunks(conversation_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_page_num ON chunks(page_num)")
     except sqlite3.OperationalError:
-        # Indexes may already exist
         pass
-    
+
     conn.commit()
     conn.close()
 
 
-def extract_text_from_pdf(file_path: str) -> str:
-    """Extract text from PDF."""
+def extract_text_by_page(file_path: str):
+    """Extract text from PDF page by page."""
     reader = PdfReader(file_path)
-    text = ""
-    for page in reader.pages:
-        if page.extract_text():
-            text += page.extract_text() + "\n"
-    return text.strip()
+    pages = []
+    for i, page in enumerate(reader.pages, start=1):
+        text = page.extract_text() or ""
+        if text.strip():
+            pages.append((i, text.strip()))
+    return pages
 
 
 def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50):
@@ -82,73 +86,126 @@ def embed_texts(texts):
     return EMBED_MODEL.encode(texts, convert_to_numpy=True)
 
 
-def save_chunks(chunks, embeddings, user_id=None, conversation_id=None, document_name=""):
+def save_chunks(chunks, embeddings, user_id=None, conversation_id=None, document_name="", page_num=-1):
     """Store chunks + embeddings into SQLite with user/conversation context."""
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     for txt, emb in zip(chunks, embeddings):
         cur.execute(
-            "INSERT INTO chunks (user_id, conversation_id, document_name, chunk_text, embedding) VALUES (?, ?, ?, ?, ?)",
-            (user_id, conversation_id, document_name, txt, emb.tobytes())
+            """
+            INSERT INTO chunks (user_id, conversation_id, document_name, page_num, chunk_text, embedding)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (user_id, conversation_id, document_name, page_num, txt, emb.tobytes())
         )
     conn.commit()
     conn.close()
 
 
+def process_pdf(file_path: str, user_id=None, conversation_id=None, document_name=""):
+    """
+    Extract, chunk, embed, and save PDF page by page.
+    Each page is chunked separately so context stays tighter.
+    """
+    pages = extract_text_by_page(file_path)
+
+    for page_num, text in pages:
+        chunks = chunk_text(text, chunk_size=500, overlap=50)
+        if not chunks:
+            continue
+
+        embeddings = embed_texts(chunks)
+        save_chunks(
+            chunks,
+            embeddings,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            document_name=document_name,
+            page_num=page_num
+        )
+
+
+def process_file_for_user(file_path: str, user_id=None, conversation_id=None, document_name=None):
+    """Generic file processor used by the upload view.
+
+    - For PDFs, process page-by-page using existing pipeline.
+    - For plain text files, read, chunk, embed, and save.
+    - Other file types currently raise NotImplementedError.
+    """
+    if document_name is None:
+        document_name = os.path.basename(file_path)
+
+    lower = file_path.lower()
+    if lower.endswith(".pdf"):
+        return process_pdf(file_path, user_id=user_id, conversation_id=conversation_id, document_name=document_name)
+
+    if lower.endswith(".txt"):
+        # Simple text file handling: treat whole file as a single "page"
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            text = f.read()
+        if not text.strip():
+            return
+        chunks = chunk_text(text, chunk_size=500, overlap=50)
+        embeddings = embed_texts(chunks)
+        save_chunks(chunks, embeddings, user_id=user_id, conversation_id=conversation_id, document_name=document_name, page_num=-1)
+        return
+
+    # TODO: add OCR for images and other formats if needed
+    raise NotImplementedError(f"Unsupported file type for processing: {file_path}")
+
+
 def search_similar_for_user(query_text, user_id, top_k=5):
     """Search for most similar chunks to a query for a specific user."""
-    init_db()  # ensure table exists
+    init_db()
 
-    # 1. Embed query
+    # Embed query
     query_emb = EMBED_MODEL.encode([query_text])[0]
 
-    # 2. Fetch chunks only for this user
+    # Fetch chunks for this user
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    cur.execute("SELECT id, chunk_text, embedding, document_name FROM chunks WHERE user_id = ?", (user_id,))
+    cur.execute("SELECT id, chunk_text, embedding, document_name, page_num FROM chunks WHERE user_id = ?", (user_id,))
     rows = cur.fetchall()
     conn.close()
 
     if not rows:
         return []
 
-    # 3. Compute cosine similarity
+    # Compute cosine similarity
     results = []
-    for cid, txt, emb_blob, doc_name in rows:
+    for cid, txt, emb_blob, doc_name, page_num in rows:
         emb = np.frombuffer(emb_blob, dtype=np.float32)
         score = float(np.dot(query_emb, emb) / (np.linalg.norm(query_emb) * np.linalg.norm(emb)))
-        results.append((cid, txt, score, doc_name))
+        results.append((cid, txt, score, doc_name, page_num))
 
-    # 4. Sort and return top-k
     results.sort(key=lambda x: x[2], reverse=True)
     return results[:top_k]
 
 
 def search_similar(query_text, top_k=5):
-    """Search for most similar chunks to a query."""
-    init_db()  # ensure table exists
+    """Search for most similar chunks to a query across all users."""
+    init_db()
 
-    # 1. Embed query
+    # Embed query
     query_emb = EMBED_MODEL.encode([query_text])[0]
 
-    # 2. Fetch all chunks
+    # Fetch all chunks
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    cur.execute("SELECT id, chunk_text, embedding FROM chunks")
+    cur.execute("SELECT id, chunk_text, embedding, document_name, page_num FROM chunks")
     rows = cur.fetchall()
     conn.close()
 
     if not rows:
         return []
 
-    # 3. Compute cosine similarity
+    # Compute cosine similarity
     results = []
-    for cid, txt, emb_blob in rows:
+    for cid, txt, emb_blob, doc_name, page_num in rows:
         emb = np.frombuffer(emb_blob, dtype=np.float32)
         score = float(np.dot(query_emb, emb) / (np.linalg.norm(query_emb) * np.linalg.norm(emb)))
-        results.append((cid, txt, score))
+        results.append((cid, txt, score, doc_name, page_num))
 
-    # 4. Sort and return top-k
     results.sort(key=lambda x: x[2], reverse=True)
     return results[:top_k]
 

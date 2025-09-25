@@ -9,7 +9,9 @@ class ApiClient {
 
   constructor() {
     this.baseURL = API_URL;
-    this.timeout = 30000; // 30 second timeout
+    // Default timeout for requests (ms). Increased to 5 minutes to match backend
+    // Ollama/model calls can take longer; keep this high but reasonable.
+    this.timeout = 300000; // 300 second (5 minute) timeout
     this.defaultHeaders = {
       // Don't set default Content-Type - let each request set it appropriately
     };

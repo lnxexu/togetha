@@ -9,8 +9,8 @@ export interface EnvironmentConfig {
 }
 
 export const DEFAULT_CONFIG: EnvironmentConfig = {
-  apiUrl: 'http://localhost:8000',
-  ollamaApiUrl: 'http://localhost:11434',
+  apiUrl: 'http://192.168.1.187:8000',
+  ollamaApiUrl: 'http://192.168.1.187:11434',
   environment: 'development',
   debug: true,
 };

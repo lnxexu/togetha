@@ -68,6 +68,9 @@ EMAIL_HOST_PASSWORD = 'tjsw zzdo piwn zjea'  # Your Gmail App Password
 # Security settings
 EMAIL_TIMEOUT = 60  # Increased timeout for slow connections
 EMAIL_USE_LOCALTIME = False
+ 
+# Timeout for Ollama/model API calls (seconds)
+OLLAMA_TIMEOUT = 300
 
 # Application definition
 

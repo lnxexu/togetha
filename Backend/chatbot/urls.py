@@ -1,33 +1,27 @@
 from django.urls import path
-from .views import (
-    ChatView, 
-    FileUploadView,
-    PDFUploadView, 
-    ConversationViewSet, 
-    MessageViewSet,
-    message_actions, 
-    get_messages, 
-    chatbot_settings,
-    extract_text_from_images
-)
+from .views.conversations import ConversationViewSet, get_messages
+from .views.messages import MessageViewSet, message_actions
+from .views.settings import chatbot_settings
+from .views.chat import ChatView
+from .views.files import FileUploadView
+from .utils.ocr_utils import extract_text_from_images
 
 urlpatterns = [
     path("chat/", ChatView.as_view(), name="chat"),
-    path("upload_pdf/", FileUploadView.as_view(), name="upload_pdf"),  # Updated to use FileUploadView
-    path("upload_file/", FileUploadView.as_view(), name="upload_file"),  # New generic file upload endpoint
+    path("upload_pdf/", FileUploadView.as_view(), name="upload_pdf"),
+    path("upload_file/", FileUploadView.as_view(), name="upload_file"),
     path("extract_text_from_images/", extract_text_from_images, name="extract_text_from_images"),
-    path("extract_text/", extract_text_from_images, name="extract_text"),  # Backward compatibility
+    path("extract_text/", extract_text_from_images, name="extract_text"),
+
+    # Conversations
+    path("conversations/", ConversationViewSet.as_view({"get": "list", "post": "create"}), name="conversations_list"),
+    path("conversations/<uuid:pk>/", ConversationViewSet.as_view({"get": "retrieve", "put": "update", "delete": "destroy"}), name="conversations_detail"),
     
-    # Conversation management
-    path("conversations/", ConversationViewSet.as_view(), name="conversations_list"),
-    path("conversations/<uuid:pk>/", ConversationViewSet.as_view(), name="conversations_detail"),
-    
-    # Message operations
-    path("messages/", get_messages, name="get_messages"),
-    path("messages/<uuid:pk>/", MessageViewSet.as_view(), name="message_detail"),
+    # Messages
+    path("messages/<uuid:conversation_id>/", get_messages, name="get_messages"),
+    path("messages/<uuid:pk>/", MessageViewSet.as_view({"get": "retrieve"}), name="message_detail"),
     path("messages/actions/", message_actions, name="message_actions"),
-    path("messages/<uuid:message_id>/actions/", message_actions, name="message_actions_detail"),
-    
+
     # Settings
     path("settings/", chatbot_settings, name="chatbot_settings"),
 ]
