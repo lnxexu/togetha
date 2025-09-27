@@ -475,7 +475,7 @@ const styles = StyleSheet.create({
   },
   secondaryButtonText: {
     color: OnboardingColors.primary.main,
-    fontWeight: '600',
+    fontFamily: 'Inter-Bold',
     letterSpacing: 0.3,
   },
   primaryButton: {
@@ -495,7 +495,7 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     color: OnboardingColors.text.white,
-    fontWeight: '700',
+    fontFamily: 'Inter-Bold',
     letterSpacing: 0.3,
   },
   getStartedButton: {
@@ -515,7 +515,7 @@ const styles = StyleSheet.create({
   },
   getStartedButtonText: {
     color: OnboardingColors.text.white,
-    fontWeight: '700',
+    fontFamily: 'Inter-Regular',
     letterSpacing: 0.5,
   },
 });
