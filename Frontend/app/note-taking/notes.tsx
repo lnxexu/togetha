@@ -1135,25 +1135,19 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
     });
   }, [navigation]);
 
+  // Show drawing setup modal
   const handleCreateDrawing = () => {
-    // Show drawing setup modal instead of navigating directly
     setShowDrawingSetupModal(true);
   };
 
+  // Show document import preview modal
   const handleImportDocument = () => {
-    // Show document preview modal instead of navigating directly
     setShowDocumentPreviewModal(true);
   };
 
+  // Confirm and upload the selected document as a note
   const handleConfirmDocumentImport = async (documentInfo: any) => {
     try {
-      // Quick duplicate check using the provided document name
-      const candidateName = documentInfo?.name?.trim() || "";
-      if (candidateName && isDuplicateNoteTitle(candidateName)) {
-        showTypedErrorToast("A note with this title already exists.", "duplicate_name");
-        return;
-      }
-      // Create a note with the document information
       const token = await AsyncStorage.getItem("authToken");
       if (!token) {
         navigation.navigate("Login");
@@ -1165,7 +1159,6 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
       formData.append("content", `Imported document: ${documentInfo.name}`);
       formData.append("type", "document");
 
-      // Add document file as attachment
       formData.append("document", {
         uri: documentInfo.uri,
         type: documentInfo.mimeType || "application/octet-stream",
@@ -1183,54 +1176,42 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
         }
       );
 
-        if (response.ok) {
+      if (response.ok) {
         const result = await response.json();
-          // Server returned a created note - double-check the returned title for duplicates
-          const returnedTitle = result?.title?.trim();
-          if (returnedTitle && isDuplicateNoteTitle(returnedTitle)) {
-            // Optionally, you might want to delete the just-created duplicate on the server.
-            showTypedErrorToast("A note with this title already exists.", "duplicate_name");
-            // Still refresh list to reflect server state
-            fetchNotes(true);
-            return;
-          }
+
+        // Check for duplicate title returned from server
+        const returnedTitle = result?.title?.trim();
+        if (returnedTitle && isDuplicateNoteTitle(returnedTitle)) {
+          showTypedErrorToast("A note with this title already exists.", "duplicate_name");
+          fetchNotes(true);
+          return;
+        }
+
         showSuccessToast("Document imported successfully!");
-
-        // Refresh the notes list to show the new document
         fetchNotes(true);
-
-        // Invalidate folder cache to update counts in home screen
         await folderCacheUtils.invalidateCache();
 
-        // Open the document in DocumentViewer for annotation instead of NoteEditor
-        const documentType = documentInfo.mimeType?.includes("pdf")
-          ? "pdf"
-          : documentInfo.mimeType?.includes("word") ||
-            documentInfo.mimeType?.includes("document")
-          ? "word"
-          : documentInfo.mimeType?.includes("image") ||
-            documentInfo.name?.match(/\.(jpg|jpeg|png|gif|bmp|webp|svg)$/i)
-          ? "image"
-          : documentInfo.name?.match(/\.txt$/i)
-          ? "txt"
-          : "document";
+        const documentType =
+          documentInfo.mimeType?.includes("pdf")
+            ? "pdf"
+            : documentInfo.mimeType?.includes("word") ||
+              documentInfo.mimeType?.includes("document")
+            ? "word"
+            : documentInfo.mimeType?.includes("image") ||
+              documentInfo.name?.match(/\.(jpg|jpeg|png|gif|bmp|webp|svg)$/i)
+            ? "image"
+            : documentInfo.name?.match(/\.txt$/i)
+            ? "txt"
+            : "document";
 
-        const documentUrl =
-          result.document_url || result.document_file || documentInfo.uri;
+        const documentUrl = result.document_url || result.document_file || documentInfo.uri;
         let finalDocumentUri = documentUrl;
 
-        // For PDF files, download to local storage if it's a remote URL
         if (documentType === "pdf" && isRemoteURL(documentUrl)) {
           try {
-            console.log(
-              "PDF is remote URL, downloading to local storage:",
-              documentUrl
-            );
             finalDocumentUri = await getLocalPDFPath(documentUrl);
-            console.log("PDF downloaded to local path:", finalDocumentUri);
           } catch (error) {
-            console.error("Failed to download PDF to local storage:", error);
-            // Fall back to original URL - PDFAnnotationViewer will handle the error
+            console.warn("Failed to download PDF, using remote URL", error);
             finalDocumentUri = documentUrl;
           }
         }
@@ -1242,7 +1223,6 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
           type: documentType,
         });
 
-        // Use PDFAnnotationViewer for PDF files, DocumentViewer for others
         if (documentType === "pdf") {
           setShowPDFViewer(true);
         } else {
@@ -1262,6 +1242,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
       );
     }
   };
+
 
   const closeDrawingSetupModal = () => {
     setShowDrawingSetupModal(false);
@@ -2216,29 +2197,7 @@ const handleCreateFolder = async () => {
                   </View>
                 )}
 
-                {item.tags && item.tags.length > 0 && (
-                  <View style={styles.inlineTagsContainer}>
-                    {item.tags.slice(0, 1).map((tag, idx) => (
-                      <View key={idx} style={styles.gridTag}>
-                        <MaterialIcons
-                          name="local-offer"
-                          size={8}
-                          color="#4B5563"
-                        />
-                        <Text style={styles.gridTagText}>
-                          {typeof tag === "string" ? tag : tag.name}
-                        </Text>
-                      </View>
-                    ))}
-                    {item.tags.length > 1 && (
-                      <View style={styles.gridMoreTagsIndicator}>
-                        <Text style={styles.gridMoreTagsText}>
-                          +{item.tags.length - 1}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                )}
+                {/* Tags removed from UI per request */}
               </View>
             </View>
 
@@ -2787,104 +2746,7 @@ const handleCreateFolder = async () => {
                 />
               </View>
 
-              {/* Size Options Section */}
-              <View style={styles.drawingModalSection}>
-                <Text style={styles.drawingModalSectionLabel}>Canvas Size</Text>
-                <View style={styles.sizeGrid}>
-                  {DRAWING_SIZES.map((size) => (
-                    <TouchableOpacity
-                      key={size.id}
-                      style={[
-                        styles.sizeOption,
-                        selectedSize === size.id && styles.selectedSizeOption,
-                      ]}
-                      onPress={() => setSelectedSize(size.id)}
-                    >
-                      <Text
-                        style={[
-                          styles.sizeOptionName,
-                          selectedSize === size.id &&
-                            styles.selectedSizeOptionText,
-                        ]}
-                      >
-                        {size.name}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.sizeOptionDimensions,
-                          selectedSize === size.id &&
-                            styles.selectedSizeOptionText,
-                        ]}
-                      >
-                        {selectedOrientation === "landscape"
-                          ? size.landscape
-                          : size.portrait}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-
-                {/* Orientation Toggle */}
-                <View style={styles.orientationSubSection}>
-                  <Text style={styles.drawingModalSubLabel}>Orientation</Text>
-                  <View style={styles.orientationToggle}>
-                    <TouchableOpacity
-                      style={[
-                        styles.orientationButton,
-                        selectedOrientation === "landscape" &&
-                          styles.selectedOrientationButton,
-                      ]}
-                      onPress={() => setSelectedOrientation("landscape")}
-                    >
-                      <MaterialIcons
-                        name="crop-landscape"
-                        size={20}
-                        color={
-                          selectedOrientation === "landscape"
-                            ? "#FFFFFF"
-                            : "#6B7280"
-                        }
-                      />
-                      <Text
-                        style={[
-                          styles.orientationButtonText,
-                          selectedOrientation === "landscape" &&
-                            styles.selectedOrientationButtonText,
-                        ]}
-                      >
-                        Landscape
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[
-                        styles.orientationButton,
-                        selectedOrientation === "portrait" &&
-                          styles.selectedOrientationButton,
-                      ]}
-                      onPress={() => setSelectedOrientation("portrait")}
-                    >
-                      <MaterialIcons
-                        name="crop-portrait"
-                        size={20}
-                        color={
-                          selectedOrientation === "portrait"
-                            ? "#FFFFFF"
-                            : "#6B7280"
-                        }
-                      />
-                      <Text
-                        style={[
-                          styles.orientationButtonText,
-                          selectedOrientation === "portrait" &&
-                            styles.selectedOrientationButtonText,
-                        ]}
-                      >
-                        Portrait
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </View>
+              {/* Canvas size and orientation selection removed - using defaults */}
 
               {/* Templates Section */}
               <View style={styles.drawingModalSection}>

@@ -243,30 +243,124 @@ function lineSegmentsIntersect(p1: Point, p2: Point, p3: Point, p4: Point): bool
 }
 
 /**
- * Convert stroke data to SVG path string
+ * Convert stroke data to SVG path string with enhanced smoothing
  */
 export function strokeToSVGPath(stroke: Stroke): string {
   if (stroke.points.length < 2) return '';
 
-  let path = `M${stroke.points[0].x},${stroke.points[0].y}`;
-  
+  // For very short strokes, use simple linear path
   if (stroke.points.length === 2) {
-    path += ` L${stroke.points[1].x},${stroke.points[1].y}`;
-    return path;
+    return `M${stroke.points[0].x},${stroke.points[0].y} L${stroke.points[1].x},${stroke.points[1].y}`;
   }
+  
+  // For longer strokes, use Catmull-Rom spline for maximum smoothness
+  if (stroke.points.length >= 4) {
+    return createCatmullRomSVGPath(stroke.points, 0.5);
+  }
+  
+  // For 3 points, use enhanced quadratic bezier
+  return createEnhancedQuadraticSVGPath(stroke.points);
+}
 
-  // Use quadratic curves for smoother lines
-  for (let i = 1; i < stroke.points.length - 1; i++) {
-    const current = stroke.points[i];
-    const next = stroke.points[i + 1];
+/**
+ * Create ultra-smooth SVG path using Catmull-Rom splines
+ */
+function createCatmullRomSVGPath(points: Point[], tension: number = 0.5): string {
+  let path = `M${points[0].x},${points[0].y}`;
+  
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[Math.max(i - 1, 0)];
+    const p1 = points[i];
+    const p2 = points[Math.min(i + 1, points.length - 1)];
+    const p3 = points[Math.min(i + 2, points.length - 1)];
+    
+    // Calculate control points for Catmull-Rom
+    const cp1x = p1.x + (p2.x - p0.x) * tension / 6;
+    const cp1y = p1.y + (p2.y - p0.y) * tension / 6;
+    const cp2x = p2.x - (p3.x - p1.x) * tension / 6;
+    const cp2y = p2.y - (p3.y - p1.y) * tension / 6;
+    
+    path += ` C${cp1x},${cp1y} ${cp2x},${cp2y} ${p2.x},${p2.y}`;
+  }
+  
+  return path;
+}
+
+/**
+ * Create enhanced quadratic bezier path for shorter strokes
+ */
+function createEnhancedQuadraticSVGPath(points: Point[]): string {
+  let path = `M${points[0].x},${points[0].y}`;
+  
+  for (let i = 1; i < points.length - 1; i++) {
+    const current = points[i];
+    const next = points[i + 1];
+    const prev = points[i - 1];
+    
+    // Enhanced control point calculation with better smoothing
+    const controlX = current.x * 0.7 + (prev.x + next.x) * 0.15;
+    const controlY = current.y * 0.7 + (prev.y + next.y) * 0.15;
     const midX = (current.x + next.x) / 2;
     const midY = (current.y + next.y) / 2;
     
-    path += ` Q${current.x},${current.y} ${midX},${midY}`;
+    path += ` Q${controlX},${controlY} ${midX},${midY}`;
   }
   
-  const lastPoint = stroke.points[stroke.points.length - 1];
+  // Finish with the last point
+  const lastPoint = points[points.length - 1];
   path += ` L${lastPoint.x},${lastPoint.y}`;
   
   return path;
+}
+
+/**
+ * Advanced stroke smoothing using multiple algorithms combined
+ */
+export function advancedSmoothStroke(points: Point[], options: {
+  velocitySmoothing?: number;
+  pressureSmoothing?: number;
+  positionSmoothing?: number;
+} = {}): Point[] {
+  if (points.length < 3) return points;
+
+  const {
+    velocitySmoothing = 0.3,
+    pressureSmoothing = 0.4,
+    positionSmoothing = 0.2
+  } = options;
+
+  const smoothed: Point[] = [points[0]];
+
+  for (let i = 1; i < points.length - 1; i++) {
+    const prev = points[i - 1];
+    const curr = points[i];
+    const next = points[i + 1];
+
+    // Calculate velocities for adaptive smoothing
+    const prevVel = Math.sqrt(
+      Math.pow(curr.x - prev.x, 2) + Math.pow(curr.y - prev.y, 2)
+    ) / Math.max(1, (curr.timestamp || 0) - (prev.timestamp || 0));
+    
+    const nextVel = Math.sqrt(
+      Math.pow(next.x - curr.x, 2) + Math.pow(next.y - curr.y, 2)
+    ) / Math.max(1, (next.timestamp || 0) - (curr.timestamp || 0));
+
+    // Adaptive smoothing based on velocity
+    const adaptiveSmoothing = positionSmoothing * (1 + Math.min(prevVel + nextVel, 2) / 2);
+
+    const smoothedPoint: Point = {
+      x: curr.x * (1 - adaptiveSmoothing) + (prev.x + next.x) * adaptiveSmoothing / 2,
+      y: curr.y * (1 - adaptiveSmoothing) + (prev.y + next.y) * adaptiveSmoothing / 2,
+      pressure: curr.pressure ? 
+        curr.pressure * (1 - pressureSmoothing) + 
+        ((prev.pressure || 1) + (next.pressure || 1)) * pressureSmoothing / 2 : 
+        curr.pressure,
+      timestamp: curr.timestamp,
+    };
+
+    smoothed.push(smoothedPoint);
+  }
+
+  smoothed.push(points[points.length - 1]);
+  return smoothed;
 }

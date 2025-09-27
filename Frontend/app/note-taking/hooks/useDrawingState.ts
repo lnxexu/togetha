@@ -294,6 +294,18 @@ export const useDrawingState = ({
     setHasUnsavedChanges(true);
   }, [saveToHistory]);
 
+  // Remove strokes by id(s) - used when deleting pages or removing groups of strokes
+  const removeStrokesByIds = useCallback((ids: string[]) => {
+    if (!ids || ids.length === 0) return;
+    setStrokes(prev => {
+      const filtered = prev.filter(s => !ids.includes(s.id));
+      // Save to history after removal
+      setTimeout(() => saveToHistory(filtered), 0);
+      return filtered;
+    });
+    setHasUnsavedChanges(true);
+  }, [saveToHistory]);
+
   const undo = useCallback(() => {
     if (historyStep > 0) {
       const newStep = historyStep - 1;
@@ -459,6 +471,7 @@ export const useDrawingState = ({
     currentNoteId,
     addStroke,
     eraseStrokes,
+    removeStrokesByIds,
     clearDrawing,
     saveDrawing,
     loadDrawing,

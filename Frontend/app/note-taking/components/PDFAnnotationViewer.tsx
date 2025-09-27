@@ -246,9 +246,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [folderName, setFolderName] = useState("PDF Documents");
   const [showFolderModal, setShowFolderModal] = useState(false);
-  const [tags, setTags] = useState<string[]>([]);
-  const [showTagModal, setShowTagModal] = useState(false);
-  const [newTag, setNewTag] = useState("");
   
   // Sync status state
   const [syncStatus, setSyncStatus] = useState<"saved" | "syncing" | "offline">("saved");
@@ -952,23 +949,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     setPdfTransform(prev => ({ ...prev, scale }));
   };
 
-  // Tag management functions
-  const addTag = () => {
-    if (newTag.trim() && !tags.includes(newTag.trim())) {
-      setTags([...tags, newTag.trim()]);
-      setNewTag("");
-      setSyncStatus("syncing");
-      // Auto-save with tags
-      setTimeout(() => setSyncStatus("saved"), 1000);
-    }
-  };
 
-  const removeTag = (tagToRemove: string) => {
-    setTags(tags.filter(tag => tag !== tagToRemove));
-    setSyncStatus("syncing");
-    // Auto-save with tags
-    setTimeout(() => setSyncStatus("saved"), 1000);
-  };
 
   // Sync status functions
   const getSyncStatusIcon = () => {
@@ -2273,6 +2254,14 @@ return (
               )}
             </TouchableOpacity>
 
+            {/* Folder Button (replaces Export Button) */}
+            <TouchableOpacity
+              style={[styles.saveButton, { marginRight: 8 }]}
+              onPress={() => setShowFolderModal(true)}
+            >
+              <MaterialIcons name="folder" size={18} color="#fff" />
+            </TouchableOpacity>
+
             {/* More Options Menu */}
             <TouchableOpacity
               onPress={() => setShowMoreMenu(true)}
@@ -2403,78 +2392,7 @@ return (
           </ScrollView>
         </View>
 
-        {/* Compact Metadata Row */}
-        <View style={styles.compactHeaderInfo}>
-          <View style={styles.compactMetadata}>
-            <View style={styles.folderSection}>
-              <TouchableOpacity
-                style={styles.compactFolderSelector}
-                onPress={() => setShowFolderModal(true)}
-                activeOpacity={0.8}
-              >
-                <MaterialIcons name="folder" size={16} color="#8B5CF6" />
-                <Text style={styles.compactFolderText} numberOfLines={1}>
-                  {folderName}
-                </Text>
-                <MaterialIcons name="keyboard-arrow-down" size={16} color="#8B5CF6" />
-              </TouchableOpacity>
-            </View>
 
-            <View style={styles.tagSection}>
-              <View style={styles.compactTagsSection}>
-                <TouchableOpacity
-                  style={styles.addTagButton}
-                  onPress={() => setShowTagModal(true)}
-                  activeOpacity={0.8}
-                >
-                  <MaterialIcons name="add" size={14} color="#8B5CF6" />
-                  <Text style={styles.addTagText}>Tag</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-
-          {/* Tags Display */}
-          {tags.length > 0 && (
-            <View style={styles.tagsDisplayContainer}>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.tagsScrollContent}
-              >
-                <View style={styles.tagsContainer}>
-                  {tags.map((tag, index) => (
-                    <View key={index} style={styles.compactTag}>
-                      <Text style={styles.compactTagText} numberOfLines={1}>
-                        {tag}
-                      </Text>
-                      <TouchableOpacity
-                        onPress={() => removeTag(tag)}
-                        activeOpacity={0.8}
-                      >
-                        <MaterialIcons name="close" size={12} color="#8B5CF6" />
-                      </TouchableOpacity>
-                    </View>
-                  ))}
-                </View>
-              </ScrollView>
-            </View>
-          )}
-
-          {/* Sync Status */}
-          <View style={styles.compactSyncContainer}>
-            <View style={styles.syncStatusContainer}>
-              <MaterialIcons
-                name={getSyncStatusIcon()}
-                size={14}
-                color={getSyncStatusColor()}
-              />
-              <Text style={[styles.syncStatusText, { color: getSyncStatusColor() }]}>
-                {getSyncStatusText()}
-              </Text>
-            </View>
-          </View>
-        </View>
 
         {/* PDF Viewer - Direct without container */}
         {isLoading ? (
@@ -2648,106 +2566,9 @@ return (
         </Animated.View>
       </View>
 
-      {/* Folder Selection Modal */}
-      <Modal
-        visible={showFolderModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowFolderModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.noteModal}>
-            <View style={styles.modalHeader}>
-              <MaterialIcons name="folder" size={24} color="#667eea" />
-              <Text style={styles.modalTitle}>Select Folder</Text>
-            </View>
+      {/* (single) Folder Selection Modal is rendered further down with DrawingEditor styles */}
 
-            <View style={styles.modalContent}>
-              <TouchableOpacity
-                style={[
-                  styles.folderItem,
-                  !selectedFolderId && styles.selectedFolderItem,
-                ]}
-                onPress={() => handleFolderSelect(null)}
-                activeOpacity={0.8}
-              >
-                <View
-                  style={[
-                    styles.folderIcon,
-                    { backgroundColor: "#F3F4F6" },
-                  ]}
-                >
-                  <MaterialIcons name="folder-open" size={24} color="#8B5CF6" />
-                </View>
-                <Text style={styles.folderItemName}>PDF Documents</Text>
-              </TouchableOpacity>
 
-              <View style={styles.modalActions}>
-                <TouchableOpacity
-                  style={[styles.modalActionButton, styles.cancelButton]}
-                  onPress={() => setShowFolderModal(false)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.modalCancelText}>Cancel</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Tag Modal */}
-      <Modal
-        visible={showTagModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowTagModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.noteModal}>
-            <View style={styles.modalHeader}>
-              <MaterialIcons name="local-offer" size={24} color="#667eea" />
-              <Text style={styles.modalTitle}>Add Tag</Text>
-            </View>
-
-            <View style={styles.modalContent}>
-              <TextInput
-                style={styles.noteInput}
-                placeholder="Enter tag name..."
-                placeholderTextColor="#999"
-                value={newTag}
-                onChangeText={setNewTag}
-                autoFocus
-              />
-
-              <View style={styles.modalActions}>
-                <TouchableOpacity
-                  style={[styles.modalActionButton, styles.cancelButton]}
-                  onPress={() => {
-                    setShowTagModal(false);
-                    setNewTag("");
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.modalCancelText}>Cancel</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.modalActionButton,
-                    !newTag.trim() && { opacity: 0.5 },
-                  ]}
-                  onPress={addTag}
-                  disabled={!newTag.trim()}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.modalActionText}>Add Tag</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </View>
-      </Modal>
 
       {/* Note/Text Modal */}
       <Modal visible={showNoteModal} animationType="slide" transparent>
@@ -2803,6 +2624,66 @@ return (
               </View>
             </View>
           </Animated.View>
+        </View>
+      </Modal>
+
+      {/* Folder Selection Modal (replaces Export Modal) */}
+      <Modal
+        visible={showFolderModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowFolderModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.folderModalContent}>
+            <View style={styles.folderModalHeaderRow}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <MaterialIcons name="folder" size={22} color="#8B5CF6" />
+                <Text style={styles.folderModalTitle}> Select Folder</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowFolderModal(false)}>
+                <MaterialIcons name="close" size={22} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Search / quick filter */}
+            <View style={styles.folderSearchRow}>
+              <TextInput
+                placeholder="Search folders"
+                placeholderTextColor="#9CA3AF"
+                style={styles.folderSearchInput}
+                onChangeText={(v) => {
+                  // local filter; keep minimal - no folder state in this viewer
+                }}
+                defaultValue={""}
+                returnKeyType="search"
+              />
+            </View>
+
+            <ScrollView style={styles.folderListScroll} contentContainerStyle={styles.folderListContent}>
+              <TouchableOpacity
+                style={[styles.folderCard, styles.selectedFolderCard]}
+                onPress={() => setShowFolderModal(false)}
+              >
+                <View style={[styles.folderCardIcon, { backgroundColor: '#64748B' }]}>
+                  <MaterialIcons name="notes" size={20} color="#fff" />
+                </View>
+                <View style={styles.folderCardTextWrap}>
+                  <Text style={styles.folderCardTitle}>Unorganized Notes</Text>
+                  <Text style={styles.folderCardSubtitle}>No folder</Text>
+                </View>
+                <MaterialIcons name="check-circle" size={20} color="#8B5CF6" />
+              </TouchableOpacity>
+
+              <View style={styles.folderDividerRow}>
+                <View style={styles.folderDividerLine} />
+                <Text style={styles.folderDividerText}>All folders</Text>
+                <View style={styles.folderDividerLine} />
+              </View>
+
+              {/* Placeholder: no remote folders in this viewer - keep list minimal */}
+            </ScrollView>
+          </View>
         </View>
       </Modal>
 
@@ -2901,7 +2782,7 @@ mainContainer: {
     backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
-    marginTop: 120, // Position it below the header
+    marginTop: 140, // Position it below the header
     shadowColor: "#1E293B",
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.1,
@@ -2947,13 +2828,7 @@ mainContainer: {
     flexDirection: "row",
     alignItems: "center",
   },
-  exportButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 8,
-    borderRadius: 12,
-    backgroundColor: "rgba(255,255,255,0.2)",
-  },
+
   exportText: {
     fontSize: 12,
     color: "#ffffff",
@@ -3575,6 +3450,222 @@ mainContainer: {
     width: screenWidth,
     height: screenHeight * 3, // Increased for multi-page PDFs
     backgroundColor: '#F3F4F6', // keep transform container matching viewer background
+  },
+
+  // Export Modal Styles
+  exportModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  exportModalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 24,
+    width: screenWidth - 48,
+    maxWidth: 400,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 20,
+  },
+  exportModalTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1F2937',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  exportModalSubtitle: {
+    fontSize: 16,
+    color: '#6B7280',
+    marginBottom: 24,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  exportModalButtons: {
+    width: '100%',
+    gap: 12,
+  },
+  exportFormatButton: {
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  exportFormatButtonGradient: {
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    width: '100%',
+  },
+  exportFormatButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  exportFormatButtonSubtext: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 12,
+    fontWeight: '400',
+    marginLeft: 8,
+  },
+  exportActionButtons: {
+    width: '100%',
+    marginTop: 12,
+  },
+  exportCancelButton: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  exportCancelButtonText: {
+    color: '#374151',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  exportButton: {
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  exportButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  exportCloseButton: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  exportCloseButtonText: {
+    color: '#374151',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  // Folder modal styles (copied from DrawingEditor)
+  folderModalContent: {
+    width: '92%',
+    maxHeight: '78%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 12,
+  },
+  folderModalHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E7EB',
+    marginBottom: 8,
+  },
+  folderModalTitle: {
+    marginLeft: 10,
+    fontSize: 16,
+    color: '#111827',
+    fontWeight: '600',
+  },
+  folderSearchRow: {
+    paddingVertical: 8,
+  },
+  folderSearchInput: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    color: '#111827',
+    fontSize: 14,
+  },
+  folderListScroll: {
+    marginTop: 6,
+  },
+  folderListContent: {
+    paddingBottom: 18,
+  },
+  folderCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    marginBottom: 8,
+  },
+  selectedFolderCard: {
+    backgroundColor: '#F8FAFC',
+  },
+  folderCardIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  folderCardTextWrap: {
+    flex: 1,
+  },
+  folderCardTitle: {
+    fontSize: 15,
+    color: '#111827',
+    fontWeight: '600',
+  },
+  folderCardSubtitle: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  folderDividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 10,
+  },
+  folderDividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E2E8F0',
+  },
+  folderDividerText: {
+    fontSize: 12,
+    fontFamily: 'Inter-Medium',
+    color: '#64748B',
+    marginHorizontal: 12,
   },
 });
 

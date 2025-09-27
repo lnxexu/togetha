@@ -192,6 +192,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   );
   const [showFolderModal, setShowFolderModal] = useState(false);
   const [folderName, setFolderName] = useState<string>("Unorganized Notes");
+  const [folderFilter, setFolderFilter] = useState('');
   const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
   const [showWordMeaningModal, setShowWordMeaningModal] = useState(false);
   const [selectedWord, setSelectedWord] = useState("");
@@ -885,7 +886,6 @@ const handleSaveAndExit = async () => {
             }}
           >
             {/* Modern Compact Header */}
-            <View style={styles.compactHeaderInfo}>
               {/* Folder and Add Tag Row */}
               <View style={styles.compactMetadata}>
                 <View style={styles.folderSection}>
@@ -929,7 +929,6 @@ const handleSaveAndExit = async () => {
                   </ScrollView>
                 </View>
               )}
-            </View>
 
             {/* Compact Rich Text Toolbar */}
             <View style={styles.compactToolbarContainer}>
@@ -1234,92 +1233,84 @@ const handleSaveAndExit = async () => {
         <Modal
           visible={showFolderModal}
           transparent
-          animationType="fade"
+          animationType="slide"
           onRequestClose={() => setShowFolderModal(false)}
         >
           <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <MaterialIcons name="folder" size={28} color="#8B5CF6" />
-                <Text style={[styles.modalTitle, { marginBottom: 0, marginLeft: 12 }]}>Select Folder</Text>
+            <View style={styles.folderModalContent}>
+              <View style={styles.folderModalHeaderRow}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <MaterialIcons name="folder" size={22} color="#8B5CF6" />
+                  <Text style={styles.folderModalTitle}> Select Folder</Text>
+                </View>
+                <TouchableOpacity onPress={() => setShowFolderModal(false)}>
+                  <MaterialIcons name="close" size={22} color="#6B7280" />
+                </TouchableOpacity>
               </View>
 
-              <View
-                style={{ maxHeight: 400, paddingBottom: 10 }}
-              >
-                {/* Unorganized Notes Option */}
+              {/* Search / quick filter */}
+              <View style={styles.folderSearchRow}>
+                <TextInput
+                  placeholder="Search folders"
+                  placeholderTextColor="#9CA3AF"
+                  style={styles.folderSearchInput}
+                  onChangeText={(v) => {
+                    setFolderFilter(v);
+                  }}
+                  defaultValue={folderFilter}
+                  returnKeyType="search"
+                />
+              </View>
+
+              <ScrollView style={styles.folderListScroll} contentContainerStyle={styles.folderListContent}>
+                {/* Unorganized Notes Card */}
                 <TouchableOpacity
-                  style={[
-                    styles.folderItem,
-                    !selectedFolderId && styles.selectedFolderItem,
-                  ]}
-                  onPress={() => handleFolderSelect(null)}
+                  style={[styles.folderCard, !selectedFolderId && styles.selectedFolderCard]}
+                  onPress={() => {
+                    handleFolderSelect(null);
+                    setShowFolderModal(false);
+                  }}
                 >
-                  <View
-                    style={[styles.folderIcon, { backgroundColor: "#64748B" }]}
-                  >
-                    <MaterialIcons name="notes" size={20} color="#FFFFFF" />
+                  <View style={[styles.folderCardIcon, { backgroundColor: '#64748B' }]}>
+                    <MaterialIcons name="notes" size={20} color="#fff" />
                   </View>
-                  <Text style={styles.folderItemName}>Unorganized Notes</Text>
-                  {!selectedFolderId && (
-                    <MaterialIcons
-                      name="check-circle"
-                      size={22}
-                      color="#8B5CF6"
-                    />
-                  )}
+                  <View style={styles.folderCardTextWrap}>
+                    <Text style={styles.folderCardTitle}>Unorganized Notes</Text>
+                    <Text style={styles.folderCardSubtitle}>No folder</Text>
+                  </View>
+                  {!selectedFolderId && <MaterialIcons name="check-circle" size={20} color="#8B5CF6" />}
                 </TouchableOpacity>
 
-                <View style={styles.folderDivider}>
+                {/* Divider */}
+                <View style={styles.folderDividerRow}>
                   <View style={styles.folderDividerLine} />
-                  <Text style={styles.folderDividerText}>Folders</Text>
+                  <Text style={styles.folderDividerText}>All folders</Text>
                   <View style={styles.folderDividerLine} />
                 </View>
 
-                {/* Folder List */}
-                {folders.map((folder) => (
-                  <TouchableOpacity
-                    key={folder.id}
-                    style={[
-                      styles.folderItem,
-                      selectedFolderId === folder.id.toString() &&
-                        styles.selectedFolderItem,
-                    ]}
-                    onPress={() => handleFolderSelect(folder)}
-                  >
-                    <View
-                      style={[
-                        styles.folderIcon,
-                        { backgroundColor: folder.color || "#6A009C" },
-                      ]}
+                {/* Folder List (filtered) */}
+                {folders
+                  .filter(f => !folderFilter || f.name.toLowerCase().includes(folderFilter.toLowerCase()))
+                  .map(folder => (
+                    <TouchableOpacity
+                      key={folder.id}
+                      style={[styles.folderCard, selectedFolderId === folder.id && styles.selectedFolderCard]}
+                      onPress={() => {
+                        handleFolderSelect(folder);
+                        setShowFolderModal(false);
+                      }}
                     >
-                      <MaterialIcons
-                        name={folder.icon || "folder"}
-                        size={20}
-                        color="#FFFFFF"
-                      />
-                    </View>
-                    <Text style={styles.folderItemName}>{folder.name}</Text>
-                    {selectedFolderId === folder.id.toString() && (
-                      <MaterialIcons
-                        name="check-circle"
-                        size={22}
-                        color="#8B5CF6"
-                      />
-                    )}
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <TouchableOpacity
-                style={[
-                  styles.cancelButton,
-                  { marginTop: 20, alignSelf: "stretch" },
-                ]}
-                onPress={() => setShowFolderModal(false)}
-              >
-                <Text style={[styles.modalCancelText, { textAlign: "center" }]}>Cancel</Text>
-              </TouchableOpacity>
+                      <View style={[styles.folderCardIcon, { backgroundColor: folder.color || '#8B5CF6' }]}>
+                        <MaterialIcons name={folder.icon || 'folder'} size={20} color="#fff" />
+                      </View>
+                      <View style={styles.folderCardTextWrap}>
+                        <Text style={styles.folderCardTitle}>{folder.name}</Text>
+                        <Text style={styles.folderCardSubtitle}>Folder ID: {folder.id}</Text>
+                      </View>
+                      {selectedFolderId === folder.id && <MaterialIcons name="check-circle" size={20} color="#8B5CF6" />}
+                    </TouchableOpacity>
+                  ))}
+              </ScrollView>
             </View>
           </View>
         </Modal>
@@ -1591,19 +1582,7 @@ const styles = StyleSheet.create({
   },
   
   // Modern compact styles
-  compactHeaderInfo: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: Platform.select({ ios: 20, android: 16 }),
-    marginBottom: 16,
-    shadowColor: "#8B5CF6",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: "#F3F4F6",
-  },
+
   modernTitleInput: {
     fontSize: Platform.select({ ios: 20, android: 18 }),
     fontFamily: "Inter-Bold",
@@ -1849,25 +1828,108 @@ const styles = StyleSheet.create({
     fontFamily: "Inter-Regular",
   },
   folderModalSection: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: "#f8f9fa",
     borderBottomWidth: 1,
-    borderBottomColor: "#eee",
-    paddingBottom: 16,
+    borderBottomColor: "#e9ecef",
   },
   folderSelector: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F8FAFC",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    padding: 8,
+    backgroundColor: "#ffffff",
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#e2e8f0",
   },
   folderName: {
     flex: 1,
     marginLeft: 8,
-    fontFamily: "Inter-Medium",
     fontSize: 14,
+    fontFamily: "Inter-Medium",
+  },
+  // Modern folder modal styles from DrawingEditor
+  folderModalContent: {
+    width: '92%',
+    maxHeight: '78%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 12,
+  },
+  folderModalHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E7EB',
+    marginBottom: 8,
+  },
+  folderModalTitle: {
+    marginLeft: 10,
+    fontSize: 16,
+    color: '#111827',
+    fontWeight: '600',
+  },
+  folderSearchRow: {
+    paddingVertical: 8,
+  },
+  folderSearchInput: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    color: '#111827',
+    fontSize: 14,
+  },
+  folderListScroll: {
+    marginTop: 6,
+  },
+  folderListContent: {
+    paddingBottom: 18,
+  },
+  folderCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    marginBottom: 8,
+  },
+  selectedFolderCard: {
+    backgroundColor: '#F8FAFC',
+  },
+  folderCardIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  folderCardTextWrap: {
+    flex: 1,
+  },
+  folderCardTitle: {
+    fontSize: 15,
+    color: '#111827',
+    fontWeight: '600',
+  },
+  folderCardSubtitle: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  folderDividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 10,
   },
   folderItem: {
     flexDirection: "row",

@@ -100,9 +100,10 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
   canRedo = false,
 }) => {
   // Use a single state to track which dropdown is open
-  const [activeDropdown, setActiveDropdown] = useState<"color" | "width" | "image" | "template" | null>(null);
+  const [activeDropdown, setActiveDropdown] = useState<"tools" | "color" | "width" | "image" | "template" | null>(null);
   
   // Helper functions to check which dropdown is active
+  const showToolSelector = activeDropdown === "tools";
   const showColorPicker = activeDropdown === "color";
   const showWidthPicker = activeDropdown === "width";
   const showImageOptions = activeDropdown === "image";
@@ -126,6 +127,11 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
   const getCurrentTemplateName = () => {
     const config = getTemplateConfig(currentTemplate);
     return config.name;
+  };
+
+  const getCurrentToolInfo = () => {
+    const tool = TOOLS.find((t) => t.name === currentTool);
+    return tool || TOOLS[0]; // fallback to first tool
   };
 
   const requestPermissions = async () => {
@@ -188,26 +194,71 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
         contentContainerStyle={styles.contentContainer}
         keyboardShouldPersistTaps="handled"
       >
+        {/* Actions Section - moved to first position for quick access */}
+        <View style={styles.section}>
+          <View style={styles.actionsRow}>
+            <TouchableOpacity
+              style={[styles.actionButton, !canUndo && styles.disabledButton]}
+              onPress={onUndo}
+              disabled={!canUndo}
+            >
+              <Ionicons
+                name="arrow-undo"
+                size={18}
+                color={canUndo ? "#333" : "#ccc"}
+              />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.actionButton, !canRedo && styles.disabledButton]}
+              onPress={onRedo}
+              disabled={!canRedo}
+            >
+              <Ionicons
+                name="arrow-redo"
+                size={18}
+                color={canRedo ? "#333" : "#ccc"}
+              />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.actionButton} onPress={onClear}>
+              <Ionicons name="trash" size={18} color="#ff4444" />
+            </TouchableOpacity>
+          </View>
+        </View>
         {/* Tools Section */}
         <View style={styles.section}>
-          <View style={styles.toolsRow}>
-            {TOOLS.map((tool) => {
-              const isActive = currentTool === tool.name;
-              return (
-                <TouchableOpacity
-                  key={tool.name}
-                  style={isActive ? styles.activeToolButton : undefined}
-                  onPress={() => onToolChange(tool.name as DrawingTool)}
-                >
-                  <Ionicons
-                    name={tool.icon as any}
-                    size={isActive ? 32 : 22}
-                    color={isActive ? "#8B5CF6" : "#333"}
-                    style={isActive ? styles.activeToolIcon : styles.toolIcon}
-                  />
-                </TouchableOpacity>
-              );
-            })}
+          <View style={styles.toolsSection}>
+            <TouchableOpacity
+              style={[
+                styles.dropdown,
+                showToolSelector && styles.dropdownActive
+              ]}
+              onPress={() => {
+                setActiveDropdown(showToolSelector ? null : "tools");
+              }}
+              activeOpacity={0.7}
+              hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+            >
+              <View style={styles.toolIndicator}>
+                <Ionicons
+                  name={getCurrentToolInfo().icon as any}
+                  size={16}
+                  color={showToolSelector ? "#FFFFFF" : "#333"}
+                />
+              </View>
+              <View style={styles.labelContainer}>
+                <Text style={[
+                  styles.dropdownLabel,
+                  showToolSelector && { color: '#FFFFFF' }
+                ]}>{getCurrentToolInfo().label}</Text>
+                <Ionicons 
+                  name={showToolSelector ? "chevron-up" : "chevron-down"} 
+                  size={12} 
+                  color={showToolSelector ? "#FFFFFF" : "#666"}
+                />
+              </View>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -394,42 +445,51 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
           </View>
         )}
 
-        {/* Actions Section */}
-        <View style={styles.section}>
-          <View style={styles.actionsRow}>
-            <TouchableOpacity
-              style={[styles.actionButton, !canUndo && styles.disabledButton]}
-              onPress={onUndo}
-              disabled={!canUndo}
-            >
-              <Ionicons
-                name="arrow-undo"
-                size={18}
-                color={canUndo ? "#333" : "#ccc"}
-              />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.actionButton, !canRedo && styles.disabledButton]}
-              onPress={onRedo}
-              disabled={!canRedo}
-            >
-              <Ionicons
-                name="arrow-redo"
-                size={18}
-                color={canRedo ? "#333" : "#ccc"}
-              />
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.actionButton} onPress={onClear}>
-              <Ionicons name="trash" size={18} color="#ff4444" />
-            </TouchableOpacity>
-          </View>
-        </View>
+        {/* Actions moved to the start of the toolbar for quick access */}
       </ScrollView>
       
       {/* Popout containers below the toolbar */}
       <View style={styles.popoutContainer}>
+        {/* Tools Selector Popout */}
+        {showToolSelector && (
+          <View style={styles.toolsDropdown}>
+            <View style={styles.toolsGrid}>
+              {TOOLS.map((tool) => (
+                <TouchableOpacity
+                  key={tool.name}
+                  style={[
+                    styles.toolCard,
+                    currentTool === tool.name && styles.selectedToolCard
+                  ]}
+                  onPress={() => {
+                    onToolChange(tool.name as DrawingTool);
+                    setActiveDropdown(null);
+                  }}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+                >
+                  <View style={[
+                    styles.toolCardIcon,
+                    currentTool === tool.name && styles.selectedToolIcon
+                  ]}>
+                    <Ionicons
+                      name={tool.icon as any}
+                      size={20}
+                      color={currentTool === tool.name ? "#FFFFFF" : "#374151"}
+                    />
+                  </View>
+                  <Text style={[
+                    styles.toolCardName,
+                    currentTool === tool.name && styles.selectedToolText
+                  ]}>
+                    {tool.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
+
         {/* Color Picker Popout */}
         {showColorPicker && (
           <View style={styles.colorDropdown}>
@@ -598,88 +658,56 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
 
 const styles = StyleSheet.create({
   toolbarWrapper: {
-    backgroundColor: "#ffffffff",
-    borderRadius: 0,
-    borderWidth: 0,
-    shadowColor: "transparent",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0,
-    shadowRadius: 0,
-    elevation: 0,
-    zIndex: 100,
+    backgroundColor: "#F8FAFC",
+    borderRadius: 12,
+    marginBottom: 16,
+
+    marginTop: 16,
+    shadowColor: "#000",
+
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
   },
   
   container: {
     width: '100%',
-    minWidth: 360,
-    backgroundColor: "#ffffffff",
+    minWidth: 0,
+    backgroundColor: "transparent",
     borderRadius: 0,
     borderWidth: 0,
-    shadowColor: "transparent",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0,
-    shadowRadius: 0,
     elevation: 0,
   },
 
   popoutContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: "#fafbfc",
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    backgroundColor: "transparent",
     alignItems: 'center',
   },
 
   contentContainer: {
     flexDirection: 'row',
     flexGrow: 1,
-    alignItems: "flex-start",
+    alignItems: "center",
     justifyContent: "flex-start",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 16,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    gap: 10,
   },
 
   section: {
     alignItems: "center",
-    minWidth: 80,
+    minWidth: 56,
     justifyContent: "center",
   },
 
-  // Tools Section
-  toolsRow: {
-    flexDirection: "row",
-    gap: 10,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  toolIcon: {
-  },
-  activeToolIcon: {
-    // Optionally add a little shadow or scale for effect
-  },
-  activeToolButton: {
-    // Optionally add a little padding for touch area, but no background/border
-    borderRadius: 20,
-  },
 
-  toolButton: {
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 8,
-    borderRadius: 10,
-    backgroundColor: "rgba(248, 249, 250, 0.8)",
-    borderWidth: 2,
-    borderColor: "rgba(222, 226, 230, 0.8)",
-    width: 40,
-    height: 40,
-  },
-
-  selectedToolButton: {
-    backgroundColor: "#007bff",
-    borderColor: "#007bff",
-  },
 
   // Section Styles
+  toolsSection: {
+    alignItems: 'center',
+  },
+
   colorSection: {
     alignItems: 'center',
   },
@@ -704,31 +732,31 @@ const styles = StyleSheet.create({
   },
 
   zoomButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#F3F4F6",
+    width: 30,
+    height: 30,
+    borderRadius: 14,
+    backgroundColor: "#F8FAFC",
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: "#EEF2FF",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.03,
     shadowRadius: 2,
     elevation: 1,
   },
 
   zoomResetButton: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 8,
     paddingVertical: 6,
-    borderRadius: 12,
+    borderRadius: 10,
     backgroundColor: "#F8FAFC",
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#E5E7EB",
-    minWidth: 60,
+    borderColor: "#EEF2FF",
+    minWidth: 48,
   },
 
   zoomText: {
@@ -742,19 +770,13 @@ const styles = StyleSheet.create({
   dropdown: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 1,
-    elevation: 1,
+    backgroundColor: 'transparent',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderWidth: 0,
     gap: 6,
-    minWidth: 80,
+    minWidth: 64,
   },
 
   dropdownActive: {
@@ -780,41 +802,68 @@ const styles = StyleSheet.create({
     color: '#374151',
   },
 
+  // Tool Dropdown Styles
+  toolIndicator: {
+    width: 14,
+    height: 14,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#EEF2FF',
+  },
+
   // Color Dropdown Styles
   colorIndicator: {
-    width: 16,
-    height: 16,
+    width: 14,
+    height: 14,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#EEF2FF',
   },
 
   // Template Dropdown Styles
   templateIndicator: {
-    width: 16,
-    height: 16,
+    width: 14,
+    height: 14,
     borderRadius: 8,
     backgroundColor: '#F3F4F6',
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#EEF2FF',
+  },
+
+  toolsDropdown: {
+    marginTop: 6,
+    width: 260,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#EEF2FF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 6,
+    padding: 8,
   },
 
   colorDropdown: {
-    marginTop: 8,
-    width: 300,
+    marginTop: 6,
+    width: 220,
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: '#E5E7EB',
+    borderWidth: 1,
+    borderColor: '#EEF2FF',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
     shadowRadius: 10,
     elevation: 6,
-    padding: 10,
+    padding: 8,
   },
 
   // Width Dropdown Styles
@@ -826,50 +875,50 @@ const styles = StyleSheet.create({
   },
 
   widthDropdown: {
-    marginTop: 8,
-    width: 300,
+    marginTop: 6,
+    width: 220,
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: '#E5E7EB',
+    borderWidth: 1,
+    borderColor: '#EEF2FF',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
     shadowRadius: 10,
     elevation: 6,
-    padding: 10,
+    padding: 8,
   },
 
   // Image Dropdown Styles
   imageDropdown: {
-    marginTop: 8,
-    width: 180,
+    marginTop: 6,
+    width: 140,
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: '#E5E7EB',
+    borderWidth: 1,
+    borderColor: '#EEF2FF',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
     shadowRadius: 10,
     elevation: 6,
-    padding: 10,
+    padding: 8,
   },
 
   // Template Dropdown Styles
   templateDropdown: {
-    marginTop: 8,
-    width: 300,
+    marginTop: 6,
+    width: 240,
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: '#E5E7EB',
+    borderWidth: 1,
+    borderColor: '#EEF2FF',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
     shadowRadius: 10,
     elevation: 6,
-    padding: 10,
+    padding: 8,
   },
 
   // Actions Section
@@ -881,13 +930,13 @@ const styles = StyleSheet.create({
   actionButton: {
     alignItems: "center",
     justifyContent: "center",
-    padding: 8,
+    padding: 6,
     borderRadius: 8,
-    backgroundColor: "rgba(248, 249, 250, 0.8)",
+    backgroundColor: "#F8FAFC",
     borderWidth: 1,
-    borderColor: "rgba(222, 226, 230, 0.8)",
-    width: 36,
-    height: 36,
+    borderColor: "#EEF2FF",
+    width: 32,
+    height: 32,
   },
 
   disabledButton: {
@@ -909,19 +958,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'flex-start',
-    gap: 5,
+    gap: 6,
   },
   colorCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 8,
-    width: 60,
+    borderRadius: 10,
+    padding: 6,
+    width: 52,
     alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: '#E5E7EB',
+    borderWidth: 1,
+    borderColor: '#EEF2FF',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.03,
     shadowRadius: 2,
     elevation: 1,
   },
@@ -935,11 +984,11 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   colorCardPreview: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 22,
+    height: 22,
+    borderRadius: 12,
     borderWidth: 2,
-    borderColor: '#E5E7EB',
+    borderColor: '#EEF2FF',
     marginBottom: 6,
   },
   selectedColorPreview: {
@@ -961,19 +1010,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'flex-start',
-    gap: 5,
+    gap: 6,
   },
   widthCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 8,
-    width: 65,
+    borderRadius: 10,
+    padding: 6,
+    width: 60,
     alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: '#E5E7EB',
+    borderWidth: 1,
+    borderColor: '#EEF2FF',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.03,
     shadowRadius: 2,
     elevation: 1,
   },
@@ -1020,19 +1069,19 @@ const styles = StyleSheet.create({
   imageGrid: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    gap: 8,
+    gap: 6,
   },
   imageCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 12,
-    width: 70,
+    borderRadius: 10,
+    padding: 10,
+    width: 64,
     alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: '#E5E7EB',
+    borderWidth: 1,
+    borderColor: '#EEF2FF',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.03,
     shadowRadius: 2,
     elevation: 1,
   },
@@ -1057,19 +1106,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'flex-start',
-    gap: 8,
+    gap: 6,
   },
   templateCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 10,
-    width: 85,
+    borderRadius: 10,
+    padding: 8,
+    width: 72,
     alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: '#E5E7EB',
+    borderWidth: 1,
+    borderColor: '#EEF2FF',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.03,
     shadowRadius: 2,
     elevation: 1,
   },
@@ -1116,6 +1165,62 @@ const styles = StyleSheet.create({
   },
   selectedTemplateDescText: {
     color: '#E5E7EB',
+  },
+
+  // Tool Card Styles
+  toolsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-start',
+    gap: 6,
+  },
+  toolCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    padding: 8,
+    width: 68,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#EEF2FF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  selectedToolCard: {
+    backgroundColor: '#6A009C',
+    borderColor: '#6A009C',
+    shadowColor: '#6A009C',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    elevation: 4,
+  },
+  toolCardIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: '#EEF2FF',
+  },
+  selectedToolIcon: {
+    backgroundColor: '#6A009C',
+    borderColor: '#FFFFFF',
+    borderWidth: 2,
+  },
+  toolCardName: {
+    fontSize: 11,
+    fontFamily: 'Inter-Medium',
+    color: '#374151',
+    textAlign: 'center',
+  },
+  selectedToolText: {
+    color: '#FFFFFF',
   },
 });
 
