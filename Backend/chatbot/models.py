@@ -131,3 +131,12 @@ class ConversationFile(models.Model):
     
     class Meta:
         ordering = ['-created_at']
+
+# models.py
+class DocumentChunk(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    doc_id = models.UUIDField(default=uuid.uuid4, editable=False)   # unique doc identifier
+    document_name = models.CharField(max_length=255)
+    chunk_text = models.TextField()
+    embedding = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)

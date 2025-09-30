@@ -354,6 +354,21 @@ class ChatbotAPIService {
     }
   }
 
+  /**
+   * Ask the backend RAG endpoint with a query and up to 4 document UUIDs.
+   */
+  async askRag(query: string, doc_ids: string[] = [], top_k: number = 5): Promise<any> {
+    try {
+      const headers = await this.getAuthHeaders();
+      const payload = { query, doc_ids: doc_ids.slice(0, 4), top_k };
+      const response = await apiClient.post(API_ENDPOINTS.CHATBOT_RAG, payload, headers, 120000);
+      return response;
+    } catch (error: any) {
+      this.handleNetworkError(error, "RAG query");
+      throw error;
+    }
+  }
+
   // File Management
   async uploadFile(
     file: any,

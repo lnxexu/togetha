@@ -986,6 +986,67 @@ function ChatBot(): React.ReactElement {
     }
   };
 
+  // Prompt user for comma-separated doc UUIDs and call RAG endpoint
+  const handleRagSearchPrompt = () => {
+    // Use Alert.prompt where available (iOS) — this project already used Alert.prompt elsewhere
+    try {
+      Alert.prompt(
+        'RAG Search',
+        'Enter up to 4 document UUIDs separated by commas (or leave blank to search all):',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Search', onPress: (inputText) => handleRagSearch(inputText) }
+        ],
+        'plain-text',
+        ''
+      );
+    } catch (e) {
+      // Fallback for platforms without Alert.prompt: simple prompt via window (web) or Alert
+      const inputText = ''; // no-op fallback
+      handleRagSearch(inputText);
+    }
+  };
+
+  const handleRagSearch = async (inputText: string | undefined) => {
+    const raw = (inputText || '').trim();
+    const docIds = raw.length > 0 ? raw.split(',').map(s => s.trim()).filter(Boolean).slice(0,4) : [];
+
+    if (!input && docIds.length === 0 && messages.length === 0) {
+      Alert.alert('No query', 'Please enter a query in the input field or provide document IDs.');
+      return;
+    }
+
+    const queryText = input.trim() || messages.reverse().find(m => m.role === 'user')?.content || '';
+    if (!queryText) {
+      Alert.alert('No query', 'Please enter a query in the input field.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const resp = await chatbotAPI.askRag(queryText, docIds, 5);
+
+      const answer = resp.answer || resp.data?.answer || resp.result || JSON.stringify(resp);
+
+      // Append assistant message
+      setMessages(prev => [...prev, { role: 'assistant', content: answer, timestamp: new Date() }]);
+
+      // Optionally show sources as separate assistant message
+      if (resp.sources && Array.isArray(resp.sources) && resp.sources.length > 0) {
+        const sourcesText = resp.sources.map((s: any, i: number) => `• (${s.document_name || s.doc_id || 'doc'}) page:${s.page || '-'} score:${(s.score||0).toFixed(3)} — ${s.snippet.slice(0,200)}`).join('\n\n');
+        setMessages(prev => [...prev, { role: 'assistant', content: `Sources:\n${sourcesText}`, timestamp: new Date() }]);
+      }
+
+      // Clear input
+      setInput('');
+    } catch (err: any) {
+      console.error('RAG search failed:', err);
+      Alert.alert('RAG Search Error', err?.message || 'Failed to perform RAG search');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <>
     <View style={styles.rootContainer}>
@@ -1275,6 +1336,16 @@ function ChatBot(): React.ReactElement {
                 >
                   <Ionicons name="scan" size={16} color="#6B46C1" />
                   <Text style={styles.actionButtonText}>Extract Text</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.actionButton} 
+                  onPress={() => handleRagSearchPrompt()}
+                  accessibilityLabel="RAG Search"
+                  accessibilityHint="Search selected documents using RAG"
+                >
+                  <Ionicons name="search" size={16} color="#6B46C1" />
+                  <Text style={styles.actionButtonText}>RAG Search</Text>
                 </TouchableOpacity>
               </ScrollView>
             </View>
