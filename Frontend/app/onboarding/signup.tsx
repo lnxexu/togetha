@@ -666,7 +666,7 @@ const styles = StyleSheet.create({
   },
   welcomeTitle: {
     fontSize: 32,
-    fontWeight: "800",
+    fontFamily: 'Inter-Bold',
     color: OnboardingColors.primary.main,
     textAlign: "center",
     marginBottom: 8,
@@ -726,7 +726,7 @@ const styles = StyleSheet.create({
   buttonText: {
     color: OnboardingColors.text.white,
     fontSize: 16,
-    fontWeight: "700",
+    fontFamily: 'Inter-Bold',
     textAlign: "center",
   },
   divider: {
@@ -743,7 +743,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     color: OnboardingColors.text.light,
     fontSize: 13,
-    fontWeight: "600",
+    fontFamily: 'Inter-Bold',
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
@@ -770,7 +770,7 @@ const styles = StyleSheet.create({
   googleButtonText: {
     color: OnboardingColors.text.primary,
     fontSize: 15,
-    fontWeight: "600",
+    fontFamily: 'Inter-Bold',
   },
   footer: {
     flexDirection: "row",
@@ -780,11 +780,11 @@ const styles = StyleSheet.create({
   footerText: {
     color: OnboardingColors.text.secondary,
     fontSize: 14,
-    fontWeight: "400",
+    fontFamily: 'Inter-Bold',
   },
   linkText: {
     color: OnboardingColors.primary.main,
     fontSize: 14,
-    fontWeight: "700",
+    fontFamily: 'Inter-Bold',
   },
 });
