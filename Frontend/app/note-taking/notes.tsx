@@ -71,6 +71,7 @@ interface Note {
   folderId?: string;
   createdAt: Date;
   updatedAt: Date;
+  lastAccessedAt?: Date;
   type: "text" | "image" | "drawing" | "document"; // Add "document" type for PDF/Word documents
   tags?: (string | TagObject)[];
   linkedTaskId?: string;
@@ -930,11 +931,25 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
     [setActiveNoteOptions, setIsLoading, setNotes, navigation]
   );
 
+  // Function to move accessed note to top by updating lastAccessedAt
+  const updateNoteAccessTime = useCallback((noteId: string) => {
+    setNotes(prevNotes => 
+      prevNotes.map(note => 
+        note.id === noteId 
+          ? { ...note, lastAccessedAt: new Date() }
+          : note
+      )
+    );
+  }, []);
+
   const handleNotePress = useCallback(
     async (note: Note) => {
       // Close any open options when navigating
       setActiveNoteOptions(null);
       setDropdownPosition(null);
+      
+      // Update access time to move note to top
+      updateNoteAccessTime(note.id);
 
       // Check if it's a document type note
       if (note.type === "document") {
@@ -1749,8 +1764,8 @@ const handleCreateFolder = async () => {
 
   // Memoize filtered notes to prevent recalculation on every render
   const filteredNotes = useMemo(
-    () =>
-      notes.filter((note) => {
+    () => {
+      const filtered = notes.filter((note) => {
         // Filter by search query
         const matchesSearch =
           searchQuery === "" ||
@@ -1780,7 +1795,25 @@ const handleCreateFolder = async () => {
         const notArchived = !note.is_archived;
 
         return matchesSearch && matchesFilter && notArchived;
-      }),
+      });
+      
+      // Sort by lastAccessedAt (most recent first), then by updatedAt
+      return filtered.sort((a, b) => {
+        // If both have lastAccessedAt, sort by most recent access
+        if (a.lastAccessedAt && b.lastAccessedAt) {
+          return b.lastAccessedAt.getTime() - a.lastAccessedAt.getTime();
+        }
+        // If only one has lastAccessedAt, prioritize it
+        if (a.lastAccessedAt && !b.lastAccessedAt) {
+          return -1;
+        }
+        if (!a.lastAccessedAt && b.lastAccessedAt) {
+          return 1;
+        }
+        // If neither has lastAccessedAt, sort by updatedAt (most recent first)
+        return b.updatedAt.getTime() - a.updatedAt.getTime();
+      });
+    },
     [notes, searchQuery, selectedFilter]
   ); // Only recalculate when these dependencies change
 
@@ -2059,8 +2092,7 @@ const handleCreateFolder = async () => {
         <TouchableOpacity
           style={[
             styles.gridNoteItem,
-            // Enhanced visual differentiation for drawing notes
-            isDrawing && styles.drawingNoteItem,
+            // Unified note appearance - removed drawing differentiation
             isSelectMode &&
               selectedNotes.includes(item.id) &&
               styles.selectedNoteItem,
@@ -2083,7 +2115,7 @@ const handleCreateFolder = async () => {
           <View
             style={[
               styles.gridNoteContent,
-              isDrawing && styles.drawingNoteContent,
+              // Unified content styling for all note types
             ]}
           >
             {/* Preview Image Container */}
@@ -2110,7 +2142,7 @@ const handleCreateFolder = async () => {
                   <Text
                     style={[
                       styles.gridNoteTitle,
-                      isDrawing && styles.drawingNoteTitle,
+                      // Unified title styling for all note types
                     ]}
                     numberOfLines={1}
                     ellipsizeMode="tail"
@@ -2485,7 +2517,21 @@ const handleCreateFolder = async () => {
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Choose Folder</Text>
+            <View style={styles.modalTitleContainer}>
+              <View style={styles.modalTitleRow}>
+                <Text style={styles.modalTitle}>
+                  Move to Folder
+                </Text>
+                <View style={styles.selectedCountBadge}>
+                  <Text style={styles.selectedCountText}>
+                    {selectedNotes.length}
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.modalSubtitle}>
+                Choose a destination folder to organize your selected {selectedNotes.length === 1 ? 'note' : 'notes'}
+              </Text>
+            </View>
             <TouchableOpacity
               onPress={() => setShowSortNotesModal(false)}
               style={styles.modalCloseButton}
@@ -2503,23 +2549,27 @@ const handleCreateFolder = async () => {
               style={[
                 styles.folderItem,
                 styles.unorganizedFolderItem,
-                selectedFolder === "unorganized" && styles.selectedFolderItem,
               ]}
               onPress={() => {
+                // Close modal first for better UX
+                setShowSortNotesModal(false);
+                
                 // For each selected note, remove from folder
                 selectedNotes.forEach((noteId) => {
                   handleRemoveFromFolder(noteId);
                 });
-                setShowSortNotesModal(false);
+                
+                // Provide feedback
+                showSuccessToast(`${selectedNotes.length} ${selectedNotes.length === 1 ? 'note' : 'notes'} moved to unorganized`);
               }}
             >
-              <View style={[styles.folderIcon, { backgroundColor: "#64748B" }]}>
+              <View style={[styles.modalFolderIcon, { backgroundColor: "#64748B" }]}>
                 <MaterialIcons name="notes" size={20} color="#FFFFFF" />
               </View>
-              <Text style={styles.folderName}>Unorganized Notes</Text>
-              {selectedFolder === "unorganized" && (
-                <MaterialIcons name="check-circle" size={22} color="#6A009C" />
-              )}
+              <Text style={styles.modalFolderName}>Unorganized Notes</Text>
+              <View style={styles.folderArrow}>
+                <MaterialIcons name="arrow-forward-ios" size={16} color="#9CA3AF" />
+              </View>
             </TouchableOpacity>
 
             <View style={styles.folderDivider}>
@@ -2536,15 +2586,15 @@ const handleCreateFolder = async () => {
                   selectedFolder === folder.id && styles.selectedFolderItem,
                 ]}
                 onPress={() => {
-                  setSelectedFolder(folder.id);
-                  // Immediately assign selected notes to this folder
-                  assignNotesToFolder(folder.id, selectedNotes);
+                  // Show confirmation and assign notes to folder
                   setShowSortNotesModal(false);
+                  setSelectedFolder(folder.id);
+                  assignNotesToFolder(folder.id, selectedNotes);
                 }}
               >
                 <View
                   style={[
-                    styles.folderIcon,
+                    styles.modalFolderIcon,
                     {
                       backgroundColor: Array.isArray(folder.color)
                         ? folder.color[0]
@@ -2554,14 +2604,10 @@ const handleCreateFolder = async () => {
                 >
                   <MaterialIcons name="folder" size={20} color="#FFFFFF" />
                 </View>
-                <Text style={styles.folderName}>{folder.name}</Text>
-                {selectedFolder === folder.id && (
-                  <MaterialIcons
-                    name="check-circle"
-                    size={22}
-                    color="#6A009C"
-                  />
-                )}
+                <Text style={styles.modalFolderName}>{folder.name}</Text>
+                <View style={styles.folderArrow}>
+                  <MaterialIcons name="arrow-forward-ios" size={16} color="#9CA3AF" />
+                </View>
               </TouchableOpacity>
             ))}
 
@@ -3124,17 +3170,18 @@ const handleCreateFolder = async () => {
             <TouchableOpacity
               style={[styles.selectionModeButton, styles.folderButton]}
               onPress={() => {
-                if (selectedFolder && selectedNotes.length > 0) {
-                  assignNotesToFolder(selectedFolder, selectedNotes);
-                } else {
-                  if (selectedNotes.length > 0 && folders.length > 0) {
-                    setShowSortNotesModal(true);
-                  } else if (folders.length === 0) {
-                    showWarningToast("Create a folder first");
-                  } else {
-                    showWarningToast("Select notes first");
-                  }
+                if (selectedNotes.length === 0) {
+                  showWarningToast("Select notes first");
+                  return;
                 }
+                
+                if (folders.length === 0) {
+                  showWarningToast("Create a folder first");
+                  return;
+                }
+                
+                // Always show folder selection modal for better UX
+                setShowSortNotesModal(true);
               }}
             >
               <MaterialIcons name="folder" size={18} color="#FFFFFF" />
@@ -4161,13 +4208,43 @@ const styles = StyleSheet.create({
     borderBottomColor: "#F1F5F9",
     position: "relative",
   },
+  modalTitleContainer: {
+    flex: 1,
+    alignItems: "center",
+  },
+  modalTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 6,
+  },
   modalTitle: {
-    fontSize: 22,
+    fontSize: 20,
     fontFamily: "Inter-Bold",
     color: "#1E293B",
     letterSpacing: -0.3,
-    flex: 1,
     textAlign: "center",
+  },
+  selectedCountBadge: {
+    backgroundColor: "#6A009C",
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginLeft: 8,
+    minWidth: 24,
+    alignItems: "center",
+  },
+  selectedCountText: {
+    fontSize: 12,
+    fontFamily: "Inter-Bold",
+    color: "#FFFFFF",
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    fontFamily: "Inter-Medium",
+    color: "#64748B",
+    textAlign: "center",
+    lineHeight: 18,
   },
   modalCloseButton: {
     width: 40,
@@ -4413,16 +4490,44 @@ const styles = StyleSheet.create({
   folderItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 12,
+    paddingVertical: 16,
     paddingHorizontal: 16,
     borderRadius: 12,
     marginBottom: 8,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   unorganizedFolderItem: {
     backgroundColor: "#F8FAFC",
+    borderColor: "#CBD5E1",
   },
   selectedFolderItem: {
     backgroundColor: "#6A009C",
+    borderColor: "#6A009C",
+  },
+  folderArrow: {
+    marginLeft: "auto",
+    opacity: 0.6,
+  },
+  modalFolderName: {
+    flex: 1,
+    fontSize: 16,
+    fontFamily: "Inter-Medium",
+    color: "#1F2937",
+    marginLeft: 12,
+  },
+  modalFolderIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
   },
   folderDivider: {
     flexDirection: "row",
@@ -5155,16 +5260,15 @@ const styles = StyleSheet.create({
     fontFamily: "Inter-Medium",
   },
   drawingNoteItem: {
-    borderWidth: 2,
-    borderColor: "#E0E7FF",
+    // Removed border styling to unify note appearance
   },
 
   drawingNoteContent: {
-    backgroundColor: "#FEFBFF",
+    // Removed special background color for unified look
   },
 
   drawingNoteTitle: {
-    color: "#7C3AED",
+    // Removed special color styling for unified appearance
   },
 
   drawingPreviewHeader: {

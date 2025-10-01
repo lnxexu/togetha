@@ -25,10 +25,8 @@ import { showSuccessToast, showErrorToast, showWarningToast } from "../utils/Toa
 import { useAutoSave } from "./hooks/useAutoSave";
 import { noteService, Note as NoteType, SaveStatus } from "./services/noteService";
 import { useNetworkStatus, getNetworkStatusText, getNetworkStatusColor } from "./services/networkService";
-import UnsavedChangesModal from "./components/UnsavedChangesModal";
-import chatbotAPI from "../chatbot/services/chatbotAPIService"; // Add chatbot service
-import RenderHtml from "react-native-render-html"; // Add for markdown rendering
-import dictionaryService from "./services/dictionaryService"; // Add dictionary service for RINA
+import RenderHtml from "react-native-render-html";
+import dictionaryService from "./services/dictionaryService";
 
 
 const { RichEditor, RichToolbar } = require("react-native-pell-rich-editor");
@@ -42,7 +40,6 @@ interface NoteEditorProps {
         title: string;
         content: string;
         formatted_content?: string;
-        tags?: string[];
         folderId?: string | null;
         createdAt?: string;
         updatedAt?: string;
@@ -58,7 +55,6 @@ interface Note {
   title: string;
   content: string;
   formatted_content?: string;
-  tags?: string[];
   folderId?: string | null;
   createdAt?: string;
   updatedAt?: string;
@@ -159,13 +155,10 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   const [formattedContent, setFormattedContent] = useState(
     route.params?.initialNote?.formatted_content || ""
   );
-  const [tags, setTags] = useState<string[]>(
-    route.params?.initialNote?.tags || []
-  );
+
   const [isSaving, setIsSaving] = useState(false);
-  const [showMoreOptions, setShowMoreOptions] = useState(false);
-  const [showTagModal, setShowTagModal] = useState(false);
-  const [newTag, setNewTag] = useState("");
+  // Removed showMoreOptions state since kebab menu is removed
+
   const [saveStatus, setSaveStatus] = useState<SaveStatus>({ status: 'saved' });
   const [noteId, setNoteId] = useState(route.params?.noteId || noteService.generateNoteId());
   const [currentNote, setCurrentNote] = useState<NoteType>(() => ({
@@ -173,7 +166,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     title: route.params?.initialNote?.title || "",
     content: route.params?.initialNote?.content || "",
     formatted_content: route.params?.initialNote?.formatted_content || "",
-    tags: route.params?.initialNote?.tags || [],
+
     folderId: route.params?.initialNote?.folderId || null,
     version: route.params?.initialNote?.version || 1,
   }));
@@ -199,8 +192,6 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   const [wordMeaning, setWordMeaning] = useState("");
   const [isLoadingMeaning, setIsLoadingMeaning] = useState(false);
   const [windowDimensions, setWindowDimensions] = useState(Dimensions.get('window'));
-  const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   // Network status monitoring
   const networkStatus = useNetworkStatus();
@@ -302,6 +293,10 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     return () => {
       keyboardDidShowListener.remove();
       keyboardDidHideListener.remove();
+      // Clean up auto-save timeout
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -350,7 +345,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
       title,
       content,
       formatted_content: formattedContent,
-      tags,
+
       folderId: selectedFolderId,
       updatedAt: new Date().toISOString(),
     };
@@ -361,58 +356,14 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     if (title.trim() || content.trim() || formattedContent.trim()) {
       triggerSave(updatedNote);
     }
-  }, [title, content, formattedContent, tags, selectedFolderId]);
+  }, [title, content, formattedContent, selectedFolderId]);
 
-  // Track unsaved changes using enhanced auto-save detection
-  useEffect(() => {
-    const hasContent = Boolean(title.trim() || content.trim() || formattedContent.trim());
-    setHasUnsavedChanges(hasContent && autoSaveHasChanges);
-  }, [title, content, formattedContent, autoSaveHasChanges]);
-
-  // Handle back button with unsaved changes check
+  // Handle back button - auto-save handles saving automatically
   const handleBackPress = () => {
-    if (hasUnsavedChanges && (title.trim() || content.trim() || formattedContent.trim())) {
-      setShowUnsavedChangesModal(true);
-    } else {
-      navigation.goBack();
-    }
-  };
-
-const handleSaveAndExit = async () => {
-  try {
-    setShowUnsavedChangesModal(false);
-    
-    // Force save and wait for completion
-    await forceSave(currentNote);
-    
-    // Wait a brief moment for status to update
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
-    // Only show success toast and navigate if save was actually successful
-    if (saveStatus.status === 'saved') {
-      showSuccessToast("Note saved successfully");
-    } else if (saveStatus.status === 'offline') {
-      showWarningToast("Note saved locally. Will sync when online.");
-    } else {
-      // Fallback - assume success if no error was thrown
-      showSuccessToast("Note saved successfully");
-    }
-    
-    // Navigate back after successful save
-    navigation.goBack();
-  } catch (error) {
-    showErrorToast("Failed to save note");
-    // Don't close modal or navigate if save failed
-    setShowUnsavedChangesModal(true);
-  }
-};  const handleDiscardAndExit = () => {
-    setShowUnsavedChangesModal(false);
     navigation.goBack();
   };
 
-  const handleContinueEditing = () => {
-    setShowUnsavedChangesModal(false);
-  };
+
 
   // Helper functions
   const getWordMeaning = async (word: string) => {
@@ -517,51 +468,69 @@ const handleSaveAndExit = async () => {
   const applyColor = (colorName: string, colorHex: string) => {
     if (currentColorAction === "text") {
       setTextColor(colorName);
-      richTextRef.current?.setForeColor(colorHex);
+      richTextRef.current?.sendAction('foreColor', colorHex);
       showSuccessToast(`Text color changed to ${colorName}`);
     } else if (currentColorAction === "background") {
       setBgColor(colorName);
-      richTextRef.current?.setHiliteColor(colorHex);
+      richTextRef.current?.sendAction('hiliteColor', colorHex);
       showSuccessToast(`Background color changed to ${colorName}`);
     }
     setShowColorPicker(false);
   };
 
-  // Event handlers
+  // Event handlers - implement debounce to prevent duplicate saves
+  const lastSaveTimeRef = useRef<number>(0);
+  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Auto-save function with debouncing
+  const handleAutoSave = async () => {
+    // Don't auto-save if already saving or if content is empty
+    if (isSaving || (!content.trim() && !formattedContent.trim())) {
+      return;
+    }
+    
+    try {
+      await forceSave(currentNote);
+      // Silent save - no toast notification for auto-save
+      console.log('Auto-saved note successfully');
+    } catch (error) {
+      console.error('Auto-save failed:', error);
+      // Don't show error toast for auto-save failures to avoid spam
+    }
+  };
+  
   const handleSave = async () => {
-    // Prevent duplicate saves by checking if already saving
-    if (isSaving) {
+    const now = Date.now();
+    const timeSinceLastSave = now - lastSaveTimeRef.current;
+    
+    // Prevent duplicate saves within 2 seconds
+    if (isSaving || timeSinceLastSave < 2000) {
       return;
     }
 
+    lastSaveTimeRef.current = now;
     setIsSaving(true);
+    
     try {
       // Force immediate save (bypass debounce) and wait for completion
-      const saveResult = await forceSave(currentNote);
+      await forceSave(currentNote);
       
-      // Wait a brief moment for status to update
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      // Show success message based on the actual save result
-      // Check the updated save status
-      if (saveStatus.status === 'saved') {
+      // Show success message based on network status
+      if (isOnline) {
         showSuccessToast("Note saved successfully");
-      } else if (saveStatus.status === 'offline') {
-        showWarningToast("Note saved locally. Will sync when online.");
-      } else if (saveStatus.status === 'conflict') {
-        showErrorToast("Note was modified elsewhere. Please refresh and try again.");
       } else {
-        // Fallback - if status doesn't update, assume success if no error thrown
-        showSuccessToast("Note saved successfully");
+        showWarningToast("Note saved locally. Will sync when online.");
       }
 
     } catch (error) {
       showErrorToast("Failed to save note. Please try again.");
+      // Reset the last save time on error to allow immediate retry
+      lastSaveTimeRef.current = 0;
     } finally {
-      // Add a slight delay before enabling the save button again
+      // Reset saving state after a brief delay
       setTimeout(() => {
         setIsSaving(false);
-      }, 1000);
+      }, 500);
     }
   };
 
@@ -670,25 +639,7 @@ const handleSaveAndExit = async () => {
     }
   };
 
-  const addTag = () => {
-    if (newTag.trim() && !tags.includes(newTag.trim())) {
-      // Add haptic feedback
-      if (Platform.OS === 'ios') {
-        Vibration.vibrate(10);
-      }
-      setTags((prev) => [...prev, newTag.trim()]);
-      setNewTag("");
-      showSuccessToast(`Tag "${newTag.trim()}" added successfully`);
-    } else if (tags.includes(newTag.trim())) {
-      showWarningToast("Tag already exists");
-    } else {
-      showErrorToast("Please enter a valid tag name");
-    }
-  };
 
-  const removeTag = (tagToRemove: string) => {
-    setTags((prev) => prev.filter((tag) => tag !== tagToRemove));
-  };
 
   const getSyncStatusIcon = () => {
     // If network is offline, always show offline status
@@ -756,7 +707,8 @@ const handleSaveAndExit = async () => {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
     >
       <Animated.View 
         style={[
@@ -829,6 +781,14 @@ const handleSaveAndExit = async () => {
               </View>
 
               <View style={styles.headerActions}>
+                {/* Folder Selector in Header */}
+                <TouchableOpacity
+                  style={styles.folderSelectorButton}
+                  onPress={() => setShowFolderModal(true)}
+                >
+                  <MaterialIcons name="folder" size={16} color="#fff" />
+                </TouchableOpacity>
+
                 {keyboardHeight > 0 && (
                   <TouchableOpacity
                     style={styles.keyboardDismissButton}
@@ -862,13 +822,6 @@ const handleSaveAndExit = async () => {
                     color="#fff"
                   />
                 </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.moreButton}
-                  onPress={() => setShowMoreOptions((prev) => !prev)}
-                >
-                  <MaterialIcons name="more-vert" size={20} color="#fff" />
-                </TouchableOpacity>
               </View>
             </View>
           </View>
@@ -881,120 +834,258 @@ const handleSaveAndExit = async () => {
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{
-              paddingBottom: keyboardHeight > 0 ? keyboardHeight + 40 : 40,
+              paddingBottom: 40,
               flexGrow: 1,
             }}
+            nestedScrollEnabled={true}
+            keyboardDismissMode="interactive"
           >
-            {/* Modern Compact Header */}
-              {/* Folder and Add Tag Row */}
-              <View style={styles.compactMetadata}>
-                <View style={styles.folderSection}>
+
+
+            {/* Enhanced Rich Text Toolbar with More Tools */}
+            <View style={styles.enhancedToolbarContainer}>
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.toolbarScrollContent}
+                bounces={false}
+              >
+                <View style={styles.toolbarSection}>
+                  {/* Text Formatting */}
                   <TouchableOpacity
-                    style={styles.compactFolderSelector}
-                    onPress={() => setShowFolderModal(true)}
+                    style={styles.toolButton}
+                    onPress={() => richTextRef.current?.sendAction('bold', 'result')}
                   >
-                    <MaterialIcons name="folder" size={16} color="#8B5CF6" />
-                    <Text style={styles.compactFolderText}>{folderName}</Text>
-                    <MaterialIcons name="keyboard-arrow-down" size={16} color="#8B5CF6" />
+                    <MaterialIcons name="format-bold" size={20} color="#374151" />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={styles.toolButton}
+                    onPress={() => richTextRef.current?.sendAction('italic', 'result')}
+                  >
+                    <MaterialIcons name="format-italic" size={20} color="#374151" />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={styles.toolButton}
+                    onPress={() => richTextRef.current?.sendAction('underline', 'result')}
+                  >
+                    <MaterialIcons name="format-underlined" size={20} color="#374151" />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={styles.toolButton}
+                    onPress={() => richTextRef.current?.sendAction('strikeThrough', 'result')}
+                  >
+                    <MaterialIcons name="format-strikethrough" size={20} color="#374151" />
                   </TouchableOpacity>
                 </View>
-
-                <View style={styles.tagSection}>
+                
+                <View style={styles.toolbarDivider} />
+                
+                <View style={styles.toolbarSection}>
+                  {/* Lists */}
                   <TouchableOpacity
-                    style={styles.addTagButton}
-                    onPress={() => setShowTagModal(true)}
+                    style={styles.toolButton}
+                    onPress={() => richTextRef.current?.sendAction('insertBulletsList', 'result')}
                   >
-                    <MaterialIcons name="add" size={14} color="#8B5CF6" />
-                    <Text style={styles.addTagText}>Tag</Text>
+                    <MaterialIcons name="format-list-bulleted" size={20} color="#374151" />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={styles.toolButton}
+                    onPress={() => richTextRef.current?.sendAction('insertOrderedList', 'result')}
+                  >
+                    <MaterialIcons name="format-list-numbered" size={20} color="#374151" />
                   </TouchableOpacity>
                 </View>
-              </View>
-
-              {/* Tags Display Row - Separate row to prevent congestion */}
-              {tags.length > 0 && (
-                <View style={styles.tagsDisplayContainer}>
-                  <ScrollView 
-                    horizontal 
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.tagsScrollContent}
+                
+                <View style={styles.toolbarDivider} />
+                
+                <View style={styles.toolbarSection}>
+                  {/* Alignment */}
+                  <TouchableOpacity
+                    style={styles.toolButton}
+                    onPress={() => richTextRef.current?.sendAction('justifyLeft', 'result')}
                   >
-                    {tags.map((tag, index) => (
-                      <View key={index} style={styles.compactTag}>
-                        <Text style={styles.compactTagText}>{tag}</Text>
-                        <TouchableOpacity onPress={() => removeTag(tag)}>
-                          <MaterialIcons name="close" size={12} color="#8B5CF6" />
-                        </TouchableOpacity>
-                      </View>
-                    ))}
-                  </ScrollView>
+                    <MaterialIcons name="format-align-left" size={20} color="#374151" />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={styles.toolButton}
+                    onPress={() => richTextRef.current?.sendAction('justifyCenter', 'result')}
+                  >
+                    <MaterialIcons name="format-align-center" size={20} color="#374151" />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={styles.toolButton}
+                    onPress={() => richTextRef.current?.sendAction('justifyRight', 'result')}
+                  >
+                    <MaterialIcons name="format-align-right" size={20} color="#374151" />
+                  </TouchableOpacity>
                 </View>
-              )}
-
-            {/* Compact Rich Text Toolbar */}
-            <View style={styles.compactToolbarContainer}>
-              <View style={styles.toolbarContentWrapper}>
-                <RichToolbar
-                  style={styles.compactRichTextToolbar}
-                  editor={richTextRef}
-                  selectedIconTint="#8B5CF6"
-                  disabledIconTint="#9CA3AF"
-                  actions={[
-                    "bold",
-                    "italic",
-                    "underline",
-                    "unorderedList",
-                    "orderedList",
-                    "alignLeft",
-                    "alignCenter",
-                    "alignRight",
-                    "undo",
-                    "redo",
-                    "foreColor",
-                    "hiliteColor",
-                  ]}
-                  iconMap={{
-                    bold: () => <MaterialIcons name="format-bold" size={18} color="#6B7280" />,
-                    italic: () => <MaterialIcons name="format-italic" size={18} color="#6B7280" />,
-                    underline: () => <MaterialIcons name="format-underlined" size={18} color="#6B7280" />,
-                    unorderedList: () => <MaterialIcons name="format-list-bulleted" size={18} color="#6B7280" />,
-                    orderedList: () => <MaterialIcons name="format-list-numbered" size={18} color="#6B7280" />,
-                    alignLeft: () => <MaterialIcons name="format-align-left" size={18} color="#6B7280" />,
-                    alignCenter: () => <MaterialIcons name="format-align-center" size={18} color="#6B7280" />,
-                    alignRight: () => <MaterialIcons name="format-align-right" size={18} color="#6B7280" />,
-                    undo: () => <MaterialIcons name="undo" size={18} color="#6B7280" />,
-                    redo: () => <MaterialIcons name="redo" size={18} color="#6B7280" />,
-                    foreColor: () => (
-                      <TouchableOpacity onPress={() => openColorPicker("text")}>
-                        <MaterialIcons name="format-color-text" size={18} color="#6B7280" />
-                      </TouchableOpacity>
-                    ),
-                    hiliteColor: () => (
-                      <TouchableOpacity onPress={() => openColorPicker("background")}>
-                        <MaterialIcons name="format-color-fill" size={18} color="#6B7280" />
-                      </TouchableOpacity>
-                    ),
-                  }}
-                />
-              </View>
+                
+                <View style={styles.toolbarDivider} />
+                
+                <View style={styles.toolbarSection}>
+                  {/* Text Size */}
+                  <TouchableOpacity
+                    style={styles.toolButton}
+                    onPress={() => richTextRef.current?.sendAction('fontSize', '6')}
+                  >
+                    <MaterialIcons name="text-increase" size={20} color="#374151" />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={styles.toolButton}
+                    onPress={() => richTextRef.current?.sendAction('fontSize', '3')}
+                  >
+                    <MaterialIcons name="text-decrease" size={20} color="#374151" />
+                  </TouchableOpacity>
+                </View>
+                
+                <View style={styles.toolbarDivider} />
+                
+                <View style={styles.toolbarSection}>
+                  {/* Colors */}
+                  <TouchableOpacity
+                    style={[styles.toolButton, styles.colorButton]}
+                    onPress={() => openColorPicker("text")}
+                  >
+                    <MaterialIcons name="format-color-text" size={20} color="#374151" />
+                    <View style={[styles.colorIndicator, { backgroundColor: textColor === 'Default' ? '#000' : textColor }]} />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={[styles.toolButton, styles.colorButton]}
+                    onPress={() => openColorPicker("background")}
+                  >
+                    <MaterialIcons name="format-color-fill" size={20} color="#374151" />
+                    <View style={[styles.colorIndicator, { backgroundColor: bgColor === 'Default' ? '#FFFF00' : bgColor }]} />
+                  </TouchableOpacity>
+                </View>
+                
+                <View style={styles.toolbarDivider} />
+                
+                <View style={styles.toolbarSection}>
+                  {/* Undo/Redo */}
+                  <TouchableOpacity
+                    style={styles.toolButton}
+                    onPress={() => {
+                      richTextRef.current?.sendAction('undo', 'result');
+                      showSuccessToast('Undone');
+                    }}
+                  >
+                    <MaterialIcons name="undo" size={20} color="#374151" />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={styles.toolButton}
+                    onPress={() => {
+                      richTextRef.current?.sendAction('redo', 'result');
+                      showSuccessToast('Redone');
+                    }}
+                  >
+                    <MaterialIcons name="redo" size={20} color="#374151" />
+                  </TouchableOpacity>
+                </View>
+                
+                <View style={styles.toolbarDivider} />
+                
+                <View style={styles.toolbarSection}>
+                  {/* Undo/Redo */}
+                  <TouchableOpacity
+                    style={styles.toolButton}
+                    onPress={() => {
+                      richTextRef.current?.sendAction('undo', 'result');
+                      showSuccessToast('Undone');
+                    }}
+                  >
+                    <MaterialIcons name="undo" size={20} color="#374151" />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={styles.toolButton}
+                    onPress={() => {
+                      richTextRef.current?.sendAction('redo', 'result');
+                      showSuccessToast('Redone');
+                    }}
+                  >
+                    <MaterialIcons name="redo" size={20} color="#374151" />
+                  </TouchableOpacity>
+                </View>
+                
+                <View style={styles.toolbarDivider} />
+                
+                <View style={styles.toolbarSection}>
+                  {/* Insert Tools */}
+                  <TouchableOpacity
+                    style={styles.toolButton}
+                    onPress={() => {
+                      richTextRef.current?.insertHTML('<hr style="border: 1px solid #E5E7EB; margin: 16px 0;">');
+                      showSuccessToast('Divider inserted');
+                    }}
+                  >
+                    <MaterialIcons name="horizontal-rule" size={20} color="#374151" />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={styles.toolButton}
+                    onPress={() => {
+                      richTextRef.current?.insertHTML('<blockquote style="border-left: 4px solid #8B5CF6; padding-left: 16px; margin: 16px 0; font-style: italic; color: #6B7280;">Quote text here</blockquote>');
+                      showSuccessToast('Quote block inserted');
+                    }}
+                  >
+                    <MaterialIcons name="format-quote" size={20} color="#374151" />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={styles.toolButton}
+                    onPress={() => {
+                      richTextRef.current?.insertHTML('<code style="background-color: #F3F4F6; padding: 4px 8px; border-radius: 4px; font-family: monospace; color: #1F2937;">Code here</code>');
+                      showSuccessToast('Code block inserted');
+                    }}
+                  >
+                    <MaterialIcons name="code" size={20} color="#374151" />
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
             </View>
 
-            {/* Enhanced Rich Text Editor with more space */}
+            {/* Enhanced Rich Text Editor with responsive sizing */}
             <View style={[styles.modernEditorWrapper, { 
-              minHeight: isTablet ? 600 : isSmallPhone ? 400 : 500,
-              maxHeight: windowDimensions.height - 350 // Prevent uncontrolled resizing
+              minHeight: Math.max(windowDimensions.height * 0.4, 300),
+              maxHeight: windowDimensions.height - 200,
+              width: '100%'
             }]}>
               <RichEditor
                 ref={richTextRef}
                 style={[styles.modernRichTextInput, { 
-                  minHeight: isTablet ? 600 : isSmallPhone ? 400 : 500,
-                  maxHeight: windowDimensions.height - 350
+                  minHeight: Math.max(windowDimensions.height * 0.4, 300),
+                  maxHeight: windowDimensions.height - 200,
+                  width: '100%'
                 }]}
                 initialContentHTML={
                   route.params?.initialNote?.formatted_content || content
                 }
                 onChange={(html: string) => {
-                  setContent(html.replace(/<[^>]*>/g, ""));
+                  const plainText = html.replace(/<[^>]*>/g, "");
+                  setContent(plainText);
                   setFormattedContent(html);
+                  
+                  // Auto-save on every change with debouncing
+                  if (plainText.trim() || html.trim()) {
+                    // Clear existing timeout
+                    if (autoSaveTimeoutRef.current) {
+                      clearTimeout(autoSaveTimeoutRef.current);
+                    }
+                    
+                    // Set new timeout for auto-save (1 second delay)
+                    autoSaveTimeoutRef.current = setTimeout(() => {
+                      handleAutoSave();
+                    }, 1000);
+                  }
                 }}
                 placeholder="Start writing your note here..."
                 editorInitializedCallback={() => {
@@ -1176,49 +1267,7 @@ const handleSaveAndExit = async () => {
           </ScrollView>
         </View>
 
-        {/* More Options Menu - Moved to root level for proper z-index */}
-        {showMoreOptions && (
-          <View style={styles.moreOptionsMenu}>
-            <TouchableOpacity
-              style={styles.optionItem}
-              onPress={() => setShowMoreOptions(false)}
-            >
-              <MaterialIcons name="keyboard-voice" size={20} color="#8B5CF6" />
-              <Text style={styles.optionText}>Voice Recording</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.optionItem}>
-              <MaterialIcons name="psychology" size={20} color="#8B5CF6" />
-              <Text style={styles.optionText}>AI Suggest</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.optionItem}
-              onPress={() => {
-                setShowMoreOptions(false);
-                // Get current content and simulate text selection
-                if (content.trim()) {
-                  // Extract first 50 characters as "selected" text for demo
-                  const textContent = content.replace(/<[^>]*>/g, "").trim(); // Remove HTML tags
-                  const selectedText =
-                    textContent.slice(0, 50) +
-                    (textContent.length > 50 ? "..." : "");
-                  handleTextSelection(selectedText, { x: 150, y: 200 });
-                } else {
-                  handleTextSelection(
-                    "Demo: Select text in the editor to see Ask RINA button",
-                    { x: 150, y: 200 }
-                  );
-                }
-                // Add haptic feedback
-                if (Platform.OS === 'ios') {
-                  Vibration.vibrate(10);
-                }
-              }}
-            >
-              <MaterialIcons name="psychology" size={20} color="#8B5CF6" />
-              <Text style={styles.optionText}>Demo RINA Selection</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+        {/* More Options Menu removed for cleaner interface */}
 
         {/* RINA Button for Text Selection */}
         <RinaButton
@@ -1360,40 +1409,7 @@ const handleSaveAndExit = async () => {
           </View>
         </Modal>
 
-        <Modal visible={showTagModal} transparent animationType="fade">
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Add Tag</Text>
-              <TextInput
-                style={styles.tagInput}
-                placeholder="Enter tag name"
-                value={newTag}
-                onChangeText={setNewTag}
-                autoFocus
-              />
-              <View style={styles.modalActions}>
-                <TouchableOpacity
-                  style={styles.modalActionButton}
-                  onPress={() => {
-                    addTag();
-                    setShowTagModal(false);
-                  }}
-                >
-                  <Text style={styles.modalActionText}>Add</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.modalActionButton, styles.cancelButton]}
-                  onPress={() => {
-                    setNewTag("");
-                    setShowTagModal(false);
-                  }}
-                >
-                  <Text style={styles.modalCancelText}>Cancel</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
+
 
         {/* Word Meaning Modal */}
         <Modal
@@ -1484,14 +1500,6 @@ const handleSaveAndExit = async () => {
             </View>
           </View>
         </Modal>
-
-        <UnsavedChangesModal
-          visible={showUnsavedChangesModal}
-          onSave={handleSaveAndExit}
-          onDiscard={handleDiscardAndExit}
-          onCancel={handleContinueEditing}
-          isSaving={isSaving}
-        />
       </Animated.View>
     </KeyboardAvoidingView>
   );
@@ -1593,56 +1601,8 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderWidth: 0,
   },
-  compactMetadata: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 12,
-  },
-  folderSection: {
-    flex: 1,
-    alignItems: "flex-start",
-  },
-  tagSection: {
-    flex: 1,
-    alignItems: "flex-end",
-  },
-  tagsDisplayContainer: {
-    marginTop: 8,
-    maxHeight: 60,
-  },
-  tagsScrollContent: {
-    paddingRight: 16,
-  },
-  equalSpaceSection: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-    flexWrap: "wrap",
-    justifyContent: "center",
-  },
-  leftMetadataSection: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-    flexWrap: "wrap",
-  },
-  compactFolderSelector: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F8FAFC",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-  },
-  compactFolderText: {
-    marginHorizontal: 8,
-    fontSize: 13,
-    fontFamily: "Inter-Medium",
-    color: "#6B7280",
-  },
+
+
   syncStatusContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -1656,67 +1616,68 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: "Inter-Medium",
   },
-  compactTagsSection: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  addTagButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F3F4F6",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+
+
+
+
+  enhancedToolbarContainer: {
+    backgroundColor: "#FFFFFF",
     borderRadius: 16,
-    marginRight: 8,
-    marginBottom: 4,
-  },
-  addTagText: {
-    color: "#8B5CF6",
-    marginLeft: 4,
-    fontFamily: "Inter-Medium",
-    fontSize: 12,
-  },
-  tagsContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  compactTag: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#EDE9FE",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 14,
-    marginRight: 8,
-    marginBottom: 4,
-    minWidth: 60, // Minimum width for readability
-    maxWidth: 100, // Prevent tags from taking too much space
-  },
-  compactTagText: {
-    color: "#8B5CF6",
-    fontSize: 12,
-    fontFamily: "Inter-Medium",
-    marginRight: 4,
-    flexShrink: 1,
-  },
-  compactToolbarContainer: {
-    backgroundColor: "#F8FAFC",
-    borderRadius: 12,
     marginBottom: 16,
-    paddingVertical: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
     borderWidth: 1,
     borderColor: "#E5E7EB",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  toolbarContentWrapper: {
-    paddingHorizontal: 8,
+  toolbarScrollContent: {
+    alignItems: 'center',
+    paddingHorizontal: 4,
   },
-  compactRichTextToolbar: {
-    backgroundColor: "transparent",
-    borderRadius: 0,
-    shadowColor: "transparent",
-    elevation: 0,
-    borderWidth: 0,
-    minHeight: 40,
+  toolbarSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  toolButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: "#FFFFFF",
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginHorizontal: 3,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  colorButton: {
+    position: 'relative',
+    paddingBottom: 6,
+  },
+  colorIndicator: {
+    position: 'absolute',
+    bottom: 2,
+    left: '50%',
+    marginLeft: -8,
+    width: 16,
+    height: 3,
+    borderRadius: 2,
+    borderWidth: 0.5,
+    borderColor: 'rgba(0,0,0,0.2)',
+  },
+  toolbarDivider: {
+    width: 1,
+    height: 32,
+    backgroundColor: "#E5E7EB",
+    marginHorizontal: 8,
   },
   modernEditorWrapper: {
     flex: 1,
@@ -1730,6 +1691,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
     overflow: "hidden",
+    alignSelf: 'stretch',
   },
   modernRichTextInput: {
     flex: 1,
@@ -1740,6 +1702,8 @@ const styles = StyleSheet.create({
     padding: Platform.select({ ios: 20, android: 16 }),
     lineHeight: Platform.select({ ios: 24, android: 22 }),
     borderWidth: 0,
+    alignSelf: 'stretch',
+    textAlignVertical: 'top',
   },
   voiceButton: {
     padding: 10,
@@ -1778,6 +1742,25 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 2,
+  },
+  folderSelectorButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: "rgba(255,255,255,0.25)",
+    marginRight: 8,
+    maxWidth: 120,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.3)",
+  },
+  folderButtonText: {
+    color: "#fff",
+    fontSize: 11,
+    fontFamily: "Inter-Medium",
+    marginLeft: 4,
+    flex: 1,
   },
   moreButton: {
     width: 44,
@@ -2104,21 +2087,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: "Inter-Medium",
   },
-  tagInput: {
-    borderWidth: 2,
-    borderColor: "#E5E7EB",
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
-    fontFamily: "Inter-Regular",
-    marginBottom: 20,
-    backgroundColor: "#F9FAFB",
-    shadowColor: "#1F2937",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 1,
-  },
+
   modalActions: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -2176,36 +2145,7 @@ const styles = StyleSheet.create({
     minHeight: 300,
     width: "100%",
   },
-  moreOptionsMenu: {
-    position: "absolute",
-    top: Platform.OS === "ios" ? 120 : 105, // Adjust for header height
-    right: 24, // Match header padding
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-    minWidth: 200,
-    elevation: 25, // Very high elevation for Android
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    zIndex: 999999, // Extremely high z-index
-    borderWidth: 1,
-    borderColor: "rgba(0,0,0,0.08)",
-  },
-  optionItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-  },
-  optionText: {
-    marginLeft: 10,
-    fontSize: 14,
-    fontFamily: "Inter-Regular",
-    color: "#333",
-  },
+  // Removed moreOptionsMenu and related styles since kebab menu is removed
   previewOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.95)",

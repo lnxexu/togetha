@@ -1,6 +1,7 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useMemo } from 'react';
 import { View, StyleSheet, PanResponder, GestureResponderEvent, Dimensions } from 'react-native';
 import Svg, { Path, G } from 'react-native-svg';
+import { getStroke } from 'perfect-freehand';
 import { optimizeStroke, strokeToSVGPath, advancedSmoothStroke } from '../utils/strokeUtils';
 import TemplateOverlay, { TemplateType } from './TemplateOverlay';
 import { DrawingStroke } from '../services/drawingAPI';
@@ -63,6 +64,11 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 }) => {
   const [currentStroke, setCurrentStroke] = useState<Stroke | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
+  const [canvasZoom, setCanvasZoom] = useState(1);
+  const [canvasPan, setCanvasPan] = useState({ x: 0, y: 0 });
+  const gestureStartDistanceRef = useRef(0);
+  const gestureStartZoomRef = useRef(1);
+  const isPinchingRef = useRef(false);
   
   // Canvas dimensions based on orientation (fixed medium size)
   const getCanvasDimensions = () => {
@@ -95,90 +101,51 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   
   const { width: CANVAS_WIDTH, height: CANVAS_HEIGHT, marginVertical: CANVAS_MARGIN = 0 } = getCanvasDimensions();
   const strokeIdRef = useRef(0);
-  // Add a ref for unique segment ID generation
   const segmentIdRef = useRef(0);
 
-  // Debug effect to monitor strokes received
-  React.useEffect(() => {
-    console.log('DrawingCanvas: Received strokes:', strokes.length);
-    if (strokes.length > 0) {
-      console.log('DrawingCanvas: First stroke sample:', strokes[0]);
-      console.log('DrawingCanvas: First stroke validation:', {
-        hasId: !!strokes[0]?.id,
-        hasPoints: Array.isArray(strokes[0]?.points),
-        pointsLength: strokes[0]?.points?.length,
-        pointsFormat: strokes[0]?.points?.slice(0, 4),
-        hasColor: !!strokes[0]?.color,
-        hasWidth: !!strokes[0]?.width,
-        hasTool: !!strokes[0]?.tool,
-      });
-    }
-  }, [strokes]);
-
-  // removed dynamic onLayout sizing — canvas uses fixed size constants
-
-  // Enhanced smooth path creation with multiple algorithms
-  const createSmoothPath = useCallback((points: Point[], smoothingLevel: number = 0.5): string => {
+  // Use perfect-freehand for professional, smooth stroke rendering
+  const getSmoothStrokePath = useCallback((points: Point[], width: number, tool: DrawingTool): string => {
     if (points.length < 2) return '';
-    
-    // For very short strokes, use simple linear path
-    if (points.length === 2) {
-      return `M${points[0].x},${points[0].y} L${points[1].x},${points[1].y}`;
-    }
-    
-    // Apply Catmull-Rom spline for smooth curves
-    if (points.length >= 4) {
-      return createCatmullRomPath(points, smoothingLevel);
-    }
-    
-    // For 3 points, use quadratic bezier with enhanced control points
-    return createQuadraticBezierPath(points, smoothingLevel);
-  }, []);
-  
-  // Catmull-Rom spline implementation for ultra-smooth curves
-  const createCatmullRomPath = useCallback((points: Point[], tension: number = 0.5): string => {
-    let path = `M${points[0].x},${points[0].y}`;
-    
-    for (let i = 0; i < points.length - 1; i++) {
-      const p0 = points[Math.max(i - 1, 0)];
-      const p1 = points[i];
-      const p2 = points[Math.min(i + 1, points.length - 1)];
-      const p3 = points[Math.min(i + 2, points.length - 1)];
-      
-      // Calculate control points for Catmull-Rom
-      const cp1x = p1.x + (p2.x - p0.x) * tension / 6;
-      const cp1y = p1.y + (p2.y - p0.y) * tension / 6;
-      const cp2x = p2.x - (p3.x - p1.x) * tension / 6;
-      const cp2y = p2.y - (p3.y - p1.y) * tension / 6;
-      
-      path += ` C${cp1x},${cp1y} ${cp2x},${cp2y} ${p2.x},${p2.y}`;
-    }
-    
-    return path;
-  }, []);
-  
-  // Enhanced quadratic bezier for shorter strokes
-  const createQuadraticBezierPath = useCallback((points: Point[], smoothing: number = 0.5): string => {
-    let path = `M${points[0].x},${points[0].y}`;
-    
-    for (let i = 1; i < points.length - 1; i++) {
-      const current = points[i];
-      const next = points[i + 1];
-      
-      // Enhanced control point calculation with smoothing
-      const controlX = current.x * (1 - smoothing) + (points[i-1].x + next.x) * smoothing / 2;
-      const controlY = current.y * (1 - smoothing) + (points[i-1].y + next.y) * smoothing / 2;
-      const midX = (current.x + next.x) / 2;
-      const midY = (current.y + next.y) / 2;
-      
-      path += ` Q${controlX},${controlY} ${midX},${midY}`;
-    }
-    
-    // Finish with the last point
-    const lastPoint = points[points.length - 1];
-    path += ` L${lastPoint.x},${lastPoint.y}`;
-    
-    return path;
+
+    // Convert points to perfect-freehand format [x, y, pressure]
+    const pfPoints = points.map(p => [p.x, p.y, p.pressure || 0.5]);
+
+    // Tool-specific perfect-freehand settings optimized for visible, smooth curves
+    const options = {
+      size: width,
+      thinning: tool === 'calligraphy' ? 0.7 : tool === 'brush' ? 0.5 : 0.4,
+      smoothing: 0.85, // Even higher smoothing for maximum curve visibility
+      streamline: 0.75, // Higher streamline for better curve flow
+      easing: (t: number) => {
+        // Custom easing for ultra-smooth curves
+        const ease = t * t * t * (t * (t * 6 - 15) + 10); // Smootherstep function
+        return ease;
+      },
+      simulatePressure: true,
+      last: true,
+      start: {
+        taper: tool === 'calligraphy' ? 25 : tool === 'brush' ? 15 : 8,
+        cap: true,
+      },
+      end: {
+        taper: tool === 'calligraphy' ? 25 : tool === 'brush' ? 15 : 8,
+        cap: true,
+      },
+    };
+
+    const stroke = getStroke(pfPoints, options);
+    if (stroke.length === 0) return '';
+
+    // Convert stroke outline to SVG path
+    const pathData = stroke.reduce(
+      (acc, [x0, y0], i, arr) => {
+        if (i === 0) return `M ${x0.toFixed(2)},${y0.toFixed(2)}`;
+        return acc + ` L ${x0.toFixed(2)},${y0.toFixed(2)}`;
+      },
+      ''
+    ) + ' Z';
+
+    return pathData;
   }, []);
 
   const getPressureWidth = useCallback((pressure: number = 1, baseWidth: number): number => {
@@ -187,21 +154,28 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     return minWidth + (maxWidth - minWidth) * pressure;
   }, []);
 
+  const touchStartTimeRef = useRef(0);
+  const touchStartPosRef = useRef({ x: 0, y: 0 });
+
   const handleTouchStart = useCallback((evt: GestureResponderEvent) => {
     if (disabled) return;
 
     const { locationX, locationY } = evt.nativeEvent;
     const pressure = (evt.nativeEvent as any).force || 1;
+    const timestamp = Date.now();
+    
+    touchStartTimeRef.current = timestamp;
+    touchStartPosRef.current = { x: locationX, y: locationY };
     
     const isEraser = currentTool === 'eraser';
     
     const newStroke: Stroke = {
-      id: `stroke_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      id: `stroke_${timestamp}_${Math.random().toString(36).substr(2, 9)}`,
       points: [{
         x: locationX,
         y: locationY,
         pressure,
-        timestamp: Date.now()
+        timestamp
       }],
       // Render eraser as a white (canvas background) brush stroke while keeping the tool named 'eraser'
       color: isEraser ? backgroundColor : currentColor,
@@ -214,76 +188,39 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     setCurrentStroke(newStroke);
     setIsDrawing(true);
     onStrokeUpdate?.(newStroke);
-  }, [disabled, currentColor, currentWidth, currentTool, onStrokeUpdate]);
+  }, [disabled, currentColor, currentWidth, currentTool, onStrokeUpdate, backgroundColor]);
 
-  // Enhanced point filtering and smoothing
-  const shouldAddPoint = useCallback((newPoint: Point, lastPoint: Point, currentPoints: Point[]): boolean => {
-    const distance = Math.sqrt(
-      Math.pow(newPoint.x - lastPoint.x, 2) + Math.pow(newPoint.y - lastPoint.y, 2)
-    );
-    
-    // Dynamic distance threshold based on tool and speed
-    const minDistance = currentTool === 'pen' ? 1.5 : 
-                       currentTool === 'pencil' ? 1.0 : 
-                       currentTool === 'brush' ? 2.0 : 2.0;
-    
-    // Consider velocity for adaptive sampling
-    if (currentPoints.length >= 2) {
-      const prevPoint = currentPoints[currentPoints.length - 2];
-      const velocity = distance / Math.max(1, newPoint.timestamp! - lastPoint.timestamp!);
-      
-      // Adapt distance threshold based on velocity (faster = more points for smoothness)
-      const adaptiveDistance = minDistance * Math.max(0.5, Math.min(2, 1 / (velocity + 0.1)));
-      return distance > adaptiveDistance;
-    }
-    
-    return distance > minDistance;
-  }, [currentTool]);
+  // Capture every point for truly seamless strokes - no filtering
+  const shouldAddPoint = useCallback((newPoint: Point, lastPoint: Point): boolean => {
+    // No distance filtering - capture all movement for maximum smoothness
+    // The perfect-freehand library will handle rendering optimization
+    return true;
+  }, []);
   
   const handleTouchMove = useCallback((evt: GestureResponderEvent) => {
     if (!isDrawing || !currentStroke || disabled) return;
 
     const { locationX, locationY } = evt.nativeEvent;
-    const pressure = (evt.nativeEvent as any).force || 1;
+    const pressure = (evt.nativeEvent as any).force || 0.5;
     const timestamp = Date.now();
     
     const lastPoint = currentStroke.points[currentStroke.points.length - 1];
-    const newPoint: Point = {
-      x: locationX,
-      y: locationY,
-      pressure,
-      timestamp
-    };
+    const newPoint: Point = { x: locationX, y: locationY, pressure, timestamp };
 
-    if (shouldAddPoint(newPoint, lastPoint, currentStroke.points)) {
-      // Apply real-time smoothing for immediate visual feedback
-      const smoothedPoint = applySmoothingFilter(newPoint, currentStroke.points.slice(-3));
+    if (shouldAddPoint(newPoint, lastPoint)) {
+      // Directly mutate points array for performance - React will still re-render
+      currentStroke.points.push(newPoint);
       
-      const updatedStroke = {
-        ...currentStroke,
-        points: [...currentStroke.points, smoothedPoint]
-      };
-
-      setCurrentStroke(updatedStroke);
-      onStrokeUpdate?.(updatedStroke);
+      // Update state with the same reference to trigger render
+      // This is more efficient than creating new objects every time
+      setCurrentStroke({ ...currentStroke });
+      
+      // Throttle stroke update callbacks to reduce overhead
+      if (onStrokeUpdate && currentStroke.points.length % 2 === 0) {
+        onStrokeUpdate(currentStroke);
+      }
     }
   }, [isDrawing, currentStroke, disabled, onStrokeUpdate, shouldAddPoint]);
-  
-  // Real-time smoothing filter for immediate visual feedback
-  const applySmoothingFilter = useCallback((newPoint: Point, recentPoints: Point[]): Point => {
-    if (recentPoints.length < 2) return newPoint;
-    
-    // Apply exponential moving average for smooth point positioning
-    const smoothingFactor = 0.3;
-    const lastPoint = recentPoints[recentPoints.length - 1];
-    
-    return {
-      x: lastPoint.x + (newPoint.x - lastPoint.x) * smoothingFactor,
-      y: lastPoint.y + (newPoint.y - lastPoint.y) * smoothingFactor,
-      pressure: newPoint.pressure,
-      timestamp: newPoint.timestamp
-    };
-  }, []);
 
   const eraseIntersectingStrokes = (existingStrokes: Stroke[], eraserStroke: Stroke): Stroke[] => {
     if (!eraserStroke.points.length) return existingStrokes;
@@ -356,21 +293,50 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 const handleTouchEnd = useCallback(() => {
     if (!isDrawing || !currentStroke || disabled) return;
 
-    // Ensure we have at least 2 points for a valid stroke
-    if (currentStroke.points.length >= 2) {
-      // Enhanced optimization parameters based on tool type
+    const touchDuration = Date.now() - touchStartTimeRef.current;
+    const touchDistance = currentStroke.points.length > 1 ? 
+      Math.sqrt(
+        Math.pow(currentStroke.points[currentStroke.points.length - 1].x - touchStartPosRef.current.x, 2) +
+        Math.pow(currentStroke.points[currentStroke.points.length - 1].y - touchStartPosRef.current.y, 2)
+      ) : 0;
+
+    // If touch was quick and didn't move much, create a visible dot
+    if (touchDuration < 200 && touchDistance < 5) {
+      // Create a circular dot by adding points in a circle
+      const centerX = currentStroke.points[0].x;
+      const centerY = currentStroke.points[0].y;
+      const dotRadius = currentStroke.width / 2;
+      const dotPoints: Point[] = [];
+      
+      // Create a circle with 16 points for a smooth dot
+      for (let i = 0; i <= 16; i++) {
+        const angle = (i / 16) * Math.PI * 2;
+        dotPoints.push({
+          x: centerX + Math.cos(angle) * dotRadius,
+          y: centerY + Math.sin(angle) * dotRadius,
+          pressure: 1,
+          timestamp: Date.now()
+        });
+      }
+      
+      const dotStroke = {
+        ...currentStroke,
+        points: dotPoints
+      };
+      
+      onStrokeComplete(dotStroke);
+    } else if (currentStroke.points.length >= 2) {
+      // Normal stroke - minimal optimization to maintain visual consistency
       const optimizationConfig = {
-        pen: { simplify: true, smooth: true, tolerance: 1.0, smoothing: 0.4 },
-        pencil: { simplify: true, smooth: true, tolerance: 0.8, smoothing: 0.5 },
-        brush: { simplify: true, smooth: true, tolerance: 2.0, smoothing: 0.3 },
-        highlighter: { simplify: true, smooth: true, tolerance: 3.0, smoothing: 0.2 },
-        calligraphy: { simplify: false, smooth: true, tolerance: 0.5, smoothing: 0.6 },
-        eraser: { simplify: true, smooth: false, tolerance: 2.0, smoothing: 0.1 },
+        pen: { simplify: true, smooth: false, tolerance: 0.5, smoothing: 0 },
+        pencil: { simplify: true, smooth: false, tolerance: 0.4, smoothing: 0 },
+        brush: { simplify: true, smooth: false, tolerance: 1.0, smoothing: 0 },
+        highlighter: { simplify: true, smooth: false, tolerance: 1.5, smoothing: 0 },
+        calligraphy: { simplify: false, smooth: false, tolerance: 0.3, smoothing: 0 },
+        eraser: { simplify: true, smooth: false, tolerance: 1.0, smoothing: 0 },
       };
       
       const config = optimizationConfig[currentTool] || optimizationConfig.pen;
-      
-      // Optimize the stroke before saving
       const optimizedStroke = optimizeStroke(currentStroke, config);
       onStrokeComplete(optimizedStroke);
     }
@@ -400,26 +366,78 @@ const handleTouchEnd = useCallback(() => {
     };
   };
 
+  const getDistance = (touches: any[]) => {
+    if (touches.length < 2) return 0;
+    const [touch1, touch2] = touches;
+    const dx = touch1.pageX - touch2.pageX;
+    const dy = touch1.pageY - touch2.pageY;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
   const panResponder = PanResponder.create({
-    onStartShouldSetPanResponder: () => !disabled,
-    onMoveShouldSetPanResponder: () => !disabled,
-    onPanResponderGrant: handleTouchStart,
-    onPanResponderMove: handleTouchMove,
-    onPanResponderRelease: handleTouchEnd,
-    onPanResponderTerminate: handleTouchEnd,
+    onStartShouldSetPanResponder: (evt) => {
+      const touches = evt.nativeEvent.touches || [];
+      return !disabled || touches.length === 2;
+    },
+    onStartShouldSetPanResponderCapture: (evt) => {
+      const touches = evt.nativeEvent.touches || [];
+      return (!disabled || touches.length === 2);
+    },
+    onMoveShouldSetPanResponder: (evt) => {
+      const touches = evt.nativeEvent.touches || [];
+      return !disabled || touches.length === 2;
+    },
+    onMoveShouldSetPanResponderCapture: (evt) => {
+      const touches = evt.nativeEvent.touches || [];
+      return (!disabled || touches.length === 2);
+    },
+    onPanResponderTerminationRequest: () => false,
+    onShouldBlockNativeResponder: () => true,
+    onPanResponderGrant: (evt) => {
+      const touches = evt.nativeEvent.touches || [];
+      if (touches.length === 2) {
+        // Start pinch zoom
+        isPinchingRef.current = true;
+        gestureStartZoomRef.current = canvasZoom;
+        gestureStartDistanceRef.current = getDistance(touches);
+      } else {
+        isPinchingRef.current = false;
+        handleTouchStart(evt);
+      }
+    },
+    onPanResponderMove: (evt, gestureState) => {
+      const touches = evt.nativeEvent.touches || [];
+      if (touches.length === 2 && isPinchingRef.current) {
+        // Handle pinch zoom
+        const currentDistance = getDistance(touches);
+        const startDistance = gestureStartDistanceRef.current;
+        if (startDistance > 0) {
+          const scale = currentDistance / startDistance;
+          const newZoom = Math.max(0.5, Math.min(5, gestureStartZoomRef.current * scale));
+          setCanvasZoom(newZoom);
+        }
+      } else if (!isPinchingRef.current) {
+        handleTouchMove(evt);
+      }
+    },
+    onPanResponderRelease: () => {
+      if (!isPinchingRef.current) {
+        handleTouchEnd();
+      }
+      isPinchingRef.current = false;
+      gestureStartDistanceRef.current = 0;
+    },
+    onPanResponderTerminate: () => {
+      if (!isPinchingRef.current) {
+        handleTouchEnd();
+      }
+      isPinchingRef.current = false;
+      gestureStartDistanceRef.current = 0;
+    },
   });
 
   // Convert DrawingStroke to Stroke for rendering
   const convertDrawingStrokeToStroke = useCallback((drawingStroke: DrawingStroke): Stroke => {
-    console.log(`Converting stroke ${drawingStroke.id}:`, {
-      originalPointsLength: drawingStroke.points.length,
-      originalPointsSample: drawingStroke.points.slice(0, 8),
-      pointsAreNumbers: drawingStroke.points.every(p => typeof p === 'number'),
-      color: drawingStroke.color,
-      width: drawingStroke.width,
-      tool: drawingStroke.tool
-    });
-    
     const points: Point[] = [];
     for (let i = 0; i < drawingStroke.points.length; i += 2) {
       if (i + 1 < drawingStroke.points.length) {
@@ -427,18 +445,12 @@ const handleTouchEnd = useCallback(() => {
         const y = drawingStroke.points[i + 1];
         
         if (typeof x === 'number' && typeof y === 'number') {
-          points.push({
-            x: x,
-            y: y,
-            timestamp: drawingStroke.timestamp
-          });
-        } else {
-          console.warn(`Invalid point data at index ${i}:`, { x, y, xType: typeof x, yType: typeof y });
+          points.push({ x, y, timestamp: drawingStroke.timestamp });
         }
       }
     }
 
-    const convertedStroke = {
+    return {
       id: drawingStroke.id,
       points,
       color: drawingStroke.color,
@@ -446,108 +458,74 @@ const handleTouchEnd = useCallback(() => {
       tool: drawingStroke.tool as DrawingTool,
       opacity: drawingStroke.opacity || 1
     };
-
-    console.log(`Converted stroke ${drawingStroke.id}:`, {
-      convertedPointsLength: convertedStroke.points.length,
-      convertedPointsSample: convertedStroke.points.slice(0, 4),
-      isValidStroke: convertedStroke.points.length >= 2,
-      allFieldsPresent: {
-        hasId: !!convertedStroke.id,
-        hasPoints: Array.isArray(convertedStroke.points),
-        hasColor: !!convertedStroke.color,
-        hasWidth: !!convertedStroke.width,
-        hasTool: !!convertedStroke.tool,
-      }
-    });
-
-    return convertedStroke;
   }, []);
 
   const renderStroke = useCallback((stroke: Stroke, index: number | string) => {
-    if (stroke.points.length < 2) {
-      console.log(`DrawingCanvas: Skipping stroke ${stroke.id} - insufficient points:`, stroke.points.length);
-      return null;
-    }
+    if (stroke.points.length < 2) return null;
 
-    // Use enhanced smooth path creation with tool-specific smoothing levels
-    const smoothingLevels = {
-      pen: 0.5,
-      pencil: 0.6,
-      brush: 0.4,
-      highlighter: 0.3,
-      calligraphy: 0.7,
-      // Treat eraser as a smooth brush for visual appearance
-      eraser: 0.45,
+    // Calculate effective width
+    const effectiveWidth = scaleStrokesWithZoom ? stroke.width * currentZoom : stroke.width;
+    
+    let pathData: string;
+    let opacity = stroke.opacity || 1;
+    
+    // Use perfect-freehand for pen, pencil, brush, calligraphy (smooth, professional)
+    if (stroke.tool === 'pen' || stroke.tool === 'pencil' || stroke.tool === 'brush' || stroke.tool === 'calligraphy') {
+      pathData = getSmoothStrokePath(stroke.points, effectiveWidth, stroke.tool);
+      if (!pathData) return null;
+      
+      return (
+        <Path
+          key={`${stroke.id}-${index}`}
+          d={pathData}
+          fill={stroke.color}
+          opacity={opacity}
+        />
+      );
+    }
+    
+    // Simple line rendering for highlighter and eraser (fast)
+    const createSimplePath = (points: Point[]): string => {
+      if (points.length < 2) return '';
+      let path = `M${points[0].x},${points[0].y}`;
+      for (let i = 1; i < points.length; i++) {
+        path += ` L${points[i].x},${points[i].y}`;
+      }
+      return path;
     };
     
-    const smoothingLevel = smoothingLevels[stroke.tool] || 0.5;
-    const pathData = createSmoothPath(stroke.points, smoothingLevel);
+    pathData = createSimplePath(stroke.points);
+    if (!pathData) return null;
     
-    if (!pathData) {
-      console.log(`DrawingCanvas: No path data for stroke ${stroke.id}`);
-      return null;
+    if (stroke.tool === 'highlighter') {
+      return (
+        <Path
+          key={`${stroke.id}-${index}`}
+          d={pathData}
+          stroke={stroke.color}
+          strokeWidth={effectiveWidth * 2.5}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          fill="none"
+          opacity={0.4}
+        />
+      );
     }
     
-    console.log(`DrawingCanvas: Rendering stroke ${stroke.id} with ${stroke.points.length} points, color: ${stroke.color}, width: ${stroke.width}`);
-    
-    // Apply tool-specific styling with optional zoom scaling
-    let strokeWidth = stroke.width * (scaleStrokesWithZoom ? currentZoom : 1);
-    let strokeOpacity = 1;
-    let fillOpacity = 0;
-    let strokeLinecap: 'round' | 'square' | 'butt' = 'round';
-    let strokeDasharray: string | undefined;
-    
-    switch (stroke.tool) {
-      case 'highlighter':
-        strokeWidth = (stroke.width * 2.5) * (scaleStrokesWithZoom ? currentZoom : 1);
-        strokeOpacity = 0.4;
-        fillOpacity = 0.2;
-        break;
-      case 'brush':
-        strokeWidth = (stroke.width * 1.8) * (scaleStrokesWithZoom ? currentZoom : 1);
-        strokeOpacity = 0.9;
-        strokeLinecap = 'round';
-        break;
-      case 'pencil':
-        strokeWidth = (stroke.width * 0.8) * (scaleStrokesWithZoom ? currentZoom : 1);
-        strokeOpacity = 0.8;
-        strokeLinecap = 'round';
-        break;
-      case 'calligraphy':
-        strokeWidth = (stroke.width * 1.8) * (scaleStrokesWithZoom ? currentZoom : 1);
-        strokeLinecap = 'square';
-        break;
-      case 'eraser':
-        // Render eraser as a painted stroke using the canvas background color
-        strokeWidth = (stroke.width * 1.8) * (scaleStrokesWithZoom ? currentZoom : 1);
-        strokeOpacity = 1.0;
-        strokeLinecap = 'round';
-        // Use the stroke.color (already set to backgroundColor when creating).
-        break;
-      case 'pen':
-      default:
-        strokeWidth = stroke.width * (scaleStrokesWithZoom ? currentZoom : 1);
-        strokeOpacity = 1.0;
-        strokeLinecap = 'round';
-        break;
-    }
-    
+    // Eraser
     return (
       <Path
         key={`${stroke.id}-${index}`}
         d={pathData}
         stroke={stroke.color}
-        strokeWidth={strokeWidth}
-        strokeLinecap={strokeLinecap}
+        strokeWidth={effectiveWidth * 1.8}
+        strokeLinecap="round"
         strokeLinejoin="round"
-        fill={stroke.tool === 'highlighter' ? stroke.color : 'none'}
-        fillOpacity={fillOpacity}
-        opacity={stroke.opacity || 1}
-        strokeOpacity={strokeOpacity}
-        strokeDasharray={strokeDasharray}
+        fill="none"
+        opacity={1}
       />
     );
-  }, []);
+  }, [scaleStrokesWithZoom, currentZoom, getSmoothStrokePath]);
 
   return (
     <View 
@@ -557,6 +535,7 @@ const handleTouchEnd = useCallback(() => {
         CANVAS_MARGIN ? { marginVertical: CANVAS_MARGIN } : null,
       ]} 
       {...panResponder.panHandlers}
+      collapsable={false}
     >
       <TemplateOverlay 
         template={template}
@@ -570,12 +549,10 @@ const handleTouchEnd = useCallback(() => {
         height={CANVAS_HEIGHT}
         style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
       >
-        <G>
+        <G scale={canvasZoom} origin={`${CANVAS_WIDTH/2}, ${CANVAS_HEIGHT/2}`}>
           {/* Render completed strokes */}
           {strokes.map((drawingStroke, index) => {
-            console.log(`DrawingCanvas: Processing stroke ${index}:`, drawingStroke.id);
             const convertedStroke = convertDrawingStrokeToStroke(drawingStroke);
-            console.log(`DrawingCanvas: Converted stroke ${index}:`, convertedStroke.id, 'points:', convertedStroke.points.length);
             return renderStroke(convertedStroke, index);
           })}
 

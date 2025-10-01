@@ -462,7 +462,7 @@ export default function ForgotPassword() {
                   { fontSize: isLandscape ? 13 : 15 },
                 ]}
               >
-                Sign In
+                Log In
               </Text>
             </TouchableOpacity>
           </View>

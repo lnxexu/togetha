@@ -12,6 +12,7 @@ import {
   Modal,
   Platform,
   Alert,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -62,6 +63,7 @@ const queryClient = new QueryClient();
 function ChatBot(): React.ReactElement {
   const navigation = useNavigation();
   const scrollViewRef = useRef<ScrollView>(null);
+  const insets = useSafeAreaInsets();
   const { setActiveConversation, setHasActiveConversation, disableChatHead, enableChatHead } = useChatHead();
   
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -81,6 +83,12 @@ function ChatBot(): React.ReactElement {
   const [previewFile, setPreviewFile] = useState<any>(null);
   const [attachmentMenuVisible, setAttachmentMenuVisible] = useState(false);
   const [processingFiles, setProcessingFiles] = useState(false);
+  
+  // OCR Modal states
+  const [showOCRModal, setShowOCRModal] = useState(false);
+  const [ocrImage, setOCRImage] = useState<any>(null);
+  const [ocrResult, setOCRResult] = useState<string>("");
+  const [ocrLoading, setOCRLoading] = useState(false);
 
   useEffect(() => {
     loadConversations();
@@ -449,11 +457,10 @@ function ChatBot(): React.ReactElement {
   });
 
   const suggestedPrompts = [
-    { id: "1", text: "Help me understand complex concepts", icon: "🧠", description: "Break down difficult topics into simpler explanations" },
-    { id: "2", text: "Create practice questions", icon: "📘", description: "Generate quiz questions from your study materials" },
-    { id: "3", text: "Summarize documents", icon: "📄", description: "Upload and get concise summaries of lengthy texts" },
-    { id: "4", text: "Explain with examples", icon: "💡", description: "Provide real-world examples for better understanding" },
-    { id: "5", text: "Extract text from images", icon: "📷", description: "Upload images to extract and analyze text content" },
+    { id: "1", text: "Understand concepts", icon: "🧠", description: "Break down difficult topics" },
+    { id: "2", text: "Practice questions", icon: "📘", description: "Generate quiz questions" },
+    { id: "3", text: "Summarize docs", icon: "📄", description: "Get concise summaries" },
+    { id: "4", text: "Learn with examples", icon: "💡", description: "Real-world examples" },
   ];
 
   const handleGoBack = () => {
@@ -485,7 +492,6 @@ function ChatBot(): React.ReactElement {
     }
     
     setErrorMessage(null);
-    setLoading(true);
     
     // Store current message and files for this specific message
     const currentInput = input.trim();
@@ -618,6 +624,9 @@ function ChatBot(): React.ReactElement {
         timestamp: new Date()
       };
       setMessages(prev => [...prev, userMessage]);
+
+      // Set loading after user message is added
+      setLoading(true);
 
       // Auto-scroll to bottom when user sends message
       setTimeout(() => {
@@ -858,6 +867,102 @@ function ChatBot(): React.ReactElement {
     }
   };
 
+  const handleOCRModalOpen = () => {
+    setShowOCRModal(true);
+    setShowChatOptions(false);
+  };
+
+  const handleOCRImageSelect = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'image/*',
+        copyToCacheDirectory: true,
+        multiple: false
+      });
+      
+      if (result.canceled) return;
+      
+      const file = result.assets[0];
+      
+      if (!file) {
+        Alert.alert("Error", "No image selected");
+        return;
+      }
+      
+      // Validate file size (50MB limit)
+      const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+      if (file.size && file.size > MAX_FILE_SIZE) {
+        Alert.alert("Error", "File too large (max 50MB)");
+        return;
+      }
+      
+      setOCRImage(file);
+      setOCRResult("");
+    } catch (error: any) {
+      console.error('Image selection error:', error);
+      Alert.alert("Error", "Failed to select image");
+    }
+  };
+
+  const handleOCRProcess = async () => {
+    if (!ocrImage) {
+      Alert.alert("Error", "Please select an image first");
+      return;
+    }
+
+    try {
+      setOCRLoading(true);
+      setOCRResult("");
+      
+      console.log(`📸 Starting OCR for: ${ocrImage.name}`);
+      
+      const ocrResponse = await chatbotAPI.extractTextFromImage(ocrImage);
+      
+      if (ocrResponse.text && ocrResponse.text.trim().length > 0) {
+        setOCRResult(ocrResponse.text.trim());
+        console.log(`✅ OCR successful: ${ocrResponse.text.length} characters extracted`);
+      } else {
+        setOCRResult("No readable text found in the image.");
+      }
+    } catch (error: any) {
+      console.error(`❌ OCR processing error:`, error);
+      
+      let errorMessage = "Failed to extract text from image";
+      
+      if (error.message?.includes("413") || error.message?.includes("too large")) {
+        errorMessage = "Image file is too large (max 50MB)";
+      } else if (error.message?.includes("415") || error.message?.includes("not supported")) {
+        errorMessage = "Image format not supported. Please use JPG, PNG, or GIF.";
+      } else if (error.message?.includes("500")) {
+        errorMessage = "Server error during OCR processing";
+      } else if (error.message?.includes("timeout")) {
+        errorMessage = "OCR processing timed out. Please try with a smaller image.";
+      }
+      
+      setOCRResult(`Error: ${errorMessage}`);
+      Alert.alert("OCR Error", errorMessage);
+    } finally {
+      setOCRLoading(false);
+    }
+  };
+
+  const handleOCRCopyText = async () => {
+    if (!ocrResult) return;
+    
+    // Copy to clipboard would need expo-clipboard
+    // For now, we'll just close the modal and put the text in input
+    setInput(ocrResult);
+    setShowOCRModal(false);
+    Alert.alert("Success", "Text copied to message input");
+  };
+
+  const handleOCRClose = () => {
+    setShowOCRModal(false);
+    setOCRImage(null);
+    setOCRResult("");
+    setOCRLoading(false);
+  };
+
   const handleOCR = async () => {
     if (pendingFiles.length === 0) {
       Alert.alert(
@@ -986,67 +1091,6 @@ function ChatBot(): React.ReactElement {
     }
   };
 
-  // Prompt user for comma-separated doc UUIDs and call RAG endpoint
-  const handleRagSearchPrompt = () => {
-    // Use Alert.prompt where available (iOS) — this project already used Alert.prompt elsewhere
-    try {
-      Alert.prompt(
-        'RAG Search',
-        'Enter up to 4 document UUIDs separated by commas (or leave blank to search all):',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Search', onPress: (inputText) => handleRagSearch(inputText) }
-        ],
-        'plain-text',
-        ''
-      );
-    } catch (e) {
-      // Fallback for platforms without Alert.prompt: simple prompt via window (web) or Alert
-      const inputText = ''; // no-op fallback
-      handleRagSearch(inputText);
-    }
-  };
-
-  const handleRagSearch = async (inputText: string | undefined) => {
-    const raw = (inputText || '').trim();
-    const docIds = raw.length > 0 ? raw.split(',').map(s => s.trim()).filter(Boolean).slice(0,4) : [];
-
-    if (!input && docIds.length === 0 && messages.length === 0) {
-      Alert.alert('No query', 'Please enter a query in the input field or provide document IDs.');
-      return;
-    }
-
-    const queryText = input.trim() || messages.reverse().find(m => m.role === 'user')?.content || '';
-    if (!queryText) {
-      Alert.alert('No query', 'Please enter a query in the input field.');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const resp = await chatbotAPI.askRag(queryText, docIds, 5);
-
-      const answer = resp.answer || resp.data?.answer || resp.result || JSON.stringify(resp);
-
-      // Append assistant message
-      setMessages(prev => [...prev, { role: 'assistant', content: answer, timestamp: new Date() }]);
-
-      // Optionally show sources as separate assistant message
-      if (resp.sources && Array.isArray(resp.sources) && resp.sources.length > 0) {
-        const sourcesText = resp.sources.map((s: any, i: number) => `• (${s.document_name || s.doc_id || 'doc'}) page:${s.page || '-'} score:${(s.score||0).toFixed(3)} — ${s.snippet.slice(0,200)}`).join('\n\n');
-        setMessages(prev => [...prev, { role: 'assistant', content: `Sources:\n${sourcesText}`, timestamp: new Date() }]);
-      }
-
-      // Clear input
-      setInput('');
-    } catch (err: any) {
-      console.error('RAG search failed:', err);
-      Alert.alert('RAG Search Error', err?.message || 'Failed to perform RAG search');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <>
     <View style={styles.rootContainer}>
@@ -1075,6 +1119,14 @@ function ChatBot(): React.ReactElement {
               <Text style={styles.botDescription}>Your AI Tutoring Assistant</Text>
             </View>
           </View>
+          <TouchableOpacity 
+            style={styles.menuButton} 
+            onPress={handleOCRModalOpen}
+            accessibilityLabel="Image to Text"
+            accessibilityHint="Extract text from images using OCR"
+          >
+            <MaterialIcons name="image-search" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
           <TouchableOpacity 
             style={styles.menuButton} 
             onPress={handleMenuPress}
@@ -1126,7 +1178,8 @@ function ChatBot(): React.ReactElement {
         <KeyboardAvoidingView
           style={styles.keyboardAvoidingView}
           behavior={Platform.OS === "ios" ? "padding" : "height"}
-          keyboardVerticalOffset={Platform.OS === "ios" ? 88 : 0}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+          enabled={true}
         >
           {/* Messages */}
           <ScrollView 
@@ -1136,6 +1189,7 @@ function ChatBot(): React.ReactElement {
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="interactive"
+            removeClippedSubviews={true}
             onTouchStart={() => {
               setShowChatOptions(false);
               setAttachmentMenuVisible(false);
@@ -1148,7 +1202,7 @@ function ChatBot(): React.ReactElement {
               <View style={styles.welcomeContainer}>
                 <Text style={styles.welcomeTitle}>Welcome to Rina!</Text>
                 <Text style={styles.welcomeSubtitle}>
-                  Your intelligent AI tutoring assistant
+                  Your AI tutoring assistant
                 </Text>
                 <View style={styles.suggestedPromptsGrid}>
                   {suggestedPrompts.map((prompt) => (
@@ -1281,7 +1335,7 @@ function ChatBot(): React.ReactElement {
             )}
           </ScrollView>
 
-          <SafeAreaView edges={["bottom"]} style={styles.safeAreaBottom}>
+          <View style={styles.inputContainer}>
             {errorMessage && (
               <View style={styles.errorBanner}>
                 <Text style={styles.errorText}>{errorMessage}</Text>
@@ -1291,67 +1345,59 @@ function ChatBot(): React.ReactElement {
               </View>
             )}
 
-            {/* Action Buttons */}
-            <View style={styles.actionsContainer}>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.actionsScrollContent}
-              >
-                <TouchableOpacity
-                  style={styles.actionButton}
-                  onPress={handleSummarize}
-                  accessibilityLabel="Summarize content"
-                  accessibilityHint="Generate a summary of the conversation or document"
+            {/* Compact Action Buttons */}
+            {messages.length > 0 && (
+              <View style={styles.compactActionsContainer}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.compactActionsContent}
                 >
-                  <Ionicons name="document-text" size={16} color="#6B46C1" />
-                  <Text style={styles.actionButtonText}>Summarize</Text>
-                </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.compactActionButton}
+                    onPress={handleSummarize}
+                    accessibilityLabel="Summarize content"
+                  >
+                    <Ionicons name="document-text" size={18} color="#6B46C1" />
+                  </TouchableOpacity>
 
-                <TouchableOpacity 
-                  style={styles.actionButton} 
-                  onPress={handleExplain}
-                  accessibilityLabel="Explain concepts"
-                  accessibilityHint="Get detailed explanations of concepts"
-                >
-                  <Ionicons name="bulb" size={16} color="#6B46C1" />
-                  <Text style={styles.actionButtonText}>Explain</Text>
-                </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.compactActionButton} 
+                    onPress={handleExplain}
+                    accessibilityLabel="Explain concepts"
+                  >
+                    <Ionicons name="bulb" size={18} color="#6B46C1" />
+                  </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={styles.actionButton}
-                  onPress={handleGenerateQuiz}
-                  accessibilityLabel="Generate quiz"
-                  accessibilityHint="Create practice questions based on the content"
-                >
-                  <Ionicons name="help-circle" size={16} color="#6B46C1" />
-                  <Text style={styles.actionButtonText}>Generate Quiz</Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity 
-                  style={styles.actionButton} 
-                  onPress={handleOCR}
-                  accessibilityLabel="Extract text"
-                  accessibilityHint="Extract text from uploaded images"
-                >
-                  <Ionicons name="scan" size={16} color="#6B46C1" />
-                  <Text style={styles.actionButtonText}>Extract Text</Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity 
-                  style={styles.actionButton} 
-                  onPress={() => handleRagSearchPrompt()}
-                  accessibilityLabel="RAG Search"
-                  accessibilityHint="Search selected documents using RAG"
-                >
-                  <Ionicons name="search" size={16} color="#6B46C1" />
-                  <Text style={styles.actionButtonText}>RAG Search</Text>
-                </TouchableOpacity>
-              </ScrollView>
-            </View>
+                  <TouchableOpacity
+                    style={styles.compactActionButton}
+                    onPress={handleGenerateQuiz}
+                    accessibilityLabel="Generate quiz"
+                  >
+                    <Ionicons name="help-circle" size={18} color="#6B46C1" />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={styles.compactActionButton} 
+                    onPress={() => handlePromptSelection("Please analyze the key concepts from our conversation and provide a detailed study guide.")}
+                    accessibilityLabel="Study guide"
+                  >
+                    <Ionicons name="library" size={18} color="#6B46C1" />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={styles.compactActionButton} 
+                    onPress={handleOCR}
+                    accessibilityLabel="Extract text from images"
+                  >
+                    <Ionicons name="image" size={18} color="#6B46C1" />
+                  </TouchableOpacity>
+                </ScrollView>
+              </View>
+            )}
 
             {/* Input Area */}
-            <View style={styles.inputContainer}>
+            <View style={styles.inputAreaContainer}>
               {/* Pending Files Display */}
               {pendingFiles.length > 0 && (
                 <View style={styles.pendingFilesContainer}>
@@ -1476,8 +1522,100 @@ function ChatBot(): React.ReactElement {
                 </TouchableOpacity>
               </View>
             </View>
-          </SafeAreaView>
+          </View>
         </KeyboardAvoidingView>
+
+        {/* OCR Modal */}
+        <Modal
+          visible={showOCRModal}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          onRequestClose={handleOCRClose}
+        >
+          <View style={styles.ocrModalContainer}>
+            <View style={styles.ocrModalHeader}>
+              <Text style={styles.ocrModalTitle}>Image to Text</Text>
+              <TouchableOpacity 
+                style={styles.closeButton} 
+                onPress={handleOCRClose}
+              >
+                <Ionicons name="close" size={24} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView style={styles.ocrModalContent} showsVerticalScrollIndicator={false}>
+              {/* Image Selection */}
+              <View style={styles.ocrSection}>
+                <Text style={styles.ocrSectionTitle}>Select Image</Text>
+                <TouchableOpacity 
+                  style={styles.imageSelectButton}
+                  onPress={handleOCRImageSelect}
+                >
+                  {ocrImage ? (
+                    <View style={styles.selectedImageContainer}>
+                      <Image 
+                        source={{ uri: ocrImage.uri }}
+                        style={styles.selectedImage}
+                        resizeMode="cover"
+                      />
+                      <View style={styles.selectedImageOverlay}>
+                        <Ionicons name="checkmark-circle" size={32} color="#10B981" />
+                        <Text style={styles.selectedImageText}>{ocrImage.name}</Text>
+                      </View>
+                    </View>
+                  ) : (
+                    <View style={styles.imageSelectContent}>
+                      <Ionicons name="image" size={48} color="#6B46C1" />
+                      <Text style={styles.imageSelectText}>Tap to select an image</Text>
+                      <Text style={styles.imageSelectSubtext}>JPG, PNG, or GIF (max 50MB)</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              </View>
+
+              {/* Process Button */}
+              {ocrImage && (
+                <View style={styles.ocrSection}>
+                  <TouchableOpacity 
+                    style={[styles.processButton, ocrLoading && styles.processButtonDisabled]}
+                    onPress={handleOCRProcess}
+                    disabled={ocrLoading}
+                  >
+                    {ocrLoading ? (
+                      <ActivityIndicator color="#FFFFFF" size="small" />
+                    ) : (
+                      <Ionicons name="scan" size={20} color="#FFFFFF" />
+                    )}
+                    <Text style={styles.processButtonText}>
+                      {ocrLoading ? "Processing..." : "Extract Text"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* Results */}
+              {ocrResult && (
+                <View style={styles.ocrSection}>
+                  <Text style={styles.ocrSectionTitle}>Extracted Text</Text>
+                  <View style={styles.ocrResultContainer}>
+                    <ScrollView style={styles.ocrResultScroll} showsVerticalScrollIndicator={true}>
+                      <Text style={styles.ocrResultText}>{ocrResult}</Text>
+                    </ScrollView>
+                    <View style={styles.ocrResultActions}>
+                      <TouchableOpacity 
+                        style={styles.copyTextButton}
+                        onPress={handleOCRCopyText}
+                      >
+                        <Ionicons name="copy" size={16} color="#6B46C1" />
+                        <Text style={styles.copyTextButtonText}>Use in Chat</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </Modal>
 
         {/* Chat History Modal */}
         <Modal
@@ -1921,19 +2059,48 @@ const styles = StyleSheet.create({
     marginLeft: 6,
     fontWeight: "600",
   },
+  compactActionsContainer: {
+    backgroundColor: "#FFFFFF",
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9",
+    paddingVertical: 6,
+  },
+  compactActionsContent: {
+    paddingHorizontal: 12,
+    gap: 6,
+    alignItems: 'center',
+  },
+  compactActionButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#6B46C1",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 1,
+    elevation: 1,
+  },
   inputContainer: {
     backgroundColor: "#FFFFFF",
     borderTopWidth: 1,
     borderTopColor: "#E2E8F0",
+    paddingBottom: 8,
     shadowColor: "#1E293B",
     shadowOffset: {
       width: 0,
-      height: -4,
+      height: -2,
     },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 8,
-    paddingBottom: Platform.OS === "ios" ? 0 : 8,
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  inputAreaContainer: {
+    backgroundColor: "transparent",
   },
   touchOverlay: {
     position: "absolute",
@@ -2034,9 +2201,9 @@ const styles = StyleSheet.create({
   },
   inputRow: {
     flexDirection: "row",
-    padding: 16,
+    padding: 12,
     alignItems: "flex-end",
-    gap: 12,
+    gap: 8,
   },
   inputWrapper: {
     flex: 1,
@@ -2124,65 +2291,67 @@ const styles = StyleSheet.create({
   // Welcome section styles
   welcomeContainer: {
     paddingHorizontal: 20,
-    paddingVertical: 40,
+    paddingVertical: 16,
+    flex: 1,
+    justifyContent: 'center',
   },
   welcomeTitle: {
-    fontSize: 32,
+    fontSize: 24,
     fontWeight: "bold",
     color: "#1E293B",
-    marginBottom: 12,
+    marginBottom: 6,
     textAlign: "center",
   },
   welcomeSubtitle: {
-    fontSize: 18,
+    fontSize: 14,
     color: "#64748B",
     textAlign: "center",
-    lineHeight: 24,
-    marginBottom: 32,
+    lineHeight: 20,
+    marginBottom: 20,
   },
   suggestedPromptsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
-    gap: 16,
+    gap: 10,
   },
   promptCard: {
     backgroundColor: "#FFFFFF",
-    padding: 24,
-    marginBottom: 16,
-    borderRadius: 20,
-    width: "47%",
+    padding: 12,
+    marginBottom: 8,
+    borderRadius: 12,
+    width: "48%",
     shadowColor: "#1E293B",
     shadowOffset: {
       width: 0,
-      height: 4,
+      height: 1,
     },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 6,
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 2,
     borderWidth: 1,
     borderColor: "#F1F5F9",
-    minHeight: 140,
+    minHeight: 95,
     justifyContent: "space-between",
   },
   promptIcon: {
-    fontSize: 32,
-    marginBottom: 12,
+    fontSize: 24,
+    marginBottom: 8,
     textAlign: "center",
   },
   promptTitle: {
-    fontSize: 16,
-    fontWeight: "700",
+    fontSize: 13,
+    fontWeight: "600",
     color: "#1E293B",
-    marginBottom: 8,
+    marginBottom: 4,
     textAlign: "center",
-    lineHeight: 20,
+    lineHeight: 16,
   },
   promptDescription: {
-    fontSize: 13,
+    fontSize: 11,
     color: "#64748B",
     textAlign: "center",
-    lineHeight: 18,
+    lineHeight: 14,
   },
 
   // Chat History Modal
@@ -2415,6 +2584,147 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     marginLeft: 8,
+  },
+
+  // OCR Modal Styles
+  ocrModalContainer: {
+    flex: 1,
+    backgroundColor: "#F8FAFC",
+  },
+  ocrModalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 20,
+    paddingTop: 50,
+    backgroundColor: "#6B46C1",
+  },
+  ocrModalTitle: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: "#FFFFFF",
+  },
+  ocrModalContent: {
+    flex: 1,
+    padding: 20,
+  },
+  ocrSection: {
+    marginBottom: 24,
+  },
+  ocrSectionTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#1E293B",
+    marginBottom: 12,
+  },
+  imageSelectButton: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 2,
+    borderColor: "#E2E8F0",
+    borderStyle: "dashed",
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 200,
+  },
+  imageSelectContent: {
+    alignItems: "center",
+  },
+  imageSelectText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#6B46C1",
+    marginTop: 12,
+  },
+  imageSelectSubtext: {
+    fontSize: 14,
+    color: "#64748B",
+    marginTop: 4,
+    textAlign: "center",
+  },
+  selectedImageContainer: {
+    position: "relative",
+    width: "100%",
+    height: 200,
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  selectedImage: {
+    width: "100%",
+    height: "100%",
+  },
+  selectedImageOverlay: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    padding: 12,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  selectedImageText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "500",
+    marginLeft: 8,
+    flex: 1,
+  },
+  processButton: {
+    backgroundColor: "#6B46C1",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+    borderRadius: 12,
+    gap: 8,
+  },
+  processButtonDisabled: {
+    backgroundColor: "#94A3B8",
+  },
+  processButtonText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  ocrResultContainer: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    overflow: "hidden",
+  },
+  ocrResultScroll: {
+    maxHeight: 300,
+    padding: 16,
+  },
+  ocrResultText: {
+    fontSize: 14,
+    color: "#1E293B",
+    lineHeight: 20,
+  },
+  ocrResultActions: {
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9",
+    padding: 12,
+    backgroundColor: "#F8FAFC",
+  },
+  copyTextButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F1F5F9",
+    borderWidth: 1,
+    borderColor: "#6B46C1",
+    borderRadius: 8,
+    padding: 12,
+    gap: 8,
+  },
+  copyTextButtonText: {
+    color: "#6B46C1",
+    fontSize: 14,
+    fontWeight: "600",
   },
 });
 

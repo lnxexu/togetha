@@ -661,12 +661,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#F8FAFC",
     borderRadius: 12,
     marginBottom: 16,
-
     marginTop: 16,
     shadowColor: "#000",
-
     borderWidth: 1,
     borderColor: "#E5E7EB",
+    zIndex: 100,
+    elevation: 5,
   },
   
   container: {
@@ -679,10 +679,17 @@ const styles = StyleSheet.create({
   },
 
   popoutContainer: {
+    position: 'absolute',
+    bottom: '100%',
+    left: 0,
+    right: 0,
     paddingHorizontal: 8,
-    paddingVertical: 6,
+    paddingBottom: 8,
     backgroundColor: "transparent",
     alignItems: 'center',
+    zIndex: 99999,
+    elevation: 999,
+    pointerEvents: 'box-none', // Allow touch events to pass through to children
   },
 
   contentContainer: {
@@ -837,7 +844,6 @@ const styles = StyleSheet.create({
   },
 
   toolsDropdown: {
-    marginTop: 6,
     width: 260,
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
@@ -845,14 +851,14 @@ const styles = StyleSheet.create({
     borderColor: '#EEF2FF',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    elevation: 6,
+    shadowOpacity: 0.15,
+    shadowRadius: 15,
+    elevation: 999,
     padding: 8,
+    pointerEvents: 'auto', // Ensure dropdown can receive touch events
   },
 
   colorDropdown: {
-    marginTop: 6,
     width: 220,
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
@@ -860,10 +866,11 @@ const styles = StyleSheet.create({
     borderColor: '#EEF2FF',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    elevation: 6,
+    shadowOpacity: 0.15,
+    shadowRadius: 15,
+    elevation: 999,
     padding: 8,
+    pointerEvents: 'auto',
   },
 
   // Width Dropdown Styles
@@ -875,7 +882,6 @@ const styles = StyleSheet.create({
   },
 
   widthDropdown: {
-    marginTop: 6,
     width: 220,
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
@@ -883,15 +889,15 @@ const styles = StyleSheet.create({
     borderColor: '#EEF2FF',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    elevation: 6,
+    shadowOpacity: 0.15,
+    shadowRadius: 15,
+    elevation: 999,
     padding: 8,
+    pointerEvents: 'auto',
   },
 
   // Image Dropdown Styles
   imageDropdown: {
-    marginTop: 6,
     width: 140,
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
@@ -899,15 +905,15 @@ const styles = StyleSheet.create({
     borderColor: '#EEF2FF',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    elevation: 6,
+    shadowOpacity: 0.15,
+    shadowRadius: 15,
+    elevation: 999,
     padding: 8,
+    pointerEvents: 'auto',
   },
 
   // Template Dropdown Styles
   templateDropdown: {
-    marginTop: 6,
     width: 240,
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
@@ -915,10 +921,11 @@ const styles = StyleSheet.create({
     borderColor: '#EEF2FF',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    elevation: 6,
+    shadowOpacity: 0.15,
+    shadowRadius: 15,
+    elevation: 999,
     padding: 8,
+    pointerEvents: 'auto',
   },
 
   // Actions Section

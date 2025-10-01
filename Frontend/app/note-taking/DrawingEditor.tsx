@@ -21,6 +21,7 @@ import {
   ActivityIndicator,
   Share,
 } from "react-native";
+import Slider from '@react-native-community/slider';
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LinearGradient } from "expo-linear-gradient";
@@ -112,14 +113,7 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
   const effectiveInitialDrawingData = routeInitialDrawingData || initialDrawingData;
   const effectiveNoteId = routeNoteId || noteId;
   
-  console.log('DrawingEditor: Route params:', {
-    hasInitialDrawingData: !!effectiveInitialDrawingData,
-    hasRouteData: !!routeInitialDrawingData,
-    hasPropData: !!initialDrawingData,
-    noteId: effectiveNoteId,
-    routeNoteId,
-    propNoteId: noteId
-  });
+  // Route params loaded
 
   const {
     strokes,
@@ -205,6 +199,7 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
   
   // Canvas orientation state
   const [canvasOrientation, setCanvasOrientation] = useState<'landscape' | 'portrait'>(initialOrientation);
+  const [canvasRotation, setCanvasRotation] = useState(0); // Rotation angle in degrees
   // Export state
   const [showExportModal, setShowExportModal] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -269,42 +264,40 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
     setCurrentZoom(1);
   };
 
-  // Create PanResponder for pinch-to-zoom gestures and drawing - optimized for real-time response
+  // Create PanResponder for pinch-to-zoom gestures - optimized to not interfere with drawing
   const panResponder = PanResponder.create({
     onStartShouldSetPanResponder: (evt, gestureState) => {
       const touches = evt.nativeEvent.touches || [];
-      // Start responder immediately for multi-touch (pinch), when drawing,
-      // or when we're zoomed in and want to pan the content with one finger.
+      // Only handle multi-touch (pinch-to-zoom) or panning when zoomed in read-only mode
+      // Let DrawingCanvas handle all single-touch drawing gestures
       if (touches.length === 2) {
         return true;
       }
-      if (!readOnly) return true; // Allow drawing when not read-only
-      if (currentZoom > 1 && touches.length === 1) return true;
+      if (currentZoom > 1 && touches.length === 1 && readOnly) return true;
       return false;
     },
     onMoveShouldSetPanResponder: (evt, gestureState) => {
       const touches = evt.nativeEvent.touches || [];
-      // Accept move gestures immediately without delay
+      // Only handle pinch gestures and panning in read-only zoomed mode
       if (touches.length === 2) return true; // pinch
-      // If drawing enabled, handle single-touch move immediately
-      if (!readOnly && touches.length === 1) return true;
-      // If zoomed in, allow single-finger pan immediately
-      if (currentZoom > 1 && touches.length === 1) return true;
+      if (currentZoom > 1 && touches.length === 1 && readOnly) return true;
       return false;
     },
     onMoveShouldSetPanResponderCapture: (evt, gestureState) => {
       const touches = evt.nativeEvent.touches || [];
-      // Capture gestures immediately for real-time response
+      // Only capture multi-touch for zoom, never capture single-touch drawing
       if (touches.length === 2) return true;
-      if (!readOnly && touches.length === 1) return true;
-      if (currentZoom > 1 && touches.length === 1) return true;
       return false;
     },
-    // Enable immediate response by setting these to true
-    onShouldBlockNativeResponder: () => true,
+    // Block native responder for zoom gestures only
+    onShouldBlockNativeResponder: (evt) => {
+      const touches = evt.nativeEvent.touches || [];
+      return touches.length === 2;
+    },
     onStartShouldSetPanResponderCapture: (evt, gestureState) => {
       const touches = evt.nativeEvent.touches || [];
-      return touches.length === 2 || !readOnly || currentZoom > 1;
+      // Only capture two-finger gestures to avoid interfering with drawing
+      return touches.length === 2;
     },
 
     onPanResponderGrant: (evt, gestureState) => {
@@ -593,16 +586,8 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
     };
     
     if (stroke.tool === 'eraser') {
-      // User requested the eraser be rendered/behave like a white brush.
-      // Treat eraser strokes as normal painted strokes using the canvas background color.
-      // Add to current page and global state
-      setPages(prev => {
-        const copy = prev.map(p => p.slice());
-        copy[currentPageIndex] = copy[currentPageIndex] || [];
-        copy[currentPageIndex].push(drawingStroke);
-        return copy;
-      });
-      addStroke(drawingStroke);
+      // Actually erase strokes by calling eraseStrokes with the DrawingStroke
+      eraseStrokes(drawingStroke);
     } else {
       // Regular stroke, add to canvas
       setPages(prev => {
@@ -1194,124 +1179,82 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
                 />
             )}
 
-            {/* Orientation is now controlled only via the floating quick toggle. */}
+            {/* Canvas Rotation Slider */}
+            {!readOnly && (
+              <View style={styles.rotationSliderContainer}>
+                <View style={styles.sliderRow}>
+                  <Text style={styles.sliderMinLabel}>0°</Text>
+                  <Slider
+                    style={{ flex: 1, height: 40, marginHorizontal: 8 }}
+                    minimumValue={0}
+                    maximumValue={360}
+                    step={1}
+                    value={canvasRotation}
+                    onValueChange={(value) => setCanvasRotation(Math.round(value))}
+                    minimumTrackTintColor="#8B5CF6"
+                    maximumTrackTintColor="#E5E7EB"
+                    thumbTintColor="#8B5CF6"
+                  />
+                  <Text style={styles.sliderMaxLabel}>{canvasRotation}°</Text>
+                </View>
+              </View>
+            )}
 
             {/* Canvas Container */}
-            {/* Page tabs */}
-            <View style={styles.tabsContainer}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsScrollContent}>
-                {pages.map((page, idx) => (
-                  <TouchableOpacity
-                    key={`page-tab-${idx}`}
-                    onPress={() => setCurrentPageIndex(idx)}
-                    onLongPress={() => confirmDeletePage(idx)}
-                    style={[
-                      styles.tabButton,
-                      idx === currentPageIndex ? styles.tabButtonActive : styles.tabButtonInactive,
-                    ]}
-                  >
-                    <Text style={[styles.tabText, idx === currentPageIndex ? styles.tabTextActive : styles.tabTextInactive]}>Page {idx + 1}</Text>
-                  </TouchableOpacity>
-                ))}
-
-                {/* Modern Add page icon (icon-only) */}
-                <TouchableOpacity
-                  onPress={() => {
-                    // Atomically add a new page and set the current page to the newly created index
-                    setPages(prev => {
-                      const newPages = [...prev, []];
-                      // set current to last page index
-                      setCurrentPageIndex(newPages.length - 1);
-                      return newPages;
-                    });
-                  }}
-                  style={styles.addPagePillWrapper}
-                  activeOpacity={0.85}
-                >
-                  <LinearGradient colors={["#7C3AED", "#8B5CF6"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.addPageIcon}>
-                    <MaterialIcons name="note-add" size={18} color="#fff" />
-                  </LinearGradient>
-                </TouchableOpacity>
-              </ScrollView>
-            </View>
+            {/* Empty space where page tabs used to be */}
+            <View style={{ height: 8 }} />
 
             <View style={styles.canvasSection}>
-              <ScrollView
-                style={styles.canvasScrollView}
-                contentContainerStyle={styles.canvasScrollContent}
-                showsHorizontalScrollIndicator={false}
-                showsVerticalScrollIndicator={false}
-                bounces={false}
-                scrollEnabled={currentZoom > 1}
-                minimumZoomScale={0.5}
-                maximumZoomScale={3}
-                zoomScale={currentZoom}
-                onScroll={(event) => {
-                  setScrollOffset({
-                    x: event.nativeEvent.contentOffset.x,
-                    y: event.nativeEvent.contentOffset.y,
-                  });
-                }}
-                scrollEventThrottle={16}
-                onScrollBeginDrag={() => {
-                  // Disable drawing when scrolling
-                  setCurrentStroke(null);
+              <View
+                style={[styles.modernCanvasWrapper, { 
+                  width: 800,
+                  height: 600,
+                  transform: [{ scale: currentZoom }],
+                }]}
+                ref={canvasCaptureRef}
+                onLayout={(ev) => {
+                  const { width, height } = ev.nativeEvent.layout;
+                  // store canvas layout for direct on-canvas selection
+                  setCanvasLayout({ width, height });
                 }}
               >
-                <TouchableOpacity
-                  style={[styles.modernCanvasWrapper, { 
-                    width: 800,
-                    height: 600,
-                    transform: [{ scale: currentZoom }],
-                  }]}
-                  onPress={handleDoubleTap}
-                    activeOpacity={1}
-                    ref={canvasCaptureRef}
-                    onLayout={(ev) => {
-                      const { width, height } = ev.nativeEvent.layout;
-                      // store canvas layout for direct on-canvas selection
-                      setCanvasLayout({ width, height });
-                    }}
-                  {...panResponder.panHandlers}
-                >
-                  <DrawingCanvas
-                    strokes={pages[currentPageIndex] || []}
-                    currentTool={currentTool}
-                    currentColor={currentColor}
-                    currentWidth={currentWidth}
-                    onStrokeComplete={handleStrokeComplete}
-                    onAddStroke={addStroke}
-                    onStrokeUpdate={setCurrentStroke}
-                    disabled={readOnly}
-                    backgroundColor={getTemplateBackgroundColor(activeTemplate)}
-                    template={activeTemplate}
-                    templateOptions={getTemplateOptionsForCanvas()}
-                    scaleStrokesWithZoom={SCALE_STROKES_WITH_ZOOM}
-                    currentZoom={currentZoom}
-                    orientation={canvasOrientation}
-                  />
+                <DrawingCanvas
+                  strokes={pages[currentPageIndex] || []}
+                  currentTool={currentTool}
+                  currentColor={currentColor}
+                  currentWidth={currentWidth}
+                  onStrokeComplete={handleStrokeComplete}
+                  onAddStroke={addStroke}
+                  onStrokeUpdate={setCurrentStroke}
+                  disabled={readOnly}
+                  backgroundColor={getTemplateBackgroundColor(activeTemplate)}
+                  template={activeTemplate}
+                  templateOptions={getTemplateOptionsForCanvas()}
+                  scaleStrokesWithZoom={SCALE_STROKES_WITH_ZOOM}
+                  currentZoom={currentZoom}
+                  orientation={canvasOrientation}
+                />
 
-                  {/* Canvas overlay for direct selection mode */}
-                  {useCanvasSelection && canvasLayout && (
-                    <View
-                      style={{ position: 'absolute', left: 0, top: 0, width: canvasLayout.width, height: canvasLayout.height }}
-                      pointerEvents="box-only"
-                      {...(selectionPanResponderRef.current ? selectionPanResponderRef.current.panHandlers : {})}
-                    >
-                      {selection && (
-                        <View style={{ position: 'absolute', left: selection.left, top: selection.top, width: selection.width, height: selection.height }}>
-                          <View style={{ flex: 1, borderWidth: 1, borderColor: '#111827', backgroundColor: 'rgba(255,255,255,0.12)' }} />
-                          {/* corner handles */}
-                          <View style={{ position: 'absolute', left: -12, top: -12, width: 24, height: 24, borderRadius: 6, backgroundColor: 'rgba(17,24,39,0.9)' }} />
-                          <View style={{ position: 'absolute', right: -12, top: -12, width: 24, height: 24, borderRadius: 6, backgroundColor: 'rgba(17,24,39,0.9)' }} />
-                          <View style={{ position: 'absolute', left: -12, bottom: -12, width: 24, height: 24, borderRadius: 6, backgroundColor: 'rgba(17,24,39,0.9)' }} />
-                          <View style={{ position: 'absolute', right: -12, bottom: -12, width: 24, height: 24, borderRadius: 6, backgroundColor: 'rgba(17,24,39,0.9)' }} />
-                        </View>
-                      )}
-                    </View>
-                  )}
-                </TouchableOpacity>
-              </ScrollView>
+                {/* Canvas overlay for direct selection mode */}
+                {useCanvasSelection && canvasLayout && (
+                  <View
+                    style={{ position: 'absolute', left: 0, top: 0, width: canvasLayout.width, height: canvasLayout.height }}
+                    pointerEvents={selection ? "auto" : "none"}
+                    {...(selectionPanResponderRef.current ? selectionPanResponderRef.current.panHandlers : {})}
+                  >
+                    {selection && (
+                      <View style={{ position: 'absolute', left: selection.left, top: selection.top, width: selection.width, height: selection.height }}>
+                        <View style={{ flex: 1, borderWidth: 1, borderColor: '#111827', backgroundColor: 'rgba(255,255,255,0.12)' }} />
+                        {/* corner handles */}
+                        <View style={{ position: 'absolute', left: -12, top: -12, width: 24, height: 24, borderRadius: 6, backgroundColor: 'rgba(17,24,39,0.9)' }} />
+                        <View style={{ position: 'absolute', right: -12, top: -12, width: 24, height: 24, borderRadius: 6, backgroundColor: 'rgba(17,24,39,0.9)' }} />
+                        <View style={{ position: 'absolute', left: -12, bottom: -12, width: 24, height: 24, borderRadius: 6, backgroundColor: 'rgba(17,24,39,0.9)' }} />
+                        <View style={{ position: 'absolute', right: -12, bottom: -12, width: 24, height: 24, borderRadius: 6, backgroundColor: 'rgba(17,24,39,0.9)' }} />
+                      </View>
+                    )}
+                  </View>
+                )}
+              </View>
               
               {/* Zoom Indicator */}
               {currentZoom !== 1 && (
@@ -1320,21 +1263,6 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
                     {Math.round(currentZoom * 100)}%
                   </Text>
                 </View>
-              )}
-
-              {/* Quick Orientation Toggle */}
-              {!readOnly && (
-                <TouchableOpacity 
-                  style={styles.quickOrientationToggle} 
-                  onPress={toggleOrientation}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons 
-                    name={canvasOrientation === 'landscape' ? 'phone-portrait' : 'phone-landscape'} 
-                    size={20} 
-                    color="#4F46E5" 
-                  />
-                </TouchableOpacity>
               )}
               
               {/* Gesture Hint */}
@@ -1355,385 +1283,114 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
         <Modal
           visible={showExportModal}
           transparent={true}
-          animationType="slide"
+          animationType="fade"
           onRequestClose={() => setShowExportModal(false)}
         >
-          <View style={styles.exportModalOverlay}>
+          <KeyboardAvoidingView 
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.exportModalOverlay}
+          >
             <View style={styles.exportModalContainer}>
+              {/* Enhanced Header */}
               <View style={styles.exportModalHeader}>
-                <View style={styles.exportModalIcon}>
-                  <LinearGradient
-                    colors={["#8B5CF6", "#7C3AED"]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.exportModalIconGradient}
-                  >
-                    <MaterialIcons name="file-download" size={24} color="#fff" />
-                  </LinearGradient>
-                </View>
-                <Text style={styles.exportModalTitle}>Export Drawing</Text>
-                <Text style={styles.exportModalSubtitle}>
-                  Create a high-quality export of your drawing
-                </Text>
+                <LinearGradient
+                  colors={["#8B5CF6", "#7C3AED"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.exportModalHeaderGradient}
+                >
+                  <View style={styles.exportModalIcon}>
+                    <MaterialIcons name="file-download" size={28} color="#fff" />
+                  </View>
+                  <Text style={styles.exportModalTitle}>Export Drawing</Text>
+                  <Text style={styles.exportModalSubtitle}>
+                    Choose format and save your masterpiece
+                  </Text>
+                </LinearGradient>
                 <TouchableOpacity 
                   style={styles.exportModalCloseButton}
                   onPress={() => setShowExportModal(false)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                  <MaterialIcons name="close" size={20} color="#6B7280" />
+                  <MaterialIcons name="close" size={24} color="#FFFFFF" />
                 </TouchableOpacity>
               </View>
 
-              {/* Preview + selection area (single preview shown) */}
-              <View style={styles.exportPreviewContainer}>
-                {exporting ? (
-                  <View style={styles.exportLoadingContainer}>
-                    <ActivityIndicator size="large" color="#8B5CF6" />
-                    <Text style={styles.exportLoadingText}>Preparing export...</Text>
-                  </View>
-                ) : (
-                  <View
-                    onLayout={(ev) => {
-                      const { width, height } = ev.nativeEvent.layout;
-                      setPreviewLayout({ width, height });
-                    }}
-                    style={styles.exportPreviewImageContainer}
-                  >
-
-              {/* Floating action bar for canvas selection mode */}
-              {useCanvasSelection && (
-                <View style={{ position: 'absolute', bottom: 20, left: 20, right: 20, flexDirection: 'row', justifyContent: 'space-between' }} pointerEvents="box-none">
-                  <TouchableOpacity
-                    style={[styles.cancelButton, { flex: 0.45 }]}
-                    onPress={() => {
-                      // cancel selection and re-open modal
-                      setSelection(null);
-                      setUseCanvasSelection(false);
-                      setShowExportModal(true);
-                    }}
-                  >
-                    <Text style={styles.cancelButtonText}>Cancel</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.modalActionButton, { flex: 0.45 }]}
-                    onPress={async () => {
-                      // Capture canvas and crop using current selection
-                      try {
-                        setExporting(true);
-                        const uri = await captureRef(canvasCaptureRef.current || canvasCaptureRef, { format: 'png', quality: 1 });
-                        setExportPNGUri(uri);
-
-                        if (selection && canvasLayout && isManipulatorAvailable) {
-                          const imgW = imageOriginalSize?.width || canvasLayout.width;
-                          const imgH = imageOriginalSize?.height || canvasLayout.height;
-                          const scaleX = imgW / canvasLayout.width;
-                          const scaleY = imgH / canvasLayout.height;
-                          const crop = {
-                            originX: Math.round(selection.left * scaleX),
-                            originY: Math.round(selection.top * scaleY),
-                            width: Math.round(selection.width * scaleX),
-                            height: Math.round(selection.height * scaleY),
-                          };
-                          // eslint-disable-next-line @typescript-eslint/no-var-requires
-                          const ImageManipulator = require('expo-image-manipulator');
-                          const result = await ImageManipulator.manipulateAsync(uri, [{ crop }], { compress: 1, format: ImageManipulator.SaveFormat.PNG });
-                          try {
-                            // Save result.uri to Photos and share
-                            await saveImageToPhotos(result.uri, true);
-                            showSuccessToast('Export saved to Photos and shared');
-                          } catch (saveErr) {
-                            console.warn('Saving to photos failed, falling back to share file', saveErr);
-                            const dest = `${FileSystem.documentDirectory}drawing_export_${Date.now()}${result.uri.endsWith('.jpg') ? '.jpg' : '.png'}`;
-                            await FileSystem.copyAsync({ from: result.uri, to: dest });
-                            await Share.share({ url: dest, title: 'Exported drawing' } as any);
-                            showSuccessToast('Export saved to documents');
-                          }
-                        } else {
-                          // fallback: share full capture
-                          try {
-                            await saveImageToPhotos(uri, true);
-                            showSuccessToast('Export saved to Photos and shared');
-                          } catch (saveErr) {
-                            const dest = `${FileSystem.documentDirectory}drawing_export_${Date.now()}${uri.endsWith('.jpg') ? '.jpg' : '.png'}`;
-                            await FileSystem.copyAsync({ from: uri, to: dest });
-                            await Share.share({ url: dest, title: 'Exported drawing' } as any);
-                            showSuccessToast('Export saved to documents');
-                          }
-                        }
-                      } catch (e) {
-                        console.error('Canvas export error', e);
-                        showErrorToast('Failed to export selection from canvas');
-                      } finally {
-                        setExporting(false);
-                        setSelection(null);
-                        setUseCanvasSelection(false);
-                      }
-                    }}
-                  >
-                    <Text style={styles.modalActionText}>Capture & Crop</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-                    {/* Show whichever preview is available (PNG preferred) */}
-                    {exportPNGUri || exportJPGUri ? (
-                      <Image
-                        source={{ uri: exportPNGUri || exportJPGUri || undefined }}
-                        style={{ width: '100%', height: '100%' }}
-                        resizeMode="contain"
-                        onLoad={(e) => {
-                          const { width, height } = e.nativeEvent.source;
-                          setImageOriginalSize({ width, height });
-                        }}
-                      />
-                    ) : (
-                      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                        <Text style={{ color: '#9CA3AF' }}>Preview will appear here</Text>
-                      </View>
-                    )}
-
-                    {/* interactive selection overlay (overlay captures gestures) */}
-                    {previewLayout && (
-                      <Pressable
-                        style={{ position: 'absolute', left: 0, top: 0, width: previewLayout.width, height: previewLayout.height }}
-                        onPressIn={(event) => {
-                          console.log('Pressable onPressIn triggered');
-                          console.log('Selection exists:', !!selection);
-                          console.log('Image URI exists:', !!(exportPNGUri || exportJPGUri));
-                          console.log('Event coordinates:', event.nativeEvent.locationX, event.nativeEvent.locationY);
-                          
-                          if (exportPNGUri || exportJPGUri) {
-                            const { locationX, locationY } = event.nativeEvent;
-                            
-                            // Check if tap is inside existing selection (if any)
-                            let tappedInsideSelection = false;
-                            if (selection) {
-                              tappedInsideSelection = locationX >= selection.left && locationX <= (selection.left + selection.width) &&
-                                                    locationY >= selection.top && locationY <= (selection.top + selection.height);
-                              console.log('Tapped inside existing selection:', tappedInsideSelection);
-                            }
-                            
-                            // Create new selection at press location (unless tapping inside existing selection for dragging)
-                            if (!tappedInsideSelection) {
-                              const size = Math.min(previewLayout.width, previewLayout.height) * 0.3;
-                              const left = Math.max(0, Math.min(locationX - size/2, previewLayout.width - size));
-                              const top = Math.max(0, Math.min(locationY - size/2, previewLayout.height - size));
-                              console.log('Creating new selection:', { left, top, width: size, height: size });
-                              setSelection({ left, top, width: size, height: size });
-                            }
-                          }
-                        }}
-                        onPress={(event) => {
-                          console.log('Pressable onPress triggered as fallback');
-                          // Fallback for onPress if onPressIn doesn't work
-                          if (exportPNGUri || exportJPGUri) {
-                            const { locationX, locationY } = event.nativeEvent;
-                            
-                            // Check if tap is inside existing selection (if any)
-                            let tappedInsideSelection = false;
-                            if (selection) {
-                              tappedInsideSelection = locationX >= selection.left && locationX <= (selection.left + selection.width) &&
-                                                    locationY >= selection.top && locationY <= (selection.top + selection.height);
-                            }
-                            
-                            // Create new selection at press location (unless tapping inside existing selection for dragging)
-                            if (!tappedInsideSelection) {
-                              const size = Math.min(previewLayout.width, previewLayout.height) * 0.3;
-                              const left = Math.max(0, Math.min(locationX - size/2, previewLayout.width - size));
-                              const top = Math.max(0, Math.min(locationY - size/2, previewLayout.height - size));
-                              console.log('Creating selection via onPress fallback:', { left, top, width: size, height: size });
-                              setSelection({ left, top, width: size, height: size });
-                            }
-                          }
-                        }}
-                        // Only attach pan handlers when a selection exists to avoid responder conflicts
-                        {...(selection ? (selectionPanResponderRef.current ? selectionPanResponderRef.current.panHandlers : {}) : {})}
-                      >
-                        {selection && (
-                          <View style={{ position: 'absolute', left: selection.left, top: selection.top, width: selection.width, height: selection.height }}>
-                            <View style={{ flex: 1, borderWidth: 2, borderColor: '#8B5CF6', backgroundColor: 'rgba(139,92,246,0.1)' }} />
-                            {/* corner handles */}
-                            <View style={{ position: 'absolute', left: -8, top: -8, width: 16, height: 16, borderRadius: 8, backgroundColor: '#8B5CF6', borderWidth: 2, borderColor: '#fff' }} />
-                            <View style={{ position: 'absolute', right: -8, top: -8, width: 16, height: 16, borderRadius: 8, backgroundColor: '#8B5CF6', borderWidth: 2, borderColor: '#fff' }} />
-                            <View style={{ position: 'absolute', left: -8, bottom: -8, width: 16, height: 16, borderRadius: 8, backgroundColor: '#8B5CF6', borderWidth: 2, borderColor: '#fff' }} />
-                            <View style={{ position: 'absolute', right: -8, bottom: -8, width: 16, height: 16, borderRadius: 8, backgroundColor: '#8B5CF6', borderWidth: 2, borderColor: '#fff' }} />
-                          </View>
-                        )}
-                        {/* Show tap hint when no selection */}
-                        {!selection && (exportPNGUri || exportJPGUri) && (
-                          <View style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(139,92,246,0.05)', pointerEvents: 'none' }}>
-                            <View style={{ backgroundColor: 'rgba(139,92,246,0.9)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 }}>
-                              <Text style={{ color: '#fff', fontSize: 12, fontFamily: 'Inter-Medium' }}>Tap anywhere to select area</Text>
-                            </View>
-                          </View>
-                        )}
-                      </Pressable>
-                    )}
-                  </View>
-                )}
-              </View>
-
-              <View style={styles.exportFormatButtons}>
-                <TouchableOpacity
-                  style={styles.exportFormatButton}
-                  onPress={async () => {
-                    setExporting(true);
-                    try {
-                      const uri = await captureRef(canvasCaptureRef.current || canvasCaptureRef, { format: 'png', quality: 1 });
-                      setExportPNGUri(uri);
-                      setExportJPGUri(null);
-                      // Auto-create a centered selection if none exists
-                      if (previewLayout && !selection) {
-                        const w = Math.round(previewLayout.width * 0.8);
-                        const h = Math.round(previewLayout.height * 0.8);
-                        setSelection({ 
-                          left: Math.round((previewLayout.width - w) / 2), 
-                          top: Math.round((previewLayout.height - h) / 2), 
-                          width: w, 
-                          height: h 
-                        });
-                      }
-                    } catch (e) {
-                      showErrorToast('Failed to capture PNG');
-                    } finally { setExporting(false); }
-                  }}
-                >
-                  <LinearGradient
-                    colors={["#10B981", "#059669"]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.exportFormatButtonGradient}
-                  >
-                    <MaterialIcons name="image" size={18} color="#fff" />
-                    <Text style={styles.exportFormatButtonText}>PNG</Text>
-                    <Text style={styles.exportFormatButtonSubtext}>Best Quality</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.exportFormatButton}
-                  onPress={async () => {
-                    setExporting(true);
-                    try {
-                      const uri = await captureRef(canvasCaptureRef.current || canvasCaptureRef, { format: 'jpg', quality: 0.9 });
-                      setExportJPGUri(uri);
-                      setExportPNGUri(null);
-                      // Auto-create a centered selection if none exists
-                      if (previewLayout && !selection) {
-                        const w = Math.round(previewLayout.width * 0.8);
-                        const h = Math.round(previewLayout.height * 0.8);
-                        setSelection({ 
-                          left: Math.round((previewLayout.width - w) / 2), 
-                          top: Math.round((previewLayout.height - h) / 2), 
-                          width: w, 
-                          height: h 
-                        });
-                      }
-                    } catch (e) {
-                      showErrorToast('Failed to capture JPEG');
-                    } finally { setExporting(false); }
-                  }}
-                >
-                  <LinearGradient
-                    colors={["#F59E0B", "#D97706"]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.exportFormatButtonGradient}
-                  >
-                    <MaterialIcons name="photo" size={18} color="#fff" />
-                    <Text style={styles.exportFormatButtonText}>JPEG</Text>
-                    <Text style={styles.exportFormatButtonSubtext}>Smaller Size</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              </View>
-
-              {/* Selection info text */}
-              <View style={styles.exportSelectionInfo}>
-                <Text style={styles.exportSelectionInfoText}>
-                  {selection ? 'Tap and drag on the preview to adjust selection area' : 'Tap on the preview to create a selection area'}
+              <ScrollView 
+                style={{ maxHeight: 400 }}
+                contentContainerStyle={{ paddingBottom: 16 }}
+                showsVerticalScrollIndicator={false}
+              >
+              {/* Simplified Export Instructions */}
+              <View style={styles.exportInstructionsContainer}>
+                <Ionicons name="information-circle-outline" size={20} color="#8B5CF6" />
+                <Text style={styles.exportInstructionsText}>
+                  Select a format to export your entire canvas
                 </Text>
               </View>
 
-              <View style={styles.exportActionButtons}>
-                <TouchableOpacity
-                  style={styles.exportCancelButton}
-                  onPress={() => setShowExportModal(false)}
-                >
-                  <Text style={styles.exportCancelButtonText}>Cancel</Text>
-                </TouchableOpacity>
-
-                {selection && (
+              {/* Format Selection with Cards */}
+              <View style={styles.exportFormatSection}>
+                <Text style={styles.exportSectionTitle}>Choose Export Format</Text>
+                <View style={styles.exportFormatButtons}>
                   <TouchableOpacity
-                    style={styles.exportClearButton}
-                    onPress={() => setSelection(null)}
+                    style={[styles.exportFormatButton, exportPNGUri && styles.exportFormatButtonActive]}
+                    onPress={async () => {
+                      setExporting(true);
+                      try {
+                        const uri = await captureRef(canvasCaptureRef.current || canvasCaptureRef, { format: 'png', quality: 1 });
+                        // Immediately save and share
+                        await saveImageToPhotos(uri, true);
+                        showSuccessToast('PNG exported successfully!');
+                        setShowExportModal(false);
+                      } catch (e) {
+                        showErrorToast('Failed to export PNG');
+                      } finally { setExporting(false); }
+                    }}
                   >
-                    <Text style={styles.exportClearButtonText}>Clear</Text>
+                    <LinearGradient
+                      colors={exportPNGUri ? ["#10B981", "#059669"] : ["#10B981", "#059669"]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.exportFormatButtonGradient}
+                    >
+                      <MaterialIcons name="image" size={32} color="#fff" />
+                      <Text style={styles.exportFormatButtonText}>PNG</Text>
+                      <Text style={styles.exportFormatButtonSubtext}>Best Quality</Text>
+                    </LinearGradient>
                   </TouchableOpacity>
-                )}
 
-                <TouchableOpacity
-                  style={[styles.exportSaveButton, selection ? { flex: 2 } : { flex: 3 }]}
-                  onPress={async () => {
-                    // Crop & save the selected area (if selection present) using expo-image-manipulator when available
-                    try {
-                      const uriToUse = exportPNGUri || exportJPGUri || null;
-                      if (!uriToUse) { showWarningToast('Capture an image first'); return; }
-
-                      if (selection && previewLayout && isManipulatorAvailable) {
-                        // Map selection (preview coords) to actual image pixels
-                        const imgW = imageOriginalSize?.width || previewLayout.width;
-                        const imgH = imageOriginalSize?.height || previewLayout.height;
-                        const scaleX = imgW / previewLayout.width;
-                        const scaleY = imgH / previewLayout.height;
-                        const crop = {
-                          originX: Math.round(selection.left * scaleX),
-                          originY: Math.round(selection.top * scaleY),
-                          width: Math.round(selection.width * scaleX),
-                          height: Math.round(selection.height * scaleY),
-                        };
-                        // eslint-disable-next-line @typescript-eslint/no-var-requires
-                        const ImageManipulator = require('expo-image-manipulator');
-                        const result = await ImageManipulator.manipulateAsync(uriToUse, [{ crop }], { compress: 1, format: exportPNGUri ? ImageManipulator.SaveFormat.PNG : ImageManipulator.SaveFormat.JPEG });
-                        try {
-                          await saveImageToPhotos(result.uri, true);
-                          showSuccessToast('Export saved to Photos and shared');
-                        } catch (saveErr) {
-                          console.warn('Saving to photos failed, falling back to share file', saveErr);
-                          const dest = `${FileSystem.documentDirectory}drawing_export_${Date.now()}${result.uri.endsWith('.jpg') ? '.jpg' : '.png'}`;
-                          await FileSystem.copyAsync({ from: result.uri, to: dest });
-                          await Share.share({ url: dest, title: 'Exported drawing' } as any);
-                          showSuccessToast('Export saved to documents');
-                        }
-                      } else {
-                        // Fallback: save full captured image
-                        try {
-                          await saveImageToPhotos(uriToUse, true);
-                          showSuccessToast('Export saved to Photos and shared');
-                        } catch (saveErr) {
-                          const dest = `${FileSystem.documentDirectory}drawing_export_${Date.now()}${uriToUse.endsWith('.jpg') ? '.jpg' : '.png'}`;
-                          await FileSystem.copyAsync({ from: uriToUse, to: dest });
-                          await Share.share({ url: dest, title: 'Exported drawing' } as any);
-                          showSuccessToast('Export saved to documents');
-                        }
-                      }
-                    } catch (e) {
-                      console.error('Export error', e);
-                      showErrorToast('Failed to export image');
-                    }
-                  }}
-                >
-                  <LinearGradient
-                    colors={["#8B5CF6", "#7C3AED"]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.exportSaveButtonGradient}
+                  <TouchableOpacity
+                    style={[styles.exportFormatButton, exportJPGUri && styles.exportFormatButtonActive]}
+                    onPress={async () => {
+                      setExporting(true);
+                      try {
+                        const uri = await captureRef(canvasCaptureRef.current || canvasCaptureRef, { format: 'jpg', quality: 0.9 });
+                        // Immediately save and share
+                        await saveImageToPhotos(uri, true);
+                        showSuccessToast('JPEG exported successfully!');
+                        setShowExportModal(false);
+                      } catch (e) {
+                        showErrorToast('Failed to export JPEG');
+                      } finally { setExporting(false); }
+                    }}
                   >
-                    <MaterialIcons name="save-alt" size={18} color="#fff" />
-                    <Text style={styles.exportSaveButtonText}>Export & Share</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
+                    <LinearGradient
+                      colors={exportJPGUri ? ["#F59E0B", "#D97706"] : ["#F59E0B", "#D97706"]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.exportFormatButtonGradient}
+                    >
+                      <MaterialIcons name="photo" size={32} color="#fff" />
+                      <Text style={styles.exportFormatButtonText}>JPEG</Text>
+                      <Text style={styles.exportFormatButtonSubtext}>Smaller Size</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </View>
               </View>
+              </ScrollView>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </Modal>
 
         {/* Folder Selection Modal */}
@@ -1986,7 +1643,7 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 10,
     zIndex: 1000,
-    overflow: "hidden",
+    overflow: "visible",
   },
   mainScrollView: {
     flex: 1,
@@ -2022,16 +1679,9 @@ const styles = StyleSheet.create({
   canvasSection: {
     flex: 1,
     position: "relative",
-  },
-  canvasScrollView: {
-    flex: 1,
-    backgroundColor: "#f3f3f3ff",
-  },
-  canvasScrollContent: {
     alignItems: "center",
     justifyContent: "center",
-    minHeight: "100%",
-// Add padding to prevent content from touching edges
+    backgroundColor: "#f3f3f3ff",
   },
   zoomIndicator: {
     position: "absolute",
@@ -2096,6 +1746,47 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: "#e2e8f0",
+  },
+
+  // Rotation slider styles
+  rotationSliderContainer: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 10,
+    marginVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 2,
+    elevation: 1,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  rotationLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#374151",
+    marginBottom: 4,
+    textAlign: "center",
+    fontFamily: "Inter-SemiBold",
+  },
+  sliderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  sliderMinLabel: {
+    fontSize: 11,
+    color: "#9CA3AF",
+    fontFamily: "Inter-Medium",
+    minWidth: 22,
+  },
+  sliderMaxLabel: {
+    fontSize: 11,
+    color: "#8B5CF6",
+    fontFamily: "Inter-SemiBold",
+    minWidth: 36,
+    textAlign: "right",
   },
 
 
@@ -2995,73 +2686,135 @@ const styles = StyleSheet.create({
   // Modern Export Modal Styles
   exportModalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
   },
   
   exportModalContainer: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    width: "95%",
-    maxWidth: 400,
-    maxHeight: "90%",
+    borderRadius: 20,
+    width: "100%",
+    maxWidth: 450,
+    maxHeight: "92%",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 20 },
-    shadowOpacity: 0.4,
-    shadowRadius: 35,
-    elevation: 20,
+    shadowOpacity: 0.5,
+    shadowRadius: 40,
+    elevation: 25,
+    overflow: 'hidden',
   },
 
   exportModalHeader: {
-    alignItems: "center",
-    paddingTop: 28,
-    paddingHorizontal: 24,
-    paddingBottom: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F1F5F9",
     position: "relative",
   },
 
-  exportModalIcon: {
-    marginBottom: 16,
-  },
-
-  exportModalIconGradient: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: "center",
+  exportModalHeaderGradient: {
+    paddingTop: 32,
+    paddingHorizontal: 24,
+    paddingBottom: 24,
     alignItems: "center",
   },
 
+  exportModalIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+
   exportModalTitle: {
-    fontSize: 22,
+    fontSize: 24,
     fontFamily: "Inter-Bold",
-    color: "#1F2937",
-    marginBottom: 8,
+    color: "#FFFFFF",
+    marginBottom: 6,
     textAlign: "center",
   },
 
   exportModalSubtitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontFamily: "Inter-Regular",
-    color: "#6B7280",
+    color: "rgba(255, 255, 255, 0.9)",
     textAlign: "center",
-    lineHeight: 22,
+    lineHeight: 20,
   },
 
   exportModalCloseButton: {
     position: "absolute",
-    top: 16,
-    right: 16,
+    top: 12,
+    right: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  // Step Indicator Styles
+  exportStepContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+    backgroundColor: "#F8FAFC",
+  },
+
+  exportStepIndicator: {
+    alignItems: "center",
+    flex: 1,
+  },
+
+  exportStepCircle: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#E5E7EB",
     justifyContent: "center",
     alignItems: "center",
+    marginBottom: 6,
+  },
+
+  exportStepActive: {
+    backgroundColor: "#8B5CF6",
+  },
+
+  exportStepNumber: {
+    fontSize: 14,
+    fontFamily: "Inter-Bold",
+    color: "#FFFFFF",
+  },
+
+  exportStepLabel: {
+    fontSize: 10,
+    fontFamily: "Inter-Medium",
+    color: "#6B7280",
+    textAlign: "center",
+  },
+
+  exportStepDivider: {
+    width: 24,
+    height: 2,
+    backgroundColor: "#E5E7EB",
+    marginBottom: 22,
+  },
+
+  // Format Section Styles
+  exportFormatSection: {
+    paddingHorizontal: 24,
+    paddingTop: 20,
+  },
+
+  exportSectionTitle: {
+    fontSize: 16,
+    fontFamily: "Inter-SemiBold",
+    color: "#1F2937",
+    marginBottom: 12,
   },
 
   exportPreviewContainer: {
@@ -3109,41 +2862,57 @@ const styles = StyleSheet.create({
 
   exportFormatButtons: {
     flexDirection: "row",
-    paddingHorizontal: 24,
     gap: 12,
-    marginBottom: 20,
   },
 
   exportFormatButton: {
     flex: 1,
     borderRadius: 16,
     overflow: "hidden",
-    elevation: 4,
+    elevation: 3,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    borderWidth: 2,
+    borderColor: "transparent",
+  },
+
+  exportFormatButtonActive: {
+    borderColor: "#8B5CF6",
+    elevation: 6,
+    shadowOpacity: 0.2,
   },
 
   exportFormatButtonGradient: {
     padding: 16,
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 80,
+    minHeight: 110,
+    position: "relative",
   },
 
   exportFormatButtonText: {
-    fontSize: 16,
+    fontSize: 18,
     fontFamily: "Inter-Bold",
     color: "#FFFFFF",
-    marginTop: 8,
-    marginBottom: 2,
+    marginTop: 10,
+    marginBottom: 4,
   },
 
   exportFormatButtonSubtext: {
     fontSize: 12,
     fontFamily: "Inter-Medium",
     color: "rgba(255, 255, 255, 0.9)",
+  },
+
+  exportFormatCheckmark: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    padding: 2,
   },
 
   exportSelectionControls: {
@@ -3183,10 +2952,10 @@ const styles = StyleSheet.create({
   exportCancelButton: {
     flex: 1,
     backgroundColor: "#F8FAFC",
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: "#E5E7EB",
     paddingVertical: 16,
-    borderRadius: 16,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -3195,6 +2964,23 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: "Inter-SemiBold",
     color: "#6B7280",
+  },
+
+  exportClearButton: {
+    flex: 1,
+    backgroundColor: "#FEF3C7",
+    borderWidth: 2,
+    borderColor: "#FCD34D",
+    paddingVertical: 16,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  exportClearButtonText: {
+    fontSize: 16,
+    fontFamily: "Inter-SemiBold",
+    color: "#D97706",
   },
 
   exportSaveButton: {
@@ -3237,22 +3023,26 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
-  exportClearButton: {
-    flex: 1,
-    backgroundColor: "#FEF3C7",
-    borderWidth: 1,
-    borderColor: "#F59E0B",
-    paddingVertical: 16,
-    borderRadius: 16,
+  // New simplified export styles
+  exportInstructionsContainer: {
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginHorizontal: 4,
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    backgroundColor: "#F8FAFC",
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 16,
+    borderRadius: 12,
+    gap: 8,
   },
 
-  exportClearButtonText: {
-    fontSize: 16,
-    fontFamily: "Inter-SemiBold",
-    color: "#D97706",
+  exportInstructionsText: {
+    fontSize: 14,
+    fontFamily: "Inter-Medium",
+    color: "#6B7280",
+    textAlign: "center",
   },
 });
 

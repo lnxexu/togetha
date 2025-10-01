@@ -32,24 +32,35 @@ const GoogleCalendar: React.FC<GoogleCalendarProps> = ({
   const { width } = Dimensions.get('window');
   const cellWidth = (width - 80) / 7; // Account for padding and margins
 
-  // Get calendar days for the current month
+  // Get calendar days for the current month - versatile for any date
   const getCalendarDays = () => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
     
+    // Get the first and last day of the current month
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
+    
+    // Calculate the start date (Sunday of the week containing the first day)
     const startDate = new Date(firstDay);
+    const dayOfWeek = firstDay.getDay(); // 0 = Sunday, 6 = Saturday
+    startDate.setDate(firstDay.getDate() - dayOfWeek);
     
-    // Start from Sunday of the week containing the first day
-    startDate.setDate(startDate.getDate() - firstDay.getDay());
+    // Calculate the end date (Saturday of the week containing the last day)
+    const endDate = new Date(lastDay);
+    const lastDayOfWeek = lastDay.getDay();
+    const daysToAdd = 6 - lastDayOfWeek;
+    endDate.setDate(lastDay.getDate() + daysToAdd);
     
+    // Generate all days between start and end
     const days = [];
-    for (let i = 0; i < 42; i++) { // 6 weeks * 7 days
-      const date = new Date(startDate);
-      date.setDate(startDate.getDate() + i);
-      days.push(date);
+    const currentDay = new Date(startDate);
+    
+    while (currentDay <= endDate) {
+      days.push(new Date(currentDay));
+      currentDay.setDate(currentDay.getDate() + 1);
     }
+    
     return days;
   };
 
@@ -197,26 +208,39 @@ const GoogleCalendar: React.FC<GoogleCalendarProps> = ({
                     {date.getDate()}
                   </Text>
                   
-                  {/* Task indicators */}
+                  {/* Enhanced Task indicators with annotations */}
                   {dayTasks.length > 0 && isCurrentMonthDate && (
                     <View style={styles.taskIndicatorsContainer}>
-                      {dayTasks.slice(0, 3).map((task, taskIndex) => (
-                        <View
-                          key={taskIndex}
-                          style={[
-                            styles.taskIndicator,
-                            {
-                              backgroundColor: task.completed 
-                                ? '#34a853' 
-                                : task.overdue 
-                                ? '#ea4335' 
-                                : '#4285f4'
-                            }
-                          ]}
-                        />
-                      ))}
+                      <View style={styles.taskDotsContainer}>
+                        {dayTasks.slice(0, 3).map((task, taskIndex) => {
+                          const dotColor = task.completed 
+                            ? '#10B981' // Green for completed
+                            : task.overdue 
+                            ? '#EF4444' // Red for overdue
+                            : (task.priority === 'urgent-important' || task.priority === 'urgent-not-important')
+                            ? '#F59E0B' // Orange for urgent tasks
+                            : '#3B82F6'; // Blue for normal
+                          
+                          return (
+                            <View
+                              key={taskIndex}
+                              style={[
+                                styles.taskIndicator,
+                                { backgroundColor: dotColor }
+                              ]}
+                            />
+                          );
+                        })}
+                      </View>
                       {dayTasks.length > 3 && (
-                        <Text style={styles.moreTasksText}>+{dayTasks.length - 3}</Text>
+                        <View style={styles.moreTasksBadge}>
+                          <Text style={styles.moreTasksText}>+{dayTasks.length - 3}</Text>
+                        </View>
+                      )}
+                      {dayTasks.length <= 3 && dayTasks.length > 0 && (
+                        <View style={styles.taskCountBadge}>
+                          <Text style={styles.taskCountText}>{dayTasks.length}</Text>
+                        </View>
                       )}
                     </View>
                   )}
@@ -339,10 +363,11 @@ const styles = StyleSheet.create({
   },
   dateCell: {
     aspectRatio: 1,
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     alignItems: 'center',
     position: 'relative',
     marginVertical: 2,
+    paddingTop: 8,
   },
   inactiveDate: {
     opacity: 0.3,
@@ -378,22 +403,64 @@ const styles = StyleSheet.create({
   },
   taskIndicatorsContainer: {
     position: 'absolute',
-    bottom: 2,
-    flexDirection: 'row',
+    bottom: 4,
+    left: 0,
+    right: 0,
+    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 2,
   },
+  taskDotsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+  },
   taskIndicator: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 1,
+    elevation: 1,
+  },
+  moreTasksBadge: {
+    backgroundColor: '#5f6368',
+    borderRadius: 6,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    minWidth: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   moreTasksText: {
-    fontSize: 8,
-    color: '#5f6368',
-    marginLeft: 2,
-    fontFamily: 'Inter-Regular',
+    fontSize: 7,
+    color: '#ffffff',
+    fontWeight: '600',
+    fontFamily: 'Inter-SemiBold',
+  },
+  taskCountBadge: {
+    backgroundColor: '#E8F0FE',
+    borderRadius: 6,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    minWidth: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 0.5,
+    borderColor: '#1a73e8',
+  },
+  taskCountText: {
+    fontSize: 7,
+    color: '#1a73e8',
+    fontWeight: '700',
+    fontFamily: 'Inter-Bold',
   },
 });
 

@@ -21,6 +21,7 @@ import { API_URL } from "@/constants/ApiConfig";
 import { Picker } from "@react-native-picker/picker";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaWrapper } from "../components/SafeAreaWrapper";
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -29,6 +30,7 @@ const EditProfile: React.FC = () => {
   const [userData, setUserData] = useState<UserProfile | null>(null);
   const [originalData, setOriginalData] = useState<UserProfile | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   // Load user data when screen is focused
   useFocusEffect(
@@ -117,6 +119,20 @@ const EditProfile: React.FC = () => {
       month: "long",
       day: "numeric",
     });
+  };
+
+  const handleDateChange = (event: any, selectedDate?: Date) => {
+    setShowDatePicker(false);
+    if (selectedDate && userData) {
+      const formattedDate = selectedDate.toISOString().split('T')[0]; // Format as YYYY-MM-DD
+      setUserData({
+        ...userData,
+        profile: {
+          ...userData.profile,
+          birthdate: formattedDate,
+        },
+      });
+    }
   };
 
   const handleCancel = () => {
@@ -402,24 +418,20 @@ const EditProfile: React.FC = () => {
           <View style={styles.fieldContainer}>
             <Text style={styles.fieldLabel}>Birthdate</Text>
             {isEditing ? (
-              <TextInput
-                style={[styles.textInput, !isEditing && styles.disabledInput]}
-                value={userData.profile?.birthdate || ""}
-                onChangeText={(text) => {
-                  if (userData) {
-                    setUserData({
-                      ...userData,
-                      profile: {
-                        ...userData.profile,
-                        birthdate: text,
-                      },
-                    });
-                  }
-                }}
-                editable={isEditing}
-                placeholder="YYYY-MM-DD"
-                keyboardType="numeric"
-              />
+              <>
+                <TouchableOpacity
+                  style={[styles.textInput, styles.datePickerButton]}
+                  onPress={() => setShowDatePicker(true)}
+                >
+                  <Text style={styles.datePickerText}>
+                    {userData.profile?.birthdate 
+                      ? formatBirthdate(userData.profile.birthdate)
+                      : "Select birthdate"
+                    }
+                  </Text>
+                  <MaterialIcons name="calendar-today" size={20} color="#6A009C" />
+                </TouchableOpacity>
+              </>
             ) : (
               <Text style={styles.textInput}>
                 {formatBirthdate(userData.profile?.birthdate)}
@@ -492,6 +504,17 @@ const EditProfile: React.FC = () => {
           </View>
         )}
       </ScrollView>
+
+      {/* Date Picker */}
+      {showDatePicker && userData && (
+        <DateTimePicker
+          value={userData.profile?.birthdate ? new Date(userData.profile.birthdate) : new Date()}
+          mode="date"
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={handleDateChange}
+          maximumDate={new Date()}
+        />
+      )}
     </View>
     </SafeAreaWrapper>
   );
@@ -695,6 +718,17 @@ const styles = StyleSheet.create({
     height: 'auto',
     width: "100%",
     padding: 0
+  },
+  datePickerButton: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  datePickerText: {
+    flex: 1,
+    fontSize: 16,
+    color: "#1E293B",
+    fontFamily: "Inter-Regular",
   },
 });
 

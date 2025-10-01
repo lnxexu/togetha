@@ -302,7 +302,7 @@ const WelcomeScreen: React.FC = () => {
                   >
                     <Text style={[styles.secondaryButtonText, {
                       fontSize: Math.min(width * 0.032, isLandscape ? 13 : 15),
-                    }]}>Sign In</Text>
+                    }]}>Log In</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.primaryButton, {

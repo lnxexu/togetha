@@ -67,7 +67,7 @@ const WelcomePage1: React.FC<WelcomePage1Props> = ({ onLoginPress }) => {
           >
             <Text style={[styles.loginButtonText, { 
               fontSize: isLandscape ? Math.min(16, height * 0.035) : width * 0.04 
-            }]}>Already have an account? Sign In</Text>
+            }]}>Already have an account? Log In</Text>
           </TouchableOpacity>
         </View>
       </View>

@@ -7,6 +7,7 @@ import {
   getCurrentPhilippineDate,
 } from "@/app/utils/dateHelpers";
 import offlineTaskService from './offlineTaskService';
+import { pushNotificationService } from '@/app/notifications/services/PushNotificationService';
 
 class TaskService {
   private async getAuthToken(): Promise<string | null> {
@@ -106,7 +107,55 @@ class TaskService {
   }
 
   async createTask(taskData: TaskFormData): Promise<Task> {
-    return offlineTaskService.createTask(taskData);
+    const task = await offlineTaskService.createTask(taskData);
+    
+    // Send push notification for task creation
+    try {
+      await pushNotificationService.notifyTaskCreated(task.title);
+      
+      // Schedule reminder notifications if task has a due date
+      if (task.due_datetime) {
+        await this.scheduleTaskReminders(task);
+      }
+    } catch (error) {
+      console.error('Error sending task creation notification:', error);
+    }
+    
+    return task;
+  }
+
+  // Helper method to schedule task reminders
+  private async scheduleTaskReminders(task: Task): Promise<void> {
+    try {
+      if (!task.due_datetime) return;
+      
+      const dueDate = new Date(task.due_datetime);
+      const now = new Date();
+      
+      // Schedule notification 1 hour before due date
+      const oneHourBefore = new Date(dueDate.getTime() - 60 * 60 * 1000);
+      if (oneHourBefore > now) {
+        await pushNotificationService.scheduleTaskReminderAtTime(task.title, oneHourBefore);
+      }
+      
+      // Schedule notification 30 minutes before due date
+      const thirtyMinsBefore = new Date(dueDate.getTime() - 30 * 60 * 1000);
+      if (thirtyMinsBefore > now) {
+        await pushNotificationService.scheduleTaskReminderAtTime(task.title, thirtyMinsBefore);
+      }
+      
+      // Check if task is due today
+      const today = new Date();
+      if (
+        dueDate.getDate() === today.getDate() &&
+        dueDate.getMonth() === today.getMonth() &&
+        dueDate.getFullYear() === today.getFullYear()
+      ) {
+        await pushNotificationService.notifyTaskDueToday(task.title);
+      }
+    } catch (error) {
+      console.error('Error scheduling task reminders:', error);
+    }
   }
 
   async updateTask(id: string, updates: Partial<TaskFormData>): Promise<Task> {
@@ -118,7 +167,16 @@ class TaskService {
   }
 
   async markTaskComplete(id: string): Promise<Task> {
-    return offlineTaskService.markTaskComplete(id);
+    const task = await offlineTaskService.markTaskComplete(id);
+    
+    // Send celebration notification
+    try {
+      await pushNotificationService.scheduleTaskCompletionCelebration(task.title);
+    } catch (error) {
+      console.error('Error sending task completion notification:', error);
+    }
+    
+    return task;
   }
 
   async markTaskIncomplete(id: string): Promise<Task> {

@@ -31,9 +31,11 @@ import {
 import LoadingScreen from '../components/LoadingScreen';
 import { getEnhancedSafeAreaConfig, getStatusBarConfig, getSafeAreaContainerStyle, getPlatformShadow } from '../utils/SafeAreaUtils';
 import { WelcomeAnimationUtils } from '../utils/WelcomeAnimationUtils';
+import { initializePushNotificationsAfterLogin } from '../notifications/services/PushNotificationService';
+import usePushNotifications from '../notifications/hooks/usePushNotifications';
 
 
-export default function SignIn() {
+export default function LogIn() {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { width, height } = useWindowDimensions();
@@ -48,6 +50,18 @@ export default function SignIn() {
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [showLoadingScreen, setShowLoadingScreen] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  
+  // Initialize push notifications hook
+  const { initializeAfterLogin } = usePushNotifications({
+    userId: userId || undefined,
+    onNotificationReceived: (notification) => {
+      console.log('Login screen - Notification received:', notification);
+    },
+    onNotificationPressed: (response) => {
+      console.log('Login screen - Notification pressed:', response);
+    }
+  });
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
@@ -114,6 +128,9 @@ export default function SignIn() {
       const result = await GoogleAuthService.signInWithGoogle();
 
       if (result.success && result.token) {
+        // Initialize push notifications after login
+        await initializeAfterLogin();
+
         setIsGoogleLoading(false);
         setShowLoadingScreen(true);
         
@@ -156,6 +173,9 @@ export default function SignIn() {
         // Perform login with the updated method that handles CSRF
         const response = await authService.login(username, password);
         clearTimeout(timeoutId);
+
+        // Initialize push notifications after login
+        await initializeAfterLogin();
 
         // Show loading screen for professional look
         setIsLoading(false);
@@ -200,6 +220,9 @@ export default function SignIn() {
                     );
 
                     if (forceLoginResponse) {
+                      // Initialize push notifications after login
+                      await initializeAfterLogin();
+
                       // Handle successful force login
                       setIsLoading(false);
                       setShowLoadingScreen(true);
@@ -287,7 +310,7 @@ export default function SignIn() {
                 fontSize: isLandscape ? width * 0.02 : 16,
                 marginBottom: isLandscape ? 15 : 24,
               }
-            ]}>Sign in to continue your journey</Text>
+            ]}>Log in to continue your journey</Text>
           </Animated.View>
 
           {/* Illustration */}
@@ -393,13 +416,13 @@ export default function SignIn() {
               ]}>Forgot Password?</Text>
             </TouchableOpacity>
 
-            {/* Sign In Button */}
+            {/* Log In Button */}
             <Animated.View style={[
               { transform: [{ scale: buttonScaleAnim }] }
             ]}>
               <TouchableOpacity
                 style={[
-                  styles.signInButton,
+                  styles.logInButton,
                   {
                     paddingVertical: isLandscape ? 12 : 16,
                     marginTop: isLandscape ? 12 : 20,
@@ -419,7 +442,7 @@ export default function SignIn() {
                   <Text style={[
                     styles.buttonText,
                     { fontSize: isLandscape ? 15 : 16 }
-                  ]}>Sign In</Text>
+                  ]}>Log In</Text>
                 )}
               </TouchableOpacity>
             </Animated.View>
@@ -503,7 +526,7 @@ export default function SignIn() {
     {/* Loading Screen Overlay */}
     {showLoadingScreen && (
       <LoadingScreen 
-        message="Signing You In"
+        message="Logging You In"
         isVisible={showLoadingScreen}
         showSuccessIcon={false}
         onAnimationComplete={() => {
@@ -613,7 +636,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
   },
-  signInButton: {
+  logInButton: {
     backgroundColor: OnboardingColors.primary.main,
     borderRadius: 16,
     shadowColor: OnboardingColors.shadow.purple,

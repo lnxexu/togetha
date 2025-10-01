@@ -332,20 +332,25 @@ export const useDrawingState = ({
   const canRedo = historyStep < history.length - 1;
 
   const clearDrawing = useCallback(async () => {
+    // Clear immediately for instant user feedback
+    const emptyStrokes: DrawingStroke[] = [];
+    setStrokes(emptyStrokes);
+    // Reset history when clearing
+    setHistory([emptyStrokes]);
+    setHistoryStep(0);
+    setHasUnsavedChanges(false);
+    
+    // Then sync with server in background
     if (currentNoteId) {
       try {
         setIsSaving(true);
         await drawingAPI.clearDrawing(currentNoteId);
-        const emptyStrokes: DrawingStroke[] = [];
-        setStrokes(emptyStrokes);
-        // Reset history when clearing
-        setHistory([emptyStrokes]);
-        setHistoryStep(0);
-        setHasUnsavedChanges(false);
+        console.log('Drawing cleared successfully on server');
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Failed to clear drawing';
+        const errorMessage = error instanceof Error ? error.message : 'Failed to clear drawing on server';
         setError(errorMessage);
-        console.error('Failed to clear drawing:', error);
+        console.error('Failed to clear drawing on server:', error);
+        // On error, we could potentially restore the previous state here if needed
       } finally {
         setIsSaving(false);
       }

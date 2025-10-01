@@ -15,6 +15,7 @@ import {
   Keyboard,
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
@@ -83,7 +84,7 @@ const AddTask: React.FC = () => {
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [categories, setCategories] = useState<TaskCategory[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [calendarDate, setCalendarDate] = useState(new Date());
+  const [datePickerDate, setDatePickerDate] = useState(new Date());
   const [screenData, setScreenData] = useState(Dimensions.get('window'));
 
   // Check if device is in landscape mode
@@ -155,6 +156,33 @@ const AddTask: React.FC = () => {
       return false;
     }
     return true;
+  };
+
+  // Date picker handlers
+  const handleDateChange = (event: any, selectedDate?: Date) => {
+    setShowDatePicker(false);
+    if (selectedDate) {
+      setDatePickerDate(selectedDate);
+      handleInputChange("due_datetime", selectedDate);
+    }
+  };
+
+  const handleTimeChange = (event: any, selectedTime?: Date) => {
+    setShowTimePicker(false);
+    if (selectedTime && formData.due_datetime) {
+      const dateWithTime = new Date(formData.due_datetime);
+      dateWithTime.setHours(selectedTime.getHours());
+      dateWithTime.setMinutes(selectedTime.getMinutes());
+      handleInputChange("due_datetime", dateWithTime);
+      
+      // Update due_time for display purposes
+      const timeString = selectedTime.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      });
+      handleInputChange("due_time", timeString);
+    }
   };
 
   // In the handleSave method:
@@ -379,8 +407,29 @@ const AddTask: React.FC = () => {
                   </TouchableOpacity>
                 </View>
 
-                {/* Calendar Picker */}
+                {/* Date Picker */}
                 {showDatePicker && (
+                  <DateTimePicker
+                    value={datePickerDate}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={handleDateChange}
+                    minimumDate={new Date()}
+                  />
+                )}
+
+                {/* Time Picker */}
+                {showTimePicker && formData.due_datetime && (
+                  <DateTimePicker
+                    value={formData.due_datetime}
+                    mode="time"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={handleTimeChange}
+                  />
+                )}
+
+                {/* OLD CALENDAR IMPLEMENTATION - REMOVE LATER */}
+                {false && (
                   <View
                     style={[
                       styles.dropdownOptions, 
@@ -412,9 +461,9 @@ const AddTask: React.FC = () => {
                               isLandscape && styles.monthNavButtonLandscape
                             ]}
                             onPress={() => {
-                              const newDate = new Date(calendarDate);
+                              const newDate = new Date(datePickerDate);
                               newDate.setMonth(newDate.getMonth() - 1);
-                              setCalendarDate(newDate);
+                              setDatePickerDate(newDate);
                             }}
                           >
                             <MaterialIcons
@@ -427,7 +476,7 @@ const AddTask: React.FC = () => {
                             styles.monthYearText,
                             isLandscape && styles.monthYearTextLandscape
                           ]}>
-                            {calendarDate.toLocaleDateString("en-US", {
+                            {datePickerDate.toLocaleDateString("en-US", {
                               month: "long",
                               year: "numeric",
                             })}
@@ -438,9 +487,9 @@ const AddTask: React.FC = () => {
                               isLandscape && styles.monthNavButtonLandscape
                             ]}
                             onPress={() => {
-                              const newDate = new Date(calendarDate);
+                              const newDate = new Date(datePickerDate);
                               newDate.setMonth(newDate.getMonth() + 1);
-                              setCalendarDate(newDate);
+                              setDatePickerDate(newDate);
                             }}
                           >
                             <MaterialIcons
@@ -477,8 +526,8 @@ const AddTask: React.FC = () => {
                           <View style={styles.daysContainer}>
                             {Array.from({ length: 42 }, (_, index) => {
                               const firstDay = new Date(
-                                calendarDate.getFullYear(),
-                                calendarDate.getMonth(),
+                                datePickerDate.getFullYear(),
+                                datePickerDate.getMonth(),
                                 1
                               );
                               const startDate = new Date(firstDay);
@@ -490,7 +539,7 @@ const AddTask: React.FC = () => {
 
                               const isCurrentMonth =
                                 currentDate.getMonth() ===
-                                calendarDate.getMonth();
+                                datePickerDate.getMonth();
                               const isToday =
                                 currentDate.toDateString() ===
                                 new Date().toDateString();

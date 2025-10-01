@@ -16,12 +16,15 @@ import {
   RefreshControl,
   Modal,
   Alert,
+  TextInput,
 } from "react-native";
+import DatePicker from 'react-native-date-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RootStackParamList } from "../navigation/AppNavigator";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
 import { NotificationService } from './services/notificationService';
+import { NotificationManager, useNotificationManager } from './components/NotificationManager';
 
 const { width } = Dimensions.get("window");
 
@@ -49,17 +52,32 @@ interface Notification {
   notification_type: string;
   related_task?: string;
   task_details?: TaskDetails;
+  task_status?: any;
 }
 
 export default function Notifications() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [allNotifications, setAllNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
   const [selectedNotification, setSelectedNotification] = useState<Notification | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  
+  // Filter states
+  const [showFilters, setShowFilters] = useState(false);
+  const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [priorityFilter, setPriorityFilter] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [startDate, setStartDate] = useState<Date | null>(null);
+  const [endDate, setEndDate] = useState<Date | null>(null);
+  const [showStartDatePicker, setShowStartDatePicker] = useState(false);
+  const [showEndDatePicker, setShowEndDatePicker] = useState(false);
+  
+  // Notification manager hook
+  const notificationManager = useNotificationManager();
 
   // Sample notifications data (replace with API call)
   const sampleNotifications: Notification[] = [];
@@ -89,9 +107,11 @@ export default function Notifications() {
         task_details: item.task_details,
       }));
       
+      setAllNotifications(formattedNotifications);
       setNotifications(formattedNotifications);
     } catch (error) {
       console.error('Error fetching notifications:', error);
+      setAllNotifications([]);
       setNotifications([]); // Set empty array on error
     } finally {
       setLoading(false);
@@ -137,30 +157,39 @@ export default function Notifications() {
   };
 
 
+  // Check task status for smart redirection
+  const checkTaskStatus = async (taskId: string) => {
+    try {
+      const token = await AsyncStorage.getItem('authToken');
+      if (!token) return null;
+      
+      const response = await fetch(`${API_URL}/tasks/${taskId}/`, {
+        headers: {
+          'Authorization': `Token ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      } else if (response.status === 404) {
+        return { deleted: true };
+      }
+      return null;
+    } catch (error) {
+      console.error('Error checking task status:', error);
+      return null;
+    }
+  };
+
   const handleNotificationPress = async (notification: Notification) => {
     // Mark as read when notification is viewed
     if (!notification.read) {
       await markAsRead(notification.id);
     }
 
-    // Show notification detail first
+    // Show notification detail with enhanced preview
     await showNotificationDetail(notification);
-
-    // Navigate based on notification type
-    switch (notification.type) {
-      case 'task':
-        if (notification.action_id) {
-          navigation.navigate("Home"); // Navigate to home where tasks are shown
-        }
-        break;
-      case 'note':
-        if (notification.action_id) {
-          navigation.navigate("Notes");
-        }
-        break;
-      default:
-        break;
-    }
   };
 
   const getNotificationIcon = (notification: Notification): keyof typeof MaterialIcons.glyphMap => {
@@ -256,17 +285,102 @@ export default function Notifications() {
       return `${diffInDays}d ago`;
     }
   };
+  
+  // Filter functions
+  const applyFilters = () => {
+    let filtered = [...allNotifications];
+    
+    // Type filter
+    if (typeFilter !== 'all') {
+      filtered = filtered.filter(notif => notif.type === typeFilter);
+    }
+    
+    // Priority filter
+    if (priorityFilter !== 'all') {
+      filtered = filtered.filter(notif => notif.priority === priorityFilter);
+    }
+    
+    // Search query filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(notif => 
+        notif.title.toLowerCase().includes(query) ||
+        notif.message.toLowerCase().includes(query)
+      );
+    }
+    
+    // Date range filter
+    if (startDate || endDate) {
+      filtered = filtered.filter(notif => {
+        const notifDate = new Date(notif.timestamp);
+        const start = startDate ? new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()) : null;
+        const end = endDate ? new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 23, 59, 59) : null;
+        
+        if (start && end) {
+          return notifDate >= start && notifDate <= end;
+        } else if (start) {
+          return notifDate >= start;
+        } else if (end) {
+          return notifDate <= end;
+        }
+        return true;
+      });
+    }
+    
+    setNotifications(filtered);
+  };
+  
+  const clearFilters = () => {
+    setTypeFilter('all');
+    setPriorityFilter('all');
+    setSearchQuery('');
+    setStartDate(null);
+    setEndDate(null);
+    setNotifications(allNotifications);
+  };
+  
+  const formatDate = (date: Date | null) => {
+    if (!date) return 'Select date';
+    return date.toLocaleDateString();
+  };
+  
+  const getTypeOptions = () => {
+    const types = [...new Set(allNotifications.map(notif => notif.type).filter(Boolean))];
+    return ['all', ...types];
+  };
+  
+  const getPriorityOptions = () => {
+    const priorities = [...new Set(allNotifications.map(notif => notif.priority).filter(Boolean))];
+    return ['all', ...priorities];
+  };
+  
+  // Apply filters when filter values change
+  useEffect(() => {
+    if (allNotifications.length > 0) {
+      applyFilters();
+    }
+  }, [typeFilter, priorityFilter, searchQuery, startDate, endDate, allNotifications]);
 
   const showNotificationDetail = async (notification: Notification) => {
     try {
       // Fetch full notification details from the API
       const detailData = await NotificationService.getNotificationDetail(notification.id);
       
-      // Update the notification with full details
-      setSelectedNotification({
+      let enhancedNotification = {
         ...notification,
         task_details: detailData.task_details
-      });
+      };
+      
+      // If this is a task-related notification, check task status
+      if (notification.type === 'task' && notification.related_task) {
+        const taskStatus = await checkTaskStatus(notification.related_task);
+        enhancedNotification = {
+          ...enhancedNotification,
+          task_status: taskStatus
+        };
+      }
+      
+      setSelectedNotification(enhancedNotification);
       setShowDetailModal(true);
     } catch (error) {
       console.error('Error showing notification detail:', error);
@@ -279,6 +393,40 @@ export default function Notifications() {
   const filteredNotifications = notifications.filter(notif => 
     filter === 'all' || (filter === 'unread' && !notif.read)
   );
+
+  // Handle task navigation based on task status
+  const handleTaskNavigation = async (notification: any) => {
+    if (!notification.related_task) return;
+    
+    const taskStatus = notification.task_status;
+    
+    if (taskStatus?.deleted) {
+      Alert.alert('Task Not Found', 'This task has been deleted and is no longer available.');
+      return;
+    }
+    
+    if (taskStatus?.completed) {
+      Alert.alert(
+        'Task Completed',
+        'This task has been completed. Would you like to view your completed tasks?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'View Completed',
+            onPress: () => {
+              setShowDetailModal(false);
+              navigation.navigate('Home');
+            }
+          }
+        ]
+      );
+      return;
+    }
+    
+    // Task is active, navigate to task details
+    setShowDetailModal(false);
+    navigation.navigate('Home'); // You might want to navigate to a specific task detail screen
+  };
 
   const unreadCount = notifications.filter(notif => !notif.read).length;
 
@@ -310,18 +458,23 @@ export default function Notifications() {
             )}
           </View>
 
-          <TouchableOpacity
-            style={styles.markAllButton}
-            onPress={markAllAsRead}
-            disabled={unreadCount === 0}
-          >
-            <Text style={[
-              styles.markAllButtonText,
-              { opacity: unreadCount === 0 ? 0.5 : 1 }
-            ]}>
-              Mark All
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              style={styles.filterButton}
+              onPress={() => setShowFilters(true)}
+            >
+              <Ionicons name="filter" size={22} color="#FFFFFF" />
+            </TouchableOpacity>
+            
+            {unreadCount > 0 && (
+              <TouchableOpacity
+                style={styles.markAllButton}
+                onPress={markAllAsRead}
+              >
+                <Ionicons name="checkmark-done" size={22} color="#FFFFFF" />
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
       </LinearGradient>
 
@@ -397,13 +550,14 @@ export default function Notifications() {
                 styles.notificationCard,
                 !notification.read && styles.unreadNotificationCard
               ]}
-              activeOpacity={0.8}
+              activeOpacity={0.7}
               onPress={() => handleNotificationPress(notification)}
             >
               <View style={styles.notificationContent}>
                 <View style={[
                   styles.notificationIcon,
-                  { backgroundColor: `${getNotificationColor(notification)}20` }
+                  { backgroundColor: `${getNotificationColor(notification)}15` },
+                  !notification.read && styles.unreadNotificationIcon
                 ]}>
                   <MaterialIcons
                     name={getNotificationIcon(notification)}
@@ -414,31 +568,45 @@ export default function Notifications() {
 
                 <View style={styles.notificationText}>
                   <View style={styles.notificationHeader}>
-                    <Text style={[
-                      styles.notificationTitle,
-                      !notification.read && styles.unreadNotificationTitle
-                    ]}>
+                    <Text 
+                      style={[
+                        styles.notificationTitle,
+                        !notification.read && styles.unreadNotificationTitle
+                      ]}
+                      numberOfLines={1}
+                    >
                       {notification.title}
                     </Text>
-                    <Text style={styles.notificationTime}>
-                      {formatTimeAgo(notification.timestamp)}
-                    </Text>
+                    {!notification.read && <View style={styles.unreadDot} />}
                   </View>
                   
-                  <Text style={styles.notificationMessage}>
+                  <Text 
+                    style={[
+                      styles.notificationMessage,
+                      !notification.read && styles.unreadNotificationMessage
+                    ]}
+                    numberOfLines={2}
+                  >
                     {notification.message}
                   </Text>
 
-                  {notification.priority === 'high' && (
-                    <View style={styles.priorityBadge}>
-                      <Text style={styles.priorityBadgeText}>High Priority</Text>
+                  <View style={styles.notificationFooter}>
+                    <View style={styles.notificationMetadata}>
+                      <Ionicons name="time-outline" size={14} color="#9CA3AF" />
+                      <Text style={styles.notificationTime}>
+                        {formatTimeAgo(notification.timestamp)}
+                      </Text>
                     </View>
-                  )}
+                    
+                    {notification.priority === 'high' && (
+                      <View style={styles.priorityBadge}>
+                        <MaterialIcons name="priority-high" size={10} color="#EF4444" />
+                        <Text style={styles.priorityBadgeText}>High</Text>
+                      </View>
+                    )}
+                  </View>
                 </View>
-
-                {!notification.read && <View style={styles.unreadDot} />}
               </View>
-
             </TouchableOpacity>
           ))}
           
@@ -446,6 +614,170 @@ export default function Notifications() {
           <View style={{ height: 100 }} />
         </ScrollView>
       )}
+      
+      {/* Notification Manager for push notifications */}
+      <NotificationManager
+        notifications={notificationManager.notifications}
+        onNotificationPress={(notification) => {
+          console.log('Notification pressed:', notification);
+        }}
+        onNotificationDismiss={(id) => {
+          notificationManager.removeNotification(id);
+        }}
+      />
+      
+      {/* Filter Modal */}
+      <Modal
+        visible={showFilters}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowFilters(false)}
+      >
+        <View style={styles.filterModal}>
+          <View style={styles.filterHeader}>
+            <Text style={styles.filterTitle}>Filter Notifications</Text>
+            <TouchableOpacity
+              onPress={() => setShowFilters(false)}
+              style={styles.closeFilterButton}
+            >
+              <Ionicons name="close" size={24} color="#6B7280" />
+            </TouchableOpacity>
+          </View>
+          
+          <ScrollView style={styles.filterContent}>
+            {/* Type Filter */}
+            <View style={styles.filterSection}>
+              <Text style={styles.filterLabel}>Notification Type</Text>
+              <View style={styles.filterButtonContainer}>
+                {getTypeOptions().map((type) => (
+                  <TouchableOpacity
+                    key={type}
+                    style={[
+                      styles.filterOptionButton,
+                      typeFilter === type && styles.activeFilterOption
+                    ]}
+                    onPress={() => setTypeFilter(type)}
+                  >
+                    <Text style={[
+                      styles.filterOptionText,
+                      typeFilter === type && styles.activeFilterOptionText
+                    ]}>
+                      {type.charAt(0).toUpperCase() + type.slice(1)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+            
+            {/* Priority Filter */}
+            <View style={styles.filterSection}>
+              <Text style={styles.filterLabel}>Priority</Text>
+              <View style={styles.filterButtonContainer}>
+                {getPriorityOptions().map((priority) => (
+                  <TouchableOpacity
+                    key={priority}
+                    style={[
+                      styles.filterOptionButton,
+                      priorityFilter === priority && styles.activeFilterOption
+                    ]}
+                    onPress={() => setPriorityFilter(priority)}
+                  >
+                    <Text style={[
+                      styles.filterOptionText,
+                      priorityFilter === priority && styles.activeFilterOptionText
+                    ]}>
+                      {priority.charAt(0).toUpperCase() + priority.slice(1)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+            
+            {/* Search Filter */}
+            <View style={styles.filterSection}>
+              <Text style={styles.filterLabel}>Search</Text>
+              <TextInput
+                style={styles.filterInput}
+                placeholder="Search notifications..."
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholderTextColor="#9CA3AF"
+              />
+            </View>
+            
+            {/* Date Range Filter */}
+            <View style={styles.filterSection}>
+              <Text style={styles.filterLabel}>Date Range</Text>
+              
+              <View style={styles.dateFilterRow}>
+                <TouchableOpacity
+                  style={styles.dateButton}
+                  onPress={() => setShowStartDatePicker(true)}
+                >
+                  <Ionicons name="calendar" size={20} color="#6A009C" />
+                  <Text style={styles.dateButtonText}>
+                    From: {formatDate(startDate)}
+                  </Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={styles.dateButton}
+                  onPress={() => setShowEndDatePicker(true)}
+                >
+                  <Ionicons name="calendar" size={20} color="#6A009C" />
+                  <Text style={styles.dateButtonText}>
+                    To: {formatDate(endDate)}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+            
+            {/* Filter Actions */}
+            <View style={styles.filterActions}>
+              <TouchableOpacity
+                style={styles.clearFiltersButton}
+                onPress={clearFilters}
+              >
+                <Text style={styles.clearFiltersText}>Clear All</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={styles.applyFiltersButton}
+                onPress={() => setShowFilters(false)}
+              >
+                <Text style={styles.applyFiltersText}>Apply Filters</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
+      
+      {/* Date Pickers */}
+      <DatePicker
+        modal
+        open={showStartDatePicker}
+        date={startDate || new Date()}
+        mode="date"
+        onConfirm={(date) => {
+          setStartDate(date);
+          setShowStartDatePicker(false);
+        }}
+        onCancel={() => setShowStartDatePicker(false)}
+        title="Select Start Date"
+      />
+      
+      <DatePicker
+        modal
+        open={showEndDatePicker}
+        date={endDate || new Date()}
+        mode="date"
+        onConfirm={(date) => {
+          setEndDate(date);
+          setShowEndDatePicker(false);
+        }}
+        onCancel={() => setShowEndDatePicker(false)}
+        title="Select End Date"
+      />
 
       {/* Notification Detail Modal */}
       <Modal
@@ -552,10 +884,74 @@ export default function Notifications() {
                       </View>
                     </View>
                   )}
+                  
+                  {/* Task Actions */}
+                  {selectedNotification.type === 'task' && selectedNotification.related_task && (
+                    <View style={styles.taskActionsContainer}>
+                      <Text style={styles.taskActionsTitle}>Actions</Text>
+                      
+                      {selectedNotification.task_status?.deleted ? (
+                        <View style={styles.taskStatusInfo}>
+                          <MaterialIcons name="delete" size={20} color="#EF4444" />
+                          <Text style={styles.taskStatusText}>This task has been deleted</Text>
+                        </View>
+                      ) : selectedNotification.task_status?.completed ? (
+                        <View style={styles.taskStatusInfo}>
+                          <MaterialIcons name="check-circle" size={20} color="#10B981" />
+                          <Text style={styles.taskStatusText}>This task is completed</Text>
+                        </View>
+                      ) : (
+                        <TouchableOpacity
+                          style={styles.taskActionButton}
+                          onPress={() => handleTaskNavigation(selectedNotification)}
+                        >
+                          <MaterialIcons name="arrow-forward" size={20} color="#FFFFFF" />
+                          <Text style={styles.taskActionButtonText}>View Task Details</Text>
+                        </TouchableOpacity>
+                      )}
+                      
+                      {!selectedNotification.task_status?.deleted && (
+                        <TouchableOpacity
+                          style={styles.taskActionButtonSecondary}
+                          onPress={() => {
+                            setShowDetailModal(false);
+                            navigation.navigate('Home');
+                          }}
+                        >
+                          <MaterialIcons name="home" size={20} color="#6A009C" />
+                          <Text style={styles.taskActionButtonSecondaryText}>Go to Home</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  )}
                 </View>
               </View>
             )}
           </ScrollView>
+          
+          {/* Modal Footer with Quick Actions */}
+          <View style={styles.modalFooter}>
+            <TouchableOpacity
+              style={styles.modalFooterButton}
+              onPress={() => setShowDetailModal(false)}
+            >
+              <Text style={styles.modalFooterButtonText}>Close</Text>
+            </TouchableOpacity>
+            
+            {selectedNotification && !selectedNotification.read && (
+              <TouchableOpacity
+                style={[styles.modalFooterButton, styles.modalFooterButtonPrimary]}
+                onPress={async () => {
+                  await markAsRead(selectedNotification.id);
+                  setShowDetailModal(false);
+                }}
+              >
+                <Text style={[styles.modalFooterButtonText, styles.modalFooterButtonPrimaryText]}>
+                  Mark as Read
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
       </Modal>
     </View>
@@ -607,11 +1003,8 @@ const styles = StyleSheet.create({
   },
   markAllButton: {
     padding: 8,
-  },
-  markAllButtonText: {
-    fontSize: 14,
-    fontFamily: "Inter-Medium",
-    color: "#FFFFFF",
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    borderRadius: 8,
   },
   filterContainer: {
     flexDirection: "row",
@@ -693,14 +1086,13 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
     borderWidth: 1,
-    borderColor: "rgba(226, 232, 240, 0.6)",
-    flexDirection: "row",
-    alignItems: "flex-start",
+    borderColor: "#E2E8F0",
   },
   unreadNotificationCard: {
     borderLeftWidth: 4,
     borderLeftColor: "#6A009C",
     backgroundColor: "#FEFEFE",
+    shadowOpacity: 0.08,
   },
   notificationContent: {
     flexDirection: "row",
@@ -715,60 +1107,79 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginRight: 12,
   },
+  unreadNotificationIcon: {
+    shadowColor: "#6A009C",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
+  },
   notificationText: {
     flex: 1,
   },
   notificationHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 4,
+    alignItems: "center",
+    marginBottom: 6,
   },
   notificationTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontFamily: "Inter-SemiBold",
-    color: "#1E293B",
+    color: "#334155",
     flex: 1,
-    lineHeight: 20,
+    marginRight: 8,
   },
   unreadNotificationTitle: {
     fontFamily: "Inter-Bold",
-  },
-  notificationTime: {
-    fontSize: 12,
-    fontFamily: "Inter-Regular",
-    color: "#9CA3AF",
-    marginLeft: 8,
+    color: "#1E293B",
   },
   notificationMessage: {
     fontSize: 14,
     fontFamily: "Inter-Regular",
     color: "#64748B",
-    lineHeight: 18,
+    lineHeight: 20,
     marginBottom: 8,
   },
-  priorityBadge: {
-    backgroundColor: "#FEF2F2",
-    borderColor: "#EF4444",
-    borderWidth: 1,
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    alignSelf: "flex-start",
+  unreadNotificationMessage: {
+    color: "#475569",
   },
-  priorityBadgeText: {
-    fontSize: 10,
-    fontFamily: "Inter-Bold",
-    color: "#EF4444",
-    textTransform: "uppercase",
+  notificationFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  notificationMetadata: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  notificationTime: {
+    fontSize: 12,
+    fontFamily: "Inter-Regular",
+    color: "#9CA3AF",
   },
   unreadDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
     backgroundColor: "#6A009C",
-    marginLeft: 8,
-    marginTop: 4,
+  },
+  priorityBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FEF2F2",
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    gap: 2,
+  },
+  priorityBadgeText: {
+    fontSize: 10,
+    fontFamily: "Inter-Bold",
+    color: "#EF4444",
+    textTransform: "uppercase",
   },
   
   // Modal styles
@@ -873,6 +1284,242 @@ const styles = StyleSheet.create({
   taskStatusPending: {
     color: "#DC2626",
     fontFamily: "Inter-Bold",
+  },
+  
+  // Filter styles
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  filterButton: {
+    padding: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    borderRadius: 8,
+  },
+  filterModal: {
+    flex: 1,
+    backgroundColor: "#F8FAFC",
+  },
+  filterHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: "#FFFFFF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0",
+  },
+  filterTitle: {
+    fontSize: 18,
+    fontFamily: "Inter-Bold",
+    color: "#1E293B",
+  },
+  closeFilterButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: "#F1F5F9",
+  },
+  filterContent: {
+    flex: 1,
+    padding: 20,
+  },
+  filterSection: {
+    marginBottom: 24,
+  },
+  filterLabel: {
+    fontSize: 16,
+    fontFamily: "Inter-SemiBold",
+    color: "#1E293B",
+    marginBottom: 12,
+  },
+  filterButtonContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  filterOptionButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    backgroundColor: "#F1F5F9",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  activeFilterOption: {
+    backgroundColor: "#6A009C",
+    borderColor: "#6A009C",
+  },
+  filterOptionText: {
+    fontSize: 14,
+    fontFamily: "Inter-Medium",
+    color: "#64748B",
+  },
+  activeFilterOptionText: {
+    color: "#FFFFFF",
+  },
+  filterInput: {
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    fontFamily: "Inter-Regular",
+    backgroundColor: "#FFFFFF",
+    color: "#1E293B",
+  },
+  dateFilterRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  dateButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+    gap: 8,
+  },
+  dateButtonText: {
+    fontSize: 14,
+    fontFamily: "Inter-Medium",
+    color: "#1E293B",
+    flex: 1,
+  },
+  filterActions: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 32,
+  },
+  clearFiltersButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: "#F1F5F9",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    alignItems: "center",
+  },
+  clearFiltersText: {
+    fontSize: 16,
+    fontFamily: "Inter-Medium",
+    color: "#64748B",
+  },
+  applyFiltersButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: "#6A009C",
+    alignItems: "center",
+  },
+  applyFiltersText: {
+    fontSize: 16,
+    fontFamily: "Inter-Medium",
+    color: "#FFFFFF",
+  },
+  
+  // Task actions styles
+  taskActionsContainer: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  taskActionsTitle: {
+    fontSize: 16,
+    fontFamily: "Inter-Bold",
+    color: "#1E293B",
+    marginBottom: 12,
+  },
+  taskStatusInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F3F4F6",
+    padding: 12,
+    borderRadius: 8,
+    gap: 8,
+  },
+  taskStatusText: {
+    fontSize: 14,
+    fontFamily: "Inter-Medium",
+    color: "#64748B",
+    flex: 1,
+  },
+  taskActionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#6A009C",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    gap: 8,
+    marginTop: 8,
+  },
+  taskActionButtonText: {
+    fontSize: 14,
+    fontFamily: "Inter-SemiBold",
+    color: "#FFFFFF",
+  },
+  taskActionButtonSecondary: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#6A009C",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    gap: 8,
+    marginTop: 8,
+  },
+  taskActionButtonSecondaryText: {
+    fontSize: 14,
+    fontFamily: "Inter-SemiBold",
+    color: "#6A009C",
+  },
+  
+  // Modal footer styles
+  modalFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: "#FFFFFF",
+    borderTopWidth: 1,
+    borderTopColor: "#E2E8F0",
+    gap: 12,
+  },
+  modalFooterButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+  },
+  modalFooterButtonPrimary: {
+    backgroundColor: "#6A009C",
+  },
+  modalFooterButtonText: {
+    fontSize: 16,
+    fontFamily: "Inter-Medium",
+    color: "#64748B",
+  },
+  modalFooterButtonPrimaryText: {
+    color: "#FFFFFF",
   },
 
 });

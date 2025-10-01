@@ -16,6 +16,7 @@ import {
   RefreshControl,
   Alert,
   Animated,
+  Image,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaWrapper } from "./components/SafeAreaWrapper";
@@ -94,6 +95,7 @@ export default function Home() {
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const weekDates = getCurrentWeek();
   const [username, setUsername] = useState("User");
+  const [profilePicture, setProfilePicture] = useState<string | null>(null);
   // State for data - combine stats and actions
   const [quickCards] = useState([...initialQuickStats, ...initialQuickActions]);
   const [priorityTasks, setPriorityTasks] = useState<any[]>([]);
@@ -202,6 +204,7 @@ export default function Home() {
         // Clear all cached data
         await AsyncStorage.multiRemove([
           "username",
+          "userProfilePicture",
           "notesCount",
           "priorityTasks",
           "notesFolders",
@@ -254,11 +257,16 @@ export default function Home() {
       try {
         setLoading(true);
 
-        // First try to get username from local storage for immediate display
+        // First try to get username and profile picture from local storage for immediate display
         if (!forceRefresh) {
           const cachedUsername = await AsyncStorage.getItem("username");
           if (cachedUsername) {
             setUsername(cachedUsername);
+          }
+          
+          const cachedProfilePic = await AsyncStorage.getItem("userProfilePicture");
+          if (cachedProfilePic) {
+            setProfilePicture(`${API_URL}${cachedProfilePic}`);
           }
         }
 
@@ -715,30 +723,16 @@ export default function Home() {
   // Helper function to map priority from backend to UI
   const mapPriority = (priority: string) => {
     switch (priority) {
-      case "urgent_important":
+      case "urgent-important":
         return "High";
-      case "not_urgent_important":
+      case "not-urgent-important":
         return "Medium";
-      case "urgent_not_important":
+      case "urgent-not-important":
         return "Medium";
-      case "not_urgent_not_important":
+      case "not-urgent-not-important":
         return "Low";
       default:
         return "Medium";
-    }
-  };
-
-  // Helper function to map status from backend to UI
-  const mapStatus = (status: string) => {
-    switch (status) {
-      case "not_started":
-        return "Pending";
-      case "in_progress":
-        return "In Progress";
-      case "completed":
-        return "Completed";
-      default:
-        return "Pending";
     }
   };
 
@@ -781,11 +775,19 @@ export default function Home() {
                 onPress={() => navigation.navigate("EditProfile")}
                 activeOpacity={0.7}
               >
-                <View style={styles.profilePlaceholder}>
-                  <Text style={styles.profileInitial}>
-                    {username.charAt(0).toUpperCase()}
-                  </Text>
-                </View>
+                {profilePicture ? (
+                  <Image
+                    source={{ uri: profilePicture }}
+                    style={styles.profileImage}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={styles.profilePlaceholder}>
+                    <Text style={styles.profileInitial}>
+                      {username.charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                )}
               </TouchableOpacity>
 
               <View style={styles.headerGreeting}>
@@ -838,6 +840,7 @@ export default function Home() {
                 // Clear cache to force fresh data
                 await AsyncStorage.multiRemove([
                   "username",
+                  "userProfilePicture",
                   "notesCount",
                   "priorityTasks",
                   "notesFolders",
@@ -1307,6 +1310,11 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.14)",
     justifyContent: "center",
     alignItems: "center",
+  },
+  profileImage: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
   },
   profilePlaceholder: {
     width: 48,

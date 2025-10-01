@@ -616,7 +616,7 @@ export default function SignUp() {
                   <Text style={[
                     styles.linkText,
                     { fontSize: isLandscape ? 13 : 14 }
-                  ]}>Sign In</Text>
+                  ]}>Log In</Text>
                 </TouchableOpacity>
               </View>
             </Animated.View>
