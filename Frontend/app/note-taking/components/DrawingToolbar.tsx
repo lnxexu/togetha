@@ -659,9 +659,9 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
 const styles = StyleSheet.create({
   toolbarWrapper: {
     backgroundColor: "#F8FAFC",
-    borderRadius: 12,
-    marginBottom: 16,
-    marginTop: 16,
+    borderRadius: 8,
+    marginBottom: 8,
+    marginTop: 8,
     shadowColor: "#000",
     borderWidth: 1,
     borderColor: "#E5E7EB",
@@ -676,11 +676,12 @@ const styles = StyleSheet.create({
     borderRadius: 0,
     borderWidth: 0,
     elevation: 0,
+    height: 36, // Reduce height
   },
 
   popoutContainer: {
     position: 'absolute',
-    bottom: '100%',
+    top: '100%',
     left: 0,
     right: 0,
     paddingHorizontal: 8,
@@ -697,14 +698,14 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     alignItems: "center",
     justifyContent: "flex-start",
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    gap: 10,
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+    gap: 6, // Reduced gap between items
   },
 
   section: {
     alignItems: "center",
-    minWidth: 56,
+    minWidth: 44, // Reduce minimum width
     justifyContent: "center",
   },
 
@@ -778,12 +779,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'transparent',
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
     borderWidth: 0,
-    gap: 6,
-    minWidth: 64,
+    gap: 4,
+    minWidth: 56,
   },
 
   dropdownActive: {
@@ -855,7 +856,7 @@ const styles = StyleSheet.create({
     shadowRadius: 15,
     elevation: 999,
     padding: 8,
-    pointerEvents: 'auto', // Ensure dropdown can receive touch events
+    pointerEvents: 'auto'
   },
 
   colorDropdown: {
@@ -937,13 +938,13 @@ const styles = StyleSheet.create({
   actionButton: {
     alignItems: "center",
     justifyContent: "center",
-    padding: 6,
-    borderRadius: 8,
+    padding: 4,
+    borderRadius: 6,
     backgroundColor: "#F8FAFC",
     borderWidth: 1,
     borderColor: "#EEF2FF",
-    width: 32,
-    height: 32,
+    width: 26,
+    height: 26,
   },
 
   disabledButton: {

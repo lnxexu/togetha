@@ -53,9 +53,9 @@ export const useDrawingState = ({
     }
   }, [currentNoteId, skipInitialLoad]);
 
-  // Auto-save functionality
+  // Auto-save functionality (also triggers when strokes are emptied to persist clears)
   useEffect(() => {
-    if (autoSave && hasUnsavedChanges && currentNoteId && strokes.length > 0) {
+    if (autoSave && hasUnsavedChanges && currentNoteId) {
       const timer = setTimeout(() => {
         saveDrawing();
       }, autoSaveInterval);
@@ -98,10 +98,7 @@ export const useDrawingState = ({
     options
   });
 
-  if (!strokes || strokes.length === 0) {
-    console.warn('No strokes to save, strokes:', strokes);
-    return;
-  }
+  // Allow saving empty strokes to persist a full erase
 
   console.log('Proceeding with save, setting isSaving to true...');
   setIsSaving(true);
@@ -183,14 +180,17 @@ export const useDrawingState = ({
 
   // Helper function to save state to history
   const saveToHistory = useCallback((newStrokes: DrawingStroke[]) => {
-    setHistory(prev => {
-      const newHistory = prev.slice(0, historyStep + 1);
-      newHistory.push([...newStrokes]);
-      // Limit history to prevent memory issues (keep last 50 states)
-      return newHistory.length > 50 ? newHistory.slice(-50) : newHistory;
+    setHistoryStep(prevStep => {
+      setHistory(prev => {
+        const newHistory = prev.slice(0, prevStep + 1);
+        newHistory.push([...newStrokes]);
+        // Limit history to prevent memory issues (keep last 50 states)
+        const limitedHistory = newHistory.length > 50 ? newHistory.slice(-50) : newHistory;
+        return limitedHistory;
+      });
+      return prevStep + 1;
     });
-    setHistoryStep(prev => prev + 1);
-  }, [historyStep]);
+  }, []);
 
   const addStroke = useCallback((stroke: DrawingStroke) => {
     setStrokes(prev => {
@@ -204,89 +204,226 @@ export const useDrawingState = ({
 
   const eraseStrokes = useCallback((eraserStroke: DrawingStroke) => {
     setStrokes(prev => {
-      const eraseThreshold = (eraserStroke.width || 20) / 2;
+  // Eraser radius directly reflects selected width (half the diameter).
+  // Remove large minimum to ensure small sizes (e.g., 1px) behave accurately.
+  const eraserRadius = Math.max((eraserStroke.width || 12) * 0.5, 0.5);
+
+      // Compute visual half-thickness of a stroke based on its tool and width.
+      // This approximates the rendered footprint so the eraser removes ALL
+      // overlapping layers, not only those whose centerline intersects.
+      const getStrokeHalfThickness = (stroke: DrawingStroke): number => {
+        const base = Math.max(stroke.width || 1, 0.5);
+        switch (stroke.tool) {
+          case 'highlighter':
+            // Highlighter is rendered with ~2.5x strokeWidth in the canvas
+            // so its half-thickness is ~1.25 * base
+            return base * 1.25;
+          case 'brush':
+          case 'calligraphy':
+          case 'pen':
+          case 'pencil':
+          case 'eraser':
+          default:
+            // perfect-freehand uses `size` as the full thickness
+            return base * 0.5;
+        }
+      };
+
+      // Convert eraser flat array to points
       const eraserPoints: { x: number; y: number }[] = [];
-      
-      // Convert eraser flat points array to point objects
       for (let i = 0; i < eraserStroke.points.length; i += 2) {
-        eraserPoints.push({
-          x: eraserStroke.points[i],
-          y: eraserStroke.points[i + 1]
+        const x = eraserStroke.points[i];
+        const y = eraserStroke.points[i + 1];
+        if (typeof x === 'number' && typeof y === 'number') {
+          eraserPoints.push({ x, y });
+        }
+      }
+
+      // Distance helpers
+      const dist2 = (ax: number, ay: number, bx: number, by: number) => {
+        const dx = ax - bx; const dy = ay - by; return dx * dx + dy * dy;
+      };
+      const pointSegDist = (px: number, py: number, ax: number, ay: number, bx: number, by: number) => {
+        const vx = bx - ax, vy = by - ay; // segment vector
+        const wx = px - ax, wy = py - ay; // vector to point
+        const c1 = vx * wx + vy * wy;
+        if (c1 <= 0) return Math.sqrt(dist2(px, py, ax, ay));
+        const c2 = vx * vx + vy * vy;
+        if (c2 <= c1) return Math.sqrt(dist2(px, py, bx, by));
+        const t = c1 / c2;
+        const projx = ax + t * vx, projy = ay + t * vy;
+        return Math.sqrt(dist2(px, py, projx, projy));
+      };
+
+      // Optional: densify eraser points for more uniform corridor coverage
+      const denseEraser: { x: number; y: number }[] = [];
+  // Use finer sampling for small erasers to avoid gaps; cap at reasonable minimum
+  const step = Math.max(eraserRadius * 0.4, 0.5);
+      for (let i = 0; i < eraserPoints.length - 1; i++) {
+        const a = eraserPoints[i], b = eraserPoints[i + 1];
+        denseEraser.push(a);
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const len = Math.hypot(dx, dy);
+        if (len > step) {
+          const n = Math.floor(len / step);
+          for (let j = 1; j < n; j++) {
+            denseEraser.push({ x: a.x + (dx * j) / n, y: a.y + (dy * j) / n });
+          }
+        }
+      }
+      if (eraserPoints.length > 0) denseEraser.push(eraserPoints[eraserPoints.length - 1]);
+
+      // Build eraser segments and AABBs for broadphase
+      const eraserSegs: { a:{x:number;y:number}; b:{x:number;y:number}; minX:number;minY:number;maxX:number;maxY:number }[] = [];
+      for (let i = 0; i < denseEraser.length - 1; i++) {
+        const a = denseEraser[i], b = denseEraser[i+1];
+        eraserSegs.push({
+          a, b,
+          minX: Math.min(a.x, b.x),
+          minY: Math.min(a.y, b.y),
+          maxX: Math.max(a.x, b.x),
+          maxY: Math.max(a.y, b.y),
         });
       }
-      
+
+      // Segment-to-segment minimal distance (corrected)
+      const segSegDist = (ax:number,ay:number,bx:number,by:number, cx:number,cy:number,dx:number,dy:number) => {
+        // Helper: clamp t to [0,1]
+        const clamp01 = (t:number) => t < 0 ? 0 : (t > 1 ? 1 : t);
+        const r = { x: bx - ax, y: by - ay };
+        const s = { x: dx - cx, y: dy - cy }; // FIX: use (d - c), not swapped
+        const rxs = r.x * s.y - r.y * s.x;
+        const qp = { x: cx - ax, y: cy - ay };
+        const qpxr = qp.x * r.y - qp.y * r.x;
+
+        // If not parallel, check for intersection (distance 0)
+        if (Math.abs(rxs) > 1e-6) {
+          const t = (qp.x * s.y - qp.y * s.x) / rxs;
+          const u = qpxr / rxs;
+          if (t >= 0 && t <= 1 && u >= 0 && u <= 1) return 0;
+        }
+        // Otherwise compute closest endpoints/projections
+        const dot = (ux:number,uy:number,vx:number,vy:number) => ux*vx + uy*vy;
+        const len2 = (ux:number,uy:number) => ux*ux + uy*uy;
+        const projPointToSeg = (px:number,py:number, x1:number,y1:number, x2:number,y2:number) => {
+          const vx = x2 - x1, vy = y2 - y1;
+          const t = len2(vx,vy) === 0 ? 0 : clamp01(dot(px - x1, py - y1, vx, vy) / len2(vx,vy));
+          const qx = x1 + t*vx, qy = y1 + t*vy;
+          const dx0 = px - qx, dy0 = py - qy;
+          return Math.hypot(dx0, dy0);
+        };
+        return Math.min(
+          projPointToSeg(ax, ay, cx, cy, dx, dy),
+          projPointToSeg(bx, by, cx, cy, dx, dy),
+          projPointToSeg(cx, cy, ax, ay, bx, by),
+          projPointToSeg(dx, dy, ax, ay, bx, by)
+        );
+      };
+
       const modifiedStrokes = prev.reduce((result: DrawingStroke[], stroke) => {
-        if (stroke.points.length === 0) return result;
-        
-        // Convert stroke flat points array to point objects for comparison
-        const strokePoints: { x: number; y: number }[] = [];
+        if (!stroke.points || stroke.points.length < 2) return result;
+
+        // Convert stroke points to objects
+        const sp: { x: number; y: number }[] = [];
         for (let i = 0; i < stroke.points.length; i += 2) {
-          strokePoints.push({
-            x: stroke.points[i],
-            y: stroke.points[i + 1]
-          });
+          const x = stroke.points[i];
+          const y = stroke.points[i + 1];
+          if (typeof x === 'number' && typeof y === 'number') sp.push({ x, y });
         }
-        
-        // Find points that survive the eraser
-        const survivingPointIndices: number[] = [];
-        strokePoints.forEach((strokePoint, index) => {
-          const shouldErase = eraserPoints.some(eraserPoint => {
-            const distance = Math.sqrt(
-              Math.pow(strokePoint.x - eraserPoint.x, 2) + 
-              Math.pow(strokePoint.y - eraserPoint.y, 2)
-            );
-            return distance < eraseThreshold;
-          });
-          
-          if (!shouldErase) {
-            survivingPointIndices.push(index);
+        if (sp.length === 1) {
+          // Dot stroke: erase only if within eraser radius
+          let erased = false;
+          const strokeHalf = getStrokeHalfThickness(stroke);
+          for (let k = 0; k < eraserSegs.length; k++) {
+            const es = eraserSegs[k];
+            // Quick AABB check against a box around the dot
+            const inflate = eraserRadius + strokeHalf;
+            const minX = sp[0].x - inflate, maxX = sp[0].x + inflate;
+            const minY = sp[0].y - inflate, maxY = sp[0].y + inflate;
+            if (!(maxX < es.minX - eraserRadius || minX > es.maxX + eraserRadius || maxY < es.minY - eraserRadius || minY > es.maxY + eraserRadius)) {
+              // Distance from point to eraser segment
+              const d = pointSegDist(sp[0].x, sp[0].y, es.a.x, es.a.y, es.b.x, es.b.y);
+              if (d <= eraserRadius + strokeHalf) { erased = true; break; }
+            }
           }
+          if (!erased) result.push(stroke);
+          return result;
+        }
+
+        // For each segment of the stroke, decide if it's kept or erased based on proximity to the eraser path
+        const keepSegment: boolean[] = new Array(sp.length - 1).fill(true);
+        for (let i = 0; i < sp.length - 1; i++) {
+          const a = sp[i], b = sp[i + 1];
+          let erased = false;
+          const strokeHalf = getStrokeHalfThickness(stroke);
+          const combined = eraserRadius + strokeHalf;
+          // Segment AABB expanded by eraser radius for broadphase
+          const segMinX = Math.min(a.x, b.x) - combined;
+          const segMinY = Math.min(a.y, b.y) - combined;
+          const segMaxX = Math.max(a.x, b.x) + combined;
+          const segMaxY = Math.max(a.y, b.y) + combined;
+
+          for (let k = 0; k < eraserSegs.length; k++) {
+            const es = eraserSegs[k];
+            // AABB check
+            if (!(segMaxX < es.minX - eraserRadius || segMinX > es.maxX + eraserRadius || segMaxY < es.minY - eraserRadius || segMinY > es.maxY + eraserRadius)) {
+              const d = segSegDist(a.x, a.y, b.x, b.y, es.a.x, es.a.y, es.b.x, es.b.y);
+              if (d <= combined) { erased = true; break; }
+            }
+          }
+          keepSegment[i] = !erased;
+        }
+
+        // Rebuild stroke from kept segments
+        const newSegments: number[][] = [];
+        let current: number[] = [];
+        // Always include the starting point if first segment is kept
+        for (let i = 0; i < keepSegment.length; i++) {
+          if (keepSegment[i]) {
+            if (current.length === 0) {
+              // start a new segment: include starting point index i
+              current.push(i);
+            }
+            // include the end point of this kept segment (i+1)
+            current.push(i + 1);
+          } else {
+            if (current.length > 1) {
+              newSegments.push([...current]);
+            }
+            current = [];
+          }
+        }
+        if (current.length > 1) newSegments.push(current);
+
+        if (newSegments.length === 0) {
+          // Entire stroke erased; drop it
+          return result;
+        }
+
+        // If nothing was erased, preserve the original stroke
+        if (newSegments.length === 1 && newSegments[0].length === sp.length) {
+          result.push(stroke);
+          return result;
+        }
+
+        // Create strokes from segments
+        newSegments.forEach((seg, segIndex) => {
+          const newPoints: number[] = [];
+          // seg contains indices into sp. Ensure consecutive points
+          for (let idx = 0; idx < seg.length; idx++) {
+            const p = sp[seg[idx]];
+            newPoints.push(p.x, p.y);
+          }
+          result.push({
+            ...stroke,
+            id: `${stroke.id}_seg_${segIndex}_${++segmentIdRef.current}`,
+            points: newPoints,
+          });
         });
-        
-        if (survivingPointIndices.length > 1) {
-          // Group consecutive surviving points into segments
-          const segments: number[][] = [];
-          let currentSegment: number[] = [];
-          
-          survivingPointIndices.forEach(index => {
-            if (currentSegment.length === 0 || index === currentSegment[currentSegment.length - 1] + 1) {
-              // Continue current segment
-              currentSegment.push(index);
-            } else {
-              // Start new segment
-              if (currentSegment.length > 1) {
-                segments.push([...currentSegment]);
-              }
-              currentSegment = [index];
-            }
-          });
-          
-          // Add the last segment
-          if (currentSegment.length > 1) {
-            segments.push(currentSegment);
-          }
-          
-          // Create new strokes for each segment
-          segments.forEach((segment, segmentIndex) => {
-            if (segment.length > 1) {
-              const newPoints: number[] = [];
-              segment.forEach(pointIndex => {
-                newPoints.push(stroke.points[pointIndex * 2]);     // x
-                newPoints.push(stroke.points[pointIndex * 2 + 1]); // y
-              });
-              
-              result.push({
-                ...stroke,
-                id: `${stroke.id}_seg_${segmentIndex}_${++segmentIdRef.current}`,
-                points: newPoints,
-              });
-            }
-          });
-        }
-        
+
         return result;
-      }, []);
-      
+      }, [] as DrawingStroke[]);
+
       // Save to history after erasing
       setTimeout(() => saveToHistory(modifiedStrokes), 0);
       return modifiedStrokes;
@@ -307,26 +444,38 @@ export const useDrawingState = ({
   }, [saveToHistory]);
 
   const undo = useCallback(() => {
-    if (historyStep > 0) {
-      const newStep = historyStep - 1;
-      setHistoryStep(newStep);
-      const previousState = history[newStep] || [];
-      setStrokes([...previousState]);
-      setHasUnsavedChanges(true);
-      console.log('Undo: Reverted to step', newStep, 'with', previousState.length, 'strokes');
-    }
-  }, [historyStep, history]);
+    setHistoryStep(prevStep => {
+      if (prevStep > 0) {
+        const newStep = prevStep - 1;
+        setHistory(prevHistory => {
+          const previousState = prevHistory[newStep] || [];
+          setStrokes([...previousState]);
+          setHasUnsavedChanges(true);
+          console.log('Undo: Reverted to step', newStep, 'with', previousState.length, 'strokes');
+          return prevHistory;
+        });
+        return newStep;
+      }
+      return prevStep;
+    });
+  }, []);
 
   const redo = useCallback(() => {
-    if (historyStep < history.length - 1) {
-      const newStep = historyStep + 1;
-      setHistoryStep(newStep);
-      const nextState = history[newStep] || [];
-      setStrokes([...nextState]);
-      setHasUnsavedChanges(true);
-      console.log('Redo: Advanced to step', newStep, 'with', nextState.length, 'strokes');
-    }
-  }, [historyStep, history]);
+    setHistoryStep(prevStep => {
+      setHistory(prevHistory => {
+        if (prevStep < prevHistory.length - 1) {
+          const newStep = prevStep + 1;
+          const nextState = prevHistory[newStep] || [];
+          setStrokes([...nextState]);
+          setHasUnsavedChanges(true);
+          console.log('Redo: Advanced to step', newStep, 'with', nextState.length, 'strokes');
+          return prevHistory;
+        }
+        return prevHistory;
+      });
+      return prevStep < history.length - 1 ? prevStep + 1 : prevStep;
+    });
+  }, [history.length]);
 
   const canUndo = historyStep > 0;
   const canRedo = historyStep < history.length - 1;

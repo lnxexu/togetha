@@ -187,9 +187,13 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
   // Scroll offset state for coordinate conversion
   const [scrollOffset, setScrollOffset] = useState({ x: 0, y: 0 });
 
-  // Animation states
-  const fadeAnim = useState(new Animated.Value(0))[0];
-  const slideAnim = useState(new Animated.Value(-50))[0];
+  // Animation states using React Native's Animated (not Reanimated)
+  // If you switch to Reanimated, use useSharedValue instead:
+  // import { useSharedValue } from 'react-native-reanimated';
+  // const fadeAnim = useSharedValue(0);
+  // const slideAnim = useSharedValue(-50);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(-50)).current;
 
   // Drawing state
   const [currentTool, setCurrentTool] = useState<DrawingTool>('pen');
@@ -200,6 +204,7 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
   // Canvas orientation state
   const [canvasOrientation, setCanvasOrientation] = useState<'landscape' | 'portrait'>(initialOrientation);
   const [canvasRotation, setCanvasRotation] = useState(0); // Rotation angle in degrees
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false); // Track dropdown open state
   // Export state
   const [showExportModal, setShowExportModal] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -487,6 +492,10 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
     loadCanvasPreferences();
 
     // Animate entrance
+    // Note: If you get Reanimated warnings, this is using React Native's Animated API
+    // To use Reanimated instead, you would use:
+    // fadeAnim.value = withTiming(1, { duration: 600 });
+    // slideAnim.value = withTiming(0, { duration: 600 });
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -589,13 +598,7 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
       // Actually erase strokes by calling eraseStrokes with the DrawingStroke
       eraseStrokes(drawingStroke);
     } else {
-      // Regular stroke, add to canvas
-      setPages(prev => {
-        const copy = prev.map(p => p.slice());
-        copy[currentPageIndex] = copy[currentPageIndex] || [];
-        copy[currentPageIndex].push(drawingStroke);
-        return copy;
-      });
+      // Regular stroke, add via hook; pages will sync from hook state
       addStroke(drawingStroke);
     }
   }, [addStroke, eraseStrokes, currentPageIndex]);
@@ -764,12 +767,10 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
 
   // Initialize pages from existing strokes when strokes are imported, but only if pages are empty
   useEffect(() => {
-    if (strokes && strokes.length > 0 && (pages.length === 0 || (pages.length === 1 && (pages[0]?.length || 0) === 0))) {
-      // Place existing strokes on the first page
-      setPages([strokes.slice()]);
-      setCurrentPageIndex(0);
-    }
-  }, [strokes, pages.length]);
+    // Keep pages in sync with hook strokes (single-page source of truth)
+    setPages([strokes.slice()]);
+    setCurrentPageIndex(0);
+  }, [strokes]);
 
   // Helper: confirm then delete a page
   const confirmDeletePage = (index: number) => {
@@ -840,9 +841,9 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
     }
   }, [strokes, currentNoteId, effectiveNoteId, autoSave]);
 
-  // If toolbar dropdown opens, we don't need to hide anything since template is now in toolbar
+  // Track when toolbar dropdowns are open to disable slider interaction
   const handleToolbarDropdownToggle = (open: boolean) => {
-    // Template selector is now part of the toolbar, so no special handling needed
+    setIsDropdownOpen(open);
   };
 
   // Initialize with provided data
@@ -947,7 +948,17 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
       "Are you sure you want to clear the entire drawing? This action cannot be undone.",
       [
         { text: "Cancel", style: "cancel" },
-        { text: "Clear", style: "destructive", onPress: clear },
+        { 
+          text: "Clear", 
+          style: "destructive", 
+          onPress: () => {
+            // Clear everything thoroughly
+            setCurrentStroke(null); // Clear any current stroke
+            setPages([[]]);          // Reset pages to empty array
+            setCurrentPageIndex(0);  // Reset to first page
+            clear();                 // Call the hook's clear function
+          }
+        },
       ]
     );
   };
@@ -1043,8 +1054,8 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
         style={[
           styles.rootContainer,
           {
-            opacity: fadeAnim,
-            transform: [{ translateY: slideAnim }],
+            opacity: fadeAnim, // This is correct for React Native Animated
+            transform: [{ translateY: slideAnim }], // This is correct for React Native Animated
           },
         ]}
       >
@@ -1185,15 +1196,17 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
                 <View style={styles.sliderRow}>
                   <Text style={styles.sliderMinLabel}>0°</Text>
                   <Slider
-                    style={{ flex: 1, height: 40, marginHorizontal: 8 }}
+                    style={{ flex: 1, height: 18, marginHorizontal: 3 }}
                     minimumValue={0}
                     maximumValue={360}
-                    step={1}
+                    step={5} // Increased step size for more skeleton-like behavior
                     value={canvasRotation}
                     onValueChange={(value) => setCanvasRotation(Math.round(value))}
                     minimumTrackTintColor="#8B5CF6"
                     maximumTrackTintColor="#E5E7EB"
                     thumbTintColor="#8B5CF6"
+                    tapToSeek={true}
+                    disabled={isDropdownOpen} // Disable slider when dropdown is open
                   />
                   <Text style={styles.sliderMaxLabel}>{canvasRotation}°</Text>
                 </View>
@@ -1205,11 +1218,11 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
             <View style={{ height: 8 }} />
 
             <View style={styles.canvasSection}>
+              {/* Fixed-position wrapper that doesn't rotate */}
               <View
                 style={[styles.modernCanvasWrapper, { 
                   width: 800,
                   height: 600,
-                  transform: [{ scale: currentZoom }],
                 }]}
                 ref={canvasCaptureRef}
                 onLayout={(ev) => {
@@ -1218,22 +1231,39 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
                   setCanvasLayout({ width, height });
                 }}
               >
-                <DrawingCanvas
-                  strokes={pages[currentPageIndex] || []}
-                  currentTool={currentTool}
-                  currentColor={currentColor}
-                  currentWidth={currentWidth}
-                  onStrokeComplete={handleStrokeComplete}
-                  onAddStroke={addStroke}
-                  onStrokeUpdate={setCurrentStroke}
-                  disabled={readOnly}
-                  backgroundColor={getTemplateBackgroundColor(activeTemplate)}
-                  template={activeTemplate}
-                  templateOptions={getTemplateOptionsForCanvas()}
-                  scaleStrokesWithZoom={SCALE_STROKES_WITH_ZOOM}
-                  currentZoom={currentZoom}
-                  orientation={canvasOrientation}
-                />
+                {/* Inner container that rotates only the canvas content */}
+                <View
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    backgroundColor: 'transparent',
+                    transform: [
+                      { scale: currentZoom },
+                      { rotate: canvasRotation + 'deg' }
+                    ],
+                  }}
+                >
+                  <DrawingCanvas
+                    key={`canvas-${canvasRotation}-${currentZoom}`} // Force re-render on rotation/zoom
+                    // Render directly from hook state to ensure undo/redo and eraser reflect immediately
+                    strokes={strokes}
+                    currentTool={currentTool}
+                    currentColor={currentColor}
+                    currentWidth={currentWidth}
+                    onStrokeComplete={handleStrokeComplete}
+                    onAddStroke={addStroke}
+                    onStrokeUpdate={setCurrentStroke}
+                    disabled={readOnly}
+                    backgroundColor={getTemplateBackgroundColor(activeTemplate)}
+                    template={activeTemplate}
+                    templateOptions={getTemplateOptionsForCanvas()}
+                    scaleStrokesWithZoom={SCALE_STROKES_WITH_ZOOM}
+                    currentZoom={currentZoom}
+                    orientation={canvasOrientation}
+                  />
+                </View>
 
                 {/* Canvas overlay for direct selection mode */}
                 {useCanvasSelection && canvasLayout && (
@@ -1670,7 +1700,7 @@ const styles = StyleSheet.create({
   modernCanvasWrapper: {
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#f3f3f3ff",
+    backgroundColor: "transparent", // Changed from gray to transparent
     overflow: "hidden",
     // Remove flex: 1 to allow explicit sizing
   },
@@ -1681,7 +1711,8 @@ const styles = StyleSheet.create({
     position: "relative",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#f3f3f3ff",
+    backgroundColor: "#f3f3f3ff", // Keep this background color as it's for the fixed container
+    marginVertical: 2, // Minimize vertical space
   },
   zoomIndicator: {
     position: "absolute",
@@ -1750,18 +1781,10 @@ const styles = StyleSheet.create({
 
   // Rotation slider styles
   rotationSliderContainer: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 10,
-    marginVertical: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 2,
-    elevation: 1,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
+    backgroundColor: "transparent",
+    marginVertical: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
   },
   rotationLabel: {
     fontSize: 12,
@@ -1774,18 +1797,19 @@ const styles = StyleSheet.create({
   sliderRow: {
     flexDirection: "row",
     alignItems: "center",
+    height: 24,
   },
   sliderMinLabel: {
-    fontSize: 11,
+    fontSize: 10,
     color: "#9CA3AF",
     fontFamily: "Inter-Medium",
-    minWidth: 22,
+    minWidth: 16,
   },
   sliderMaxLabel: {
-    fontSize: 11,
+    fontSize: 10,
     color: "#8B5CF6",
     fontFamily: "Inter-SemiBold",
-    minWidth: 36,
+    minWidth: 24,
     textAlign: "right",
   },
 
