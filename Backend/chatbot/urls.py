@@ -7,6 +7,8 @@ from .views.files import FileUploadView
 from .utils.ocr_utils import extract_text_from_images
 from .views.documents import DocumentUploadView, DocumentListView
 from .views.RAG_view import ChatRAGView
+from .views.dictionary_views import ConceptHelpView
+
 urlpatterns = [
     path("chat/", ChatView.as_view(), name="chat"),
     path("upload_pdf/", FileUploadView.as_view(), name="upload_pdf"),
@@ -30,4 +32,6 @@ urlpatterns = [
     path("documents/upload/", DocumentUploadView.as_view(), name="upload_document"),
     path("documents/list/", DocumentListView.as_view(), name="list_documents"),
     path("chat/rag/", ChatRAGView.as_view(), name="chat_rag"),
+    #Para ni sa dictionary
+    path("dictionary/concept/", ConceptHelpView.as_view(), name="concept_help"),
 ]

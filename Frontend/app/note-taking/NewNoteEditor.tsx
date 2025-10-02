@@ -26,8 +26,7 @@ import { useAutoSave } from "./hooks/useAutoSave";
 import { noteService, Note as NoteType, SaveStatus } from "./services/noteService";
 import { useNetworkStatus, getNetworkStatusText, getNetworkStatusColor } from "./services/networkService";
 import RenderHtml from "react-native-render-html";
-import dictionaryService from "./services/dictionaryService";
-
+import { dictionaryService } from "./services/dictionaryService";
 
 const { RichEditor, RichToolbar } = require("react-native-pell-rich-editor");
 
@@ -82,7 +81,7 @@ const storage = {
   },
 };
 
-// RINA Button Component
+
 const RinaButton: React.FC<RinaPopupProps> = ({
   visible,
   selectedText,
@@ -92,24 +91,21 @@ const RinaButton: React.FC<RinaPopupProps> = ({
 }) => {
   if (!visible || !selectedText.trim()) return null;
 
-  // Calculate position to appear close to selected word
   const buttonWidth = 100;
   const buttonHeight = 35;
   const windowWidth = Dimensions.get("window").width;
   const windowHeight = Dimensions.get("window").height;
-  
-  // Position the button slightly above and to the right of the selection
-  let left = position.x + 10; // 10px to the right of selection
-  let top = position.y - buttonHeight - 5; // 5px above the selection
-  
-  // Boundary checks
+
+  let left = position.x + 10;
+  let top = position.y - buttonHeight - 5;
+
   if (left + buttonWidth > windowWidth - 16) {
-    left = position.x - buttonWidth - 10; // Place to the left instead
+    left = position.x - buttonWidth - 10;
   }
   if (left < 16) left = 16;
-  
-  if (top < 100) { // Avoid header area
-    top = position.y + 25; // Place below selection instead
+
+  if (top < 100) {
+    top = position.y + 25;
   }
   if (top + buttonHeight > windowHeight - 100) {
     top = windowHeight - buttonHeight - 100;
@@ -141,6 +137,7 @@ const RinaButton: React.FC<RinaPopupProps> = ({
   );
 };
 
+
 const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   // Refs
   const richTextRef = useRef<any>(null);
@@ -160,6 +157,8 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   // Removed showMoreOptions state since kebab menu is removed
 
   const [saveStatus, setSaveStatus] = useState<SaveStatus>({ status: 'saved' });
+  const [wordData, setWordData] = useState<any>(null);
+  const [showWordMeaningModal, setShowWordMeaningModal] = useState(false);
   const [noteId, setNoteId] = useState(route.params?.noteId || noteService.generateNoteId());
   const [currentNote, setCurrentNote] = useState<NoteType>(() => ({
     id: route.params?.noteId || noteService.generateNoteId(),
@@ -187,9 +186,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   const [folderName, setFolderName] = useState<string>("Unorganized Notes");
   const [folderFilter, setFolderFilter] = useState('');
   const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
-  const [showWordMeaningModal, setShowWordMeaningModal] = useState(false);
   const [selectedWord, setSelectedWord] = useState("");
-  const [wordMeaning, setWordMeaning] = useState("");
   const [isLoadingMeaning, setIsLoadingMeaning] = useState(false);
   const [windowDimensions, setWindowDimensions] = useState(Dimensions.get('window'));
 
@@ -364,67 +361,6 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   };
 
 
-
-  // Helper functions
-  const getWordMeaning = async (word: string) => {
-    setIsLoadingMeaning(true);
-    try {
-      // Use dictionary service (doesn't store in chat history)
-      const result = await dictionaryService.getWordDefinition(word);
-      
-      if (result && result.definition) {
-        // Format the definition nicely
-        let formattedDefinition = `**${result.word}**`;
-        
-        if (result.partOfSpeech) {
-          formattedDefinition += ` (${result.partOfSpeech})`;
-        }
-        
-        formattedDefinition += `\n\n${result.definition}`;
-        
-        if (result.examples && result.examples.length > 0) {
-          formattedDefinition += `\n\n*Example: ${result.examples[0]}*`;
-        }
-        
-        if (result.synonyms && result.synonyms.length > 0) {
-          formattedDefinition += `\n\n*Synonyms: ${result.synonyms.slice(0, 3).join(', ')}*`;
-        }
-        
-        setWordMeaning(formattedDefinition);
-      } else {
-        setWordMeaning(`Definition for "${word}" not found.`);
-      }
-      
-    } catch (error) {
-      console.error('Error getting word meaning from dictionary service:', error);
-      // Fallback with common words dictionary
-      const commonWords: { [key: string]: string } = {
-        "hello": "**Hello** (interjection)\n\nA greeting used when meeting someone or answering the phone.\n\n*Example: Hello, how are you today?*\n\n*Synonyms: hi, hey, greetings*",
-        "world": "**World** (noun)\n\nThe earth and all the people and things on it; the universe.\n\n*Example: The world is full of amazing places to explore.*\n\n*Synonyms: earth, globe, planet*",
-        "study": "**Study** (verb/noun)\n\n1. (verb) To learn about something by reading, practicing, or attending classes\n2. (noun) The act of learning or a room for learning\n\n*Example: I need to study for my exam tomorrow.*\n\n*Synonyms: learn, research, examine*",
-        "note": "**Note** (noun/verb)\n\n1. (noun) A brief written record or comment\n2. (verb) To notice or write down something important\n\n*Example: Please take notes during the lecture.*\n\n*Synonyms: record, memo, annotation*",
-        "learn": "**Learn** (verb)\n\nTo gain knowledge or skill through study, experience, or teaching.\n\n*Example: Students learn best when they are engaged.*\n\n*Synonyms: study, discover, master*",
-        "understand": "**Understand** (verb)\n\nTo comprehend the meaning or importance of something.\n\n*Example: Do you understand the instructions?*\n\n*Synonyms: comprehend, grasp, realize*"
-      };
-      
-      const meaning = commonWords[word.toLowerCase()] || 
-        `**${word}** \n\nSorry, RINA couldn't fetch the meaning right now. This might be due to network issues. Please check your connection and try again, or consider looking up this word in a dictionary.`;
-      
-      setWordMeaning(meaning);
-    } finally {
-      setIsLoadingMeaning(false);
-    }
-  };
-
-  const handleLongPressWord = (word: string) => {
-    const cleanWord = word.replace(/[^\w]/g, '').toLowerCase();
-    if (cleanWord.length > 0) {
-      setSelectedWord(cleanWord);
-      setShowWordMeaningModal(true);
-      getWordMeaning(cleanWord);
-    }
-  };
-
   const isTablet = windowDimensions.width >= 768;
   const isSmallPhone = windowDimensions.width < 375;
 
@@ -552,93 +488,44 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     }
   };
 
-  const handleAskRina = async (text: string) => {
+  const handleAskRina = (text: string) => {
     const cleanText = text.trim();
     if (cleanText.length === 0) return;
-    
-    // If it's a single word, show word meaning modal using dictionary service
-    if (cleanText.split(' ').length === 1) {
-      const cleanWord = cleanText.replace(/[^\w]/g, '').toLowerCase();
-      if (cleanWord.length > 0) {
-        setSelectedWord(cleanWord);
-        setShowWordMeaningModal(true);
-        getWordMeaning(cleanWord);
-        // Add haptic feedback
-        if (Platform.OS === 'ios') {
-          Vibration.vibrate(10);
-        }
-      }
-      return;
-    }
-    
-    // For longer text, provide AI assistance through alert with multiple options
-    Alert.alert(
-      "Ask RINA",
-      `What would you like RINA to help you with regarding:\n\"${cleanText.length > 50 ? cleanText.substring(0, 50) + '...' : cleanText}\"`,
-      [
-        {
-          text: "Explain this",
-          onPress: () => askRinaForHelp(cleanText, "explain")
-        },
-        {
-          text: "Summarize",
-          onPress: () => askRinaForHelp(cleanText, "summarize")
-        },
-        {
-          text: "Give examples",
-          onPress: () => askRinaForHelp(cleanText, "examples")
-        },
-        {
-          text: "Study tips",
-          onPress: () => askRinaForHelp(cleanText, "study")
-        },
-        {
-          text: "Cancel",
-          style: "cancel"
-        }
-      ]
-    );
-  };
-  
-  const askRinaForHelp = async (text: string, action: string) => {
-    try {
-      // Use dictionary service for RINA requests to avoid cluttering chat history
-      const response = await dictionaryService.getConceptExplanation(text, action as 'explain' | 'summarize' | 'examples' | 'study');
-      
-      if (response && response.explanation) {
-        // Show the AI response in a modal or alert
-        Alert.alert(
-          "RINA's Response",
-          response.explanation,
-          [
-            {
-              text: "Add to Note",
-              onPress: () => {
-                // Add RINA's response to the note content
-                const aiContent = `\\n\\n**RINA's Insight:**\\n${response.explanation}\\n`;
-                setContent(prev => prev + aiContent);
-                if (richTextRef.current) {
-                  richTextRef.current.insertHTML(aiContent);
-                }
-                showSuccessToast("RINA's response added to your note!");
-              }
-            },
-            {
-              text: "Close",
-              style: "cancel"
-            }
-          ]
-        );
-      } else {
-        Alert.alert("Error", "RINA couldn't provide a response. Please try again.");
-      }
-      
-    } catch (error) {
-      console.error('Error asking RINA for help:', error);
-      Alert.alert("Error", "Unable to connect to RINA. Please check your internet connection and try again.");
-    }
+
+    // Fire-and-forget the async helper (it's safe because it updates state)
+    askRinaForHelp(cleanText);
   };
 
+  const askRinaForHelp = async (text: string) => {
+  try {
+    setIsLoadingMeaning(true);
+    setSelectedWord(text);
+    setShowWordMeaningModal(true);
+
+    // Call your dictionary service (already set up in dictionaryService.ts)
+    const response = await dictionaryService.getConcept(text);
+
+    if (response) {
+      // ✅ Store the whole JSON object, not just the meaning
+      // Example response:
+      // {
+      //   Meaning: "A greeting",
+      //   PartOfSpeech: "interjection",
+      //   Synonyms: ["greeting", "salutation"],
+      //   Antonyms: ["None"],
+      //   Examples: ["Hello, how are you?", "Hi, it's nice to meet you."]
+      // }
+      setWordData(response);
+    } else {
+      setWordData(null);
+    }
+  } catch (error) {
+    console.error("Error asking RINA for help:", error);
+    setWordData(null);
+  } finally {
+    setIsLoadingMeaning(false);
+  }
+};
 
 
   const getSyncStatusIcon = () => {
@@ -1413,93 +1300,125 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
 
         {/* Word Meaning Modal */}
         <Modal
-          visible={showWordMeaningModal}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setShowWordMeaningModal(false)}
+  visible={showWordMeaningModal}
+  transparent
+  animationType="fade"
+  onRequestClose={() => setShowWordMeaningModal(false)}
+>
+  <View style={styles.wordMeaningOverlay}>
+    <View style={[styles.wordMeaningModal, { 
+      width: isTablet ? '60%' : '90%',
+      maxWidth: isTablet ? 500 : 350
+    }]}>
+      <View style={styles.wordMeaningHeader}>
+        <MaterialIcons name="psychology" size={28} color="#8B5CF6" />
+        <Text style={styles.wordMeaningTitle}>RINA Dictionary</Text>
+        <TouchableOpacity
+          style={styles.wordMeaningCloseButton}
+          onPress={() => setShowWordMeaningModal(false)}
         >
-          <View style={styles.wordMeaningOverlay}>
-            <View style={[styles.wordMeaningModal, { 
-              width: isTablet ? '60%' : '90%',
-              maxWidth: isTablet ? 500 : 350
-            }]}>
-              <View style={styles.wordMeaningHeader}>
-                <MaterialIcons name="psychology" size={28} color="#8B5CF6" />
-                <Text style={styles.wordMeaningTitle}>RINA Dictionary</Text>
-                <TouchableOpacity
-                  style={styles.wordMeaningCloseButton}
-                  onPress={() => setShowWordMeaningModal(false)}
-                >
-                  <MaterialIcons name="close" size={24} color="#6B7280" />
-                </TouchableOpacity>
-              </View>
-              
-              <View style={styles.wordMeaningContent}>
-                <Text style={styles.wordMeaningWord}>{selectedWord}</Text>
-                
-                {isLoadingMeaning ? (
-                  <View style={styles.wordMeaningLoading}>
-                    <MaterialIcons name="sync" size={24} color="#8B5CF6" />
-                    <Text style={styles.wordMeaningLoadingText}>RINA is looking up the meaning...</Text>
-                  </View>
-                ) : (
-                  <ScrollView style={styles.wordMeaningScrollView}>
-                    <RenderHtml
-                      contentWidth={isTablet ? 400 : 280}
-                      source={{ html: wordMeaning.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>') }}
-                      baseStyle={{
-                        fontSize: 14,
-                        color: '#374151',
-                        lineHeight: 20,
-                      }}
-                      tagsStyles={{
-                        strong: { fontWeight: 'bold', color: '#1F2937' },
-                        em: { fontStyle: 'italic', color: '#6B7280' },
-                        br: { height: 8 }
-                      }}
-                    />
-                  </ScrollView>
-                )}
-              </View>
-              
-              <View style={styles.wordMeaningActions}>
-                <TouchableOpacity
-                  style={styles.wordMeaningActionButton}
-                  onPress={() => {
-                    // Add to clipboard functionality - you can import Clipboard from @react-native-clipboard/clipboard
-                    // Clipboard.setString(wordMeaning);
-                    showSuccessToast("Meaning copied to clipboard");
-                    // Add haptic feedback
-                    if (Platform.OS === 'ios') {
-                      Vibration.vibrate(10);
-                    }
-                  }}
-                >
-                  <MaterialIcons name="content-copy" size={18} color="#8B5CF6" />
-                  <Text style={styles.wordMeaningActionText}>Copy</Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity
-                  style={styles.wordMeaningActionButton}
-                  onPress={() => {
-                    // Insert meaning into note
-                    const meaningText = `\n\n**${selectedWord}**: ${wordMeaning}\n\n`;
-                    richTextRef.current?.insertHTML(meaningText);
-                    setShowWordMeaningModal(false);
-                    showSuccessToast("Meaning added to note");
-                    // Add haptic feedback
-                    if (Platform.OS === 'ios') {
-                      Vibration.vibrate(10);
-                    }
-                  }}
-                >
-                  <MaterialIcons name="note-add" size={18} color="#8B5CF6" />
-                  <Text style={styles.wordMeaningActionText}>Add to Note</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+          <MaterialIcons name="close" size={24} color="#6B7280" />
+        </TouchableOpacity>
+      </View>
+      
+      <View style={styles.wordMeaningContent}>
+        <Text style={styles.wordMeaningWord}>{selectedWord}</Text>
+        
+        {isLoadingMeaning ? (
+          <View style={styles.wordMeaningLoading}>
+            <MaterialIcons name="sync" size={24} color="#8B5CF6" />
+            <Text style={styles.wordMeaningLoadingText}>
+              RINA is looking up the meaning...
+            </Text>
           </View>
-        </Modal>
+        ) : wordData ? (
+          <ScrollView style={styles.wordMeaningScrollView}>
+            <Text style={styles.sectionTitle}>Meaning:</Text>
+            <Text style={styles.wordMeaningText}>{wordData.Meaning}</Text>
+
+            <Text style={styles.sectionTitle}>Part of Speech:</Text>
+            <Text style={styles.wordMeaningText}>{wordData.PartOfSpeech}</Text>
+
+            <Text style={styles.sectionTitle}>Synonyms:</Text>
+            <Text style={styles.wordMeaningText}>
+              {wordData.Synonyms?.length ? wordData.Synonyms.join(", ") : "None"}
+            </Text>
+
+            <Text style={styles.sectionTitle}>Antonyms:</Text>
+            <Text style={styles.wordMeaningText}>
+              {wordData.Antonyms?.length ? wordData.Antonyms.join(", ") : "None"}
+            </Text>
+
+            <Text style={styles.sectionTitle}>Examples:</Text>
+            {wordData.Examples?.map((ex: string, i: number) => (
+              <Text key={i} style={styles.wordMeaningText}>• {ex}</Text>
+            ))}
+          </ScrollView>
+        ) : (
+          <Text style={styles.wordMeaningText}>
+            RINA couldn’t generate a response. Please try again.
+          </Text>
+        )}
+      </View>
+      
+      <View style={styles.wordMeaningActions}>
+  {/* Copy Button */}
+  <TouchableOpacity
+    style={styles.wordMeaningActionButton}
+    onPress={() => {
+      if (wordData) {
+        const copyText = `
+          ${selectedWord} (${wordData.PartOfSpeech})
+          Meaning: ${wordData.Meaning}
+          Synonyms: ${wordData.Synonyms?.length ? wordData.Synonyms.join(", ") : "None"}
+          Antonyms: ${wordData.Antonyms?.length ? wordData.Antonyms.join(", ") : "None"}
+          Examples: ${wordData.Examples?.join(" | ")}
+        `;
+        // Clipboard.setString(copyText); // uncomment if Clipboard installed
+        showSuccessToast("Definition copied to clipboard");
+        if (Platform.OS === 'ios') {
+          Vibration.vibrate(10);
+        }
+      }
+    }}
+  >
+    <MaterialIcons name="content-copy" size={18} color="#8B5CF6" />
+    <Text style={styles.wordMeaningActionText}>Copy</Text>
+  </TouchableOpacity>
+
+  {/* Add to Note Button */}
+  <TouchableOpacity
+    style={styles.wordMeaningActionButton}
+    onPress={() => {
+      if (wordData) {
+        const meaningText = `
+          <p><strong>${selectedWord}</strong> (${wordData.PartOfSpeech})</p>
+          <p><em>Meaning:</em> ${wordData.Meaning}</p>
+          <p><em>Synonyms:</em> ${wordData.Synonyms?.length ? wordData.Synonyms.join(", ") : "None"}</p>
+          <p><em>Antonyms:</em> ${wordData.Antonyms?.length ? wordData.Antonyms.join(", ") : "None"}</p>
+          <p><em>Examples:</em></p>
+          <ul>
+            ${wordData.Examples?.map((ex: string) => `<li>${ex}</li>`).join("")}
+          </ul>
+        `;
+        richTextRef.current?.insertHTML(meaningText);
+        setShowWordMeaningModal(false);
+        showSuccessToast("Definition added to note");
+        if (Platform.OS === 'ios') {
+          Vibration.vibrate(10);
+        }
+      }
+    }}
+  >
+    <MaterialIcons name="note-add" size={18} color="#8B5CF6" />
+    <Text style={styles.wordMeaningActionText}>Add to Note</Text>
+  </TouchableOpacity>
+</View>
+
+
+    </View>
+  </View>
+</Modal>
       </Animated.View>
     </KeyboardAvoidingView>
   );
@@ -2204,11 +2123,6 @@ const styles = StyleSheet.create({
     zIndex: 9999,
     backgroundColor: "#8B5CF6",
     borderRadius: 18,
-    shadowColor: "#8B5CF6",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 6,
   },
   rinaButtonContainer: {
     flex: 1,
@@ -2218,10 +2132,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
-  rinaButtonText: {
-    color: "#fff",
-    fontWeight: "bold",
-    fontSize: 12,
+  rinaButtonText: { 
+    color: "#fff", 
+    fontWeight: "bold" 
   },
   colorPickerModal: {
     flex: 1,
@@ -2485,6 +2398,16 @@ const styles = StyleSheet.create({
     maxHeight: 200,
     marginVertical: 8,
   },
+  wordMeaningSection: {
+  marginBottom: 12,
+},
+
+wordMeaningExample: {
+  fontSize: 14,
+  color: "#374151",
+  marginLeft: 10,
+  marginBottom: 4,
+},
 });
 
 export default NewNoteEditor;
