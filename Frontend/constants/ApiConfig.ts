@@ -123,6 +123,9 @@ export const API_ENDPOINTS = {
     CHATBOT_EXTRACT_TEXT: '/chatbot/extract_text/',
     CHATBOT_RAG: '/chatbot/chat/rag/',
     
+    // Dictionary endpoints
+    CHATBOT_DICTIONARY_DEFINE: '/chatbot/dictionary/define/',
+    CHATBOT_DICTIONARY_CONCEPT: '/chatbot/dictionary/concept/',
     // Ollama endpoints
     OLLAMA_CHAT: '/api/chat',
     OLLAMA_GENERATE: '/api/generate',
