@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -7,9 +7,11 @@ import {
   Image,
   ScrollView,
   Platform,
+  Animated,   
   Alert,
   RefreshControl,
   ActivityIndicator,
+  StatusBar,
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
@@ -66,6 +68,33 @@ const Profile: React.FC = () => {
       return () => {};
     }, [])
   );
+
+  // Animated value used to drive header/profile collapse on scroll
+  const scrollY = useRef(new Animated.Value(0)).current;
+
+  // Use diffClamp to smoothly limit the scroll value and avoid sudden jumps
+  const clampedScroll = useRef(Animated.diffClamp(scrollY, 0, 140)).current;
+
+  // Smoothly interpolate profile height from 120 -> 20 over the clamped scroll range.
+  const profileHeight = clampedScroll.interpolate({
+    inputRange: [0, 40, 100, 140],
+    outputRange: [120, 100, 48, 20],
+    extrapolate: 'clamp',
+  });
+
+  // Opacity fades progressively with a gentler curve so elements don't disappear abruptly
+  const profileOpacity = clampedScroll.interpolate({
+    inputRange: [0, 40, 100, 140],
+    outputRange: [1, 0.95, 0.6, 0],
+    extrapolate: 'clamp',
+  });
+
+  // Subtle upward translation as header collapses for smoother visual flow
+  const headerTranslateY = clampedScroll.interpolate({
+    inputRange: [0, 140],
+    outputRange: [0, -28],
+    extrapolate: 'clamp',
+  });
 
   const loadUserData = async () => {
     try {
@@ -161,12 +190,14 @@ const Profile: React.FC = () => {
     return (
       <SafeAreaWrapper disableTopSafeArea={true}>
         <View style={styles.rootContainer}>
-          <LinearGradient
-            colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.header}
-          >
+                <StatusBar barStyle="light-content" backgroundColor="#7C3AED" />
+          <Animated.View style={[styles.header, { transform: [{ translateY: headerTranslateY }], opacity: profileOpacity }]}>
+            <LinearGradient
+              colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={StyleSheet.absoluteFill}
+            />
             <View style={styles.headerTop}>
               <View style={styles.titleSection}>
                 <Skeleton width={200} height={32} style={{ backgroundColor: '#ffffff20' }} />
@@ -187,7 +218,7 @@ const Profile: React.FC = () => {
                 <Skeleton width={140} height={14} />
               </View>
             </View>
-          </LinearGradient>
+          </Animated.View>
 
           <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
             <View style={{ paddingHorizontal: 8, paddingTop: 8 }}>
@@ -419,47 +450,54 @@ const Profile: React.FC = () => {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.profileSection}>
-          <View style={styles.profilePicContainer}>
-            {userData?.profile?.profile_picture ? (
-              <Image
-                source={{ uri: `${API_URL}${userData.profile.profile_picture}` }}
-                style={styles.profilePic}
-                resizeMode="cover"
-              />
-            ) : (
-              <View style={styles.defaultProfilePic}>
-                <Text style={styles.avatarText}>
-                  {username ? username.charAt(0).toUpperCase() : "U"}
-                </Text>
-              </View>
-            )}
-          </View>
+<Animated.View
+  style={[
+    styles.profileSection,
+    { height: profileHeight, opacity: profileOpacity },
+  ]}
+>
+  <View style={styles.profilePicContainer}>
+    {userData?.profile?.profile_picture ? (
+      <Image
+        source={{ uri: `${API_URL}${userData.profile.profile_picture}` }}
+        style={styles.profilePic}
+        resizeMode="cover"
+      />
+    ) : (
+      <View style={styles.defaultProfilePic}>
+        <Text style={styles.avatarText}>
+          {username ? username.charAt(0).toUpperCase() : "U"}
+        </Text>
+      </View>
+    )}
+  </View>
 
-          <View style={styles.userInfo}>
-            <Text style={styles.userName}>
-              {userData?.profile?.full_name || username || "User"}
-            </Text>
-            <Text style={styles.userUsername}>@{username || "username"}</Text>
-            <Text style={styles.joinDate}>
-              Member since {userData?.date_joined || "N/A"}
-            </Text>
-          </View>
-        </View>
+  <View style={styles.userInfo}>
+    <Text style={styles.userName}>
+      {userData?.profile?.full_name || username || "User"}
+    </Text>
+    <Text style={styles.userUsername}>@{username || "username"}</Text>
+    <Text style={styles.joinDate}>
+      Member since {userData?.date_joined || "N/A"}
+    </Text>
+  </View>
+</Animated.View>
       </LinearGradient>
 
       {/* Content */}
-      <ScrollView
-        style={styles.content}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={["#6A009C"]}
-          />
-        }
-      >
+<Animated.ScrollView
+  style={styles.content}
+  showsVerticalScrollIndicator={false}
+  refreshControl={
+    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#6A009C"]} />
+  }
+  onScroll={Animated.event(
+    [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+    { useNativeDriver: false } // height animation needs false
+  )}
+  scrollEventThrottle={16}
+>
+
         <View style={styles.progressHeader}>
           <Text style={styles.sectionTitle}>Quick Overview</Text>
         </View>
@@ -740,7 +778,7 @@ const Profile: React.FC = () => {
             <MaterialIcons name="chevron-right" size={24} color="#FF5722" />
           </TouchableOpacity>
         </View>
-      </ScrollView>
+  </Animated.ScrollView>
 
       <Navbar activeRoute="Profile" />
       </View>

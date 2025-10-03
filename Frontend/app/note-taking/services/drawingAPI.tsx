@@ -1,7 +1,13 @@
 
 import { API_URL, API_ENDPOINTS } from '@/constants/ApiConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { embedAnnotationsInPDF, saveAnnotationsDirectlyToPDF, createPDFBackup, PDFAnnotation } from '../utils/pdfUtils';
+import { 
+  embedAnnotationsInPDF, 
+  embedAnnotationsInPDFEnhanced, 
+  saveAnnotationsDirectlyToPDF, 
+  createPDFBackup, 
+  PDFAnnotation 
+} from '../utils/pdfUtils';
 
 // Add these interfaces
 export interface DrawingStroke {
@@ -33,6 +39,12 @@ export interface PDFSaveOptions {
   createBackup?: boolean;
   saveDirectly?: boolean;
   outputFileName?: string;
+  viewerInfo?: {
+    totalPages: number;
+    viewerWidth: number;
+    viewerHeight: number;
+    pdfPageDimensions: { width: number; height: number };
+  };
 }
 
 // Add this new class to your existing api.tsx file
@@ -342,7 +354,16 @@ export class DrawingAPI {
         savedPath = pdfUri;
       } else {
         // Create a new annotated PDF file (keeps original intact)
-        savedPath = await embedAnnotationsInPDF(pdfUri, annotations, outputFileName);
+        if (options.viewerInfo) {
+          // Use enhanced embedding with viewer validation
+          savedPath = await embedAnnotationsInPDFEnhanced(pdfUri, annotations, {
+            outputFileName,
+            viewerInfo: options.viewerInfo
+          });
+        } else {
+          // Fallback to legacy embedding
+          savedPath = await embedAnnotationsInPDF(pdfUri, annotations, outputFileName);
+        }
       }
 
       console.log('PDF annotations saved successfully:', {

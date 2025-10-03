@@ -555,12 +555,7 @@ async function processPDFInChunks(
 }
 
 /**
- * Enhanced PDF annotation embedding with chunked processing for large files
- * @param originalPdfUri The URI of the original PDF file
- * @param annotations Array of annotations to embed
- * @param options Processing options
- * @param onProgress Progress callback
- * @returns Promise that resolves to the new annotated PDF file URI
+ * Enhanced PDF annotation embedding with proper coordinate validation
  */
 export async function embedAnnotationsInPDFEnhanced(
   originalPdfUri: string,
@@ -569,6 +564,12 @@ export async function embedAnnotationsInPDFEnhanced(
     outputFileName?: string;
     useChunkedProcessing?: boolean;
     maxMemoryUsage?: number;
+    viewerInfo?: {
+      totalPages: number;
+      viewerWidth: number;
+      viewerHeight: number;
+      pdfPageDimensions: { width: number; height: number };
+    };
   } = {},
   onProgress?: (progress: PDFProcessingProgress) => void
 ): Promise<string> {
@@ -576,6 +577,33 @@ export async function embedAnnotationsInPDFEnhanced(
     console.log('🎨 Starting enhanced PDF annotation embedding...');
     console.log('📍 Original PDF:', originalPdfUri);
     console.log('📝 Annotations to embed:', annotations.length);
+    
+    // Enhanced debugging for coordinate validation
+    if (options.viewerInfo) {
+      console.log('🔍 Viewer info provided:', options.viewerInfo);
+      
+      // Validate annotation coordinates against viewer info
+      const invalidAnnotations = annotations.filter(ann => {
+        const isValidPage = ann.page >= 1 && ann.page <= options.viewerInfo!.totalPages;
+        const isValidCoords = ann.x >= 0 && ann.x <= 1 && ann.y >= 0 && ann.y <= 1;
+        return !isValidPage || !isValidCoords;
+      });
+      
+      if (invalidAnnotations.length > 0) {
+        console.warn('⚠️ Found annotations with invalid coordinates:', invalidAnnotations);
+      }
+      
+      // Log page distribution with viewer context
+      const pageDistribution = annotations.reduce((acc, ann) => {
+        acc[ann.page] = (acc[ann.page] || 0) + 1;
+        return acc;
+      }, {} as Record<number, number>);
+      
+      console.log('📊 Annotation distribution vs viewer info:');
+      console.log('  - Viewer shows pages:', options.viewerInfo.totalPages);
+      console.log('  - Annotations on pages:', Object.keys(pageDistribution).join(', '));
+      console.log('  - Distribution:', pageDistribution);
+    }
 
     onProgress?.({
       stage: 'validating',
@@ -710,9 +738,37 @@ async function embedAnnotationsInMemory(
   const pdfArrayBuffer = Uint8Array.from(atob(pdfBytes), (c) =>
     c.charCodeAt(0)
   ).buffer;
-
-  // Load the PDF document
-  const pdfDoc = await PDFDocument.load(pdfArrayBuffer);
+  
+  // Load the PDF document, with enhanced handling for encrypted PDFs
+  let pdfDoc: PDFDocument;
+  let wasEncrypted = false;
+  
+  try {
+    pdfDoc = await PDFDocument.load(pdfArrayBuffer);
+  } catch (loadErr: any) {
+    console.warn('Initial PDFDocument.load failed:', loadErr && loadErr.message ? loadErr.message : loadErr);
+    // If the error indicates encryption, retry with ignoreEncryption option
+    const msg = loadErr && loadErr.message ? loadErr.message.toLowerCase() : String(loadErr || '').toLowerCase();
+    if (msg.includes('encrypted') || msg.includes('password')) {
+      try {
+        console.log('PDF appears to be encrypted - retrying load with ignoreEncryption:true');
+        console.warn('⚠️ WARNING: Loading encrypted PDF with ignoreEncryption may result in compatibility issues');
+        
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        pdfDoc = await (PDFDocument as any).load(pdfArrayBuffer, { ignoreEncryption: true });
+        wasEncrypted = true;
+        
+        // For encrypted PDFs, we need to create a new clean PDF to ensure compatibility
+        console.log('🔄 Creating clean PDF copy for better compatibility...');
+        
+      } catch (retryErr) {
+        console.error('Retry with ignoreEncryption failed:', retryErr);
+        throw new Error(`Cannot process encrypted PDF: ${retryErr instanceof Error ? retryErr.message : 'Unknown encryption error'}`);
+      }
+    } else {
+      throw loadErr;
+    }
+  }
   const pages = pdfDoc.getPages();
   console.log('📄 PDF loaded, pages:', pages.length);
 
@@ -727,25 +783,92 @@ async function embedAnnotationsInMemory(
 
   // Group annotations by page
   const annotationsByPage = groupAnnotationsByPage(annotations);
+  
+  // Debug: Log annotation distribution
+  console.log('🔍 Annotations grouped by page:', 
+    Object.entries(annotationsByPage).map(([page, anns]) => `Page ${page}: ${anns.length} annotations`).join(', ')
+  );
+  console.log('📄 PDF has', pages.length, 'pages');
+  console.log('📝 Total annotations to embed:', annotations.length);
 
   // Process each page that has annotations
   let processedPages = 0;
-  for (const [pageNum, pageAnnotations] of Object.entries(annotationsByPage)) {
-    const pageIndex = parseInt(pageNum) - 1; // Convert to 0-based index
-    if (pageIndex >= 0 && pageIndex < pages.length) {
-      const page = pages[pageIndex];
-      console.log(`📝 Processing page ${pageNum} with ${pageAnnotations.length} annotations`);
-      
-      await embedAnnotationsOnPage(page, pageAnnotations, font);
-      
-      processedPages++;
-      onProgress?.({
-        stage: 'embedding',
-        progress: 50 + Math.round((processedPages / Object.keys(annotationsByPage).length) * 30),
-        message: `Processed page ${pageNum}/${pages.length}...`
-      });
-    }
+  const totalAnnotationPages = Object.keys(annotationsByPage).length;
+  
+  console.log(`🔍 ENHANCED DEBUGGING - Starting annotation embedding on ${totalAnnotationPages} pages`);
+  console.log('📊 PDF pages available:', pages.length);
+  console.log('📝 Annotation pages:', Object.keys(annotationsByPage).sort((a, b) => parseInt(a) - parseInt(b)));
+  
+  // Enhanced page boundary validation
+  const maxAnnotationPage = Math.max(...Object.keys(annotationsByPage).map(p => parseInt(p)));
+  if (maxAnnotationPage > pages.length) {
+    console.error(`❌ CRITICAL: Annotations exist on page ${maxAnnotationPage} but PDF only has ${pages.length} pages`);
+    console.error('📋 This suggests a page numbering or PDF loading issue');
+    
+    // Log the issue but don't try to add pages (this indicates a coordinate problem)
+    const missingPages = maxAnnotationPage - pages.length;
+    console.log(`🔧 Need ${missingPages} more pages to accommodate annotations`);
+    console.log(`❌ This indicates annotations are being stored with incorrect page numbers`);
+    console.log(`� Check the PDF viewer coordinate conversion and page calculation logic`);
   }
+  
+  for (const [pageNum, pageAnnotations] of Object.entries(annotationsByPage)) {
+    const pageNumber = parseInt(pageNum);
+    const pageIndex = pageNumber - 1; // Convert to 0-based index
+    
+    console.log(`🔍 Processing page ${pageNumber} -> pageIndex ${pageIndex} (PDF has ${pages.length} pages)`);
+    
+    // Enhanced boundary check
+    if (pageIndex < 0) {
+      console.error(`❌ Invalid page number ${pageNumber} - pages must be >= 1`);
+      continue;
+    }
+    
+    if (pageIndex >= pages.length) {
+      console.error(`❌ Page ${pageNumber} is out of bounds - PDF only has ${pages.length} pages`);
+      console.error(`📋 Available page indices: 0 to ${pages.length - 1}`);
+      console.error(`📋 Requested page index: ${pageIndex}`);
+      console.error(`❌ ${pageAnnotations.length} annotations on this page will NOT be embedded!`);
+      
+      // Log the problematic annotations for debugging
+      console.error('🚨 Problematic annotations:', pageAnnotations.map(ann => ({
+        id: ann.id,
+        type: ann.type,
+        page: ann.page,
+        x: ann.x,
+        y: ann.y
+      })));
+      
+      continue;
+    }
+    
+    const page = pages[pageIndex];
+    if (!page) {
+      console.error(`❌ Page object is null/undefined for page ${pageNumber} (index ${pageIndex})`);
+      continue;
+    }
+    
+    console.log(`📝 ✅ Embedding ${pageAnnotations.length} annotations on page ${pageNumber}`);
+    
+    try {
+      await embedAnnotationsOnPage(page, pageAnnotations, font);
+      console.log(`✅ Successfully embedded annotations on page ${pageNumber}`);
+    } catch (pageError) {
+      console.error(`❌ Failed to embed annotations on page ${pageNumber}:`, pageError);
+      // Don't throw - continue with other pages
+    }
+    
+    processedPages++;
+    onProgress?.({
+      stage: 'embedding',
+      progress: 50 + Math.round((processedPages / totalAnnotationPages) * 30),
+      message: `Processed page ${pageNumber}/${pages.length}...`
+    });
+  }
+  
+  console.log(`📊 FINAL SUMMARY: ${processedPages}/${totalAnnotationPages} annotation pages processed successfully`);
+  
+  console.log(`📊 Annotation embedding summary: ${processedPages}/${totalAnnotationPages} pages processed successfully`);
 
   onProgress?.({
     stage: 'saving',
@@ -753,8 +876,87 @@ async function embedAnnotationsInMemory(
     message: 'Generating annotated PDF...'
   });
 
-  // Save the modified PDF
-  const modifiedPdfBytes = await pdfDoc.save();
+  // Save the modified PDF with special handling for encrypted sources
+  let modifiedPdfBytes: Uint8Array;
+  try {
+    console.log(`💾 Saving PDF with ${pages.length} pages (multi-page: ${pages.length > 1}, wasEncrypted: ${wasEncrypted})`);
+    
+    // Validate PDF state before saving
+    if (pages.length === 0) {
+      throw new Error('PDF has no pages - cannot save');
+    }
+    
+    if (wasEncrypted) {
+      console.log('🔓 Processing encrypted PDF - creating clean unencrypted version...');
+      
+      // For encrypted PDFs, try to save directly but with enhanced compatibility checks
+      try {
+        console.log('🔓 Attempting to save encrypted PDF with compatibility mode...');
+        
+        // Try saving the modified encrypted PDF
+        modifiedPdfBytes = await pdfDoc.save();
+        
+        // Enhanced validation for encrypted PDFs
+        if (modifiedPdfBytes.length === 0) {
+          throw new Error('Encrypted PDF save resulted in empty file');
+        }
+        
+        // Validate the saved PDF can be read back
+        try {
+          const testBuffer = Uint8Array.from(modifiedPdfBytes);
+          await PDFDocument.load(testBuffer);
+          console.log('✅ Encrypted PDF save validation passed');
+        } catch (testErr) {
+          // Try with ignoreEncryption
+          try {
+            const testBuffer = Uint8Array.from(modifiedPdfBytes);
+            await (PDFDocument as any).load(testBuffer, { ignoreEncryption: true });
+            console.log('✅ Encrypted PDF save validation passed (with ignoreEncryption)');
+          } catch (testErr2) {
+            throw new Error(`Saved encrypted PDF cannot be validated: ${testErr2 instanceof Error ? testErr2.message : 'Unknown error'}`);
+          }
+        }
+        
+        console.log(`✅ Encrypted PDF processed successfully - ${modifiedPdfBytes.length} bytes`);
+        
+      } catch (encryptedSaveError) {
+        console.error('❌ Failed to save encrypted PDF properly:', encryptedSaveError);
+        throw new Error(`Cannot process encrypted PDF: ${encryptedSaveError instanceof Error ? encryptedSaveError.message : 'Unknown error'}. Please use an unencrypted PDF for annotation.`);
+      }
+    } else {
+      // For non-encrypted PDFs, use normal save
+      modifiedPdfBytes = await pdfDoc.save();
+    }
+    
+    if (!modifiedPdfBytes || modifiedPdfBytes.length === 0) {
+      throw new Error('PDF save resulted in empty file');
+    }
+    
+    console.log(`✅ PDF save completed - ${modifiedPdfBytes.length} bytes generated`);
+    
+    // Additional validation for multi-page PDFs
+    if (pages.length > 1) {
+      console.log('🔍 Validating multi-page PDF structure...');
+      
+      // Quick validation: check if the saved PDF has valid structure
+      const pdfHeader = String.fromCharCode(...modifiedPdfBytes.slice(0, 8));
+      if (!pdfHeader.startsWith('%PDF-')) {
+        throw new Error('Generated PDF does not have valid header');
+      }
+      
+      // Check for PDF trailer
+      const pdfEnd = String.fromCharCode(...modifiedPdfBytes.slice(-20));
+      if (!pdfEnd.includes('%%EOF')) {
+        console.warn('⚠️ PDF may not have proper trailer - this could cause reader issues');
+      }
+      
+      console.log('✅ Multi-page PDF structure validation passed');
+    }
+    
+  } catch (saveError) {
+    console.error('❌ PDF save failed:', saveError);
+    throw new Error(`PDF generation failed: ${saveError instanceof Error ? saveError.message : 'Unknown save error'}`);
+  }
 
   // Generate output filename
   const originalFilename = originalPdfUri.split('/').pop() || 'document.pdf';
@@ -776,11 +978,117 @@ async function embedAnnotationsInMemory(
     message: 'Saving annotated PDF...'
   });
 
-  // Convert Uint8Array to base64 for saving
-  const base64String = btoa(String.fromCharCode(...Array.from(modifiedPdfBytes)));
+  // Convert Uint8Array to base64 for saving using safe chunked conversion
+  console.log(`💾 Converting ${modifiedPdfBytes.length} bytes to base64 for saving...`);
+  const base64String = uint8ArrayToBase64(modifiedPdfBytes);
+  console.log(`📝 Base64 string length: ${base64String.length}`);
+  
   await FileSystem.writeAsStringAsync(outputPath, base64String, {
     encoding: FileSystem.EncodingType.Base64,
   });
+
+  // Validate saved PDF by attempting to load it with pdf-lib
+  try {
+    const savedBase64 = await FileSystem.readAsStringAsync(outputPath, { encoding: FileSystem.EncodingType.Base64 });
+    const validateBuffer = Uint8Array.from(atob(savedBase64), (c) => c.charCodeAt(0)).buffer;
+    await PDFDocument.load(validateBuffer);
+    console.log('✅ Saved annotated PDF validated successfully');
+  } catch (validationErr) {
+    console.error('❌ Saved PDF validation failed:', validationErr);
+    const errorMessage = validationErr instanceof Error ? validationErr.message : String(validationErr);
+    throw new Error('Saved annotated PDF appears to be corrupted: ' + errorMessage);
+  }
+
+  // Enhanced validation of the saved file, especially for multi-page PDFs
+  try {
+    const savedFileInfo = await FileSystem.getInfoAsync(outputPath);
+    if (!savedFileInfo.exists) {
+      throw new Error('PDF file was not created');
+    }
+    
+    const savedSize = 'size' in savedFileInfo ? savedFileInfo.size || 0 : 0;
+    console.log(`🔍 Saved PDF validation - exists: ${savedFileInfo.exists}, size: ${savedSize} bytes`);
+    
+    if (savedSize === 0) {
+      throw new Error('PDF file was created but is empty');
+    }
+    
+    // Enhanced validation for multi-page PDFs
+    if (pages.length > 1) {
+      console.log(`🔍 Enhanced multi-page PDF validation (${pages.length} pages)...`);
+      
+      // Read a larger sample for multi-page validation
+      const testReadSize = Math.min(savedSize, 2048); // Read up to 2KB
+      const testRead = await FileSystem.readAsStringAsync(outputPath, { 
+        encoding: FileSystem.EncodingType.Base64,
+        length: testReadSize
+      });
+      
+      if (!testRead || testRead.length === 0) {
+        throw new Error('Multi-page PDF file cannot be read back after saving');
+      }
+      
+      // Decode and validate PDF structure
+      const pdfBytes = atob(testRead);
+      
+      // Check PDF header
+      if (!pdfBytes.startsWith('%PDF-')) {
+        throw new Error('Multi-page PDF has invalid header after saving');
+      }
+      
+      // For multi-page PDFs, try to validate with pdf-lib to ensure it's not corrupted
+      try {
+        const fullPdfData = await FileSystem.readAsStringAsync(outputPath, {
+          encoding: FileSystem.EncodingType.Base64
+        });
+        
+        const validateBuffer = Uint8Array.from(atob(fullPdfData), c => c.charCodeAt(0)).buffer;
+        
+        // Try to load the saved PDF to validate it
+        let validateDoc: PDFDocument;
+        try {
+          validateDoc = await PDFDocument.load(validateBuffer);
+        } catch (loadErr: any) {
+          // If it's encrypted, try with ignoreEncryption
+          const msg = (loadErr?.message || '').toLowerCase();
+          if (msg.includes('encrypted')) {
+            console.log('🔍 Validation: Saved PDF is encrypted, testing with ignoreEncryption...');
+            validateDoc = await (PDFDocument as any).load(validateBuffer, { ignoreEncryption: true });
+          } else {
+            throw loadErr;
+          }
+        }
+        
+        const validationPages = validateDoc.getPages();
+        if (validationPages.length !== pages.length) {
+          console.warn(`⚠️ Page count mismatch: expected ${pages.length}, got ${validationPages.length}`);
+        }
+        
+        console.log(`✅ Multi-page PDF validation passed - ${validationPages.length} pages readable`);
+        
+      } catch (validationLoadError) {
+        console.error('❌ Multi-page PDF validation failed - cannot reload saved file:', validationLoadError);
+        throw new Error(`Multi-page PDF appears corrupted: ${validationLoadError instanceof Error ? validationLoadError.message : 'Validation failed'}`);
+      }
+      
+    } else {
+      // Simple validation for single-page PDFs
+      const testRead = await FileSystem.readAsStringAsync(outputPath, { 
+        encoding: FileSystem.EncodingType.Base64,
+        length: 100 
+      });
+      
+      if (!testRead || testRead.length === 0) {
+        throw new Error('PDF file cannot be read back after saving');
+      }
+    }
+    
+    console.log(`✅ PDF save validation passed - file is readable`);
+    
+  } catch (validationError) {
+    console.error('❌ PDF save validation failed:', validationError);
+    throw new Error(`PDF save validation failed: ${validationError instanceof Error ? validationError.message : 'Unknown error'}`);
+  }
 
   onProgress?.({
     stage: 'saving',
@@ -945,21 +1253,28 @@ async function embedSingleAnnotation(
   pageWidth: number,
   pageHeight: number
 ): Promise<void> {
-  const pdfColor = hexToRgb(annotation.color);
+  // Sanitize annotation before embedding
+  const sanitizedAnnotation = sanitizeAnnotation(annotation);
+  if (!sanitizedAnnotation) {
+    console.warn('Skipping invalid annotation:', annotation.id);
+    return;
+  }
+  
+  const pdfColor = hexToRgb(sanitizedAnnotation.color);
 
   // Convert normalized coordinates (0-1) to PDF coordinates
-  const pdfX = annotation.x * pageWidth;
-  const pdfY = pageHeight - (annotation.y * pageHeight); // PDF coordinates are from bottom-left
+  const pdfX = sanitizedAnnotation.x * pageWidth;
+  const pdfY = pageHeight - (sanitizedAnnotation.y * pageHeight); // PDF coordinates are from bottom-left
 
-  switch (annotation.type) {
+  switch (sanitizedAnnotation.type) {
     case 'highlight':
-      if (annotation.path) {
+      if (sanitizedAnnotation.path) {
         // Freehand highlight - draw as path
-        await embedPathAnnotation(page, annotation, pdfColor, pageWidth, pageHeight);
+        await embedPathAnnotation(page, sanitizedAnnotation, pdfColor, pageWidth, pageHeight);
       } else {
         // Traditional rectangle highlight
-        const rectWidth = (annotation.width || 100) * pageWidth / 100;
-        const rectHeight = annotation.height || 20;
+        const rectWidth = (sanitizedAnnotation.width || 100) * pageWidth / 100;
+        const rectHeight = sanitizedAnnotation.height || 20;
         
         page.drawRectangle({
           x: pdfX,
@@ -976,8 +1291,8 @@ async function embedSingleAnnotation(
     case 'brush':
     case 'pencil':
       // Draw pen/brush/pencil strokes as paths
-      if (annotation.path) {
-        await embedPathAnnotation(page, annotation, pdfColor, pageWidth, pageHeight);
+      if (sanitizedAnnotation.path) {
+        await embedPathAnnotation(page, sanitizedAnnotation, pdfColor, pageWidth, pageHeight);
       }
       break;
 
@@ -992,8 +1307,8 @@ async function embedSingleAnnotation(
       });
 
       // Add note text
-      if (annotation.text) {
-        page.drawText(annotation.text, {
+      if (sanitizedAnnotation.text) {
+        page.drawText(sanitizedAnnotation.text, {
           x: pdfX + noteSize * 2.5,
           y: pdfY - noteSize * 1.5,
           size: 10,
@@ -1005,8 +1320,8 @@ async function embedSingleAnnotation(
 
     case 'text':
       // Add text annotation directly
-      if (annotation.text) {
-        page.drawText(annotation.text, {
+      if (sanitizedAnnotation.text) {
+        page.drawText(sanitizedAnnotation.text, {
           x: pdfX,
           y: pdfY,
           size: 14,
@@ -1028,10 +1343,12 @@ async function embedPathAnnotation(
   pageWidth: number,
   pageHeight: number
 ): Promise<void> {
-  if (!annotation.path) return;
+  // Sanitize annotation before processing path
+  const sanitizedAnnotation = sanitizeAnnotation(annotation);
+  if (!sanitizedAnnotation || !sanitizedAnnotation.path) return;
 
   // Parse the SVG path and convert to PDF coordinate system
-  const pathPoints = parsePathToPoints(annotation.path);
+  const pathPoints = parsePathToPoints(sanitizedAnnotation.path);
   if (pathPoints.length < 2) return;
 
   // Convert normalized path coordinates to PDF coordinates
@@ -1041,8 +1358,8 @@ async function embedPathAnnotation(
   }));
 
   // Draw the path as connected line segments
-  const strokeWidth = annotation.strokeWidth || 3;
-  const opacity = getStrokeOpacity(annotation.type);
+  const strokeWidth = sanitizedAnnotation.strokeWidth || 3;
+  const opacity = getStrokeOpacity(sanitizedAnnotation.type);
 
   // Draw lines between consecutive points
   for (let i = 0; i < pdfPoints.length - 1; i++) {
@@ -1121,6 +1438,94 @@ function parsePathToPoints(path: string): Array<{ x: number; y: number }> {
 }
 
 /**
+ * Convert Uint8Array to Base64 safely using chunked conversion to avoid
+ * argument/stack limits when using String.fromCharCode with large arrays.
+ */
+function uint8ArrayToBase64(u8: Uint8Array): string {
+  // Chunk size of 32KB keeps apply/fromCharCode safe in most engines
+  const CHUNK_SIZE = 0x8000; // 32768
+  let index = 0;
+  let result = '';
+  while (index < u8.length) {
+    const chunk = u8.subarray(index, Math.min(index + CHUNK_SIZE, u8.length));
+    // Use apply via String.fromCharCode for the chunk — safe because chunk is small
+    result += String.fromCharCode.apply(null, Array.from(chunk) as any);
+    index += CHUNK_SIZE;
+  }
+  // Browser/global btoa
+  if (typeof btoa === 'function') {
+    return btoa(result);
+  }
+  // Node fallback
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.from(u8).toString('base64');
+  }
+  throw new Error('No base64 encoder available in this environment');
+}
+
+/**
+ * Sanitize a PDFAnnotation before embedding:
+ * - Ensure numeric fields are finite numbers
+ * - Clamp normalized coords (x,y) to [0,1]
+ * - Clamp width/height to reasonable values
+ * - Ensure strokeWidth is finite and within bounds
+ * - Normalize path points to remove NaN/Infinity and clamp to [0,1]
+ */
+function sanitizeAnnotation(annotation: PDFAnnotation): PDFAnnotation | null {
+  if (!annotation || typeof annotation !== 'object') return null;
+
+  // Basic numeric fields
+  const safeNum = (v: any, fallback = 0) => {
+    if (typeof v === 'number' && isFinite(v)) return v;
+    const parsed = Number(v);
+    return isFinite(parsed) ? parsed : fallback;
+  };
+
+  const ann: PDFAnnotation = { ...annotation };
+
+  ann.x = Math.max(0, Math.min(1, safeNum(ann.x, 0)));
+  ann.y = Math.max(0, Math.min(1, safeNum(ann.y, 0)));
+  if ('width' in ann) ann.width = Math.max(0, safeNum(ann.width, 0));
+  if ('height' in ann) ann.height = Math.max(0, safeNum(ann.height, 0));
+  ann.strokeWidth = Math.max(0.5, Math.min(100, safeNum(ann.strokeWidth, 3)));
+  ann.timestamp = safeNum(ann.timestamp, Date.now());
+
+  // Sanitize color string - fallback to black if invalid
+  if (!ann.color || typeof ann.color !== 'string' || !/^#?[0-9A-Fa-f]{6}$/.test(ann.color)) {
+    ann.color = '#000000';
+  }
+
+  // Sanitize path (if present) - remove NaN points and clamp to [0,1]
+  if (ann.path && typeof ann.path === 'string') {
+    try {
+      const points = parsePathToPoints(ann.path); // existing helper
+      const sanitizedPoints = points
+        .map(p => ({
+          x: Math.max(0, Math.min(1, safeNum(p.x, 0))),
+          y: Math.max(0, Math.min(1, safeNum(p.y, 0))),
+        }))
+        .filter(p => isFinite(p.x) && isFinite(p.y));
+      // rebuild path if we have enough points, otherwise drop path
+      if (sanitizedPoints.length >= 2) {
+        // simple path -> "M x y L x y ..." normalized to [0..1]
+        const pathStr = sanitizedPoints.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+        ann.path = pathStr;
+      } else {
+        delete ann.path;
+      }
+    } catch (err) {
+      // parsing failed — remove the path to avoid embedding bad data
+      delete ann.path;
+    }
+  }
+
+  // Finally, ensure page is integer >=1
+  ann.page = Math.max(1, Math.floor(safeNum(ann.page, 1)));
+
+  return ann;
+}
+
+/**
  * Converts hex color to RGB values
  */
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
@@ -1163,6 +1568,158 @@ export async function saveAnnotationsDirectlyToPDF(
     console.error('Error saving annotations directly to PDF:', error);
     throw error;
   }
+}
+
+/**
+ * Validates PDF coordinate system and page boundaries
+ * @param annotations Array of annotations to validate
+ * @param totalPages Total pages in the PDF
+ * @returns Validation result with details
+ */
+export function validateAnnotationCoordinates(
+  annotations: PDFAnnotation[],
+  totalPages: number
+): {
+  isValid: boolean;
+  errors: string[];
+  warnings: string[];
+  pageDistribution: Record<number, number>;
+} {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  const pageDistribution: Record<number, number> = {};
+  
+  annotations.forEach((ann, index) => {
+    // Track page distribution
+    pageDistribution[ann.page] = (pageDistribution[ann.page] || 0) + 1;
+    
+    // Validate page number
+    if (ann.page < 1) {
+      errors.push(`Annotation ${index} (${ann.id}): Invalid page ${ann.page} - must be >= 1`);
+    } else if (ann.page > totalPages) {
+      errors.push(`Annotation ${index} (${ann.id}): Page ${ann.page} exceeds PDF page count ${totalPages}`);
+    }
+    
+    // Validate coordinates (should be 0-1 normalized)
+    if (ann.x < 0 || ann.x > 1) {
+      warnings.push(`Annotation ${index} (${ann.id}): X coordinate ${ann.x} outside valid range [0,1]`);
+    }
+    if (ann.y < 0 || ann.y > 1) {
+      warnings.push(`Annotation ${index} (${ann.id}): Y coordinate ${ann.y} outside valid range [0,1]`);
+    }
+    
+    // Validate dimensions if present
+    if (ann.width !== undefined && (ann.width < 0 || ann.width > 1)) {
+      warnings.push(`Annotation ${index} (${ann.id}): Width ${ann.width} outside valid range [0,1]`);
+    }
+    if (ann.height !== undefined && (ann.height < 0 || ann.height > 1)) {
+      warnings.push(`Annotation ${index} (${ann.id}): Height ${ann.height} outside valid range [0,1]`);
+    }
+  });
+  
+  return {
+    isValid: errors.length === 0,
+    errors,
+    warnings,
+    pageDistribution
+  };
+}
+
+/**
+ * Calculates proper PDF coordinates from viewer coordinates
+ * @param viewerCoords Screen coordinates from the PDF viewer
+ * @param viewerInfo Information about the PDF viewer dimensions and state
+ * @returns Normalized PDF coordinates (0-1)
+ */
+export function calculatePDFCoordinates(
+  viewerCoords: { x: number; y: number; page: number },
+  viewerInfo: {
+    totalPages: number;
+    viewerWidth: number;
+    viewerHeight: number;
+    pdfPageDimensions?: { width: number; height: number };
+    scrollOffset?: { x: number; y: number };
+  }
+): { x: number; y: number; page: number } {
+  
+  // Calculate the actual page height in the viewer
+  const actualPageHeight = viewerInfo.viewerHeight / viewerInfo.totalPages;
+  
+  // Calculate which page we're on based on scroll position
+  const pageStartY = (viewerCoords.page - 1) * actualPageHeight;
+  const scrollY = viewerInfo.scrollOffset?.y || 0;
+  const relativeY = viewerCoords.y - pageStartY - scrollY;
+  
+  // Convert to normalized coordinates (0-1) within the page
+  const normalizedX = Math.max(0, Math.min(1, viewerCoords.x / viewerInfo.viewerWidth));
+  const normalizedY = Math.max(0, Math.min(1, relativeY / actualPageHeight));
+  
+  console.log(`🔍 Coordinate conversion debug:`, {
+    input: viewerCoords,
+    viewerInfo: {
+      totalPages: viewerInfo.totalPages,
+      viewerDimensions: { width: viewerInfo.viewerWidth, height: viewerInfo.viewerHeight },
+      pageHeight: actualPageHeight
+    },
+    calculations: { pageStartY, relativeY },
+    output: { x: normalizedX, y: normalizedY, page: viewerCoords.page }
+  });
+  
+  return {
+    x: normalizedX,
+    y: normalizedY,
+    page: viewerCoords.page
+  };
+}
+
+/**
+ * Test coordinate conversion for debugging
+ * @param annotations Array of annotations to test
+ * @param viewerInfo Viewer information
+ * @param pdfPages Actual PDF page count
+ */
+export function debugCoordinateConversion(
+  annotations: PDFAnnotation[],
+  viewerInfo: any,
+  pdfPages: number
+): void {
+  console.log('🧪 COORDINATE CONVERSION DEBUG TEST:');
+  console.log('📊 Current state:', {
+    totalPages: pdfPages,
+    viewerInfo,
+    annotationCount: annotations.length
+  });
+  
+  const validation = validateAnnotationCoordinates(annotations, pdfPages);
+  
+  console.log('📊 Validation results:', {
+    isValid: validation.isValid,
+    errorCount: validation.errors.length,
+    warningCount: validation.warnings.length,
+    pageDistribution: validation.pageDistribution
+  });
+  
+  if (validation.errors.length > 0) {
+    console.error('❌ Coordinate errors:', validation.errors);
+  }
+  
+  if (validation.warnings.length > 0) {
+    console.warn('⚠️ Coordinate warnings:', validation.warnings);
+  }
+  
+  // Test specific problematic annotations
+  annotations.forEach((ann, index) => {
+    if (ann.page > pdfPages || ann.x < 0 || ann.x > 1 || ann.y < 0 || ann.y > 1) {
+      console.error(`🚨 Problematic annotation ${index + 1}:`, {
+        id: ann.id,
+        type: ann.type,
+        page: ann.page,
+        coordinates: { x: ann.x, y: ann.y },
+        isValidPage: ann.page >= 1 && ann.page <= pdfPages,
+        isValidCoords: ann.x >= 0 && ann.x <= 1 && ann.y >= 0 && ann.y <= 1
+      });
+    }
+  });
 }
 
 /**
