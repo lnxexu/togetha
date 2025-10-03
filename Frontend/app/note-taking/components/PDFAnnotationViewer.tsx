@@ -49,7 +49,7 @@ import {
 } from '../utils/pdfUtils';
 import { API_URL } from '@/constants/ApiConfig';
 import type { RootStackParamList } from '../../navigation/AppNavigator';
-import PDFWebViewSelector from './PDFWebViewSelector';
+// WebView functionality has been removed
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
@@ -72,6 +72,15 @@ interface Annotation {
   pdfScale?: number;
 }
 
+interface Stroke {
+  id: string;
+  points: { x: number; y: number }[];
+  color?: string;
+  width?: number;
+  page?: number;
+  timestamp?: number;
+}
+
 interface PDFAnnotationViewerProps {
   source: { uri: string };
   fileName: string;
@@ -83,6 +92,7 @@ interface PDFAnnotationViewerProps {
   onAnnotationChange?: (annotations: Annotation[]) => void; // Callback when annotations change
   networkStatus?: any; // Network status object
   saveStatus?: any; // Save status object
+  strokes?: Stroke[]; // Drawing strokes to render on top of PDF
 }
 
 const ANNOTATION_COLORS = [
@@ -100,7 +110,57 @@ const ANNOTATION_COLORS = [
 // When false, annotations remain visually stable (positions still follow zoom via coordinate conversion)
 // preventing highlights, pen strokes, note bubbles from becoming thicker when zooming.
 // This matches the DrawingCanvas implementation for consistent behavior.
+
 const SCALE_STROKES_WITH_ZOOM = false;
+
+// --- Drawing Stroke Helpers ---
+const pointsToPath = (pts: { x: number; y: number }[]) => {
+  if (!pts || pts.length === 0) return "";
+  let d = `M ${pts[0].x.toFixed(2)} ${pts[0].y.toFixed(2)}`;
+  for (let i = 1; i < pts.length; i++) {
+    d += ` L ${pts[i].x.toFixed(2)} ${pts[i].y.toFixed(2)}`;
+  }
+  return d;
+};
+
+const mapPointsToDisplay = (
+  points: { x: number; y: number }[],
+  pageDisplayWidth: number,
+  pageDisplayHeight: number,
+  isNormalized = false
+): { x: number; y: number }[] => {
+  if (!points) return [];
+  if (isNormalized) {
+    return points.map(p => ({ x: p.x * pageDisplayWidth, y: p.y * pageDisplayHeight }));
+  }
+  return points;
+};
+
+// Simplify points by uniform decimation to a maximum number of points.
+// This is cheap and avoids heavy RDP computations while keeping stroke shape.
+const simplifyPoints = (pts: { x: number; y: number }[], maxPoints = 300) => {
+  if (!pts || pts.length <= maxPoints) return pts;
+  const step = Math.ceil(pts.length / maxPoints);
+  const out: { x: number; y: number }[] = [];
+  for (let i = 0; i < pts.length; i += step) {
+    out.push(pts[i]);
+  }
+  // ensure last point is included
+  if (out.length === 0 || out[out.length - 1] !== pts[pts.length - 1]) out.push(pts[pts.length - 1]);
+  return out;
+};
+
+// Variant that preserves optional timestamp field
+const simplifyPointsWithTimestamp = (pts: { x: number; y: number; timestamp?: number }[], maxPoints = 300) => {
+  if (!pts || pts.length <= maxPoints) return pts;
+  const step = Math.ceil(pts.length / maxPoints);
+  const out: { x: number; y: number; timestamp?: number }[] = [];
+  for (let i = 0; i < pts.length; i += step) {
+    out.push(pts[i]);
+  }
+  if (out.length === 0 || out[out.length - 1] !== pts[pts.length - 1]) out.push(pts[pts.length - 1]);
+  return out;
+};
 
 const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   source,
@@ -113,13 +173,14 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   onAnnotationChange,
   networkStatus,
   saveStatus,
+  strokes,
 }) => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [selectedTool, setSelectedTool] = useState<
-    "highlight" | "note" | "text" | "eraser" | "pen" | "brush" | "pencil" | "selection" | null
+    "highlight" | "note" | "text" | "eraser" | "pen" | "brush" | "pencil" | "selection" | "textSelect" | null
   >(null);
   const [strokeWidth, setStrokeWidth] = useState(3);
   const [selectedColor, setSelectedColor] = useState(ANNOTATION_COLORS[0]);
@@ -149,8 +210,50 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const [extractedText, setExtractedText] = useState<string>("");
   const [isExtractingText, setIsExtractingText] = useState(false);
   
-  // WebView PDF selection
-  const [showWebViewSelector, setShowWebViewSelector] = useState(false);
+  // WebView functionality has been removed
+  
+  // Bbox selection state for textSelect mode
+  const [isBboxDrawing, setIsBboxDrawing] = useState(false);
+  const [bboxStart, setBboxStart] = useState<{x: number, y: number} | null>(null);
+  const [currentBbox, setCurrentBbox] = useState<{x: number, y: number, width: number, height: number} | null>(null);
+  const [showTextPreviewModal, setShowTextPreviewModal] = useState(false);
+  const [previewExtractedText, setPreviewExtractedText] = useState<string>("");
+  
+  // AI Assistant modal state
+  const [showAIModal, setShowAIModal] = useState(false);
+  const [aiMessage, setAiMessage] = useState<string>("");
+  const [aiModalAnimation] = useState(new Animated.Value(0));
+  const [chatMessages, setChatMessages] = useState<Array<{type: 'user' | 'ai', text: string}>>([
+    {type: 'ai', text: 'How can I help you with this document?'}
+  ]);
+  const chatScrollViewRef = useRef<ScrollView>(null);
+  
+  // Floating button position state
+  const [buttonPosition, setButtonPosition] = useState({ x: 20, y: 100 });
+  const buttonPositionRef = useRef({ x: 20, y: 100 });
+  const [isDraggingButton, setIsDraggingButton] = useState(false);
+  const buttonPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        setIsDraggingButton(true);
+      },
+      onPanResponderMove: (_, gestureState) => {
+        // Update button position based on drag
+        buttonPositionRef.current = {
+          x: Math.max(10, Math.min(screenWidth - 66, buttonPositionRef.current.x + gestureState.dx)),
+          y: Math.max(80, Math.min(screenHeight - 180, buttonPositionRef.current.y + gestureState.dy))
+        };
+        setButtonPosition(buttonPositionRef.current);
+      },
+      onPanResponderRelease: (_, __) => {
+        setIsDraggingButton(false);
+      },
+      onPanResponderTerminate: () => {
+        setIsDraggingButton(false);
+      },
+    })
+  ).current;
   
   // Ultra-optimized path update function for lag-free drawing
   const updatePathWithAnimation = useCallback(() => {
@@ -186,16 +289,35 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         adaptiveSmoothing = Math.max(4, smoothingLevelRef.current - Math.floor(pointsLength / 100));
       }
       
+      // Simplify large live point buffers before expensive smoothing to save CPU
+      const simplifiedLive = simplifyPointsWithTimestamp(currentPointsRef.current, 400);
+
       // Calculate the smoothed path with adaptive parameters
-      const smooth = convertPointsToSmoothedPath(currentPointsRef.current, adaptiveSmoothing);
-      
+      const smooth = convertPointsToSmoothedPath(simplifiedLive as any, adaptiveSmoothing);
+
       // Cache the result to avoid redundant calculations
       pathCacheRef.current = smooth;
       pointsCountRef.current = pointsLength;
-      
-      // Update both the ref (for immediate access) and the state (for React rendering)
+
+      // Update the immediate ref for zero-lag access
       currentPathRef.current = smooth;
-      setCurrentPath(smooth);
+
+      // Throttle React state updates to ~30fps to avoid JS-thread churn on low-end devices
+      const nowMs = Date.now();
+      if (!lastSetTimeRef.current || nowMs - lastSetTimeRef.current >= 33) {
+        setCurrentPath(smooth);
+        lastSetTimeRef.current = nowMs;
+      }
+
+      // Also update the shared stroke path cache so live-drawing uses same cached paths
+      try {
+        const liveKey = `live-${currentPage}`;
+        if ((strokePathCacheRef as any)?.current instanceof Map) {
+          (strokePathCacheRef as any).current.set(liveKey, smooth);
+        }
+      } catch (e) {
+        // ignore cache errors
+      }
       
       lastRenderTimeRef.current = now;
       
@@ -210,6 +332,11 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       animationFrameRef.current = requestAnimationFrame(updatePath);
     }
   }, []);
+
+  // Shared stroke path cache for both saved strokes and live in-progress strokes
+  const strokePathCacheRef = useRef<Map<string, string>>(new Map());
+
+  // (moved) Precompute and cache stroke paths when strokes or layout change so rendering is cheap
   
   // Single zoom state - simplified approach from DrawingEditor
   const [currentZoom, setCurrentZoom] = useState(1); // Track PDF zoom level
@@ -240,6 +367,8 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const pdfContainerRef = useRef<View>(null);
   const pdfScrollRef = useRef<ScrollView>(null);
   const [pdfContainerLayout, setPdfContainerLayout] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+
+  // (moved) Precompute and cache stroke paths when strokes or layout change so rendering is cheap
 
   // Animated values for smooth pan/zoom transitions during gestures
   const animatedTranslateX = useRef(new Animated.Value(0)).current;
@@ -330,6 +459,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const pointsCountRef = useRef<number>(0);
   const smoothingLevelRef = useRef<number>(8);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
+  const lastSetTimeRef = useRef<number | null>(null);
   
   // Midpoint tracking for pinch-to-zoom focal point preservation
   const gestureMidpointRef = useRef({ x: 0, y: 0 }); // screen coords
@@ -505,6 +635,42 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   // Actual PDF page dimensions (from the PDF file itself)
   const [pdfPageDimensions, setPdfPageDimensions] = useState({ width: 595, height: 842 }); // Default A4 size in points
   const [pdfViewerBounds, setPdfViewerBounds] = useState({ width: screenWidth, height: screenHeight });
+
+  // Precompute and cache stroke paths when strokes or layout change so rendering is cheap
+  useEffect(() => {
+    if (!strokes || !Array.isArray(strokes) || strokes.length === 0) return;
+
+    // Compute pdf display size used by mapping function
+    const containerWidth = containerSize.width || screenWidth;
+    const containerHeight = containerSize.height || screenHeight;
+    const pdfWidth = pdfPageDimensions?.width || 595;
+    const pdfHeight = pdfPageDimensions?.height || 842;
+    const aspectRatio = pdfWidth / pdfHeight;
+    let pdfDisplayWidth, pdfDisplayHeight;
+    if (containerWidth / containerHeight > aspectRatio) {
+      pdfDisplayHeight = containerHeight;
+      pdfDisplayWidth = pdfDisplayHeight * aspectRatio;
+    } else {
+      pdfDisplayWidth = containerWidth;
+      pdfDisplayHeight = pdfDisplayWidth / aspectRatio;
+    }
+
+    // Build cache entries
+    const maxPoints = 300; // conservative default
+    for (const stroke of strokes) {
+      try {
+        const isNormalized = true;
+        const displayPoints = mapPointsToDisplay(stroke.points || [], pdfDisplayWidth, pdfDisplayHeight, isNormalized);
+        const simplified = simplifyPoints(displayPoints, maxPoints);
+        const cacheKey = `${stroke.id}-${simplified.length}-${Math.round((stroke.width||2)*10)}`;
+        if (!strokePathCacheRef.current.has(cacheKey)) {
+          strokePathCacheRef.current.set(cacheKey, pointsToPath(simplified));
+        }
+      } catch (e) {
+        // ignore per-stroke errors
+      }
+    }
+  }, [strokes, containerSize.width, containerSize.height, pdfPageDimensions]);
 
   // Local source state for PDF loading. If a remote URL is provided we'll
   // download it and replace this with the local file URI so the native
@@ -1401,7 +1567,23 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     setSelectedText("");
     setSelectionRect(null);
     setShowAskRinaPopup(false);
+    // Also close text preview modal if open
+    setShowTextPreviewModal(false);
+    setPreviewExtractedText("");
   }, []);
+
+  // Handle text select tool activation (WebView functionality has been removed)
+  const handleTextSelectTool = useCallback(() => {
+    if (selectedTool === "textSelect") {
+      setSelectedTool(null);
+      return;
+    }
+    
+    // Text selection functionality has been removed
+    Alert.alert("Feature not available", "Text selection functionality has been removed.");
+  }, [selectedTool]);
+
+  // WebView text selection functionality has been removed
 
 
 
@@ -1530,7 +1712,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       const touches = evt.nativeEvent.touches || [];
       // Accept move gestures immediately without delay
       if (touches.length === 2) return true; // pinch
-      // If drawing tool selected (but not selection), handle single-touch move immediately
+      // If drawing tool selected (including textSelect), handle single-touch move immediately
       if (selectedTool !== null && selectedTool !== "selection" && touches.length === 1) return true;
       // If zoomed in, allow single-finger pan immediately
       if (currentZoomRef.current > 1 && touches.length === 1) return true;
@@ -1540,7 +1722,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       const touches = evt.nativeEvent.touches || [];
       // Capture gestures immediately for real-time response
       if (touches.length === 2) return true;
-      // Don't capture for selection mode - let PDF component handle text selection
+      // Capture for textSelect mode to enable bbox drawing
       if (selectedTool !== null && selectedTool !== "selection" && touches.length === 1) return true;
       if (currentZoomRef.current > 1 && touches.length === 1) return true;
       return false;
@@ -1583,9 +1765,8 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         const touch = touches[0];
         const { locationX, locationY } = touch;
 
-        if (selectedTool === 'selection') {
-          // For selection mode, show WebView PDF selector which supports text selection
-          setShowWebViewSelector(true);
+        if (selectedTool === 'selection' || selectedTool === 'textSelect') {
+          // Text selection functionality has been removed
           return;
         } else if (selectedTool === 'note' || selectedTool === 'text') {
           // Handle note/text placement
@@ -1690,12 +1871,16 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
           animatedTranslateX.setValue(clampedX);
           animatedTranslateY.setValue(clampedY);
         }
-      } else if (touches.length === 1 && isDrawing && selectedTool) {
+      } else if (touches.length === 1 && (isDrawing || isBboxDrawing) && selectedTool) {
         // Handle drawing with real-time path updates
         const touch = touches[0];
         const { locationX, locationY } = touch;
 
-        if (selectedTool === 'pen' || selectedTool === 'brush' || selectedTool === 'pencil' || selectedTool === 'highlight' || selectedTool === 'eraser') {
+        if (selectedTool === 'textSelect') {
+          // textSelect now extracts all page text automatically
+          // No bbox drawing needed
+          return;
+        } else if (selectedTool === 'pen' || selectedTool === 'brush' || selectedTool === 'pencil' || selectedTool === 'highlight' || selectedTool === 'eraser') {
           // Optimize point collection with distance-based filtering for smoother performance
           const newPoint = { x: locationX, y: locationY, timestamp: Date.now() };
           
@@ -1761,6 +1946,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
         if (selectedTool === "highlight") {
           addFreehandHighlight(finalPath);
+          // Text extraction via WebView has been removed
         } else if (selectedTool === "pen" || selectedTool === "brush" || selectedTool === "pencil") {
           addPenAnnotation(finalPath, selectedTool);
         } else if (selectedTool === "eraser") {
@@ -1802,6 +1988,13 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       // Reset gesture tracking
       gestureStartDistanceRef.current = 0;
       gestureStartTouchRef.current = { x: 0, y: 0 };
+      
+      // Reset bbox selection state if active
+      if (isBboxDrawing) {
+        setIsBboxDrawing(false);
+        setBboxStart(null);
+        setCurrentBbox(null);
+      }
 
       // Also animate to the final transform to avoid abrupt snapping
       const finalT = pdfTransformRef.current;
@@ -2164,6 +2357,12 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     }).filter(ann => ann !== null) as Annotation[];
     
     saveAnnotationsWithChanges(modifiedAnnotations);
+  };
+
+  // Text extraction functionality using WebView has been removed
+  const attemptToExtractTextFromPath = (path: string) => {
+    // Functionality has been removed
+    setShowTextExtractionModal(true);
   };
 
   const getPathPoints = (path: string) => {
@@ -3514,6 +3713,76 @@ Your original file is unchanged. Try exporting to a new file instead.`
           }
         })}
 
+        {/* Drawing Strokes Layer (from drawing editor) */}
+        {strokes && Array.isArray(strokes) && (() => {
+          const strokesForPage = strokes.filter(s => s && (s.page === undefined || s.page === null || s.page === currentPage));
+          if (strokesForPage.length === 0) return null;
+
+          return strokesForPage.map(stroke => {
+            const isNormalized = true; // adapt if your points are screen coords
+
+            // Map and simplify points to reduce SVG complexity
+            const displayPoints = mapPointsToDisplay(stroke.points, pdfDisplayWidth, pdfDisplayHeight, isNormalized);
+            const simplified = simplifyPoints(displayPoints, 300);
+
+            // Build or reuse cached path string
+            const cacheKey = `${stroke.id}-${simplified.length}-${Math.round((stroke.width||2)*10)}`;
+            let pathData = strokePathCacheRef.current.get(cacheKey);
+            if (!pathData) {
+              pathData = pointsToPath(simplified);
+              strokePathCacheRef.current.set(cacheKey, pathData);
+            }
+
+            const baseStrokeWidth = stroke.width ?? 2;
+            const strokeWidth = SCALE_STROKES_WITH_ZOOM ? baseStrokeWidth * (currentZoom || 1) : baseStrokeWidth;
+
+            return (
+              <AnimatedPath
+                key={`drawing-stroke-${stroke.id}`}
+                d={pathData}
+                stroke={stroke.color || "#000000"}
+                strokeWidth={strokeWidth}
+                fill="none"
+                opacity={0.95}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                pointerEvents="none"
+              />
+            );
+          });
+        })()}
+
+        {/* Live in-progress drawing path (real-time) */}
+        {(() => {
+          try {
+            const liveKey = `live-${currentPage}`;
+            const livePath = strokePathCacheRef.current.get(liveKey);
+            if (livePath) {
+              const baseStroke = strokeWidth || 3;
+              const liveStrokeWidth = SCALE_STROKES_WITH_ZOOM ? baseStroke * (currentZoom || 1) : baseStroke;
+              let liveOpacity = 1;
+              if (selectedTool === 'highlight') liveOpacity = 0.45;
+              if (selectedTool === 'eraser') liveOpacity = 0.6;
+              return (
+                <AnimatedPath
+                  key={`live-path-${currentPage}`}
+                  d={livePath}
+                  stroke={selectedColor}
+                  strokeWidth={liveStrokeWidth}
+                  fill="none"
+                  opacity={liveOpacity}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  pointerEvents="none"
+                />
+              );
+            }
+          } catch (e) {
+            // ignore
+          }
+          return null;
+        })()}
+
         {/* Current drawing/highlight/eraser/pen path */}
         {isDrawing && currentPath && (
           (() => {
@@ -3602,12 +3871,59 @@ Your original file is unchanged. Try exporting to a new file instead.`
             }
           })()
         )}
+
+        {/* Bbox selection rectangle for textSelect mode */}
+        {isBboxDrawing && currentBbox && selectedTool === 'textSelect' && (
+          <Rect
+            x={currentBbox.x}
+            y={currentBbox.y}
+            width={currentBbox.width}
+            height={currentBbox.height}
+            fill="none"
+            stroke="#8B5CF6"
+            strokeWidth={2}
+            strokeDasharray="5,5"
+            opacity={0.8}
+            rx={4}
+          />
+        )}
       </Svg>
     );
   };
 
 return (
       <View style={styles.container}>
+        {/* Floating AI Button */}
+        <Animated.View
+          style={[
+            styles.floatingAIButton,
+            {
+              left: buttonPosition.x,
+              bottom: buttonPosition.y,
+              transform: [{ scale: isDraggingButton ? 1.1 : 1 }]
+            }
+          ]}
+          {...buttonPanResponder.panHandlers}
+        >
+          <TouchableOpacity
+            style={styles.floatingAIButtonContent}
+            onLongPress={() => {}}
+            delayLongPress={200}
+            onPress={() => {
+              if (!isDraggingButton) {
+                setShowAIModal(true);
+                // Start slide-up animation
+                Animated.timing(aiModalAnimation, {
+                  toValue: 1,
+                  duration: 300,
+                  useNativeDriver: true,
+                }).start();
+              }
+            }}
+          >
+            <MaterialCommunityIcons name="robot" size={28} color="#FFFFFF" />
+          </TouchableOpacity>
+        </Animated.View>
     {/* Header as background */}
     <View style={styles.headerBackground}>
       <LinearGradient
@@ -3819,6 +4135,8 @@ return (
               </TouchableOpacity>
             ))}
 
+            {/* Text Selection tool removed */}
+
             {/* Stroke Width Controls */}
             <View style={styles.toolbarDivider} />
             <TouchableOpacity
@@ -4028,15 +4346,7 @@ return (
                   </View>
                 )}
                 
-                {/* Selection Mode Overlay */}
-                {selectedTool === 'selection' && (
-                  <View style={styles.selectionModeOverlay} pointerEvents="none">
-                    <View style={styles.selectionModeIndicator}>
-                      <MaterialIcons name="content-copy" size={16} color="#8B5CF6" />
-                      <Text style={styles.selectionModeText}>Copy text from PDF to select</Text>
-                    </View>
-                  </View>
-                )}
+                {/* Selection Mode Overlays have been removed */}
 
                 {/* Enhanced debug visualization for PDF page boundaries (visible in debug mode) */}
                 {__DEV__ && (
@@ -4510,6 +4820,129 @@ return (
           </View>
         </TouchableOpacity>
       </Modal>
+      
+      {/* AI Assistant Modal */}
+      <Modal
+        visible={showAIModal}
+        transparent={true}
+        animationType="none"
+        onRequestClose={() => {
+          // Start slide-down animation
+          Animated.timing(aiModalAnimation, {
+            toValue: 0,
+            duration: 250,
+            useNativeDriver: true,
+          }).start(() => setShowAIModal(false));
+        }}
+      >
+        <TouchableOpacity
+          style={styles.aiModalOverlay}
+          activeOpacity={1}
+          onPress={() => {
+            // Start slide-down animation
+            Animated.timing(aiModalAnimation, {
+              toValue: 0,
+              duration: 250,
+              useNativeDriver: true,
+            }).start(() => setShowAIModal(false));
+          }}
+        >
+          <Animated.View
+            style={[
+              styles.aiModalContainer,
+              {
+                transform: [{
+                  translateY: aiModalAnimation.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [600, 0],
+                  }),
+                }],
+              },
+            ]}
+          >
+            <View style={styles.aiModalContent}>
+              <View style={styles.aiModalHandle} />
+              <View style={styles.aiModalHeader}>
+                <View style={styles.aiModalIconContainer}>
+                  <MaterialCommunityIcons name="robot" size={24} color="#8B5CF6" />
+                </View>
+                <Text style={styles.aiModalTitle}>AI Assistant</Text>
+                <TouchableOpacity
+                  style={styles.aiModalCloseButton}
+                  onPress={() => {
+                    // Start slide-down animation
+                    Animated.timing(aiModalAnimation, {
+                      toValue: 0,
+                      duration: 250,
+                      useNativeDriver: true,
+                    }).start(() => setShowAIModal(false));
+                  }}
+                >
+                  <MaterialIcons name="close" size={24} color="#6B7280" />
+                </TouchableOpacity>
+              </View>
+              
+              <ScrollView 
+                ref={chatScrollViewRef}
+                style={styles.aiModalBody}
+                contentContainerStyle={{flexGrow: 1}}
+                onContentSizeChange={() => {
+                  // Scroll to bottom when content size changes (new message added)
+                  if (chatMessages.length > 1) {
+                    chatScrollViewRef.current?.scrollToEnd({ animated: true });
+                  }
+                }}
+              >
+                <View style={styles.aiChatContainer}>
+                  {chatMessages.map((message, index) => (
+                    message.type === 'ai' ? (
+                      <View key={index} style={styles.aiMessageBubble}>
+                        <Text style={styles.aiMessageText}>{message.text}</Text>
+                      </View>
+                    ) : (
+                      <View key={index} style={styles.userMessageBubble}>
+                        <Text style={styles.userMessageText}>{message.text}</Text>
+                      </View>
+                    )
+                  ))}
+                </View>
+              </ScrollView>
+              
+              <View style={styles.aiInputContainer}>
+                <TextInput
+                  style={styles.aiInput}
+                  placeholder="Ask me anything about this document..."
+                  placeholderTextColor="#9CA3AF"
+                  value={aiMessage}
+                  onChangeText={setAiMessage}
+                  multiline
+                />
+                <TouchableOpacity
+                  style={styles.aiSendButton}
+                  onPress={() => {
+                    if (aiMessage.trim() === '') return;
+                    
+                    // Add user message to chat
+                    const userMessage = aiMessage.trim();
+                    setChatMessages(prev => [...prev, {type: 'user', text: userMessage}]);
+                    
+                    // Clear input after sending
+                    setAiMessage("");
+                    
+                    // Simulate AI response after a short delay
+                    setTimeout(() => {
+                      const aiResponse = `I understand your query about "${userMessage.substring(0, 20)}${userMessage.length > 20 ? '...' : ''}". Let me analyze this document further.`;
+                      setChatMessages(prev => [...prev, {type: 'ai', text: aiResponse}]);
+                    }, 1000);
+                  }}
+                >
+                  <Ionicons name="send" size={20} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Animated.View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Ask Rina Popup */}
       {showAskRinaPopup && (
@@ -4722,25 +5155,76 @@ return (
         </View>
       </Modal>
       
-      {/* WebView PDF Selector - Enable direct text selection */}
-      <PDFWebViewSelector
-        pdfUri={currentSource?.uri || (source && source.uri) || ''}
-        isVisible={showWebViewSelector}
-        onClose={() => {
-          setShowWebViewSelector(false);
-          setSelectedTool(null);
-        }}
-        onTextSelected={(selectedText: string) => {
-          // Handle selected text from WebView the same way as manual input
-          onTextSelectionChange({
-            text: selectedText,
-            pageNumber: currentPage,
-            bounds: { x: 0, y: 0, width: 0, height: 0 }
-          });
-          setShowWebViewSelector(false);
-          setSelectedTool(null);
-        }}
-      />
+      {/* WebView PDF Selector has been removed */}
+
+      {/* Text Preview Modal for bbox extracted text */}
+      <Modal visible={showTextPreviewModal} animationType="fade" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.textExtractionModal}>
+            <View style={styles.textExtractionHeader}>
+              <MaterialIcons name="text-format" size={24} color="#8B5CF6" />
+              <Text style={styles.textExtractionTitle}>Extracted Text</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowTextPreviewModal(false);
+                  setPreviewExtractedText("");
+                }}
+                style={styles.textExtractionCloseButton}
+              >
+                <MaterialIcons name="close" size={24} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.textExtractionContent}>
+              <Text style={styles.extractionInstructions}>
+                Text extracted from page {currentPage}. You can edit the text below:
+              </Text>
+              
+              <TextInput
+                style={[styles.textExtractionInput, { height: 300 }]}
+                value={previewExtractedText}
+                onChangeText={setPreviewExtractedText}
+                multiline
+                textAlignVertical="top"
+                placeholder="Extracted text will appear here..."
+                placeholderTextColor="#9CA3AF"
+              />
+
+              <View style={styles.textExtractionActions}>
+                <TouchableOpacity
+                  style={styles.textExtractionCancelButton}
+                  onPress={() => {
+                    setShowTextPreviewModal(false);
+                    setPreviewExtractedText("");
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.textExtractionCancelText}>Close</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.textExtractionSelectButton}
+                  onPress={() => {
+                    // Close the preview modal
+                    setShowTextPreviewModal(false);
+                    
+                    // Set selected text and open Rina modal
+                    setSelectedText(previewExtractedText);
+                    setRinaQuery("Explain this text:");
+                    setShowAskRinaModal(true);
+                    
+                    // Clear preview text
+                    setPreviewExtractedText("");
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <MaterialIcons name="smart-toy" size={18} color="#FFFFFF" />
+                  <Text style={styles.textExtractionSelectText}>Ask Rina</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -6042,6 +6526,157 @@ mainContainer: {
     color: '#8B5CF6',
     fontSize: 14,
     fontWeight: '500',
+  },
+  
+  // AI Assistant floating button and modal styles
+  floatingAIButton: {
+    position: 'absolute',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#8B5CF6',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 8,
+    zIndex: 1000,
+  },
+  floatingAIButtonContent: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 28,
+  },
+  aiModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: 'flex-end',
+  },
+  aiModalContainer: {
+    backgroundColor: 'transparent',
+    width: '100%',
+    height: '90%', // Allow the modal to take up to 90% of screen height
+    justifyContent: 'flex-end',
+  },
+  aiModalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingBottom: Platform.OS === 'ios' ? 48 : 24, // Extra padding for iOS devices with home indicator
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 16,
+    minHeight: '50%',
+    maxHeight: '92%',
+  },
+  aiModalHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#E5E7EB',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  aiModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  aiModalIconContainer: {
+    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aiModalTitle: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginLeft: 12,
+  },
+  aiModalCloseButton: {
+    padding: 6,
+    borderRadius: 20,
+  },
+  aiModalBody: {
+    flexGrow: 1,
+    padding: 16,
+    maxHeight: '70%',
+  },
+  aiChatContainer: {
+    paddingBottom: 16,
+  },
+  aiMessageBubble: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 16,
+    borderTopLeftRadius: 4,
+    padding: 12,
+    marginBottom: 12,
+    maxWidth: '80%',
+    alignSelf: 'flex-start',
+  },
+  aiMessageText: {
+    fontSize: 16,
+    color: '#1F2937',
+    lineHeight: 22,
+  },
+  userMessageBubble: {
+    backgroundColor: '#8B5CF6',
+    borderRadius: 16,
+    borderTopRightRadius: 4,
+    padding: 12,
+    marginBottom: 12,
+    maxWidth: '80%',
+    alignSelf: 'flex-end',
+  },
+  userMessageText: {
+    fontSize: 16,
+    color: '#FFFFFF',
+    lineHeight: 22,
+  },
+  aiInputContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    alignItems: 'flex-end',
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    backgroundColor: '#FFFFFF',  // Ensure the input area has a solid background
+  },
+  aiInput: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    paddingRight: 48,
+    fontSize: 16,
+    maxHeight: 120,
+  },
+  aiSendButton: {
+    position: 'absolute',
+    right: 24,
+    bottom: 20,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#8B5CF6',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
 
