@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
+  Animated,
   ScrollView,
   StatusBar,
   Text,
@@ -85,6 +86,9 @@ function ChatBot(): React.ReactElement {
   const [attachmentMenuVisible, setAttachmentMenuVisible] = useState(false);
   const [processingFiles, setProcessingFiles] = useState(false);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  // Animated value for smooth keyboard movement
+  const animatedBottomValue = useRef(new Animated.Value(0)).current;
   
   // OCR Modal states
   const [showOCRModal, setShowOCRModal] = useState(false);
@@ -103,9 +107,17 @@ function ChatBot(): React.ReactElement {
     const keyboardDidShowListener = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
       (event) => {
-        const keyboardHeight = event.endCoordinates?.height || 0;
-        console.log('Keyboard height:', keyboardHeight);
+        const kbHeight = event.endCoordinates?.height || 0;
+        console.log('Keyboard height:', kbHeight);
+        setKeyboardHeight(kbHeight);
         setIsKeyboardVisible(true);
+        
+        // Animate the bottom value
+        Animated.timing(animatedBottomValue, {
+          toValue: kbHeight,
+          duration: 250,
+          useNativeDriver: false,
+        }).start();
         
         // Auto scroll to bottom when keyboard appears
         setTimeout(() => {
@@ -117,6 +129,13 @@ function ChatBot(): React.ReactElement {
     const keyboardDidHideListener = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
       () => {
+        // Animate back to zero
+        Animated.timing(animatedBottomValue, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: false,
+        }).start();
+        setKeyboardHeight(0);
         setIsKeyboardVisible(false);
       }
     );
@@ -1128,11 +1147,11 @@ function ChatBot(): React.ReactElement {
 
   return (
     <>
-      <StatusBar barStyle="light-content" backgroundColor="#A855F7" />
+      <StatusBar barStyle="light-content" backgroundColor="#8B5CF6" />
       <View style={styles.rootContainer}>
         {/* Header */}
       <LinearGradient
-        colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
+        colors={["#6366F1", "#8B5CF6", "#A855F7"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
         // Respect the device safe area so header content won't overlap the status bar
@@ -1220,8 +1239,8 @@ function ChatBot(): React.ReactElement {
             styles.messagesContentContainer,
             { 
               paddingBottom: isKeyboardVisible ? 
-                200 + insets.bottom : // More padding when keyboard is showing to ensure content is visible
-                180 + insets.bottom   // Padding when keyboard is hidden to ensure messages aren't behind input
+                (keyboardHeight > 0 ? keyboardHeight + 90 : 180) + insets.bottom : // Adjust padding based on keyboard height
+                130 + insets.bottom   // Padding when keyboard is hidden to ensure messages aren't behind input
             },
           ]}
           showsVerticalScrollIndicator={false}
@@ -1238,10 +1257,18 @@ function ChatBot(): React.ReactElement {
         >
           {messages.length === 0 && (
             <View style={styles.welcomeContainer}>
-              <Text style={styles.welcomeTitle}>Welcome to Rina!</Text>
-              <Text style={styles.welcomeSubtitle}>
-                Your AI tutoring assistant
-              </Text>
+              <View style={styles.welcomeHeader}>
+                <LinearGradient
+                  colors={["#6366F1", "#8B5CF6"]}
+                  style={styles.welcomeAvatar}
+                >
+                  <Text style={styles.welcomeAvatarText}>R</Text>
+                </LinearGradient>
+                <Text style={styles.welcomeTitle}>Hello! I'm Rina</Text>
+                <Text style={styles.welcomeSubtitle}>
+                  Your AI assistant ready to help with anything
+                </Text>
+              </View>
               <View style={styles.suggestedPromptsGrid}>
                 {suggestedPrompts.map((prompt) => (
                   <TouchableOpacity
@@ -1252,7 +1279,9 @@ function ChatBot(): React.ReactElement {
                     accessibilityHint={prompt.description}
                     activeOpacity={0.7}
                   >
-                    <Text style={styles.promptIcon}>{prompt.icon}</Text>
+                    <View style={styles.promptIconContainer}>
+                      <Text style={styles.promptIcon}>{prompt.icon}</Text>
+                    </View>
                     <Text style={styles.promptTitle}>{prompt.text}</Text>
                     <Text style={styles.promptDescription}>{prompt.description}</Text>
                   </TouchableOpacity>
@@ -1372,18 +1401,13 @@ function ChatBot(): React.ReactElement {
             </View>
           )}
         </ScrollView>
+      </View>
 
-        {/* Input Container - Always positioned at bottom */}
-        <KeyboardAvoidingView
-          style={[{ width: '100%', position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 100 }]}
-          behavior={Platform.OS === "ios" ? "padding" : "padding"}
-          keyboardVerticalOffset={Platform.OS === "ios" ? insets.top + 10 : 0}
-          enabled={true}
-        >
-          <View style={[
-            styles.inputContainer, 
-            { paddingBottom: insets.bottom }
-          ]}>
+      {/* Input Container - Moved outside root container */}
+      <View style={[
+        styles.inputContainer,
+        { backgroundColor: 'transparent' }
+      ]}>
             {errorMessage && (
               <View style={styles.errorBanner}>
                 <Text style={styles.errorText}>{errorMessage}</Text>
@@ -1505,83 +1529,106 @@ function ChatBot(): React.ReactElement {
                 </View>
               )}
 
-              <View style={styles.inputRow}>
-                <View style={styles.inputWrapper}>
-                  <TextInput
-                    style={styles.textInput}
-                    value={input}
-                    onChangeText={setInput}
-                    placeholder="Ask me anything about your studies..."
-                    placeholderTextColor="#94A3B8"
-                    multiline
-                    maxLength={1000}
-                    accessibilityLabel="Message input"
-                    accessibilityHint="Type your message to send to Rina"
-                  />
-                  <TouchableOpacity
-                    style={styles.attachButton}
-                    onPress={() => setAttachmentMenuVisible(!attachmentMenuVisible)}
-                    accessibilityLabel="Attach file"
-                    accessibilityHint="Import and upload a document or image"
-                  >
-                    <Ionicons name="attach" size={24} color="#6B46C1" />
-                  </TouchableOpacity>
-
-                  {/* Attachment Menu */}
-                  {attachmentMenuVisible && (
-                    <View style={[styles.attachmentMenu, { bottom: 50 + insets.bottom, right: 8 }]}>
-                      <TouchableOpacity
-                        style={styles.attachmentOption}
-                        onPress={() => handleFileImport('file')}
-                      >
-                        <Ionicons name="document" size={20} color="#6B46C1" />
-                        <Text style={styles.attachmentOptionText}>Document</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.attachmentOption}
-                        onPress={() => handleFileImport('image')}
-                      >
-                        <Ionicons name="image" size={20} color="#6B46C1" />
-                        <Text style={styles.attachmentOptionText}>Image</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.attachmentOption}
-                        onPress={() => handleFileImport('camera')}
-                      >
-                        <Ionicons name="camera" size={20} color="#6B46C1" />
-                        <Text style={styles.attachmentOptionText}>Camera</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                </View>
-
-                {/* Send Button */}
-                <TouchableOpacity
-                  style={[
-                    styles.sendButton,
-                    (input.trim() === "" && pendingFiles.length === 0) && styles.sendButtonDisabled,
-                  ]}
-                  onPress={handleSend}
-                  disabled={input.trim() === "" && pendingFiles.length === 0}
-                  accessibilityLabel="Send message"
-                  accessibilityHint="Send your message to Rina"
-                >
-                  <Ionicons name="send" size={20} color="#fff" />
-                </TouchableOpacity>
-              </View>
+              {/* inputRow moved out to sibling below */}
             </View>
           </View>
-        </KeyboardAvoidingView>
 
-        {/* OCR Modal */}
-        <Modal
+        {/* Floating Input Row - positioned to stay above keyboard with animation */}
+        <Animated.View style={[
+          styles.floatingInputRow, 
+          { 
+            paddingBottom: insets.bottom + 8,
+            bottom: animatedBottomValue, // Animated value for smooth keyboard following
+          }
+        ]}>
+          <View style={styles.inputRow}>
+            <View style={styles.inputWrapper}>
+              <TextInput
+                style={styles.textInput}
+                value={input}
+                onChangeText={setInput}
+                placeholder="Type a message..."
+                placeholderTextColor="#94A3B8"
+                multiline
+                maxLength={1000}
+                accessibilityLabel="Message input"
+                accessibilityHint="Type your message to send to Rina"
+                onFocus={() => {
+                  // Ensure content scrolls when keyboard appears
+                  setTimeout(() => {
+                    scrollViewRef.current?.scrollToEnd({ animated: true });
+                  }, 300);
+                }}
+              />
+              <TouchableOpacity
+                style={styles.attachButton}
+                onPress={() => setAttachmentMenuVisible(!attachmentMenuVisible)}
+                accessibilityLabel="Attach file"
+                accessibilityHint="Import and upload a document or image"
+              >
+                <Ionicons name="attach" size={24} color="#6B46C1" />
+              </TouchableOpacity>
+
+              {/* Attachment Menu */}
+              {attachmentMenuVisible && (
+                <View style={[styles.attachmentMenu, { bottom: 50 + insets.bottom, right: 8 }]}>
+                  <TouchableOpacity
+                    style={styles.attachmentOption}
+                    onPress={() => handleFileImport('file')}
+                  >
+                    <Ionicons name="document" size={20} color="#6B46C1" />
+                    <Text style={styles.attachmentOptionText}>Document</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.attachmentOption}
+                    onPress={() => handleFileImport('image')}
+                  >
+                    <Ionicons name="image" size={20} color="#6B46C1" />
+                    <Text style={styles.attachmentOptionText}>Image</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.attachmentOption}
+                    onPress={() => handleFileImport('camera')}
+                  >
+                    <Ionicons name="camera" size={20} color="#6B46C1" />
+                    <Text style={styles.attachmentOptionText}>Camera</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+
+            {/* Send Button */}
+            <TouchableOpacity
+              style={[
+                styles.sendButton,
+                (input.trim() === "" && pendingFiles.length === 0) && styles.sendButtonDisabled,
+              ]}
+              onPress={handleSend}
+              disabled={input.trim() === "" && pendingFiles.length === 0}
+              accessibilityLabel="Send message"
+              accessibilityHint="Send your message to Rina"
+            >
+              <LinearGradient
+                colors={["#6366F1", "#8B5CF6"]}
+                style={styles.sendButtonGradient}
+              >
+                <Ionicons name="send" size={20} color="#fff" />
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+
+      {/* OCR Modal */}
+      <Modal
           visible={showOCRModal}
           animationType="slide"
           presentationStyle="pageSheet"
           onRequestClose={handleOCRClose}
         >
           <View style={styles.ocrModalContainer}>
-            <View style={styles.ocrModalHeader}>
+            <LinearGradient
+              colors={["#6366F1", "#8B5CF6"]}
+              style={styles.ocrModalHeader}>
               <Text style={styles.ocrModalTitle}>Image to Text</Text>
               <TouchableOpacity 
                 style={styles.closeButton} 
@@ -1589,7 +1636,7 @@ function ChatBot(): React.ReactElement {
               >
                 <Ionicons name="close" size={24} color="#FFFFFF" />
               </TouchableOpacity>
-            </View>
+            </LinearGradient>
             
             <ScrollView style={styles.ocrModalContent} showsVerticalScrollIndicator={false}>
               {/* Image Selection */}
@@ -1672,7 +1719,9 @@ function ChatBot(): React.ReactElement {
           onRequestClose={() => setShowChatHistory(false)}
         >
           <SafeAreaView style={styles.chatHistoryContainer}>
-            <View style={styles.chatHistoryHeader}>
+            <LinearGradient
+              colors={["#6366F1", "#8B5CF6"]}
+              style={styles.chatHistoryHeader}>
               <Text style={styles.chatHistoryTitle}>Chat History</Text>
               <TouchableOpacity 
                 style={styles.closeButton} 
@@ -1680,7 +1729,7 @@ function ChatBot(): React.ReactElement {
               >
                 <Ionicons name="close" size={24} color="#FFFFFF" />
               </TouchableOpacity>
-            </View>
+            </LinearGradient>
             
             <ScrollView style={styles.chatHistoryList}>
               {conversations.map((conversation) => (
@@ -1751,12 +1800,16 @@ function ChatBot(): React.ReactElement {
               style={styles.newChatButton} 
               onPress={createNewConversation}
             >
-              <Ionicons name="add" size={24} color="#FFFFFF" />
-              <Text style={styles.newChatButtonText}>New Chat</Text>
+              <LinearGradient
+                colors={["#6366F1", "#8B5CF6"]}
+                style={styles.newChatButtonGradient}
+              >
+                <Ionicons name="add" size={24} color="#FFFFFF" />
+                <Text style={styles.newChatButtonText}>New Chat</Text>
+              </LinearGradient>
             </TouchableOpacity>
           </SafeAreaView>
         </Modal>
-      </View>
     </>
   );
 }
@@ -1764,7 +1817,7 @@ function ChatBot(): React.ReactElement {
 const styles = StyleSheet.create({
   rootContainer: {
     flex: 1,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#FFFFFF",
     position: 'relative',
     overflow: 'hidden', // Ensure no elements bleed outside the container
   },
@@ -1777,6 +1830,14 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
+  keyboardAvoidingContainer: {
+    width: '100%',
+    position: 'absolute', 
+    bottom: 0, 
+    left: 0, 
+    right: 0,
+    zIndex: 1000,
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -1784,11 +1845,11 @@ const styles = StyleSheet.create({
     paddingTop: 40,
     borderBottomLeftRadius: 25,
     borderBottomRightRadius: 25,
-    shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
+    shadowColor: "#6366F1",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
     zIndex: 1000,
   },
   backButton: {
@@ -1803,13 +1864,18 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: "#7C3AED",
     justifyContent: "center",
     alignItems: "center",
     marginRight: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   avatarText: {
     color: "#FFFFFF",
@@ -1836,7 +1902,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 16,
     paddingTop: 16,
-    paddingBottom: 120, // Ensure scrollview doesn't get hidden by the input container
+    backgroundColor: "#FAFBFF",
   },
   messageBubble: {
     padding: 16,
@@ -1854,10 +1920,10 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   userMessage: {
-    backgroundColor: "#6B46C1",
+    backgroundColor: "#6366F1",
     alignSelf: "flex-end",
-    borderBottomRightRadius: 8,
-    shadowColor: "#6B46C1",
+    borderBottomRightRadius: 6,
+    shadowColor: "#6366F1",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 6,
@@ -1866,8 +1932,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     alignSelf: "flex-start",
     borderWidth: 1,
-    borderColor: "#E2E8F0",
-    borderBottomLeftRadius: 8,
+    borderColor: "#F1F5F9",
+    borderBottomLeftRadius: 6,
   },
   userMessageText: {
     color: "#FFFFFF",
@@ -1969,7 +2035,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     alignSelf: "flex-start",
     borderRadius: 20,
-    borderBottomLeftRadius: 8,
+    borderBottomLeftRadius: 6,
     padding: 16,
     maxWidth: "85%",
     shadowColor: "#1E293B",
@@ -1978,7 +2044,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#F1F5F9",
   },
   loadingContent: {
     flexDirection: "row",
@@ -2001,7 +2067,7 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: "#CBD5E1",
+    backgroundColor: "#6366F1",
   },
   loadingDot1: {
     opacity: 0.4,
@@ -2114,9 +2180,9 @@ const styles = StyleSheet.create({
   },
   compactActionsContainer: {
     backgroundColor: "#FFFFFF",
-    borderTopWidth: 1,
-    borderTopColor: "#F1F5F9",
-    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+    paddingVertical: 12,
   },
   compactActionsContent: {
     paddingHorizontal: 12,
@@ -2140,18 +2206,28 @@ const styles = StyleSheet.create({
   },
   inputContainer: {
     width: "100%",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "transparent",
+    zIndex: 100,
+  },
+  floatingInputRow: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(249, 250, 255, 0.95)', // More opacity for better legibility over keyboard
     borderTopWidth: 1,
-    borderTopColor: "#E2E8F0",
-    shadowColor: "#1E293B",
+    borderTopColor: '#E2E8F0',
+    zIndex: 1100,
+    shadowColor: '#1E293B',
     shadowOffset: {
       width: 0,
-      height: -2,
+      height: -3,
     },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 4,
-    zIndex: 100,
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 8
   },
   inputAreaContainer: {
     backgroundColor: "transparent",
@@ -2252,9 +2328,11 @@ const styles = StyleSheet.create({
   },
   inputRow: {
     flexDirection: "row",
-    padding: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
     alignItems: "flex-end",
-    gap: 8,
+    gap: 10,
+    borderRadius: 30,
   },
   inputWrapper: {
     flex: 1,
@@ -2266,10 +2344,10 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     paddingHorizontal: 20,
     paddingVertical: 14,
-    paddingRight: 56, // Space for attachment button
+    paddingRight: 56,
     maxHeight: 120,
     fontSize: 16,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "rgba(248, 250, 252, 0.8)",
     minHeight: 48,
     color: "#1E293B",
   },
@@ -2280,7 +2358,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "rgba(248, 250, 252, 0.8)",
     borderWidth: 1,
     borderColor: "#E2E8F0",
     alignItems: "center",
@@ -2318,46 +2396,66 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   sendButton: {
-    backgroundColor: "#6B46C1",
     borderRadius: 25,
-    padding: 12,
-    minWidth: 48,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#6B46C1",
-    shadowOffset: {
-      width: 0,
-      height: 3,
-    },
+    overflow: 'hidden',
+    shadowColor: "#6366F1",
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
-    shadowRadius: 6,
+    shadowRadius: 8,
     elevation: 6,
   },
   sendButtonDisabled: {
-    backgroundColor: "#CBD5E1",
-    shadowOpacity: 0,
-    elevation: 0,
+    opacity: 0.5,
+  },
+  sendButtonGradient: {
+    padding: 14,
+    borderRadius: 25,
+    minWidth: 52,
+    minHeight: 52,
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   // Welcome section styles
   welcomeContainer: {
     paddingHorizontal: 20,
-    paddingVertical: 16,
-    flex: 1,
-    justifyContent: 'center',
+    paddingVertical: 40,
+    alignItems: 'center',
+  },
+  welcomeHeader: {
+    alignItems: 'center',
+    marginBottom: 40,
+  },
+  welcomeAvatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 20,
+    shadowColor: "#6366F1",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  welcomeAvatarText: {
+    color: "#FFFFFF",
+    fontSize: 32,
+    fontWeight: "bold",
   },
   welcomeTitle: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: "bold",
     color: "#1E293B",
-    marginBottom: 6,
+    marginBottom: 8,
     textAlign: "center",
   },
   welcomeSubtitle: {
-    fontSize: 14,
+    fontSize: 16,
     color: "#64748B",
     textAlign: "center",
-    lineHeight: 20,
+    lineHeight: 24,
     marginBottom: 20,
   },
   suggestedPromptsGrid: {
@@ -2368,41 +2466,41 @@ const styles = StyleSheet.create({
   },
   promptCard: {
     backgroundColor: "#FFFFFF",
-    padding: 12,
-    marginBottom: 8,
-    borderRadius: 12,
+    padding: 20,
+    borderRadius: 16,
     width: "48%",
     shadowColor: "#1E293B",
     shadowOffset: {
       width: 0,
-      height: 1,
+      height: 2,
     },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
     borderWidth: 1,
     borderColor: "#F1F5F9",
-    minHeight: 95,
-    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  promptIconContainer: {
+    marginBottom: 12,
   },
   promptIcon: {
-    fontSize: 24,
-    marginBottom: 8,
+    fontSize: 28,
     textAlign: "center",
   },
   promptTitle: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "600",
     color: "#1E293B",
-    marginBottom: 4,
+    marginBottom: 6,
     textAlign: "center",
     lineHeight: 16,
   },
   promptDescription: {
-    fontSize: 11,
+    fontSize: 12,
     color: "#64748B",
     textAlign: "center",
-    lineHeight: 14,
+    lineHeight: 16,
   },
 
   // Chat History Modal
@@ -2447,16 +2545,16 @@ const styles = StyleSheet.create({
     top: 100,
     right: 12,
     backgroundColor: "#FFFFFF",
-    borderRadius: 12,
+    borderRadius: 16,
     shadowColor: "#1E293B",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
     shadowRadius: 12,
     elevation: 8,
     zIndex: 1000,
-    minWidth: 180,
+    minWidth: 200,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#F1F5F9",
     paddingVertical: 8,
   },
   chatOption: {
@@ -2476,7 +2574,7 @@ const styles = StyleSheet.create({
 
   // Messages Container
   messagesContentContainer: {
-    paddingBottom: 20,
+    flexGrow: 1,
   },
 
   // Markdown Styles
@@ -2622,14 +2720,10 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   newChatButton: {
-    backgroundColor: "#6B46C1",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 16,
     margin: 16,
-    borderRadius: 12,
-    shadowColor: "#6B46C1",
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: "#6366F1",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -2640,6 +2734,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     marginLeft: 8,
+  },
+  newChatButtonGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 18,
+    borderRadius: 16,
   },
 
   // OCR Modal Styles
