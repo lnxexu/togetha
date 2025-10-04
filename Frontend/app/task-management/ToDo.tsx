@@ -1051,7 +1051,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   dashboardLabel: {
-    fontSize: 12, // Slightly reduced
+    fontSize: 11, // Slightly reduced
     fontFamily: "Inter-Medium",
     color: "#64748B",
     textAlign: "center",

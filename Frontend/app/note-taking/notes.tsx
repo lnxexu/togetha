@@ -2739,35 +2739,52 @@ const handleCreateFolder = async () => {
       transparent={true}
       animationType="slide"
       onRequestClose={closeDrawingSetupModal}
+      statusBarTranslucent
     >
-      <KeyboardAvoidingView
-        style={styles.modalContainer}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 60 : 20}
-        enabled
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={closeDrawingSetupModal}
-        >
-          <View style={{ flex: 1 }} />
+      <TouchableWithoutFeedback onPress={closeDrawingSetupModal}>
+        <View style={styles.modalContainer}>
+          <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
+            <KeyboardAvoidingView
+              style={styles.drawingModalViewContainer}
+              behavior={Platform.OS === "ios" ? "padding" : "height"}
+              keyboardVerticalOffset={Platform.OS === "ios" ? 60 : 20}
+            >
           <View style={styles.modalContent}>
-            {/* Header with Cancel and Create buttons */}
-            <View style={styles.modalHeader}>
-              <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={closeDrawingSetupModal}
-              >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <Text style={styles.modalTitle}>Create New Drawing</Text>
-              <TouchableOpacity
-                style={styles.createButton}
-                onPress={handleCreateDrawingWithSetup}
-              >
-                <Text style={styles.createButtonText}>Create</Text>
-              </TouchableOpacity>
+            {/* Header with drag handle, title and compact action buttons */}
+            <View style={styles.drawingModalHeaderCompact}>
+              <View style={[styles.drawingModalHandle, styles.drawingModalHandleCompact]} />
+              
+              {/* Three-section header layout */}
+              <View style={styles.headerThreePartLayout}>
+                {/* Left: Close button */}
+                <View style={styles.headerLeftSection}>
+                  <TouchableOpacity
+                    style={styles.headerIconButton}
+                    onPress={closeDrawingSetupModal}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons name="close" size={20} color="#6B7280" />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Middle: Title */}
+                <View style={styles.headerCenterSection}>
+                  <Text style={styles.drawingModalTitleCompact}>Create New Drawing</Text>
+                </View>
+                
+                {/* Right: Create button */}
+                <View style={styles.headerRightSection}>
+                  <TouchableOpacity
+                    style={styles.headerPrimaryButton}
+                    onPress={handleCreateDrawingWithSetup}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    activeOpacity={0.9}
+                  >
+                    <Ionicons name="brush" size={16} color="#FFFFFF" />
+                    <Text style={styles.headerPrimaryButtonText}>Create</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
             </View>
 
             <ScrollView
@@ -2780,29 +2797,36 @@ const handleCreateFolder = async () => {
                 <Text style={styles.drawingModalSectionLabel}>
                   Drawing Title
                 </Text>
-                <TextInput
-                  style={styles.drawingModalTextInput}
-                  value={drawingTitle}
-                  onChangeText={setDrawingTitle}
-                  placeholder="Enter drawing title"
-                  placeholderTextColor="#9CA3AF"
-                  maxLength={50}
-                  returnKeyType="done"
-                  numberOfLines={1}
-                />
+                <View style={styles.drawingModalInputWrapper}>
+                  <Ionicons name="pencil" size={20} color="#6B7280" style={styles.drawingModalInputIcon} />
+                  <TextInput
+                    style={styles.drawingModalTextInput}
+                    value={drawingTitle}
+                    onChangeText={setDrawingTitle}
+                    placeholder="Enter a title for your drawing"
+                    placeholderTextColor="#9CA3AF"
+                    maxLength={50}
+                    returnKeyType="done"
+                    numberOfLines={1}
+                  />
+                </View>
               </View>
-
-              {/* Canvas size and orientation selection removed - using defaults */}
 
               {/* Templates Section */}
               <View style={styles.drawingModalSection}>
                 <Text style={styles.drawingModalSectionLabel}>
                   Choose Template
                 </Text>
+                <Text style={styles.drawingModalDescription}>
+                  Select a template to start with or use a blank canvas
+                </Text>
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={styles.templateScrollRow}
+                  decelerationRate="fast"
+                  snapToInterval={140}
+                  snapToAlignment="start"
                 >
                   {DRAWING_TEMPLATES.map((template) => (
                     <TouchableOpacity
@@ -2839,8 +2863,10 @@ const handleCreateFolder = async () => {
               </View>
             </ScrollView>
           </View>
-        </TouchableOpacity>
-      </KeyboardAvoidingView>
+            </KeyboardAvoidingView>
+          </TouchableWithoutFeedback>
+        </View>
+      </TouchableWithoutFeedback>
     </Modal>
   );
 
@@ -4077,6 +4103,24 @@ const styles = StyleSheet.create({
   modalContainer: {
     flex: 1,
     justifyContent: "flex-end",
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+  },
+  
+  drawingModalOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "transparent",
+  },
+  
+  drawingModalViewContainer: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    maxHeight: "90%",
   },
   modalOverlay: {
     flex: 1,
@@ -4096,6 +4140,7 @@ const styles = StyleSheet.create({
     shadowRadius: 25,
     elevation: 25,
     paddingTop: 8,
+    overflow: "hidden",
   },
 
   // Statistics modal styles
@@ -4261,8 +4306,8 @@ const styles = StyleSheet.create({
   },
   modalBody: {
     flex: 1,
-    paddingHorizontal: 24,
     paddingTop: 8,
+    paddingBottom: 16,
   },
   modalFooter: {
     flexDirection: "row",
@@ -5028,15 +5073,124 @@ const styles = StyleSheet.create({
   },
 
   // Drawing Setup Modal Styles - Enhanced
+  drawingModalHeader: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+    alignItems: "center",
+    position: "relative",
+    backgroundColor: "#FCFCFC",
+  },
+
+  drawingModalHandle: {
+    width: 40,
+    height: 5,
+    backgroundColor: "#E2E8F0",
+    borderRadius: 3,
+    marginBottom: 16,
+    alignSelf: "center",
+  },
+
+  drawingModalTitle: {
+    fontSize: 24,
+    fontFamily: "Inter-Bold",
+    color: "#1F2937",
+    marginBottom: 20,
+    textAlign: "center",
+  },
+
+  drawingModalActionButtons: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    width: "100%",
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9",
+    backgroundColor: "#FCFCFC",
+    marginTop: 'auto',
+  },
+
+  drawingModalCancelButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 10,
+    backgroundColor: "#F9FAFB",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+
+  drawingModalCancelText: {
+    fontSize: 16,
+    fontFamily: "Inter-Medium",
+    color: "#6B7280",
+    marginLeft: 6,
+  },
+
+  drawingModalCreateButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#6366F1",
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 10,
+    shadowColor: "#6366F1",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+
+  drawingModalCreateText: {
+    fontSize: 16,
+    fontFamily: "Inter-SemiBold",
+    color: "#FFFFFF",
+    marginLeft: 8,
+  },
+
+  drawingModalDescription: {
+    fontSize: 14,
+    fontFamily: "Inter-Regular",
+    color: "#64748B",
+    marginBottom: 16,
+    paddingHorizontal: 4,
+    lineHeight: 20,
+  },
+
+  drawingModalInputWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F9FAFB",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    shadowColor: "#64748B",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+    paddingHorizontal: 16,
+    marginTop: 8,
+  },
+
+  drawingModalInputIcon: {
+    marginRight: 12,
+  },
+
   drawingModalSection: {
-    marginBottom: 36,
+    marginBottom: 32,
+    paddingHorizontal: 20,
   },
 
   drawingModalSectionLabel: {
     fontSize: 20,
     fontFamily: "Inter-Bold",
     color: "#1F2937",
-    marginBottom: 18,
+    marginBottom: 12,
     paddingLeft: 4,
     letterSpacing: -0.2,
   },
@@ -5050,20 +5204,11 @@ const styles = StyleSheet.create({
   },
 
   drawingModalTextInput: {
-    backgroundColor: "#F9FAFB",
-    borderRadius: 16,
-    paddingHorizontal: 18,
+    flex: 1,
     paddingVertical: 16,
     fontSize: 16,
     fontFamily: "Inter-Regular",
     color: "#1F2937",
-    borderWidth: 2,
-    borderColor: "#E5E7EB",
-    shadowColor: "#64748B",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
   },
 
   orientationSubSection: {
@@ -5199,9 +5344,9 @@ const styles = StyleSheet.create({
     marginRight: 16,
     borderRadius: 16,
     borderWidth: 2,
-    borderColor: "transparent",
+    borderColor: "#E5E7EB",
     padding: 14,
-    backgroundColor: "transparent",
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     width: 130,
     shadowColor: "#64748B",
@@ -5214,9 +5359,10 @@ const styles = StyleSheet.create({
     borderColor: "#8B5CF6",
     backgroundColor: "#F5F3FF",
     shadowColor: "#8B5CF6",
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 4,
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 6,
+    transform: [{ scale: 1.05 }],
   },
   templatePreviewWrapper: {
     width: 100,
@@ -5228,10 +5374,10 @@ const styles = StyleSheet.create({
     borderColor: "#e5e7eb",
     marginBottom: 12,
     shadowColor: "#64748B",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
   },
   templateIcon: {
     width: 52,
@@ -5424,5 +5570,78 @@ const styles = StyleSheet.create({
     color: "#334155",
     marginLeft: 12,
     fontWeight: "500",
+  },
+  // Compact header for drawing modal with inline actions
+  drawingModalHeaderCompact: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+    alignItems: "center",
+    position: "relative",
+    flexDirection: "column",
+    justifyContent: "center",
+  },
+  headerThreePartLayout: {
+    flexDirection: "row",
+    width: "100%",
+    alignItems: "center",
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  headerLeftSection: {
+    flex: 1,
+    alignItems: "flex-start",
+    justifyContent: "center",
+  },
+  headerCenterSection: {
+    flex: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerRightSection: {
+    flex: 1,
+    alignItems: "flex-end",
+    justifyContent: "center",
+  },
+  headerIconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F8FAFC",
+  },
+  headerPrimaryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: "#8B5CF6",
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
+    marginLeft: 8,
+  },
+  headerPrimaryButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontFamily: "Inter-SemiBold",
+    marginLeft: 8,
+  },
+  drawingModalTitleCompact: {
+    fontSize: 18,
+    fontFamily: "Inter-Bold",
+    color: "#1F2937",
+    marginBottom: 0,
+    textAlign: "center",
+    width: "100%",
+  },
+  drawingModalHandleCompact: {
+    marginBottom: 8,
   },
 });

@@ -14,6 +14,7 @@ import {
   KeyboardAvoidingView,
   Keyboard,
 } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from "@expo/vector-icons";
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useNavigation, useRoute } from "@react-navigation/native";
@@ -86,6 +87,9 @@ const AddTask: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [datePickerDate, setDatePickerDate] = useState(new Date());
   const [screenData, setScreenData] = useState(Dimensions.get('window'));
+
+  // Safe area insets for padding to avoid overlaps on devices with notches/home indicators
+  const insets = useSafeAreaInsets();
 
   // Check if device is in landscape mode
   const isLandscape = screenData.width > screenData.height;
@@ -281,7 +285,8 @@ const AddTask: React.FC = () => {
   );
 
   return (
-    <View style={styles.rootContainer}>
+    <SafeAreaView style={styles.rootContainer} edges={["top", "left", "right", "bottom"]}>
+      <View style={styles.container}>
       {/* Container for both header and content */}
       <View style={styles.container}>
         {/* Header positioned behind content */}
@@ -302,7 +307,7 @@ const AddTask: React.FC = () => {
         </LinearGradient>
 
         {/* Main Content Container positioned above header */}
-        <View style={styles.mainContentContainer}>
+  <View style={styles.mainContentContainer}>
           <KeyboardAvoidingView
             style={{ flex: 1 }}
             behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -1101,7 +1106,7 @@ const AddTask: React.FC = () => {
               </View>
 
               {/* Action Buttons */}
-              <View style={styles.buttonContainer}>
+              <View style={[styles.buttonContainer, { marginBottom: Math.max(insets.bottom + 12, 24) }] }>
                 <TouchableOpacity
                   style={styles.resetButton}
                   onPress={handleReset}
@@ -1128,7 +1133,8 @@ const AddTask: React.FC = () => {
           </KeyboardAvoidingView>
         </View>
       </View>
-    </View>
+      </View>
+    </SafeAreaView>
   );
 };
 

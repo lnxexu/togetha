@@ -13,6 +13,7 @@ import {
   Platform,
   Alert,
   Image,
+  Keyboard,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -83,6 +84,7 @@ function ChatBot(): React.ReactElement {
   const [previewFile, setPreviewFile] = useState<any>(null);
   const [attachmentMenuVisible, setAttachmentMenuVisible] = useState(false);
   const [processingFiles, setProcessingFiles] = useState(false);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   
   // OCR Modal states
   const [showOCRModal, setShowOCRModal] = useState(false);
@@ -97,9 +99,33 @@ function ChatBot(): React.ReactElement {
     // Disable chat head while on the main chat interface to prevent conflicts
     disableChatHead();
     
-    // Re-enable when component unmounts
+    // Set up keyboard visibility listeners with frame information
+    const keyboardDidShowListener = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (event) => {
+        const keyboardHeight = event.endCoordinates?.height || 0;
+        console.log('Keyboard height:', keyboardHeight);
+        setIsKeyboardVisible(true);
+        
+        // Auto scroll to bottom when keyboard appears
+        setTimeout(() => {
+          scrollViewRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      }
+    );
+    
+    const keyboardDidHideListener = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        setIsKeyboardVisible(false);
+      }
+    );
+    
+    // Re-enable when component unmounts and remove listeners
     return () => {
       enableChatHead();
+      keyboardDidShowListener.remove();
+      keyboardDidHideListener.remove();
     };
   }, [disableChatHead, enableChatHead]);
 
@@ -115,6 +141,15 @@ function ChatBot(): React.ReactElement {
       clearActiveConversation();
     }
   }, [currentConversation, setActiveConversation]);
+  
+  // Scroll to bottom effect when messages change or keyboard visibility changes
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 100);
+    
+    return () => clearTimeout(timer);
+  }, [messages, isKeyboardVisible]);
 
   const saveActiveConversation = async (conversationId: string) => {
     try {
@@ -1093,14 +1128,15 @@ function ChatBot(): React.ReactElement {
 
   return (
     <>
-    <View style={styles.rootContainer}>
       <StatusBar barStyle="light-content" backgroundColor="#A855F7" />
+      <View style={styles.rootContainer}>
         {/* Header */}
       <LinearGradient
         colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
-        style={styles.header}
+        // Respect the device safe area so header content won't overlap the status bar
+        style={[styles.header, { paddingTop: insets.top + 12 }]}
       >
           <TouchableOpacity 
             style={styles.backButton} 
@@ -1147,11 +1183,11 @@ function ChatBot(): React.ReactElement {
 
         {/* Chat Options Dropdown */}
         {showChatOptions && (
-          <View style={styles.chatOptionsContainer}>
-            <TouchableOpacity style={styles.chatOption} onPress={createNewConversation}>
-              <Ionicons name="add" size={20} color="#6B46C1" />
-              <Text style={styles.chatOptionText}>New Chat</Text>
-            </TouchableOpacity>
+          <View style={[styles.chatOptionsContainer, { top: insets.top + 72 }]}> 
+             <TouchableOpacity style={styles.chatOption} onPress={createNewConversation}>
+               <Ionicons name="add" size={20} color="#6B46C1" />
+               <Text style={styles.chatOptionText}>New Chat</Text>
+             </TouchableOpacity>
             
             {currentConversation && (
               <>
@@ -1175,167 +1211,179 @@ function ChatBot(): React.ReactElement {
           </View>
         )}
 
-        <KeyboardAvoidingView
-          style={styles.keyboardAvoidingView}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
-          enabled={true}
+        {/* Messages ScrollView - Independent of KeyboardAvoidingView for better positioning */}
+        <ScrollView 
+          ref={scrollViewRef}
+          style={styles.messagesContainer}
+          // Dynamic padding based on keyboard visibility to ensure content isn't hidden behind input container
+          contentContainerStyle={[
+            styles.messagesContentContainer,
+            { 
+              paddingBottom: isKeyboardVisible ? 
+                200 + insets.bottom : // More padding when keyboard is showing to ensure content is visible
+                180 + insets.bottom   // Padding when keyboard is hidden to ensure messages aren't behind input
+            },
+          ]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          removeClippedSubviews={true}
+          onTouchStart={() => {
+            setShowChatOptions(false);
+            setAttachmentMenuVisible(false);
+          }}
+          onScrollBeginDrag={() => {
+            setAttachmentMenuVisible(false);
+          }}
         >
-          {/* Messages */}
-          <ScrollView 
-            ref={scrollViewRef}
-            style={styles.messagesContainer}
-            contentContainerStyle={styles.messagesContentContainer}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="interactive"
-            removeClippedSubviews={true}
-            onTouchStart={() => {
-              setShowChatOptions(false);
-              setAttachmentMenuVisible(false);
-            }}
-            onScrollBeginDrag={() => {
-              setAttachmentMenuVisible(false);
-            }}
-          >
-            {messages.length === 0 && (
-              <View style={styles.welcomeContainer}>
-                <Text style={styles.welcomeTitle}>Welcome to Rina!</Text>
-                <Text style={styles.welcomeSubtitle}>
-                  Your AI tutoring assistant
-                </Text>
-                <View style={styles.suggestedPromptsGrid}>
-                  {suggestedPrompts.map((prompt) => (
-                    <TouchableOpacity
-                      key={prompt.id}
-                      style={styles.promptCard}
-                      onPress={() => handlePromptSelection(prompt.text)}
-                      accessibilityLabel={prompt.text}
-                      accessibilityHint={prompt.description}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.promptIcon}>{prompt.icon}</Text>
-                      <Text style={styles.promptTitle}>{prompt.text}</Text>
-                      <Text style={styles.promptDescription}>{prompt.description}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+          {messages.length === 0 && (
+            <View style={styles.welcomeContainer}>
+              <Text style={styles.welcomeTitle}>Welcome to Rina!</Text>
+              <Text style={styles.welcomeSubtitle}>
+                Your AI tutoring assistant
+              </Text>
+              <View style={styles.suggestedPromptsGrid}>
+                {suggestedPrompts.map((prompt) => (
+                  <TouchableOpacity
+                    key={prompt.id}
+                    style={styles.promptCard}
+                    onPress={() => handlePromptSelection(prompt.text)}
+                    accessibilityLabel={prompt.text}
+                    accessibilityHint={prompt.description}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.promptIcon}>{prompt.icon}</Text>
+                    <Text style={styles.promptTitle}>{prompt.text}</Text>
+                    <Text style={styles.promptDescription}>{prompt.description}</Text>
+                  </TouchableOpacity>
+                ))}
               </View>
-            )}
+            </View>
+          )}
 
-            {messages.map((msg, idx) => (
-              <View
-                key={idx}
-                style={[
-                  styles.messageBubble,
-                  msg.role === "user" ? styles.userMessage : styles.aiMessage,
-                ]}
-              >
-                {editingMessageIndex === idx ? (
-                  // Edit mode
-                  <View style={styles.editMessageContainer}>
-                    <TextInput
-                      style={styles.editMessageInput}
-                      value={editingContent}
-                      onChangeText={setEditingContent}
-                      multiline
-                      autoFocus
-                      placeholder="Edit your message..."
-                      placeholderTextColor="#94A3B8"
-                    />
-                    <View style={styles.editMessageActions}>
+          {messages.map((msg, idx) => (
+            <View
+              key={idx}
+              style={[
+                styles.messageBubble,
+                msg.role === "user" ? styles.userMessage : styles.aiMessage,
+              ]}
+            >
+              {editingMessageIndex === idx ? (
+                // Edit mode
+                <View style={styles.editMessageContainer}>
+                  <TextInput
+                    style={styles.editMessageInput}
+                    value={editingContent}
+                    onChangeText={setEditingContent}
+                    multiline
+                    autoFocus
+                    placeholder="Edit your message..."
+                    placeholderTextColor="#94A3B8"
+                  />
+                  <View style={styles.editMessageActions}>
+                    <TouchableOpacity
+                      style={styles.editCancelButton}
+                      onPress={cancelEditMessage}
+                    >
+                      <Ionicons name="close" size={16} color="#DC2626" />
+                      <Text style={styles.editCancelText}>Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.editSaveButton}
+                      onPress={() => saveEditMessage(idx)}
+                      disabled={!editingContent.trim()}
+                    >
+                      <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                      <Text style={styles.editSaveText}>Save</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                // Normal message display
+                <View style={styles.messageContent}>
+                  {msg.role === "user" ? (
+                    <Text
+                      style={[styles.userMessageText, { flex: 1 }]}
+                    >
+                      {msg.content}
+                    </Text>
+                  ) : (
+                    <Markdown
+                      style={{
+                        body: styles.aiMessageText,
+                        heading1: styles.markdownH1,
+                        heading2: styles.markdownH2,
+                        heading3: styles.markdownH3,
+                        strong: styles.markdownStrong,
+                        em: styles.markdownEm,
+                        bullet_list: styles.markdownList,
+                        ordered_list: styles.markdownList,
+                        list_item: styles.markdownListItem,
+                        table: styles.markdownTable,
+                        tr: styles.markdownTableRow,
+                        td: styles.markdownTableCell,
+                        th: styles.markdownTableHeader,
+                        code_inline: styles.markdownCodeInline,
+                        code_block: styles.markdownCodeBlock,
+                      }}
+                    >
+                      {msg.content}
+                    </Markdown>
+                  )}
+                  {msg.role === "user" && (
+                    <View style={styles.messageActions}>
                       <TouchableOpacity
-                        style={styles.editCancelButton}
-                        onPress={cancelEditMessage}
+                        style={styles.editButton}
+                        onPress={() => startEditMessage(idx, msg.content)}
+                        accessibilityLabel="Edit message"
+                        accessibilityHint="Edit this user message"
                       >
-                        <Ionicons name="close" size={16} color="#DC2626" />
-                        <Text style={styles.editCancelText}>Cancel</Text>
+                        <Ionicons name="pencil" size={16} color="rgba(255, 255, 255, 0.8)" />
                       </TouchableOpacity>
                       <TouchableOpacity
-                        style={styles.editSaveButton}
-                        onPress={() => saveEditMessage(idx)}
-                        disabled={!editingContent.trim()}
+                        style={styles.deleteButton}
+                        onPress={() => confirmDeleteMessage(msg.id || '', idx)}
+                        accessibilityLabel="Delete message"
+                        accessibilityHint="Delete this user message"
                       >
-                        <Ionicons name="checkmark" size={16} color="#FFFFFF" />
-                        <Text style={styles.editSaveText}>Save</Text>
+                        <Ionicons name="close-circle" size={16} color="rgba(255, 255, 255, 0.8)" />
                       </TouchableOpacity>
                     </View>
-                  </View>
-                ) : (
-                  // Normal message display
-                  <View style={styles.messageContent}>
-                    {msg.role === "user" ? (
-                      <Text
-                        style={[styles.userMessageText, { flex: 1 }]}
-                      >
-                        {msg.content}
-                      </Text>
-                    ) : (
-                      <Markdown
-                        style={{
-                          body: styles.aiMessageText,
-                          heading1: styles.markdownH1,
-                          heading2: styles.markdownH2,
-                          heading3: styles.markdownH3,
-                          strong: styles.markdownStrong,
-                          em: styles.markdownEm,
-                          bullet_list: styles.markdownList,
-                          ordered_list: styles.markdownList,
-                          list_item: styles.markdownListItem,
-                          table: styles.markdownTable,
-                          tr: styles.markdownTableRow,
-                          td: styles.markdownTableCell,
-                          th: styles.markdownTableHeader,
-                          code_inline: styles.markdownCodeInline,
-                          code_block: styles.markdownCodeBlock,
-                        }}
-                      >
-                        {msg.content}
-                      </Markdown>
-                    )}
-                    {msg.role === "user" && (
-                      <View style={styles.messageActions}>
-                        <TouchableOpacity
-                          style={styles.editButton}
-                          onPress={() => startEditMessage(idx, msg.content)}
-                          accessibilityLabel="Edit message"
-                          accessibilityHint="Edit this user message"
-                        >
-                          <Ionicons name="pencil" size={16} color="rgba(255, 255, 255, 0.8)" />
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={styles.deleteButton}
-                          onPress={() => confirmDeleteMessage(msg.id || '', idx)}
-                          accessibilityLabel="Delete message"
-                          accessibilityHint="Delete this user message"
-                        >
-                          <Ionicons name="close-circle" size={16} color="rgba(255, 255, 255, 0.8)" />
-                        </TouchableOpacity>
-                      </View>
-                    )}
-                  </View>
-                )}
-              </View>
-            ))}
+                  )}
+                </View>
+              )}
+            </View>
+          ))}
 
-            {loading && (
-              <View style={styles.loadingContainer}>
-                <View style={styles.loadingBubble}>
-                  <View style={styles.loadingContent}>
-                    <ActivityIndicator color="#6B46C1" size="small" />
-                    <Text style={styles.loadingText}>Rina is thinking...</Text>
-                  </View>
-                  <View style={styles.loadingDots}>
-                    <View style={[styles.loadingDot, styles.loadingDot1]} />
-                    <View style={[styles.loadingDot, styles.loadingDot2]} />
-                    <View style={[styles.loadingDot, styles.loadingDot3]} />
-                  </View>
+          {loading && (
+            <View style={styles.loadingContainer}>
+              <View style={styles.loadingBubble}>
+                <View style={styles.loadingContent}>
+                  <ActivityIndicator color="#6B46C1" size="small" />
+                  <Text style={styles.loadingText}>Rina is thinking...</Text>
+                </View>
+                <View style={styles.loadingDots}>
+                  <View style={[styles.loadingDot, styles.loadingDot1]} />
+                  <View style={[styles.loadingDot, styles.loadingDot2]} />
+                  <View style={[styles.loadingDot, styles.loadingDot3]} />
                 </View>
               </View>
-            )}
-          </ScrollView>
+            </View>
+          )}
+        </ScrollView>
 
-          <View style={styles.inputContainer}>
+        {/* Input Container - Always positioned at bottom */}
+        <KeyboardAvoidingView
+          style={[{ width: '100%', position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 100 }]}
+          behavior={Platform.OS === "ios" ? "padding" : "padding"}
+          keyboardVerticalOffset={Platform.OS === "ios" ? insets.top + 10 : 0}
+          enabled={true}
+        >
+          <View style={[
+            styles.inputContainer, 
+            { paddingBottom: insets.bottom }
+          ]}>
             {errorMessage && (
               <View style={styles.errorBanner}>
                 <Text style={styles.errorText}>{errorMessage}</Text>
@@ -1481,7 +1529,7 @@ function ChatBot(): React.ReactElement {
 
                   {/* Attachment Menu */}
                   {attachmentMenuVisible && (
-                    <View style={styles.attachmentMenu}>
+                    <View style={[styles.attachmentMenu, { bottom: 50 + insets.bottom, right: 8 }]}>
                       <TouchableOpacity
                         style={styles.attachmentOption}
                         onPress={() => handleFileImport('file')}
@@ -1717,13 +1765,17 @@ const styles = StyleSheet.create({
   rootContainer: {
     flex: 1,
     backgroundColor: "#F8FAFC",
+    position: 'relative',
+    overflow: 'hidden', // Ensure no elements bleed outside the container
   },
   container: {
     flex: 1,
     backgroundColor: "#F8FAFC",
   },
   keyboardAvoidingView: {
-    flex: 1,
+    position: 'relative',
+    width: '100%',
+    height: '100%',
   },
   header: {
     flexDirection: "row",
@@ -1784,13 +1836,14 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 16,
     paddingTop: 16,
+    paddingBottom: 120, // Ensure scrollview doesn't get hidden by the input container
   },
   messageBubble: {
     padding: 16,
     marginVertical: 8,
-    marginHorizontal: 20,
+    marginHorizontal: 12,
     borderRadius: 20,
-    maxWidth: "85%",
+    maxWidth: "75%",
     shadowColor: "#1E293B",
     shadowOffset: {
       width: 0,
@@ -2086,10 +2139,10 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   inputContainer: {
+    width: "100%",
     backgroundColor: "#FFFFFF",
     borderTopWidth: 1,
     borderTopColor: "#E2E8F0",
-    paddingBottom: 8,
     shadowColor: "#1E293B",
     shadowOffset: {
       width: 0,
@@ -2098,6 +2151,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 8,
     elevation: 4,
+    zIndex: 100,
   },
   inputAreaContainer: {
     backgroundColor: "transparent",
@@ -2162,12 +2216,9 @@ const styles = StyleSheet.create({
     minWidth: 160,
     maxWidth: 200,
     shadowColor: "#1E293B",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    shadowOffset: { width: 0, height: 2 },
   },
-  pendingFileIconContainer: {
+  pendingFileIconContainer:{
     alignItems: "center",
     marginRight: 8,
   },
@@ -2238,7 +2289,7 @@ const styles = StyleSheet.create({
   attachmentMenu: {
     position: "absolute",
     bottom: 50,
-    right: 0,
+    right: 8,
     backgroundColor: "#FFFFFF",
     borderRadius: 12,
     shadowColor: "#1E293B",
@@ -2247,7 +2298,7 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 8,
     zIndex: 1000,
-    minWidth: 140,
+    minWidth: 160,
     borderWidth: 1,
     borderColor: "#E2E8F0",
     paddingVertical: 4,
@@ -2382,14 +2433,19 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   safeAreaBottom: {
-    backgroundColor: "#ffffffff",
+    backgroundColor: "#FFFFFF",
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
   },
 
   // Chat Options Dropdown Styles
   chatOptionsContainer: {
     position: "absolute",
     top: 100,
-    right: 16,
+    right: 12,
     backgroundColor: "#FFFFFF",
     borderRadius: 12,
     shadowColor: "#1E293B",
@@ -2398,7 +2454,7 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 8,
     zIndex: 1000,
-    minWidth: 200,
+    minWidth: 180,
     borderWidth: 1,
     borderColor: "#E2E8F0",
     paddingVertical: 8,
