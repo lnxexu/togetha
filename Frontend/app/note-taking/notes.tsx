@@ -2781,10 +2781,11 @@ const handleCreateFolder = async () => {
   const renderDrawingSetupModal = () => (
     <Modal
       visible={showDrawingSetupModal}
-      transparent={true}
+      transparent
       animationType="slide"
-      onRequestClose={closeDrawingSetupModal}
+      presentationStyle={Platform.OS === 'ios' ? 'pageSheet' : undefined}
       statusBarTranslucent
+      onRequestClose={closeDrawingSetupModal}
     >
       <TouchableWithoutFeedback onPress={closeDrawingSetupModal}>
         <View style={styles.modalContainer}>

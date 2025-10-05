@@ -46,8 +46,9 @@ export const TemplateSelector: React.FC<TemplateSelectorProps> = ({
                 currentTemplate === templateType && styles.selectedIcon
               ]}>
                 <TemplatePreview 
-                  template={templateType} 
-                  size={32}
+                  template={templateType}
+                  width={48}
+                  height={48}
                 />
               </View>
               <Text style={[

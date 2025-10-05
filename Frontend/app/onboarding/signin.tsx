@@ -2,6 +2,7 @@ import { MaterialIcons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import React, { useState } from "react";
+import { Modal } from "react-native";
 import {
   Image,
   StatusBar,
@@ -533,6 +534,21 @@ export default function LogIn() {
         }}
       />
     )}
+    <Modal
+      visible={showLoadingScreen}
+      transparent
+      animationType="slide"
+      presentationStyle={Platform.OS === 'ios' ? 'pageSheet' : undefined}
+      statusBarTranslucent
+      onRequestClose={() => {}}
+    >
+      <LoadingScreen 
+        message="Logging You In"
+        isVisible={showLoadingScreen}
+        showSuccessIcon={false}
+        onAnimationComplete={() => {}}
+      />
+    </Modal>
     </>
   );
 }

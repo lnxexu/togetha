@@ -31,7 +31,15 @@ import chatbotAPI, {
   ConversationFile,
   ChatResponse 
 } from "./services/chatbotAPIService";
-import { useChatHead } from "../contexts/ChatHeadContext";
+// Guarded import for ChatHeadContext (fallback if not available)
+let useChatHead: any = () => ({ setActiveConversation: () => {}, setHasActiveConversation: () => {}, disableChatHead: () => {}, enableChatHead: () => {}, resetUnreadCount: () => {} });
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const ctx = require('../contexts/ChatHeadContext');
+  if (ctx && typeof ctx.useChatHead === 'function') {
+    useChatHead = ctx.useChatHead;
+  }
+} catch {}
 
 type Role = "user" | "assistant";
 
@@ -1239,12 +1247,13 @@ function ChatBot(): React.ReactElement {
           contentContainerStyle={[
             styles.messagesContentContainer,
             { 
-              paddingBottom: isKeyboardVisible ? 
-                (keyboardHeight > 0 ? keyboardHeight + 90 : 180) + insets.bottom : // Adjust padding based on keyboard height
-                130 + insets.bottom   // Padding when keyboard is hidden to ensure messages aren't behind input
-              // Ensure space equal to the actual input container height
-              // This prevents device-specific gaps when the keyboard shows/hides
-              paddingBottom: inputContainerHeight + insets.bottom + 8
+              // Ensure enough bottom padding for both keyboard presence and the actual input container height
+              paddingBottom: Math.max(
+                isKeyboardVisible 
+                  ? (keyboardHeight > 0 ? keyboardHeight + 90 : 180) + insets.bottom 
+                  : 130 + insets.bottom,
+                inputContainerHeight + insets.bottom + 8
+              )
             },
           ]}
           showsVerticalScrollIndicator={false}
@@ -1640,6 +1649,9 @@ function ChatBot(): React.ReactElement {
             </TouchableOpacity>
           </View>
         </Animated.View>
+        {/* Close wrappers for input area */}
+        </KeyboardAvoidingView>
+      </View>
 
       {/* OCR Modal */}
       <Modal
@@ -2356,9 +2368,8 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 6,
     alignItems: "flex-end",
-    gap: 10,
-    borderRadius: 30,
-    gap: 8
+    gap: 8,
+    borderRadius: 30
   },
   inputWrapper: {
     flex: 1,

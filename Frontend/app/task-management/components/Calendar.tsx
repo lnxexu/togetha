@@ -175,8 +175,10 @@ const GoogleCalendar: React.FC<GoogleCalendarProps> = ({
   return (
     <Modal
       visible={visible}
-      transparent={true}
+      transparent
       animationType="slide"
+      presentationStyle={Platform.OS === 'ios' ? 'pageSheet' : undefined}
+      statusBarTranslucent
       onRequestClose={onClose}
     >
       <View style={styles.modalOverlay}>

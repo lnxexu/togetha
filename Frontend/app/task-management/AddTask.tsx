@@ -14,12 +14,9 @@ import {
   KeyboardAvoidingView,
   Keyboard,
 } from "react-native";
-import {
-  SafeAreaView,
-  useSafeAreaInsets,
-} from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from "@expo/vector-icons";
-import DateTimePicker from "@react-native-community/datetimepicker";
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
@@ -89,14 +86,14 @@ const AddTask: React.FC = () => {
   const [categories, setCategories] = useState<TaskCategory[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [datePickerDate, setDatePickerDate] = useState(new Date());
-  const [screenData, setScreenData] = useState(Dimensions.get("window"));
+  const [screenData, setScreenData] = useState(Dimensions.get('window'));
 
   // Safe area insets for padding to avoid overlaps on devices with notches/home indicators
   const insets = useSafeAreaInsets();
 
   // Check if device is in landscape mode
   const isLandscape = screenData.width > screenData.height;
-
+  
   // Calculate adaptive dropdown height based on screen size
   const getDropdownMaxHeight = () => {
     if (isLandscape) {
@@ -132,7 +129,7 @@ const AddTask: React.FC = () => {
       setScreenData(result.window);
     };
 
-    const subscription = Dimensions.addEventListener("change", onChange);
+    const subscription = Dimensions.addEventListener('change', onChange);
     return () => subscription?.remove();
   }, []);
 
@@ -143,10 +140,10 @@ const AddTask: React.FC = () => {
         const availableCategories = await categoryService.getCategories();
         setCategories(availableCategories);
       } catch (error) {
-        console.error("Error loading categories:", error);
+        console.error('Error loading categories:', error);
       }
     };
-
+    
     loadCategories();
   }, []);
 
@@ -181,12 +178,12 @@ const AddTask: React.FC = () => {
       dateWithTime.setHours(selectedTime.getHours());
       dateWithTime.setMinutes(selectedTime.getMinutes());
       handleInputChange("due_datetime", dateWithTime);
-
+      
       // Update due_time for display purposes
-      const timeString = selectedTime.toLocaleTimeString("en-US", {
-        hour: "numeric",
-        minute: "2-digit",
-        hour12: true,
+      const timeString = selectedTime.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
       });
       handleInputChange("due_time", timeString);
     }
@@ -250,7 +247,7 @@ const AddTask: React.FC = () => {
       navigation.goBack();
     } catch (error) {
       console.error("Error creating task:", error);
-
+      
       // Provide more specific error messages
       if (!taskService.isOnline()) {
         showErrorToast("Failed to save task offline. Please try again.");
@@ -288,496 +285,671 @@ const AddTask: React.FC = () => {
   );
 
   return (
-    <SafeAreaView
-      style={styles.rootContainer}
-      edges={["top", "left", "right", "bottom"]}
-    >
+    <SafeAreaView style={styles.rootContainer} edges={["top", "left", "right", "bottom"]}>
       <View style={styles.container}>
-        {/* Container for both header and content */}
-        <View style={styles.container}>
-          {/* Header positioned behind content */}
-          <LinearGradient
-            colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.header}
+      {/* Container for both header and content */}
+      <View style={styles.container}>
+        {/* Header positioned behind content */}
+        <LinearGradient
+          colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.header}
+        >
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
           >
-            <TouchableOpacity
-              style={styles.backButton}
-              onPress={() => navigation.goBack()}
-            >
-              <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
-            </TouchableOpacity>
-            <Text style={styles.title}>Create Task</Text>
-            <View style={styles.placeholder} />
-          </LinearGradient>
+            <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+          <Text style={styles.title}>Create Task</Text>
+          <View style={styles.placeholder} />
+        </LinearGradient>
 
-          {/* Main Content Container positioned above header */}
-          <View style={styles.mainContentContainer}>
-            <KeyboardAvoidingView
-              style={{ flex: 1 }}
-              behavior={Platform.OS === "ios" ? "padding" : "height"}
-              keyboardVerticalOffset={Platform.OS === "ios" ? 120 : 80}
+        {/* Main Content Container positioned above header */}
+  <View style={styles.mainContentContainer}>
+          <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 120 : 80}
+          >
+          <TouchableOpacity
+            activeOpacity={1}
+            style={{ flex: 1 }}
+            onPress={() => {
+              // Dismiss keyboard and any open pickers when tapping background
+              Keyboard.dismiss();
+              if (showPriorityPicker) {
+                setShowPriorityPicker(false);
+              }
+              if (showCategoryPicker) {
+                setShowCategoryPicker(false);
+              }
+              if (showDatePicker) {
+                setShowDatePicker(false);
+              }
+              if (showTimePicker) {
+                setShowTimePicker(false);
+              }
+            }}
+          >
+            <ScrollView
+              style={styles.content}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
             >
-              <TouchableOpacity
-                activeOpacity={1}
-                style={{ flex: 1 }}
-                onPress={() => {
-                  // Dismiss keyboard and any open pickers when tapping background
-                  Keyboard.dismiss();
-                  if (showPriorityPicker) {
-                    setShowPriorityPicker(false);
-                  }
-                  if (showCategoryPicker) {
-                    setShowCategoryPicker(false);
-                  }
-                  if (showDatePicker) {
-                    setShowDatePicker(false);
-                  }
-                  if (showTimePicker) {
-                    setShowTimePicker(false);
-                  }
-                }}
-              >
-                <ScrollView
-                  style={styles.content}
-                  showsVerticalScrollIndicator={false}
-                  keyboardShouldPersistTaps="handled"
-                >
-                  {/* Task Title */}
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.label}>Task Name</Text>
-                    <TextInput
-                      style={styles.textInput}
-                      placeholder="Enter task name..."
-                      value={formData.title}
-                      placeholderTextColor={"#7f8c8d"}
-                      onChangeText={(text) => handleInputChange("title", text)}
-                      maxLength={100}
+              {/* Task Title */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Task Name</Text>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Enter task name..."
+                  value={formData.title}
+                  placeholderTextColor={"#7f8c8d"}
+                  onChangeText={(text) => handleInputChange("title", text)}
+                  maxLength={100}
+                />
+              </View>
+
+              {/* Date and Time */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Due Date & Time (Optional)</Text>
+                <View style={styles.dateTimeRow}>
+                  <TouchableOpacity
+                    style={styles.dateTimeButton}
+                    onPress={() => {
+                      setShowPriorityPicker(false);
+                      setShowTimePicker(false);
+                      setShowDatePicker(!showDatePicker);
+                    }}
+                  >
+                    <Text style={styles.dateTimeText}>
+                      {formData.due_datetime
+                        ? formData.due_datetime.toLocaleDateString()
+                        : "Select Date"}
+                    </Text>
+                    <MaterialIcons
+                      name="calendar-today"
+                      size={20}
+                      color="#6c757d"
                     />
-                  </View>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.dateTimeButton}
+                    onPress={() => {
+                      setShowPriorityPicker(false);
+                      setShowDatePicker(false);
+                      setShowTimePicker(!showTimePicker);
+                    }}
+                    disabled={!formData.due_datetime}
+                  >
+                    <Text
+                      style={[
+                        styles.dateTimeText,
+                        !formData.due_datetime && styles.disabledText,
+                      ]}
+                    >
+                      {formData.due_time
+                        ? (() => {
+                            // Format to HH:MM AM/PM
+                            const match =
+                              formData.due_time.match(/(\d+):(\d+) (AM|PM)/);
+                            if (match) {
+                              const hour = match[1].padStart(2, "0");
+                              const minute = match[2].padStart(2, "0");
+                              const period = match[3];
+                              return `${hour}:${minute} ${period}`;
+                            }
+                            return formData.due_time;
+                          })()
+                        : "Select Time"}
+                    </Text>
+                    <MaterialIcons
+                      name="access-time"
+                      size={20}
+                      color={formData.due_datetime ? "#6c757d" : "#bdc3c7"}
+                    />
+                  </TouchableOpacity>
+                </View>
 
-                  {/* Date and Time */}
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.label}>Due Date & Time (Optional)</Text>
-                    <View style={styles.dateTimeRow}>
-                      <TouchableOpacity
-                        style={styles.dateTimeButton}
-                        onPress={() => {
-                          setShowPriorityPicker(false);
-                          setShowTimePicker(false);
-                          setShowDatePicker(!showDatePicker);
-                        }}
-                      >
-                        <Text style={styles.dateTimeText}>
-                          {formData.due_datetime
-                            ? formData.due_datetime.toLocaleDateString()
-                            : "Select Date"}
-                        </Text>
-                        <MaterialIcons
-                          name="calendar-today"
-                          size={20}
-                          color="#6c757d"
-                        />
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.dateTimeButton}
-                        onPress={() => {
-                          setShowPriorityPicker(false);
-                          setShowDatePicker(false);
-                          setShowTimePicker(!showTimePicker);
-                        }}
-                        disabled={!formData.due_datetime}
-                      >
-                        <Text
-                          style={[
-                            styles.dateTimeText,
-                            !formData.due_datetime && styles.disabledText,
-                          ]}
-                        >
-                          {formData.due_time
-                            ? (() => {
-                                // Format to HH:MM AM/PM
-                                const match =
-                                  formData.due_time.match(
-                                    /(\d+):(\d+) (AM|PM)/
-                                  );
-                                if (match) {
-                                  const hour = match[1].padStart(2, "0");
-                                  const minute = match[2].padStart(2, "0");
-                                  const period = match[3];
-                                  return `${hour}:${minute} ${period}`;
-                                }
-                                return formData.due_time;
-                              })()
-                            : "Select Time"}
-                        </Text>
-                        <MaterialIcons
-                          name="access-time"
-                          size={20}
-                          color={formData.due_datetime ? "#6c757d" : "#bdc3c7"}
-                        />
-                      </TouchableOpacity>
-                    </View>
+                {/* Date Picker */}
+                {showDatePicker && (
+                  <DateTimePicker
+                    value={datePickerDate}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={handleDateChange}
+                    minimumDate={new Date()}
+                  />
+                )}
 
-                    {/* Date Picker */}
-                    {showDatePicker && (
-                      <DateTimePicker
-                        value={datePickerDate}
-                        mode="date"
-                        display={Platform.OS === "ios" ? "spinner" : "default"}
-                        onChange={handleDateChange}
-                        minimumDate={new Date()}
-                      />
-                    )}
+                {/* Time Picker */}
+                {showTimePicker && formData.due_datetime && (
+                  <DateTimePicker
+                    value={formData.due_datetime}
+                    mode="time"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={handleTimeChange}
+                  />
+                )}
 
-                    {/* Time Picker */}
-                    {showTimePicker && formData.due_datetime && (
-                      <DateTimePicker
-                        value={formData.due_datetime}
-                        mode="time"
-                        display={Platform.OS === "ios" ? "spinner" : "default"}
-                        onChange={handleTimeChange}
-                      />
-                    )}
-
-                    {/* Clock Time Picker */}
-                    {showTimePicker && formData.due_datetime && (
-                      <View
-                        style={[
-                          styles.dropdownOptions,
-                          styles.clockDropdown,
-                          {
-                            maxHeight: getClockMaxHeight(),
-                            ...(shouldDropdownAppearAbove() && {
-                              bottom: "100%",
-                              top: undefined,
-                              marginBottom: 8,
-                              marginTop: 0,
-                            }),
-                          },
-                        ]}
-                      >
-                        <ScrollView
-                          style={{ flex: 1 }}
-                          showsVerticalScrollIndicator={false}
-                          nestedScrollEnabled={true}
-                        >
-                          <TouchableOpacity
-                            style={[
-                              styles.clockDoneButton,
-                              isLandscape && styles.clockDoneButtonLandscape,
-                            ]}
-                            onPress={() => setShowTimePicker(false)}
-                          >
-                            <Text
+                {/* Clock Time Picker */}
+                {showTimePicker && formData.due_datetime && (
+                  <View style={[
+                    styles.dropdownOptions, 
+                    styles.clockDropdown,
+                    { 
+                      maxHeight: getClockMaxHeight(),
+                      ...(shouldDropdownAppearAbove() && {
+                        bottom: "100%",
+                        top: undefined,
+                        marginBottom: 8,
+                        marginTop: 0,
+                      })
+                    }
+                  ]}>
+                    <ScrollView 
+                      style={{ flex: 1 }}
+                      showsVerticalScrollIndicator={false}
+                      nestedScrollEnabled={true}
+                    >
+                      <View style={[
+                        styles.clockContainer,
+                        isLandscape && styles.clockContainerLandscape
+                      ]}>
+                        <Text style={[
+                          styles.clockTitle,
+                          isLandscape && styles.clockTitleLandscape
+                        ]}>Select Time</Text>
+                        <View style={styles.timeSelectorsRow}>
+                          {/* Hour Selector */}
+                          <View style={styles.timeSelector}>
+                            <Text style={[
+                              styles.timeSelectorLabel,
+                              isLandscape && styles.timeSelectorLabelLandscape
+                            ]}>Hour</Text>
+                            <ScrollView
                               style={[
-                                styles.clockDoneText,
-                                isLandscape && styles.clockDoneTextLandscape,
+                                styles.timeScrollView,
+                                isLandscape && styles.timeScrollViewLandscape
                               ]}
+                              showsVerticalScrollIndicator={false}
+                              nestedScrollEnabled={true}
+                              scrollEnabled={true}
+                              bounces={true}
+                              alwaysBounceVertical={true}
                             >
-                              Done
-                            </Text>
-                          </TouchableOpacity>
-                        </ScrollView>
-                      </View>
-                    )}
-                  </View>
+                              {Array.from({ length: 12 }, (_, i) => i + 1).map(
+                                (hour) => {
+                                  const currentTime =
+                                    formData.due_time || "12:00 AM";
+                                  const match =
+                                    currentTime.match(/(\d+):(\d+) (AM|PM)/);
+                                  let currentHour = match
+                                    ? parseInt(match[1])
+                                    : 12;
+                                  // If hour is 0, treat as 12
+                                  if (currentHour === 0) currentHour = 12;
+                                  const isSelected = currentHour === hour;
+                                  const minute = match ? match[2] : "00";
+                                  const period = match ? match[3] : "AM";
+                                  return (
+                                    <TouchableOpacity
+                                      key={hour}
+                                      style={[
+                                        styles.timeOption,
+                                        isLandscape && styles.timeOptionLandscape,
+                                        isSelected && {
+                                          backgroundColor: "#f0e6ff",
+                                        },
+                                      ]}
+                                      onPress={() => {
+                                        const newTime = `${hour
+                                          .toString()
+                                          .padStart(2, "0")}:${minute} ${period}`;
+                                        handleInputChange("due_time", newTime);
+                                      }}
+                                    >
+                                      <Text
+                                        style={[
+                                          styles.timeOptionText,
+                                          isLandscape && styles.timeOptionTextLandscape,
+                                          isSelected && {
+                                            color: "#AD00FF",
+                                            fontWeight: "bold",
+                                          },
+                                        ]}
+                                      >
+                                        {hour.toString().padStart(2, "0")}
+                                      </Text>
+                                    </TouchableOpacity>
+                                  );
+                                }
+                              )}
+                            </ScrollView>
+                          </View>
 
-                  {/* Priority and Subject Row */}
-                  <View style={styles.rowContainer}>
-                    {/* Priority (Eisenhower Matrix Quadrant) */}
-                    <View style={styles.halfInputGroup}>
-                      <Text style={styles.label}>Priority</Text>
-                      <TouchableOpacity
-                        style={styles.dropdownButton}
-                        onPress={() => {
-                          setShowDatePicker(false);
-                          setShowTimePicker(false);
-                          setShowPriorityPicker(!showPriorityPicker);
-                        }}
-                      >
-                        <Text style={styles.dropdownText}>
-                          {selectedPriority?.label || "Select Priority"}
-                        </Text>
-                        <MaterialIcons
-                          name={
-                            showPriorityPicker
-                              ? "keyboard-arrow-up"
-                              : "keyboard-arrow-down"
-                          }
-                          size={20}
-                          color="#6c757d"
-                        />
-                      </TouchableOpacity>
+                          {/* Minute Selector */}
+                          <View style={styles.timeSelector}>
+                            <Text style={[
+                              styles.timeSelectorLabel,
+                              isLandscape && styles.timeSelectorLabelLandscape
+                            ]}>Min</Text>
+                            <ScrollView
+                              style={[
+                                styles.timeScrollView,
+                                isLandscape && styles.timeScrollViewLandscape
+                              ]}
+                              showsVerticalScrollIndicator={false}
+                              nestedScrollEnabled={true}
+                              scrollEnabled={true}
+                              bounces={true}
+                              alwaysBounceVertical={true}
+                            >
+                              {Array.from({ length: 60 }, (_, i) => i).map(
+                                (minute) => {
+                                  const minuteStr = minute
+                                    .toString()
+                                    .padStart(2, "0");
+                                  const currentTime =
+                                    formData.due_time || "12:00 AM";
+                                  const match =
+                                    currentTime.match(/(\d+):(\d+) (AM|PM)/);
+                                  const currentMinute = match ? match[2] : "00";
+                                  const isSelected = currentMinute === minuteStr;
+                                  return (
+                                    <TouchableOpacity
+                                      key={minuteStr}
+                                      style={[
+                                        styles.timeOption,
+                                        isLandscape && styles.timeOptionLandscape,
+                                        isSelected && {
+                                          backgroundColor: "#f0e6ff",
+                                        },
+                                      ]}
+                                      onPress={() => {
+                                        const hour = match ? match[1] : "12";
+                                        const period = match ? match[3] : "AM";
+                                        const newTime = `${hour}:${minuteStr} ${period}`;
+                                        handleInputChange("due_time", newTime);
+                                      }}
+                                    >
+                                      <Text
+                                        style={[
+                                          styles.timeOptionText,
+                                          isLandscape && styles.timeOptionTextLandscape,
+                                          isSelected && {
+                                            color: "#AD00FF",
+                                            fontWeight: "bold",
+                                          },
+                                        ]}
+                                      >
+                                        {minuteStr}
+                                      </Text>
+                                    </TouchableOpacity>
+                                  );
+                                }
+                              )}
+                            </ScrollView>
+                          </View>
 
-                      {/* Simple Dropdown Options */}
-                      {showPriorityPicker && (
-                        <View
-                          style={[
-                            styles.dropdownOptions,
-                            isLandscape && styles.dropdownOptionsLandscape,
-                            {
-                              maxHeight: getDropdownMaxHeight(),
-                              ...(shouldDropdownAppearAbove() && {
-                                bottom: "100%",
-                                top: undefined,
-                                marginBottom: 8,
-                                marginTop: 0,
-                              }),
-                            },
-                          ]}
-                        >
-                          <ScrollView
-                            style={{ flex: 1 }}
-                            showsVerticalScrollIndicator={false}
-                            nestedScrollEnabled={true}
-                          >
-                            {priorities.map((priority) => (
-                              <TouchableOpacity
-                                key={priority.value}
-                                style={[
-                                  styles.dropdownOption,
-                                  isLandscape && styles.dropdownOptionLandscape,
-                                  formData.priority === priority.value &&
-                                    styles.selectedDropdownOption,
-                                ]}
-                                onPress={() => {
-                                  handleInputChange("priority", priority.value);
-                                  setShowPriorityPicker(false);
-                                }}
-                              >
-                                <View style={styles.priorityOptionContent}>
-                                  <Text
+                          {/* AM/PM Selector */}
+                          <View style={styles.timeSelector}>
+                            <Text style={[
+                              styles.timeSelectorLabel,
+                              isLandscape && styles.timeSelectorLabelLandscape
+                            ]}>Period</Text>
+                            <ScrollView
+                              style={[
+                                styles.timeScrollView,
+                                isLandscape && styles.timeScrollViewLandscape
+                              ]}
+                              showsVerticalScrollIndicator={false}
+                              nestedScrollEnabled={true}
+                              scrollEnabled={true}
+                              bounces={true}
+                              alwaysBounceVertical={true}
+                            >
+                              {["AM", "PM"].map((period) => {
+                                const currentTime =
+                                  formData.due_time || "12:00 AM";
+                                const match =
+                                  currentTime.match(/(\d+):(\d+) (AM|PM)/);
+                                const currentPeriod = match ? match[3] : "AM";
+                                const hour = match ? match[1] : "12";
+                                const minute = match ? match[2] : "00";
+                                const isSelected = currentPeriod === period;
+                                return (
+                                  <TouchableOpacity
+                                    key={period}
                                     style={[
-                                      styles.priorityOptionLabel,
-                                      isLandscape &&
-                                        styles.priorityOptionLabelLandscape,
-                                      formData.priority === priority.value &&
-                                        styles.selectedOptionText,
+                                      styles.timeOption,
+                                      isLandscape && styles.timeOptionLandscape,
+                                      isSelected && {
+                                        backgroundColor: "#f0e6ff",
+                                      },
                                     ]}
+                                    onPress={() => {
+                                      let newHour = parseInt(hour);
+                                      // Convert hour to 12-hour format if needed
+                                      if (period === "AM" && newHour === 12)
+                                        newHour = 12;
+                                      if (period === "PM" && newHour !== 12)
+                                        newHour = newHour;
+                                      const newTime = `${newHour
+                                        .toString()
+                                        .padStart(2, "0")}:${minute} ${period}`;
+                                      handleInputChange("due_time", newTime);
+                                    }}
                                   >
-                                    {priority.label}
-                                  </Text>
-                                  {!isLandscape && (
                                     <Text
                                       style={[
-                                        styles.priorityOptionDescription,
-                                        formData.priority === priority.value &&
-                                          styles.selectedOptionDescription,
+                                        styles.timeOptionText,
+                                        isLandscape && styles.timeOptionTextLandscape,
+                                        isSelected && {
+                                          color: "#AD00FF",
+                                          fontWeight: "bold",
+                                        },
                                       ]}
                                     >
-                                      {priority.description}
+                                      {period}
                                     </Text>
-                                  )}
-                                </View>
-                                {formData.priority === priority.value && (
-                                  <MaterialIcons
-                                    name="check"
-                                    size={16}
-                                    color="#AD00FF"
-                                  />
-                                )}
-                              </TouchableOpacity>
-                            ))}
-                          </ScrollView>
+                                  </TouchableOpacity>
+                                );
+                              })}
+                            </ScrollView>
+                          </View>
                         </View>
-                      )}
-                    </View>
-
-                    {/* Category Dropdown */}
-                    <View style={styles.halfInputGroup}>
-                      <Text style={styles.label}>Category</Text>
-                      <TouchableOpacity
-                        style={styles.dropdownButton}
-                        onPress={() => {
-                          setShowDatePicker(false);
-                          setShowTimePicker(false);
-                          setShowPriorityPicker(false);
-                          setShowCategoryPicker(!showCategoryPicker);
-                        }}
-                      >
-                        <Text style={styles.dropdownText}>
-                          {formData.category
-                            ? categories.find(
-                                (cat) => cat.name === formData.category
-                              )?.name || formData.category
-                            : "Select Category"}
-                        </Text>
-                        <MaterialIcons
-                          name={
-                            showCategoryPicker
-                              ? "keyboard-arrow-up"
-                              : "keyboard-arrow-down"
-                          }
-                          size={20}
-                          color="#6c757d"
-                        />
-                      </TouchableOpacity>
-
-                      {/* Category Dropdown Options */}
-                      {showCategoryPicker && (
-                        <View
+                        <TouchableOpacity
                           style={[
-                            styles.dropdownOptions,
-                            isLandscape && styles.dropdownOptionsLandscape,
-                            {
-                              maxHeight: getDropdownMaxHeight(),
-                              ...(shouldDropdownAppearAbove() && {
-                                bottom: "100%",
-                                top: undefined,
-                                marginBottom: 8,
-                                marginTop: 0,
-                              }),
-                            },
+                            styles.clockDoneButton,
+                            isLandscape && styles.clockDoneButtonLandscape
                           ]}
+                          onPress={() => setShowTimePicker(false)}
                         >
-                          <ScrollView
-                            style={{ flex: 1 }}
-                            showsVerticalScrollIndicator={false}
-                            nestedScrollEnabled={true}
+                          <Text style={[
+                            styles.clockDoneText,
+                            isLandscape && styles.clockDoneTextLandscape
+                          ]}>Done</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </ScrollView>
+                  </View>
+                )}
+              </View>
+
+              {/* Priority and Subject Row */}
+              <View style={styles.rowContainer}>
+                {/* Priority (Eisenhower Matrix Quadrant) */}
+                <View style={styles.halfInputGroup}>
+                  <Text style={styles.label}>Priority</Text>
+                  <TouchableOpacity
+                    style={styles.dropdownButton}
+                    onPress={() => {
+                      setShowDatePicker(false);
+                      setShowTimePicker(false);
+                      setShowPriorityPicker(!showPriorityPicker);
+                    }}
+                  >
+                    <Text style={styles.dropdownText}>
+                      {selectedPriority?.label || "Select Priority"}
+                    </Text>
+                    <MaterialIcons
+                      name={
+                        showPriorityPicker
+                          ? "keyboard-arrow-up"
+                          : "keyboard-arrow-down"
+                      }
+                      size={20}
+                      color="#6c757d"
+                    />
+                  </TouchableOpacity>
+
+                  {/* Simple Dropdown Options */}
+                  {showPriorityPicker && (
+                    <View style={[
+                      styles.dropdownOptions,
+                      isLandscape && styles.dropdownOptionsLandscape,
+                      { 
+                        maxHeight: getDropdownMaxHeight(),
+                        ...(shouldDropdownAppearAbove() && {
+                          bottom: "100%",
+                          top: undefined,
+                          marginBottom: 8,
+                          marginTop: 0,
+                        })
+                      }
+                    ]}>
+                      <ScrollView 
+                        style={{ flex: 1 }}
+                        showsVerticalScrollIndicator={false}
+                        nestedScrollEnabled={true}
+                      >
+                        {priorities.map((priority) => (
+                          <TouchableOpacity
+                            key={priority.value}
+                            style={[
+                              styles.dropdownOption,
+                              isLandscape && styles.dropdownOptionLandscape,
+                              formData.priority === priority.value &&
+                                styles.selectedDropdownOption,
+                            ]}
+                            onPress={() => {
+                              handleInputChange("priority", priority.value);
+                              setShowPriorityPicker(false);
+                            }}
                           >
-                            {/* None/Clear option */}
-                            <TouchableOpacity
+                            <View style={styles.priorityOptionContent}>
+                              <Text
+                                style={[
+                                  styles.priorityOptionLabel,
+                                  isLandscape && styles.priorityOptionLabelLandscape,
+                                  formData.priority === priority.value &&
+                                    styles.selectedOptionText,
+                                ]}
+                              >
+                                {priority.label}
+                              </Text>
+                              {!isLandscape && (
+                                <Text
+                                  style={[
+                                    styles.priorityOptionDescription,
+                                    formData.priority === priority.value &&
+                                      styles.selectedOptionDescription,
+                                  ]}
+                                >
+                                  {priority.description}
+                                </Text>
+                              )}
+                            </View>
+                            {formData.priority === priority.value && (
+                              <MaterialIcons
+                                name="check"
+                                size={16}
+                                color="#AD00FF"
+                              />
+                            )}
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  )}
+                </View>
+
+                {/* Category Dropdown */}
+                <View style={styles.halfInputGroup}>
+                  <Text style={styles.label}>Category</Text>
+                  <TouchableOpacity
+                    style={styles.dropdownButton}
+                    onPress={() => {
+                      setShowDatePicker(false);
+                      setShowTimePicker(false);
+                      setShowPriorityPicker(false);
+                      setShowCategoryPicker(!showCategoryPicker);
+                    }}
+                  >
+                    <Text style={styles.dropdownText}>
+                      {formData.category 
+                        ? categories.find(cat => cat.name === formData.category)?.name || formData.category
+                        : "Select Category"
+                      }
+                    </Text>
+                    <MaterialIcons
+                      name={
+                        showCategoryPicker
+                          ? "keyboard-arrow-up"
+                          : "keyboard-arrow-down"
+                      }
+                      size={20}
+                      color="#6c757d"
+                    />
+                  </TouchableOpacity>
+
+                  {/* Category Dropdown Options */}
+                  {showCategoryPicker && (
+                    <View style={[
+                      styles.dropdownOptions,
+                      isLandscape && styles.dropdownOptionsLandscape,
+                      { 
+                        maxHeight: getDropdownMaxHeight(),
+                        ...(shouldDropdownAppearAbove() && {
+                          bottom: "100%",
+                          top: undefined,
+                          marginBottom: 8,
+                          marginTop: 0,
+                        })
+                      }
+                    ]}>
+                      <ScrollView 
+                        style={{ flex: 1 }}
+                        showsVerticalScrollIndicator={false}
+                        nestedScrollEnabled={true}
+                      >
+                        {/* None/Clear option */}
+                        <TouchableOpacity
+                          style={[
+                            styles.dropdownOption,
+                            isLandscape && styles.dropdownOptionLandscape,
+                            !formData.category && styles.selectedDropdownOption,
+                          ]}
+                          onPress={() => {
+                            handleInputChange("category", "");
+                            setShowCategoryPicker(false);
+                          }}
+                        >
+                          <View style={styles.categoryOptionContent}>
+                            <Text
                               style={[
-                                styles.dropdownOption,
-                                isLandscape && styles.dropdownOptionLandscape,
-                                !formData.category &&
-                                  styles.selectedDropdownOption,
+                                styles.categoryOptionLabel,
+                                isLandscape && styles.categoryOptionLabelLandscape,
+                                !formData.category && styles.selectedOptionText,
                               ]}
-                              onPress={() => {
-                                handleInputChange("category", "");
-                                setShowCategoryPicker(false);
-                              }}
                             >
-                              <View style={styles.categoryOptionContent}>
+                              No Category
+                            </Text>
+                          </View>
+                          {!formData.category && (
+                            <MaterialIcons
+                              name="check"
+                              size={16}
+                              color="#AD00FF"
+                            />
+                          )}
+                        </TouchableOpacity>
+                        
+                        {/* Category options */}
+                        {categories.map((category) => (
+                          <TouchableOpacity
+                            key={category.id}
+                            style={[
+                              styles.dropdownOption,
+                              isLandscape && styles.dropdownOptionLandscape,
+                              formData.category === category.name && styles.selectedDropdownOption,
+                            ]}
+                            onPress={() => {
+                              handleInputChange("category", category.name);
+                              setShowCategoryPicker(false);
+                            }}
+                          >
+                            <View style={styles.categoryOptionContent}>
+                              <View style={styles.categoryOptionHeader}>
+                                <View 
+                                  style={[
+                                    styles.categoryColorIndicator, 
+                                    { backgroundColor: category.color || '#6c757d' }
+                                  ]} 
+                                />
                                 <Text
                                   style={[
                                     styles.categoryOptionLabel,
-                                    isLandscape &&
-                                      styles.categoryOptionLabelLandscape,
-                                    !formData.category &&
-                                      styles.selectedOptionText,
+                                    isLandscape && styles.categoryOptionLabelLandscape,
+                                    formData.category === category.name && styles.selectedOptionText,
                                   ]}
                                 >
-                                  No Category
+                                  {category.name}
                                 </Text>
                               </View>
-                              {!formData.category && (
-                                <MaterialIcons
-                                  name="check"
-                                  size={16}
-                                  color="#AD00FF"
-                                />
-                              )}
-                            </TouchableOpacity>
-
-                            {/* Category options */}
-                            {categories.map((category) => (
-                              <TouchableOpacity
-                                key={category.id}
-                                style={[
-                                  styles.dropdownOption,
-                                  isLandscape && styles.dropdownOptionLandscape,
-                                  formData.category === category.name &&
-                                    styles.selectedDropdownOption,
-                                ]}
-                                onPress={() => {
-                                  handleInputChange("category", category.name);
-                                  setShowCategoryPicker(false);
-                                }}
-                              >
-                                <View style={styles.categoryOptionContent}>
-                                  <View style={styles.categoryOptionHeader}>
-                                    <View
-                                      style={[
-                                        styles.categoryColorIndicator,
-                                        {
-                                          backgroundColor:
-                                            category.color || "#6c757d",
-                                        },
-                                      ]}
-                                    />
-                                    <Text
-                                      style={[
-                                        styles.categoryOptionLabel,
-                                        isLandscape &&
-                                          styles.categoryOptionLabelLandscape,
-                                        formData.category === category.name &&
-                                          styles.selectedOptionText,
-                                      ]}
-                                    >
-                                      {category.name}
-                                    </Text>
-                                  </View>
-                                </View>
-                                {formData.category === category.name && (
-                                  <MaterialIcons
-                                    name="check"
-                                    size={16}
-                                    color="#AD00FF"
-                                  />
-                                )}
-                              </TouchableOpacity>
-                            ))}
-                          </ScrollView>
-                        </View>
-                      )}
+                            </View>
+                            {formData.category === category.name && (
+                              <MaterialIcons
+                                name="check"
+                                size={16}
+                                color="#AD00FF"
+                              />
+                            )}
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
                     </View>
-                  </View>
+                  )}
+                </View>
+              </View>
 
-                  {/* Description */}
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.label}>
-                      Description / Notes (Optional)
-                    </Text>
-                    <TextInput
-                      style={[styles.textInput, styles.textArea]}
-                      placeholder="Add any additional notes or details..."
-                      value={formData.description || ""}
-                      onChangeText={(text) =>
-                        handleInputChange("description", text)
-                      }
-                      multiline
-                      numberOfLines={4}
-                      maxLength={500}
-                      textAlignVertical="top"
-                    />
-                  </View>
+              {/* Description */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Description / Notes (Optional)</Text>
+                <TextInput
+                  style={[styles.textInput, styles.textArea]}
+                  placeholder="Add any additional notes or details..."
+                  value={formData.description || ""}
+                  onChangeText={(text) =>
+                    handleInputChange("description", text)
+                  }
+                  multiline
+                  numberOfLines={4}
+                  maxLength={500}
+                  textAlignVertical="top"
+                />
+              </View>
 
-                  {/* Action Buttons */}
-                  <View
-                    style={[
-                      styles.buttonContainer,
-                      { marginBottom: Math.max(insets.bottom + 12, 24) },
-                    ]}
-                  >
-                    <TouchableOpacity
-                      style={styles.resetButton}
-                      onPress={handleReset}
-                    >
-                      <MaterialIcons name="refresh" size={20} color="#e74c3c" />
-                      <Text style={styles.resetButtonText}>Reset</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[
-                        styles.saveButton,
-                        isLoading && styles.disabledButton,
-                      ]}
-                      onPress={handleSave}
-                      disabled={isLoading}
-                    >
-                      <MaterialIcons name="save" size={20} color="#fff" />
-                      <Text style={styles.saveButtonText}>
-                        {isLoading ? "Saving..." : "Save Task"}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                </ScrollView>
-              </TouchableOpacity>
-            </KeyboardAvoidingView>
-          </View>
+              {/* Action Buttons */}
+              <View style={[styles.buttonContainer, { marginBottom: Math.max(insets.bottom + 12, 24) }] }>
+                <TouchableOpacity
+                  style={styles.resetButton}
+                  onPress={handleReset}
+                >
+                  <MaterialIcons name="refresh" size={20} color="#e74c3c" />
+                  <Text style={styles.resetButtonText}>Reset</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.saveButton,
+                    isLoading && styles.disabledButton,
+                  ]}
+                  onPress={handleSave}
+                  disabled={isLoading}
+                >
+                  <MaterialIcons name="save" size={20} color="#fff" />
+                  <Text style={styles.saveButtonText}>
+                    {isLoading ? "Saving..." : "Save Task"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </TouchableOpacity>
+          </KeyboardAvoidingView>
         </View>
+      </View>
       </View>
     </SafeAreaView>
   );
@@ -833,7 +1005,7 @@ const styles = StyleSheet.create({
     fontSize: 26,
     fontFamily: "Lexend",
     color: "#FFFFFF",
-
+    
     letterSpacing: -0.5,
   },
   placeholder: {
