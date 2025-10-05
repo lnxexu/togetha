@@ -1,4 +1,5 @@
 import { NavigationContainer } from '@react-navigation/native';
+import { navigationRef } from './navigationRef';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import React from 'react';
 import Toast, { BaseToast, ErrorToast } from 'react-native-toast-message';
@@ -318,7 +319,7 @@ const toastConfig = {
 
 const AppNavigator: React.FC = () => {
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <Stack.Navigator 
         initialRouteName="Welcome"
         screenOptions={{ headerShown: false, animation: 'none' }}

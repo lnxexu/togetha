@@ -6,6 +6,7 @@ from .serializers import NoteSerializer, FolderSerializer, TagSerializer
 from server.decorators import api_auth_required
 from django.db.models import Q
 from logs.views import create_log
+from django.utils import timezone
 
 @api_auth_required(['GET', 'POST'])
 def folder_list(request):
@@ -29,7 +30,8 @@ def folder_list(request):
                 action='create',
                 entity_type='folder',
                 entity_id=serializer.data['id'],
-                message=f'Folder "{serializer.data["name"]}" created successfully.'
+                message=f'Folder "{serializer.data["name"]}" created successfully.',
+                request=request
             )
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -49,7 +51,8 @@ def folder_detail(request, pk):
             entity_type='folder',
             entity_id=pk,
             level='WARNING',
-            message=f'Failed attempt to access non-existent folder (ID: {pk}).'
+            message=f'Failed attempt to access non-existent folder (ID: {pk}).',
+            request=request
         )
         return Response({"error": "Folder not found"}, status=status.HTTP_404_NOT_FOUND)
     
@@ -69,7 +72,8 @@ def folder_detail(request, pk):
                 action='update',
                 entity_type='folder',
                 entity_id=folder.id,
-                message=f'Folder "{old_name}" updated to "{serializer.data["name"]}".'
+                message=f'Folder "{old_name}" updated to "{serializer.data["name"]}".',
+                request=request
             )
             
             return Response(serializer.data)
@@ -85,7 +89,8 @@ def folder_detail(request, pk):
             action='delete',
             entity_type='folder',
             entity_id=pk,
-            message=f'Folder "{folder_name}" was deleted.'
+            message=f'Folder "{folder_name}" was deleted.',
+            request=request
         )
         
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -154,7 +159,8 @@ def note_list(request):
                 action='create',
                 entity_type='note',
                 entity_id=serializer.data['id'],
-                message=f'Note "{serializer.data["title"]}" created successfully.'
+                message=f'Note "{serializer.data["title"]}" created successfully.',
+                request=request
             )
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -175,11 +181,15 @@ def note_detail(request, pk):
             entity_type='note',
             entity_id=pk,
             level='WARNING',
-            message=f'Failed attempt to access non-existent note (ID: {pk}).'
+            message=f'Failed attempt to access non-existent note (ID: {pk}).',
+            request=request
         )
         return Response({"error": "Note not found"}, status=status.HTTP_404_NOT_FOUND)
     
     if request.method == 'GET':
+        # Update last_accessed when a note is viewed
+        note.last_accessed = timezone.now()
+        note.save(update_fields=['last_accessed'])
         serializer = NoteSerializer(note, context={'request': request})
         
         # Log note access
@@ -188,7 +198,8 @@ def note_detail(request, pk):
             action='view',
             entity_type='note',
             entity_id=note.id,
-            message=f'Note "{note.title}" was accessed.'
+            message=f'Note "{note.title}" was accessed.',
+            request=request
         )
         
         return Response(serializer.data)
@@ -223,7 +234,8 @@ def note_detail(request, pk):
                     entity_type='note',
                     entity_id=note.id,
                     level='DEBUG',
-                    message=f'Note "{note.title}" auto-saved.'
+                    message=f'Note "{note.title}" auto-saved.',
+                    request=request
                 )
             else:
                 create_log(
@@ -231,7 +243,8 @@ def note_detail(request, pk):
                     action='update',
                     entity_type='note',
                     entity_id=note.id,
-                    message=f'Note "{old_title}" updated to "{serializer.data["title"]}".'
+                    message=f'Note "{old_title}" updated to "{serializer.data["title"]}".',
+                    request=request
                 )
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -246,7 +259,8 @@ def note_detail(request, pk):
             action='delete',
             entity_type='note',
             entity_id=note_id,
-            message=f'Note "{note_title}" was deleted.'
+            message=f'Note "{note_title}" was deleted.',
+            request=request
         )
         
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -266,7 +280,8 @@ def tag_list(request):
             action='list',
             entity_type='tag',
             entity_id=None,
-            message='User accessed tag list.'
+            message='User accessed tag list.',
+            request=request
         )
         
         return Response(serializer.data)
@@ -282,7 +297,8 @@ def tag_list(request):
                 action='create',
                 entity_type='tag',
                 entity_id=serializer.data['id'],
-                message=f'Tag "{serializer.data["name"]}" created successfully.'
+                message=f'Tag "{serializer.data["name"]}" created successfully.',
+                request=request
             )
             
             return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -303,7 +319,8 @@ def tag_detail(request, pk):
             entity_type='tag',
             entity_id=pk,
             level='WARNING',
-            message=f'Failed attempt to access non-existent tag (ID: {pk}).'
+            message=f'Failed attempt to access non-existent tag (ID: {pk}).',
+            request=request
         )
         return Response({"error": "Tag not found"}, status=status.HTTP_404_NOT_FOUND)
     
@@ -316,7 +333,8 @@ def tag_detail(request, pk):
             action='view',
             entity_type='tag',
             entity_id=tag.id,
-            message=f'Tag "{tag.name}" was accessed.'
+            message=f'Tag "{tag.name}" was accessed.',
+            request=request
         )
         
         return Response(serializer.data)
@@ -333,7 +351,8 @@ def tag_detail(request, pk):
                 action='update',
                 entity_type='tag',
                 entity_id=tag.id,
-                message=f'Tag "{old_name}" updated to "{serializer.data["name"]}".'
+                message=f'Tag "{old_name}" updated to "{serializer.data["name"]}".',
+                request=request
             )
             
             return Response(serializer.data)
@@ -349,7 +368,8 @@ def tag_detail(request, pk):
             action='delete',
             entity_type='tag',
             entity_id=pk,
-            message=f'Tag "{tag_name}" was deleted.'
+            message=f'Tag "{tag_name}" was deleted.',
+            request=request
         )
         
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -382,7 +402,8 @@ def manage_note_folders(request):
             action='remove',
             entity_type='note',
             entity_id=','.join(map(str, note_ids)),
-            message=f'Removed {updated} notes from their folders.'
+            message=f'Removed {updated} notes from their folders.',
+            request=request
         )
         
         return Response({"updated_notes": updated, "folder": None, "action": "removed"}, status=status.HTTP_200_OK)
@@ -399,7 +420,8 @@ def manage_note_folders(request):
                 action='organize',
                 entity_type='note',
                 entity_id=','.join(map(str, note_ids)),
-                message=f'Assigned {updated} notes to folder "{folder.name}".'
+                message=f'Assigned {updated} notes to folder "{folder.name}".',
+                request=request
             )
             
             return Response({
@@ -416,7 +438,8 @@ def manage_note_folders(request):
                 entity_type='note',
                 entity_id=','.join(map(str, note_ids)),
                 level='ERROR',
-                message=f'Failed to organize notes: folder (ID: {folder_id}) not found.'
+                message=f'Failed to organize notes: folder (ID: {folder_id}) not found.',
+                request=request
             )
             
             return Response({"error": "Folder not found"}, status=status.HTTP_404_NOT_FOUND)
@@ -431,7 +454,8 @@ def manage_note_folders(request):
             action='organize',
             entity_type='note',
             entity_id=','.join(map(str, note_ids)),
-            message=f'Moved {updated} notes to unorganized (no folder).'
+            message=f'Moved {updated} notes to unorganized (no folder).',
+            request=request
         )
         
         return Response({"updated_notes": updated, "folder": None}, status=status.HTTP_200_OK)
@@ -447,7 +471,8 @@ def manage_note_folders(request):
             action='organize',
             entity_type='note',
             entity_id=','.join(map(str, note_ids)),
-            message=f'Moved {updated} notes to folder "{folder.name}".'
+            message=f'Moved {updated} notes to folder "{folder.name}".',
+            request=request
         )
         
         return Response({
@@ -463,7 +488,8 @@ def manage_note_folders(request):
             entity_type='note',
             entity_id=','.join(map(str, note_ids)),
             level='ERROR',
-            message=f'Failed to organize notes: folder (ID: {folder_id}) not found.'
+            message=f'Failed to organize notes: folder (ID: {folder_id}) not found.',
+            request=request
         )
         
         return Response({"error": "Folder not found"}, status=status.HTTP_404_NOT_FOUND)
@@ -497,7 +523,8 @@ def manage_note_tags(request):
             entity_type='note',
             entity_id=note_id,
             level='WARNING',
-            message=f'Failed to {action} tags: note (ID: {note_id}) not found.'
+            message=f'Failed to {action} tags: note (ID: {note_id}) not found.',
+            request=request
         )
         
         return Response({"error": "Note not found"}, status=status.HTTP_404_NOT_FOUND)
@@ -517,7 +544,8 @@ def manage_note_tags(request):
             action='tag_add',
             entity_type='note',
             entity_id=note_id,
-            message=f'Added tags "{tag_names}" to note "{note.title}".'
+            message=f'Added tags "{tag_names}" to note "{note.title}".',
+            request=request
         )
         
         serializer = NoteSerializer(note, context={'request': request})
@@ -535,7 +563,8 @@ def manage_note_tags(request):
             action='tag_remove',
             entity_type='note',
             entity_id=note_id,
-            message=f'Removed tags "{tag_names}" from note "{note.title}".'
+            message=f'Removed tags "{tag_names}" from note "{note.title}".',
+            request=request
         )
         
         serializer = NoteSerializer(note, context={'request': request})
@@ -564,7 +593,8 @@ def note_share(request):
             entity_type='note',
             entity_id=note_id,
             level='WARNING',
-            message=f'Failed to share note: note (ID: {note_id}) not found.'
+            message=f'Failed to share note: note (ID: {note_id}) not found.',
+            request=request
         )
         
         return Response({"error": "Note not found"}, status=status.HTTP_404_NOT_FOUND)
@@ -578,7 +608,8 @@ def note_share(request):
         action='share',
         entity_type='note',
         entity_id=note_id,
-        message=f'Note "{note.title}" shared with {recipient_email} with {permission} permission.'
+        message=f'Note "{note.title}" shared with {recipient_email} with {permission} permission.',
+        request=request
     )
     
     return Response({"success": True, "message": f"Note shared with {recipient_email}"}, status=status.HTTP_200_OK)
@@ -609,7 +640,8 @@ def bulk_note_action(request):
             entity_type='note',
             entity_id=','.join(map(str, note_ids)),
             level='WARNING',
-            message=f'Failed to perform bulk {action}: no valid notes found.'
+            message=f'Failed to perform bulk {action}: no valid notes found.',
+            request=request
         )
         
         return Response({"error": "No valid notes found"}, status=status.HTTP_404_NOT_FOUND)
@@ -627,7 +659,8 @@ def bulk_note_action(request):
             action='bulk_delete',
             entity_type='note',
             entity_id=','.join(map(str, note_ids)),
-            message=f'Bulk deleted {count} notes: {", ".join(note_titles)}'
+            message=f'Bulk deleted {count} notes: {", ".join(note_titles)}',
+            request=request
         )
         
         return Response({"deleted_count": count}, status=status.HTTP_200_OK)
@@ -641,7 +674,8 @@ def bulk_note_action(request):
             action='bulk_archive',
             entity_type='note',
             entity_id=','.join(map(str, note_ids)),
-            message=f'Archived {count} notes.'
+            message=f'Archived {count} notes.',
+            request=request
         )
         
         return Response({"archived_count": count}, status=status.HTTP_200_OK)
@@ -655,7 +689,8 @@ def bulk_note_action(request):
             action='bulk_unarchive',
             entity_type='note',
             entity_id=','.join(map(str, note_ids)),
-            message=f'Unarchived {count} notes.'
+            message=f'Unarchived {count} notes.',
+            request=request
         )
         
         return Response({"unarchived_count": count}, status=status.HTTP_200_OK)
@@ -682,7 +717,8 @@ def save_drawing(request, note_id):
             action='update',
             entity_type='note_drawing',
             entity_id=note.id,
-            message=f'Drawing updated for note "{note.title}" with {len(strokes_data)} strokes.'
+            message=f'Drawing updated for note "{note.title}" with {len(strokes_data)} strokes.',
+            request=request
         )
         
         return Response({
@@ -703,6 +739,9 @@ def get_drawing(request, note_id):
     """Retrieve drawing strokes for a specific note"""
     try:
         note = get_object_or_404(Note, id=note_id, user=request.user)
+        # Touch last_accessed when retrieving drawing
+        note.last_accessed = timezone.now()
+        note.save(update_fields=['last_accessed'])
         
         return Response({
             'note_id': note.id,
@@ -739,7 +778,8 @@ def clear_drawing(request, note_id):
             action='delete',
             entity_type='note_drawing',
             entity_id=note.id,
-            message=f'Drawing cleared from note "{note.title}".'
+            message=f'Drawing cleared from note "{note.title}".',
+            request=request
         )
         
         return Response({
@@ -838,7 +878,8 @@ def upload_document(request):
             'content': content,
             'type': 'document',
             'document_file': document,
-            'document_metadata': document_metadata
+            'document_metadata': document_metadata,
+            'last_accessed': timezone.now(),
         }
         
         if folder_id:
@@ -857,7 +898,8 @@ def upload_document(request):
             action='create',
             entity_type='document',
             entity_id=note.id,
-            message=f'Document "{document.name}" uploaded successfully.'
+            message=f'Document "{document.name}" uploaded successfully.',
+            request=request
         )
         
         serializer = NoteSerializer(note, context={'request': request})
@@ -899,10 +941,10 @@ def document_annotations(request, note_id):
         
         # Add timestamp and ID to annotation
         import uuid
-        from datetime import datetime
+        from django.utils import timezone as dj_timezone
         
         annotation_data['id'] = str(uuid.uuid4())
-        annotation_data['created_at'] = datetime.now().isoformat()
+        annotation_data['created_at'] = dj_timezone.now().isoformat()
         
         note.document_annotations.append(annotation_data)
         note.save()
@@ -913,7 +955,8 @@ def document_annotations(request, note_id):
             action='create',
             entity_type='annotation',
             entity_id=note.id,
-            message=f'Annotation added to document "{note.title}".'
+            message=f'Annotation added to document "{note.title}".',
+            request=request
         )
         
         return Response({
@@ -933,7 +976,8 @@ def document_annotations(request, note_id):
             action='update',
             entity_type='annotation',
             entity_id=note.id,
-            message=f'Annotations updated for document "{note.title}".'
+            message=f'Annotations updated for document "{note.title}".',
+            request=request
         )
         
         return Response({
@@ -978,7 +1022,8 @@ def delete_annotation(request, note_id, annotation_id):
         action='delete',
         entity_type='annotation',
         entity_id=note.id,
-        message=f'Annotation deleted from document "{note.title}".'
+        message=f'Annotation deleted from document "{note.title}".',
+        request=request
     )
     
     return Response({
@@ -1014,6 +1059,10 @@ def serve_document(request, note_id):
                 'error': 'Document file not found on server'
             }, status=status.HTTP_404_NOT_FOUND)
         
+        # Update last accessed for documents
+        note.last_accessed = timezone.now()
+        note.save(update_fields=['last_accessed'])
+
         # Determine content type
         content_type, _ = mimetypes.guess_type(file_path)
         if not content_type:
@@ -1040,7 +1089,8 @@ def serve_document(request, note_id):
             action='view',
             entity_type='document',
             entity_id=note.id,
-            message=f'Document "{note.title}" served successfully.'
+            message=f'Document "{note.title}" served successfully.',
+            request=request
         )
         
         return response
@@ -1050,3 +1100,15 @@ def serve_document(request, note_id):
             'error': 'Failed to serve document',
             'detail': str(e)
         }, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_auth_required(['POST'])
+def touch_note_access(request, note_id):
+    """Explicitly update last_accessed for a note"""
+    try:
+        note = get_object_or_404(Note, id=note_id, user=request.user)
+        note.last_accessed = timezone.now()
+        note.save(update_fields=['last_accessed'])
+        return Response({'status': 'ok', 'last_accessed': note.last_accessed}, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({'error': 'Failed to touch note', 'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)

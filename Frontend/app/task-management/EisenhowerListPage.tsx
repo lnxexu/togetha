@@ -130,19 +130,15 @@ const EisenhowerListPage: React.FC = () => {
         if (task.due_time) {
           timeString = task.due_time;
         } else {
-          // Format time in Philippine timezone (GMT+8)
-          console.log(due);
-          // use utc values
+          // Render in device-local timezone (no explicit timeZone override)
           timeString = due.toLocaleTimeString('en-US', {
             hour: '2-digit',
             minute: '2-digit',
             hour12: true,
-            timeZone: 'UTC'
           });
         }
-        dateString = due.toLocaleDateString('en-US', {
-          timeZone: 'UTC'
-        });
+        // Render date in device-local timezone
+        dateString = due.toLocaleDateString('en-US');
       }
     } else if (task.due_time) {
       // If only due_time is available without due_datetime

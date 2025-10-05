@@ -20,6 +20,7 @@ import {
   useWindowDimensions,
   TouchableWithoutFeedback,
   RefreshControl,
+  ActivityIndicator,
 } from "react-native";
 import {
   MaterialIcons,
@@ -46,6 +47,7 @@ import {
 import SkeletonLoader from "../components/SkeletonLoader";
 import { folderCacheUtils } from "../utils/FolderCacheUtils";
 import { getLocalPDFPath, isRemoteURL } from "./utils/pdfUtils";
+import { parseServerDate, formatShortLocalDate } from "./utils/localDate";
 
 const { width } = Dimensions.get("window");
 
@@ -231,6 +233,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
   const [folderToDelete, setFolderToDelete] = useState<string | null>(null);
   const [showDocumentPreviewModal, setShowDocumentPreviewModal] =
     useState(false);
+  const [isUploadingDocument, setIsUploadingDocument] = useState(false);
   const [showAddOptionsMenu, setShowAddOptionsMenu] = useState(false);
   const insets = useSafeAreaInsets();
   const [navbarHeight, setNavbarHeight] = useState<number>(0);
@@ -521,6 +524,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
         headers: {
           Authorization: `Token ${token}`,
           "Content-Type": "application/json",
+          "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone || "",
         },
         // Improve caching behavior
         cache: "default",
@@ -653,6 +657,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
           headers: {
             Authorization: `Token ${token}`,
             "Content-Type": "application/json",
+            "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone || "",
           },
           // Improve caching with cache control headers
           cache: "default",
@@ -672,8 +677,9 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
           formatted_content: note.formatted_content || "",
           folder: note.folder_name || null, // Use folder_name from backend
           folderId: note.folder ? note.folder.toString() : null, // Map the folder ID
-          createdAt: new Date(note.created_at),
-          updatedAt: new Date(note.updated_at),
+          createdAt: parseServerDate(note.created_at) || new Date(),
+          updatedAt: parseServerDate(note.updated_at) || new Date(),
+          lastAccessedAt: parseServerDate(note.last_accessed),
           type: note.type || "text",
           is_archived: note.is_archived || false,
           tags: note.tags || [],
@@ -682,6 +688,13 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
           document_file: note.document_file || null, // Add document file URL
           document_annotations: note.document_annotations || null, // Add document annotations
         }));
+
+        // Sort by last accessed, then by updatedAt
+        fetchedNotes.sort((a, b) => {
+          const aTime = (a.lastAccessedAt || a.updatedAt || a.createdAt)?.getTime?.() || 0;
+          const bTime = (b.lastAccessedAt || b.updatedAt || b.createdAt)?.getTime?.() || 0;
+          return bTime - aTime;
+        });
 
         // Check if notes have changed before updating state - only compare relevant fields
         const currentNotesJson = JSON.stringify(
@@ -749,6 +762,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
           headers: {
             Authorization: `Token ${token}`,
             "Content-Type": "application/json",
+            "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone || "",
           },
           body: JSON.stringify(duplicateNote),
         });
@@ -763,8 +777,8 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
         setNotes((prev) => [
           {
             ...newNote,
-            createdAt: new Date(newNote.created_at),
-            updatedAt: new Date(newNote.updated_at),
+            createdAt: parseServerDate(newNote.created_at) || new Date(),
+            updatedAt: parseServerDate(newNote.updated_at) || new Date(),
           },
           ...prev,
         ]);
@@ -815,6 +829,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
                       headers: {
                         Authorization: `Token ${token}`,
                         "Content-Type": "application/json",
+                        "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone || "",
                       },
                       body: JSON.stringify({
                         action: "remove",
@@ -897,6 +912,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
                     method: "DELETE",
                     headers: {
                       Authorization: `Token ${token}`,
+                      "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone || "",
                     },
                   }
                 );
@@ -932,14 +948,37 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
   );
 
   // Function to move accessed note to top by updating lastAccessedAt
-  const updateNoteAccessTime = useCallback((noteId: string) => {
-    setNotes(prevNotes => 
-      prevNotes.map(note => 
+  const updateNoteAccessTime = useCallback(async (noteId: string) => {
+    // Update local state immediately for UX
+    setNotes(prevNotes => {
+      const updated = prevNotes.map(note => 
         note.id === noteId 
           ? { ...note, lastAccessedAt: new Date() }
           : note
-      )
-    );
+      );
+      // Keep list locally sorted by last accessed
+      return [...updated].sort((a, b) => {
+        const aTime = (a.lastAccessedAt || a.updatedAt || a.createdAt)?.getTime?.() || 0;
+        const bTime = (b.lastAccessedAt || b.updatedAt || b.createdAt)?.getTime?.() || 0;
+        return bTime - aTime;
+      });
+    });
+
+    // Fire-and-forget server touch to persist last_accessed
+    try {
+      const token = await AsyncStorage.getItem("authToken");
+      if (!token) return;
+      await fetch(`${API_URL}${API_ENDPOINTS.NOTE_TOUCH(noteId)}`, {
+        method: "POST",
+        headers: { 
+          Authorization: `Token ${token}`,
+          "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone || "",
+        },
+      });
+    } catch (e) {
+      // Non-blocking
+      console.warn("Failed to touch last_accessed on server", e);
+    }
   }, []);
 
   const handleNotePress = useCallback(
@@ -1163,9 +1202,11 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
   // Confirm and upload the selected document as a note
   const handleConfirmDocumentImport = async (documentInfo: any) => {
     try {
+      setIsUploadingDocument(true);
       const token = await AsyncStorage.getItem("authToken");
       if (!token) {
         navigation.navigate("Login");
+        setIsUploadingDocument(false);
         return;
       }
 
@@ -1186,6 +1227,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
           method: "POST",
           headers: {
             Authorization: `Token ${token}`,
+            "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone || "",
           },
           body: formData,
         }
@@ -1255,6 +1297,8 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
               "Failed to import document. Please try again."
           : "Failed to import document. Please try again."
       );
+    } finally {
+      setIsUploadingDocument(false);
     }
   };
 
@@ -1319,6 +1363,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
           headers: {
             Authorization: `Token ${token}`,
             "Content-Type": "application/json",
+            "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone || "",
           },
           body: JSON.stringify({
             action: "assign",
@@ -1479,6 +1524,7 @@ const updateFolderName = async (folderId: string, newName: string) => {
         headers: {
           Authorization: `Token ${token}`,
           "Content-Type": "application/json",
+          "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone || "",
         },
         body: JSON.stringify({ name: newName }),
       }
@@ -1537,6 +1583,7 @@ const handleCreateFolder = async () => {
       headers: {
         Authorization: `Token ${token}`,
         "Content-Type": "application/json",
+        "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone || "",
       },
       body: JSON.stringify(folderData),
     });
@@ -1598,6 +1645,7 @@ const handleCreateFolder = async () => {
           method: "DELETE",
           headers: {
             Authorization: `Token ${token}`,
+            "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone || "",
           },
         }
       );
@@ -2212,10 +2260,7 @@ const handleCreateFolder = async () => {
             {/* Rest of the existing footer code... */}
             <View style={styles.noteFooter}>
               <Text style={styles.noteDate}>
-                {item.updatedAt.toLocaleDateString("en-US", {
-                  month: "short",
-                  day: "numeric",
-                })}
+                {formatShortLocalDate(item.updatedAt)}
               </Text>
 
               <View style={styles.metadataContainer}>
@@ -2935,6 +2980,14 @@ const handleCreateFolder = async () => {
   return (
   <SafeAreaWrapper disableTopSafeArea={true}>
       <View style={styles.rootContainer}> 
+      {isUploadingDocument && (
+        <View style={styles.uploadOverlay}>
+          <View style={styles.uploadCard}>
+            <ActivityIndicator size="large" color="#8B5CF6" />
+            <Text style={styles.uploadText}>Uploading document…</Text>
+          </View>
+        </View>
+      )}
     
       <StatusBar barStyle="light-content" backgroundColor="#7C3AED" />
 
@@ -3537,6 +3590,38 @@ const handleCreateFolder = async () => {
 }
 
 const styles = StyleSheet.create({
+  uploadOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 9999,
+  },
+  uploadCard: {
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+    minWidth: 200,
+    gap: 10,
+  },
+  uploadText: {
+    marginTop: 8,
+    fontSize: 14,
+    color: '#374151',
+    fontFamily: 'Inter-Medium',
+  },
     rootContainer: {
     flex: 1,
     backgroundColor: "#ffffffff",

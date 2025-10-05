@@ -17,7 +17,7 @@ Notifications.setNotificationHandler({
 export interface PushNotificationService {
   requestPermissions(): Promise<boolean>;
   registerForPushNotifications(): Promise<string | null>;
-  schedulePushNotification(title: string, body: string, trigger?: any): Promise<string>;
+  schedulePushNotification(title: string, body: string, trigger?: any, data?: Record<string, any>): Promise<string>;
   cancelNotification(notificationId: string): Promise<void>;
   cancelAllNotifications(): Promise<void>;
   addNotificationListener(callback: (notification: any) => void): void;
@@ -28,6 +28,74 @@ export interface PushNotificationService {
 class PushNotificationServiceImpl implements PushNotificationService {
   private notificationListener: any = null;
   private responseListener: any = null;
+  // Simple in-app deduplication to avoid duplicate notifications for the same event
+  private async shouldSend(key: string, ttlMs: number = 2 * 60 * 1000): Promise<boolean> {
+    try {
+      const raw = await AsyncStorage.getItem('notificationDedup');
+      const map: Record<string, number> = raw ? JSON.parse(raw) : {};
+      const now = Date.now();
+      const last = map[key];
+      if (last && now - last < ttlMs) {
+        // Recently sent the same notification; skip
+        return false;
+      }
+
+      // Prune entries older than 24h and update this key
+      const pruned: Record<string, number> = {};
+      const dayMs = 24 * 60 * 60 * 1000;
+      Object.entries(map).forEach(([k, v]) => {
+        if (now - v < dayMs) pruned[k] = v;
+      });
+      pruned[key] = now;
+      await AsyncStorage.setItem('notificationDedup', JSON.stringify(pruned));
+      return true;
+    } catch (error) {
+      console.error('Error in notification de-duplication:', error);
+      return true; // Fail-open so notifications are not blocked by storage errors
+    }
+  }
+
+  private buildKey(type: string, title: string) {
+    return `${type}:${title}`;
+  }
+
+  // Scheduled reminder dedup map helpers (avoid scheduling the same reminder twice)
+  // We store as: { [key: string]: { id: string; when: number } }
+  private async getScheduledMap(): Promise<Record<string, { id: string; when: number }>> {
+    try {
+      const raw = await AsyncStorage.getItem('scheduledReminderDedup');
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  }
+
+  private async setScheduledMap(map: Record<string, { id: string; when: number }>): Promise<void> {
+    try {
+      await AsyncStorage.setItem('scheduledReminderDedup', JSON.stringify(map));
+    } catch {
+      // ignore
+    }
+  }
+
+  private async upsertScheduledKey(key: string, id: string, when: number): Promise<void> {
+    const map = await this.getScheduledMap();
+    // prune past entries (older than 24h past scheduled time)
+    const now = Date.now();
+    const pruned: Record<string, { id: string; when: number }> = {};
+    Object.entries(map).forEach(([k, v]) => {
+      if (v && typeof v.when === 'number' && now - v.when < 24 * 60 * 60 * 1000) {
+        pruned[k] = v;
+      }
+    });
+    pruned[key] = { id, when };
+    await this.setScheduledMap(pruned);
+  }
+
+  private async hasScheduledKey(key: string): Promise<boolean> {
+    const map = await this.getScheduledMap();
+    return Boolean(map[key]);
+  }
 
   async requestPermissions(): Promise<boolean> {
     try {
@@ -94,7 +162,8 @@ class PushNotificationServiceImpl implements PushNotificationService {
   async schedulePushNotification(
     title: string, 
     body: string, 
-    trigger: any = { seconds: 1 }
+    trigger: any = { seconds: 1 },
+    data?: Record<string, any>
   ): Promise<string> {
     try {
       const notificationId = await Notifications.scheduleNotificationAsync({
@@ -104,6 +173,7 @@ class PushNotificationServiceImpl implements PushNotificationService {
           sound: 'default',
           priority: Notifications.AndroidNotificationPriority.HIGH,
           color: '#6A009C',
+          data,
         },
         trigger,
       });
@@ -167,20 +237,28 @@ class PushNotificationServiceImpl implements PushNotificationService {
   }
 
   // Immediate notification for task creation
-  async notifyTaskCreated(taskTitle: string): Promise<string> {
+  async notifyTaskCreated(taskTitle: string, taskId?: string): Promise<string> {
+    // Avoid duplicates if multiple sources try to notify at creation time
+    const canSend = await this.shouldSend(this.buildKey('TASK_CREATED', taskTitle), 60 * 1000);
+    if (!canSend) return 'deduped';
     return this.schedulePushNotification(
       '✅ Task Created',
       `"${taskTitle}" has been added to your tasks`,
-      { seconds: 1 }
+      { seconds: 1 },
+      taskId ? { type: 'task', action: 'open_task', taskId } : undefined
     );
   }
 
   // Immediate notification for task reminder
-  async notifyTaskDueSoon(taskTitle: string, minutesUntilDue: number): Promise<string> {
+  async notifyTaskDueSoon(taskTitle: string, minutesUntilDue: number, taskId?: string): Promise<string> {
+    // Avoid duplicates for near-term reminders
+    const canSend = await this.shouldSend(this.buildKey('TASK_DUE_SOON', taskTitle), 2 * 60 * 1000);
+    if (!canSend) return 'deduped';
     return this.schedulePushNotification(
       '⏰ Task Reminder',
       `"${taskTitle}" is due in ${minutesUntilDue} minutes`,
-      { seconds: 1 }
+      { seconds: 1 },
+      taskId ? { type: 'task', action: 'open_task', taskId } : undefined
     );
   }
 
@@ -203,27 +281,41 @@ class PushNotificationServiceImpl implements PushNotificationService {
   }
 
   // Immediate notification for task due today
-  async notifyTaskDueToday(taskTitle: string): Promise<string> {
+  async notifyTaskDueToday(taskTitle: string, taskId?: string): Promise<string> {
+    // Avoid duplicates within the same morning/day
+    const canSend = await this.shouldSend(this.buildKey('TASK_DUE_TODAY', taskTitle), 60 * 60 * 1000);
+    if (!canSend) return 'deduped';
     return this.schedulePushNotification(
       '📅 Task Due Today',
       `"${taskTitle}" is due today`,
-      { seconds: 1 }
+      { seconds: 1 },
+      taskId ? { type: 'task', action: 'open_task', taskId } : undefined
     );
   }
 
   // Schedule reminder notification for specific time before due date
-  async scheduleTaskReminderAtTime(taskTitle: string, reminderDate: Date): Promise<string> {
+  async scheduleTaskReminderAtTime(taskTitle: string, reminderDate: Date, taskId?: string): Promise<string> {
     const now = new Date();
     if (reminderDate <= now) {
-      // If reminder time has passed, notify immediately
-      return this.notifyTaskDueSoon(taskTitle, 0);
+      // If reminder time has passed, skip immediate notification to avoid duplicates
+      console.log('[PushNotificationService] Skipping immediate reminder for past reminderDate to avoid duplicates');
+      return 'skipped';
     }
-    
-    return this.schedulePushNotification(
+    // Dedup scheduled reminders by task + exact reminder timestamp
+    const key = `TASK_REMINDER:${taskId || taskTitle}:${reminderDate.toISOString()}`;
+    if (await this.hasScheduledKey(key)) {
+      console.log('[PushNotificationService] Duplicate scheduled reminder prevented for', key);
+      return 'deduped';
+    }
+
+    const id = await this.schedulePushNotification(
       '⏰ Task Reminder',
       `"${taskTitle}" is coming up soon`,
-      { date: reminderDate }
+      { date: reminderDate },
+      taskId ? { type: 'task', action: 'open_task', taskId } : undefined
     );
+    await this.upsertScheduledKey(key, id, reminderDate.getTime());
+    return id;
   }
 
   async scheduleWelcomeNotification(): Promise<string> {
@@ -249,11 +341,12 @@ class PushNotificationServiceImpl implements PushNotificationService {
     );
   }
 
-  async scheduleTaskCompletionCelebration(taskTitle: string): Promise<string> {
+  async scheduleTaskCompletionCelebration(taskTitle: string, taskId?: string): Promise<string> {
     return this.schedulePushNotification(
       'Task Completed! 🎉',
       `Great job completing "${taskTitle}"!`,
-      { seconds: 2 }
+      { seconds: 2 },
+      taskId ? { type: 'task', action: 'open_task', taskId } : undefined
     );
   }
 

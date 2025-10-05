@@ -12,26 +12,18 @@ export interface TaskNotification {
 }
 
 export class NotificationUtils {
-  private static readonly PHILIPPINES_TIMEZONE = 'Asia/Manila';
-
-  static getCurrentPhilippinesTime(): Date {
-    return new Date(new Date().toLocaleString("en-US", { timeZone: this.PHILIPPINES_TIMEZONE }));
+  // Return device-local current time
+  static now(): Date {
+    return new Date();
   }
 
-  static formatPhilippinesDateTime(date: Date): string {
-    return date.toLocaleString('en-PH', {
-      timeZone: this.PHILIPPINES_TIMEZONE,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
-    });
+  // Format a date in device-local settings
+  static formatLocalDateTime(date: Date, locale?: string | string[]): string {
+    return date.toLocaleString(locale);
   }
 
   static isTaskDueToday(dueDate: string): boolean {
-    const now = this.getCurrentPhilippinesTime();
+  const now = this.now();
     const due = new Date(dueDate);
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate());
@@ -40,7 +32,7 @@ export class NotificationUtils {
   }
 
   static isTaskDueTomorrow(dueDate: string): boolean {
-    const now = this.getCurrentPhilippinesTime();
+  const now = this.now();
     const due = new Date(dueDate);
     const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
     const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate());
@@ -49,7 +41,7 @@ export class NotificationUtils {
   }
 
   static isTaskOverdue(dueDate: string): boolean {
-    const now = this.getCurrentPhilippinesTime();
+  const now = this.now();
     const due = new Date(dueDate);
     return due < now;
   }

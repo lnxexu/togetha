@@ -32,6 +32,7 @@ class SyncService {
     const token = await this.getAuthToken();
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
+      'X-Client-Timezone': Intl.DateTimeFormat().resolvedOptions().timeZone || '',
     };
 
     if (token) {

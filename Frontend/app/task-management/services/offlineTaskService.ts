@@ -1,11 +1,7 @@
 import { Task, TaskFormData } from "../types/Task";
 import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import {
-  toPhilippineISOString,
-  convertToPhilippineTime,
-  getCurrentPhilippineDate,
-} from "@/app/utils/dateHelpers";
+import { parseISOToDate, toUTCISOString } from "@/app/utils/utcDate";
 import offlineStorageService, { OfflineTask } from './offlineStorageService';
 import networkService from './networkService';
 import syncService from './syncService';
@@ -28,6 +24,7 @@ class OfflineTaskService {
     const token = await this.getAuthToken();
     const headers: HeadersInit = {
       "Content-Type": "application/json",
+      "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone || "",
     };
 
     if (token) {
@@ -69,19 +66,11 @@ class OfflineTaskService {
       task.priority?.replace(/_/g, "-") || "not-urgent-not-important";
     const status = task.status?.replace(/_/g, "-") || "not-started";
 
-    // Always convert all date fields to PH time
-    const createdAt = task.created_at
-      ? convertToPhilippineTime(new Date(task.created_at))
-      : convertToPhilippineTime(new Date());
-    const updatedAt = task.updated_at
-      ? convertToPhilippineTime(new Date(task.updated_at))
-      : convertToPhilippineTime(new Date());
-    const due_datetime = task.due_datetime
-      ? convertToPhilippineTime(new Date(task.due_datetime))
-      : undefined;
-    const completedAt = task.completed_at
-      ? convertToPhilippineTime(new Date(task.completed_at))
-      : undefined;
+    // Parse UTC timestamps and rely on device local time for display
+    const createdAt = task.created_at ? parseISOToDate(task.created_at) ?? new Date() : new Date();
+    const updatedAt = task.updated_at ? parseISOToDate(task.updated_at) ?? new Date() : new Date();
+    const due_datetime = task.due_datetime ? parseISOToDate(task.due_datetime) ?? undefined : undefined;
+    const completedAt = task.completed_at ? parseISOToDate(task.completed_at) ?? undefined : undefined;
 
     return {
       ...task,
@@ -94,7 +83,7 @@ class OfflineTaskService {
       completedAt,
       overdue:
         due_datetime && !task.completed
-          ? due_datetime < convertToPhilippineTime(new Date())
+          ? due_datetime < new Date()
           : false,
     };
   }

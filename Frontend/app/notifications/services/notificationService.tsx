@@ -11,10 +11,11 @@ export class NotificationService {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-Client-Timezone': Intl.DateTimeFormat().resolvedOptions().timeZone || '',
         },
         body: JSON.stringify({
           ...notification,
-          createdAt: NotificationUtils.formatPhilippinesDateTime(NotificationUtils.getCurrentPhilippinesTime())
+          createdAt: NotificationUtils.formatLocalDateTime(NotificationUtils.now())
         })
       });
 
@@ -38,6 +39,7 @@ export class NotificationService {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Token ${token}`,
+        'X-Client-Timezone': Intl.DateTimeFormat().resolvedOptions().timeZone || '',
       },
     });
 
@@ -64,6 +66,7 @@ export class NotificationService {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Token ${token}`,
+          'X-Client-Timezone': Intl.DateTimeFormat().resolvedOptions().timeZone || '',
         },
       });
 
@@ -90,6 +93,7 @@ export class NotificationService {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Token ${token}`,
+          'X-Client-Timezone': Intl.DateTimeFormat().resolvedOptions().timeZone || '',
         },
       });
 
@@ -116,6 +120,7 @@ export class NotificationService {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Token ${token}`,
+          'X-Client-Timezone': Intl.DateTimeFormat().resolvedOptions().timeZone || '',
         },
       });
 

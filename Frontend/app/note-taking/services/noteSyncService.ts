@@ -23,13 +23,15 @@ class NoteSyncService {
       return {
         'Content-Type': 'application/json',
         'X-Requested-With': 'XMLHttpRequest',
-        ...(token && { 'Authorization': `Bearer ${token}` }),
+        'X-Client-Timezone': Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+        ...(token && { 'Authorization': `Token ${token}` }),
       };
     } catch (error) {
       console.error('Failed to get auth headers:', error);
       return {
         'Content-Type': 'application/json',
         'X-Requested-With': 'XMLHttpRequest',
+        'X-Client-Timezone': Intl.DateTimeFormat().resolvedOptions().timeZone || '',
       };
     }
   }

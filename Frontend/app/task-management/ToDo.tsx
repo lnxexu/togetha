@@ -8,7 +8,7 @@ import Navbar from "../NavBar";
 import EisenhowerMatrix from "./components/EisenhowerMatrix";
 import TaskListView from "./components/TaskListView";
 import OfflineIndicator from "./components/OfflineIndicator";
-import GoogleCalendar from "./components/GoogleCalendar";
+import Calendar from "./components/Calendar";
 import DateTasksModal from "./components/DateTasksModal";
 import { Task, TaskCategory } from "./types/Task";
 import { LinearGradient } from "expo-linear-gradient";
@@ -400,7 +400,7 @@ const ToDo: React.FC = () => {
         </View>
         
         {/* Google Calendar Modal */}
-        <GoogleCalendar
+        <Calendar
           visible={showCalendarModal}
           onClose={() => setShowCalendarModal(false)}
           tasks={tasks}

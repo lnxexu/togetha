@@ -1,5 +1,6 @@
 
 import { API_URL, API_ENDPOINTS } from '@/constants/ApiConfig';
+import { parseServerDate } from '../utils/localDate';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { 
   embedAnnotationsInPDF, 
@@ -74,6 +75,7 @@ export class DrawingAPI {
       return {
         'Content-Type': 'application/json',
         'X-Requested-With': 'XMLHttpRequest',
+        'X-Client-Timezone': Intl.DateTimeFormat().resolvedOptions().timeZone || '',
         ...(token && { 'Authorization': `Bearer ${token}` }),
         ...(csrfToken && { 'X-CSRFToken': csrfToken }),
       };
@@ -82,6 +84,7 @@ export class DrawingAPI {
       return {
         'Content-Type': 'application/json',
         'X-Requested-With': 'XMLHttpRequest',
+        'X-Client-Timezone': Intl.DateTimeFormat().resolvedOptions().timeZone || '',
       };
     }
   }
@@ -194,7 +197,7 @@ export class DrawingAPI {
         strokes,
         noteId: data.id || noteId,
         hasDrawing: strokes.length > 0,
-        lastUpdate: data.updated_at || data.last_update,
+        lastUpdate: (parseServerDate(data.updated_at) || parseServerDate(data.last_update) || new Date()).toISOString(),
       };
     } catch (error) {
       console.error('Failed to get drawing:', error);

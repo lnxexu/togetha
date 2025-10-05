@@ -1,7 +1,8 @@
 from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Q
-from datetime import datetime, timedelta
+from datetime import timedelta
+from django.utils import timezone
 from .models import Task
 from .serializers import TaskSerializer
 from server.decorators import api_auth_required
@@ -26,14 +27,14 @@ def task_list(request):
         elif filter_type == 'completed':
             tasks = tasks.filter(completed=True)
         elif filter_type == 'today':
-            today = datetime.now().date()
+            today = timezone.localdate()
             tasks = tasks.filter(due_date__date=today)
         elif filter_type == 'upcoming':
-            today = datetime.now().date()
+            today = timezone.localdate()
             next_week = today + timedelta(days=7)
             tasks = tasks.filter(due_date__gt=today, due_date__lte=next_week)
         elif filter_type == 'overdue':
-            today = datetime.now().date()
+            today = timezone.localdate()
             tasks = tasks.filter(due_date__lt=today, completed=False)
         
         # Apply other filters
@@ -67,7 +68,8 @@ def task_list(request):
                     message=f"Task '{task_title}' created",
                     action="Create",
                     entity_type="Task",
-                    entity_id=task.id
+                    entity_id=task.id,
+                    request=request
                 )
             except Exception as e:
                 # Log the error but don't fail the task creation
@@ -145,7 +147,8 @@ def task_detail(request, pk):
                     message=log_message,
                     action="Update",
                     entity_type="Task",
-                    entity_id=task.id
+                    entity_id=task.id,
+                    request=request
                 )
             except Exception as e:
                 # Log the error but don't fail the task update
@@ -233,7 +236,8 @@ def task_detail(request, pk):
                 message=f"Task '{task_title}' deleted",
                 action="Delete",
                 entity_type="Task",
-                entity_id=task_id
+                entity_id=task_id,
+                request=request
             )
         except Exception as e:
             # Log the error but don't fail the task deletion
@@ -247,7 +251,7 @@ def task_statistics(request):
     user_tasks = Task.objects.filter(user=user)
     
     # Get current date for calculations
-    today = datetime.now().date()
+    today = timezone.localdate()
     
     try:
         # Calculate statistics

@@ -4,6 +4,8 @@ import React, { useEffect } from "react";
 import { ActivityIndicator, View, AppState, Platform, StatusBar } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import AppNavigator from "./app/navigation/AppNavigator";
+import * as Notifications from 'expo-notifications';
+import { navigationRef } from './app/navigation/navigationRef';
 import Toast from "react-native-toast-message";
 import { TaskProvider } from './app/contexts/TaskContext';
 import { TaskNotificationChecker } from "./app/notifications/components/TaskNotificationChecker";
@@ -27,6 +29,20 @@ export default function App() {
       SplashScreen.hideAsync();
     }
   }, [fontsLoaded]);
+  // Navigate to TaskDetails when notification tapped with taskId
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      try {
+        const data = response?.notification?.request?.content?.data;
+        if (data?.action === 'open_task' && data?.taskId && navigationRef.isReady()) {
+          navigationRef.navigate('TaskDetails', { taskId: String(data.taskId) });
+        }
+      } catch (e) {
+        console.warn('Notification response handling error:', e);
+      }
+    });
+    return () => sub?.remove();
+  }, []);
 
   // Enhanced app state handling to prevent Android navigation bar transparency issues
   useEffect(() => {

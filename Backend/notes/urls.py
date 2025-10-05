@@ -21,6 +21,7 @@ urlpatterns = [
     path('notes/<str:note_id>/drawing/save/', views.save_drawing, name='save_drawing'),
     path('notes/<str:note_id>/drawing/', views.get_drawing, name='get_drawing'),
     path('notes/<str:note_id>/drawing/clear/', views.clear_drawing, name='clear_drawing'),
+    path('notes/<str:note_id>/touch/', views.touch_note_access, name='touch_note_access'),
     
     # Document URLs
     path('documents/upload/', views.upload_document, name='upload_document'),

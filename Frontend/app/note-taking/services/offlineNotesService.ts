@@ -33,6 +33,7 @@ class OfflineNotesService {
       return {
         'Content-Type': 'application/json',
         'X-Requested-With': 'XMLHttpRequest',
+        'X-Client-Timezone': Intl.DateTimeFormat().resolvedOptions().timeZone || '',
         ...(token && { 'Authorization': `Bearer ${token}` }),
       };
     } catch (error) {
@@ -40,6 +41,7 @@ class OfflineNotesService {
       return {
         'Content-Type': 'application/json',
         'X-Requested-With': 'XMLHttpRequest',
+        'X-Client-Timezone': Intl.DateTimeFormat().resolvedOptions().timeZone || '',
       };
     }
   }

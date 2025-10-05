@@ -308,7 +308,17 @@ export default function Home() {
                 setUsername(extractedUsername);
                 // Cache the username for faster loading next time
                 await AsyncStorage.setItem("username", extractedUsername);
-                return;
+              }
+
+              // Try to extract profile picture path
+              const profilePicPath =
+                userData.profile?.profile_picture ||
+                userData.profile_picture ||
+                userData.user?.profile?.profile_picture;
+
+              if (profilePicPath) {
+                setProfilePicture(`${API_URL}${profilePicPath}`);
+                await AsyncStorage.setItem("userProfilePicture", profilePicPath);
               }
             }
           }
@@ -330,7 +340,15 @@ export default function Home() {
                   if (extractedUsername) {
                     setUsername(extractedUsername);
                     await AsyncStorage.setItem("username", extractedUsername);
-                    return;
+                  }
+
+                  const profilePicPath =
+                    userData.profile?.profile_picture ||
+                    userData.profile_picture ||
+                    userData.user?.profile?.profile_picture;
+                  if (profilePicPath) {
+                    setProfilePicture(`${API_URL}${profilePicPath}`);
+                    await AsyncStorage.setItem("userProfilePicture", profilePicPath);
                   }
                 }
               }
@@ -1087,20 +1105,6 @@ export default function Home() {
                     {/* Task Options Menu */}
                     {showTaskOptions === task.id && (
                       <View style={styles.taskOptionsMenu}>
-                        <TouchableOpacity
-                          style={styles.taskOption}
-                          onPress={() => handleTaskAction("view", task.id)}
-                        >
-                          <MaterialIcons
-                            name="visibility"
-                            size={16}
-                            color="#4F46E5"
-                          />
-                          <Text style={styles.taskOptionText}>
-                            View Details
-                          </Text>
-                        </TouchableOpacity>
-
                         <TouchableOpacity
                           style={styles.taskOption}
                           onPress={() => handleTaskAction("edit", task.id)}

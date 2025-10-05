@@ -2,6 +2,8 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from .models import Log
+from django.utils import timezone as dj_timezone
+from django.utils.timezone import get_current_timezone_name, localtime
 from .serializers import LogSerializer
 from django.contrib.auth import get_user_model
 from rest_framework.pagination import PageNumberPagination
@@ -44,19 +46,49 @@ class LogViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 
-def create_log(user=None, level="INFO", message="", action="", entity_type=None, entity_id=None):
+def create_log(user=None, level="INFO", message="", action="", entity_type=None, entity_id=None, request=None):
     """
     Helper function to create logs programmatically from anywhere in the app
     """
     from .models import Log
     
+    # Determine client-local timestamp if request carries client timezone header
+    client_tzname = None
+    local_ts = None
+    if request:
+        client_tzname = request.headers.get('X-Client-Timezone') or request.META.get('HTTP_X_CLIENT_TIMEZONE')
+        if client_tzname:
+            try:
+                from zoneinfo import ZoneInfo
+                local_ts = dj_timezone.now().astimezone(ZoneInfo(client_tzname))
+            except Exception:
+                local_ts = None
+    # Fallback to currently active timezone (set by ClientTimezoneMiddleware)
+    if local_ts is None:
+        try:
+            local_ts = localtime(dj_timezone.now())
+            client_tzname = client_tzname or get_current_timezone_name()
+        except Exception:
+            pass
+
+    # Prepare local timestamp text with offset if available
+    local_ts_text = None
+    if local_ts is not None:
+        try:
+            local_ts_text = local_ts.isoformat()
+        except Exception:
+            local_ts_text = None
+
     log = Log.objects.create(
         user=user,
         level=level,
         message=message,
         action=action,
         entity_type=entity_type,
-        entity_id=entity_id
+        entity_id=entity_id,
+        local_timestamp=local_ts,
+        local_timestamp_text=local_ts_text,
+        client_timezone=client_tzname
     )
     return log
 

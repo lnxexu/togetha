@@ -28,6 +28,7 @@ interface DrawingToolbarProps {
   onUndo?: () => void;
   onRedo?: () => void;
   onClear?: () => void;
+  onQuickExport?: () => void;
   onImageImport?: (imageUri: string) => void;
   onZoomIn?: () => void;
   onZoomOut?: () => void;
@@ -92,6 +93,7 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
   onUndo,
   onRedo,
   onClear,
+  onQuickExport,
   onImageImport,
   onZoomIn,
   onZoomOut,
@@ -197,6 +199,19 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
         {/* Actions Section - moved to first position for quick access */}
         <View style={styles.section}>
           <View style={styles.actionsRow}>
+            {/* Quick Export: one-tap save to Photos */}
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={onQuickExport}
+              disabled={!onQuickExport}
+            >
+              <Ionicons
+                name="download-outline"
+                size={18}
+                color={onQuickExport ? "#333" : "#ccc"}
+              />
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={[styles.actionButton, !canUndo && styles.disabledButton]}
               onPress={onUndo}
@@ -280,7 +295,8 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
                 <View style={styles.templateIndicator}>
                   <TemplatePreview 
                     template={currentTemplate} 
-                    size={16}
+                    width={16}
+                    height={16}
                   />
                 </View>
                 <View style={styles.labelContainer}>
@@ -596,7 +612,8 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
                     ]}>
                       <TemplatePreview 
                         template={templateType} 
-                        size={28}
+                        width={28}
+                        height={28}
                       />
                     </View>
                     <Text style={[

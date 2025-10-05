@@ -61,6 +61,9 @@ class Note(models.Model):
     manual_save_count = models.PositiveIntegerField(default=0)
     auto_save_count = models.PositiveIntegerField(default=0)
     
+    # Track the last time this note was accessed (viewed/opened)
+    last_accessed = models.DateTimeField(null=True, blank=True)
+    
     def save(self, *args, **kwargs):
         # Determine if this is an auto-save or manual save
         is_auto_save = kwargs.pop('is_auto_save', False)
@@ -117,7 +120,8 @@ class Note(models.Model):
         return self.title
 
     class Meta:
-        ordering = ['-updated_at']
+        # Prefer recently accessed notes first, then recently updated
+        ordering = ['-last_accessed', '-updated_at']
 
 class Tag(models.Model):
     name = models.CharField(max_length=100)

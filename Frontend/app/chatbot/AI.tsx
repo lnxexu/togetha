@@ -85,6 +85,7 @@ function ChatBot(): React.ReactElement {
   const [attachmentMenuVisible, setAttachmentMenuVisible] = useState(false);
   const [processingFiles, setProcessingFiles] = useState(false);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const [inputContainerHeight, setInputContainerHeight] = useState(0);
   
   // OCR Modal states
   const [showOCRModal, setShowOCRModal] = useState(false);
@@ -1219,9 +1220,9 @@ function ChatBot(): React.ReactElement {
           contentContainerStyle={[
             styles.messagesContentContainer,
             { 
-              paddingBottom: isKeyboardVisible ? 
-                200 + insets.bottom : // More padding when keyboard is showing to ensure content is visible
-                180 + insets.bottom   // Padding when keyboard is hidden to ensure messages aren't behind input
+              // Ensure space equal to the actual input container height
+              // This prevents device-specific gaps when the keyboard shows/hides
+              paddingBottom: inputContainerHeight + insets.bottom + 8
             },
           ]}
           showsVerticalScrollIndicator={false}
@@ -1375,15 +1376,22 @@ function ChatBot(): React.ReactElement {
 
         {/* Input Container - Always positioned at bottom */}
         <KeyboardAvoidingView
-          style={[{ width: '100%', position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 100 }]}
-          behavior={Platform.OS === "ios" ? "padding" : "padding"}
-          keyboardVerticalOffset={Platform.OS === "ios" ? insets.top + 10 : 0}
+          style={styles.keyboardAvoidingView}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={Platform.OS === "ios" ? insets.top : 0}
           enabled={true}
         >
           <View style={[
             styles.inputContainer, 
-            { paddingBottom: insets.bottom }
-          ]}>
+            { paddingBottom: insets.bottom, paddingTop: 8}
+          ]}
+          onLayout={(e) => {
+            const h = e.nativeEvent.layout.height;
+            if (Math.abs(h - inputContainerHeight) > 1) {
+              setInputContainerHeight(h);
+            }
+          }}
+          >
             {errorMessage && (
               <View style={styles.errorBanner}>
                 <Text style={styles.errorText}>{errorMessage}</Text>
@@ -1773,9 +1781,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#F8FAFC",
   },
   keyboardAvoidingView: {
-    position: 'relative',
+    position: 'absolute',
     width: '100%',
     height: '100%',
+    justifyContent: 'flex-end'
   },
   header: {
     flexDirection: "row",
@@ -2155,6 +2164,7 @@ const styles = StyleSheet.create({
   },
   inputAreaContainer: {
     backgroundColor: "transparent",
+    bottom: 0,
   },
   touchOverlay: {
     position: "absolute",
@@ -2254,7 +2264,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     padding: 12,
     alignItems: "flex-end",
-    gap: 8,
+    gap: 8
   },
   inputWrapper: {
     flex: 1,

@@ -86,6 +86,7 @@ const Logs: React.FC = () => {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Token ${token}`,
+          'X-Client-Timezone': Intl.DateTimeFormat().resolvedOptions().timeZone || '',
         },
       });
       
@@ -150,6 +151,7 @@ const Logs: React.FC = () => {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Token ${token}`,
+          'X-Client-Timezone': Intl.DateTimeFormat().resolvedOptions().timeZone || '',
         },
       });
       
@@ -175,6 +177,7 @@ const Logs: React.FC = () => {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Token ${token}`,
+          'X-Client-Timezone': Intl.DateTimeFormat().resolvedOptions().timeZone || '',
         },
       });
       

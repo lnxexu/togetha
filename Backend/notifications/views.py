@@ -5,6 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
 from .models import Notification
 from .serializers import NotificationSerializer
+from logs.views import create_log
 
 class NotificationViewSet(viewsets.ModelViewSet):
     serializer_class = NotificationSerializer
@@ -21,6 +22,18 @@ class NotificationViewSet(viewsets.ModelViewSet):
         if not notification.read:
             notification.read = True
             notification.save()
+            # Log that this notification was read via detail view
+            try:
+                create_log(
+                    user=request.user,
+                    action='read',
+                    entity_type='notification',
+                    entity_id=notification.id,
+                    message=f'Notification "{notification.title}" marked as read on view.',
+                    request=request,
+                )
+            except Exception:
+                pass
         
         serializer = self.get_serializer(notification)
         return Response(serializer.data)
@@ -30,6 +43,18 @@ class NotificationViewSet(viewsets.ModelViewSet):
         queryset = self.get_queryset()
         count = queryset.filter(read=False).count()
         queryset.update(read=True)
+        # Log bulk mark all read
+        try:
+            create_log(
+                user=request.user,
+                action='read_all',
+                entity_type='notification',
+                entity_id=None,
+                message=f'Marked {count} notifications as read.',
+                request=request,
+            )
+        except Exception:
+            pass
         return Response({
             'status': 'success',
             'message': f'{count} notifications marked as read'
@@ -41,6 +66,18 @@ class NotificationViewSet(viewsets.ModelViewSet):
         if not notification.read:
             notification.read = True
             notification.save()
+            # Log single notification marked read
+            try:
+                create_log(
+                    user=request.user,
+                    action='read',
+                    entity_type='notification',
+                    entity_id=notification.id,
+                    message=f'Notification "{notification.title}" marked as read.',
+                    request=request,
+                )
+            except Exception:
+                pass
             return Response({
                 'status': 'success',
                 'message': 'Notification marked as read',
@@ -65,7 +102,7 @@ class NotificationViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(recent_notifications, many=True)
         return Response(serializer.data)
 
-def create_notification(user, notification_type, title, message, related_task=None, action_id=None, priority='medium', specific_type=None):
+def create_notification(user, notification_type, title, message, related_task=None, action_id=None, priority='medium', specific_type=None, request=None):
     """
     Utility function to create notifications from anywhere in the codebase
     """
@@ -79,4 +116,16 @@ def create_notification(user, notification_type, title, message, related_task=No
         priority=priority,
         notification_type=specific_type or 'general'
     )
+    # Optionally log notification creation
+    try:
+        create_log(
+            user=user,
+            action='create',
+            entity_type='notification',
+            entity_id=notification.id,
+            message=f'Notification "{title}" created (type: {specific_type or "general"}).',
+            request=request,
+        )
+    except Exception:
+        pass
     return notification

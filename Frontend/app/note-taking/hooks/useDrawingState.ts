@@ -228,7 +228,7 @@ export const useDrawingState = ({
             return base * 0.5;
         }
       };
-
+      
       // Convert eraser flat array to points
       const eraserPoints: { x: number; y: number }[] = [];
       for (let i = 0; i < eraserStroke.points.length; i += 2) {
@@ -414,6 +414,12 @@ export const useDrawingState = ({
             const p = sp[seg[idx]];
             newPoints.push(p.x, p.y);
           }
+          // Drop degenerate segments that wouldn't render (less than 2 points or identical points)
+          if (newPoints.length < 4) return;
+          const ax = newPoints[0], ay = newPoints[1];
+          const bx = newPoints[newPoints.length - 2], by = newPoints[newPoints.length - 1];
+          if (ax === bx && ay === by) return;
+
           result.push({
             ...stroke,
             id: `${stroke.id}_seg_${segIndex}_${++segmentIdRef.current}`,

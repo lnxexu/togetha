@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import {
   View,
   StyleSheet,
@@ -20,6 +20,8 @@ import {
   Image,
   ActivityIndicator,
   Share,
+  GestureResponderEvent,
+  PanResponderGestureState,
 } from "react-native";
 import Slider from '@react-native-community/slider';
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
@@ -36,6 +38,7 @@ import { useDrawingState } from "./hooks/useDrawingState";
 import { DrawingStroke, drawingAPI } from "./services/drawingAPI";
 import { TemplateType } from "./components/TemplateOverlay";
 import UnsavedChangesModal from "./components/UnsavedChangesModal";
+import { pushNotificationService } from '@/app/notifications/services/PushNotificationService';
 import {
   getTemplateOptions,
   getTemplateBackgroundColor,
@@ -226,20 +229,9 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
   
   // Gesture handling refs
   const lastTapRef = useRef(0);
-  const gestureStartZoomRef = useRef(1);
-  const gestureStartDistanceRef = useRef(0);
 
   const isTablet = windowDimensions.width >= 768;
   const isSmallPhone = windowDimensions.width < 375;
-
-  // Helper function to calculate distance between two touches
-  const getDistance = (touches: any[]) => {
-    if (touches.length < 2) return 0;
-    const [touch1, touch2] = touches;
-    const dx = touch1.pageX - touch2.pageX;
-    const dy = touch1.pageY - touch2.pageY;
-    return Math.sqrt(dx * dx + dy * dy);
-  };
 
   // Handle double tap to reset zoom
   const handleDoubleTap = () => {
@@ -268,82 +260,6 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
   const resetZoom = () => {
     setCurrentZoom(1);
   };
-
-  // Create PanResponder for pinch-to-zoom gestures - optimized to not interfere with drawing
-  const panResponder = PanResponder.create({
-    onStartShouldSetPanResponder: (evt, gestureState) => {
-      const touches = evt.nativeEvent.touches || [];
-      // Only handle multi-touch (pinch-to-zoom) or panning when zoomed in read-only mode
-      // Let DrawingCanvas handle all single-touch drawing gestures
-      if (touches.length === 2) {
-        return true;
-      }
-      if (currentZoom > 1 && touches.length === 1 && readOnly) return true;
-      return false;
-    },
-    onMoveShouldSetPanResponder: (evt, gestureState) => {
-      const touches = evt.nativeEvent.touches || [];
-      // Only handle pinch gestures and panning in read-only zoomed mode
-      if (touches.length === 2) return true; // pinch
-      if (currentZoom > 1 && touches.length === 1 && readOnly) return true;
-      return false;
-    },
-    onMoveShouldSetPanResponderCapture: (evt, gestureState) => {
-      const touches = evt.nativeEvent.touches || [];
-      // Only capture multi-touch for zoom, never capture single-touch drawing
-      if (touches.length === 2) return true;
-      return false;
-    },
-    // Block native responder for zoom gestures only
-    onShouldBlockNativeResponder: (evt) => {
-      const touches = evt.nativeEvent.touches || [];
-      return touches.length === 2;
-    },
-    onStartShouldSetPanResponderCapture: (evt, gestureState) => {
-      const touches = evt.nativeEvent.touches || [];
-      // Only capture two-finger gestures to avoid interfering with drawing
-      return touches.length === 2;
-    },
-
-    onPanResponderGrant: (evt, gestureState) => {
-      const touches = evt.nativeEvent.touches || [];
-      if (touches.length === 2) {
-        // Pinch-to-zoom gesture
-        gestureStartZoomRef.current = currentZoom;
-        gestureStartDistanceRef.current = getDistance(touches);
-      } else if (touches.length === 1 && currentZoom > 1 && readOnly) {
-        // Start panning when zoomed in and read-only mode
-        // Note: Drawing gestures are handled by DrawingCanvas itself
-      }
-    },
-
-    onPanResponderMove: (evt, gestureState) => {
-      const touches = evt.nativeEvent.touches || [];
-      
-      if (touches.length === 2) {
-        // Handle pinch-to-zoom with immediate updates
-        const currentDistance = getDistance(touches);
-        const startDistance = gestureStartDistanceRef.current;
-
-        if (startDistance > 0) {
-          const scale = currentDistance / startDistance;
-          const newZoom = Math.max(0.5, Math.min(3, gestureStartZoomRef.current * scale));
-          setCurrentZoom(newZoom);
-        }
-      }
-      // Note: Single-touch drawing is handled by DrawingCanvas PanResponder
-      // Note: Single-touch panning when zoomed could be added here if needed
-    },
-
-    onPanResponderRelease: () => {
-      // Reset gesture tracking
-      gestureStartDistanceRef.current = 0;
-    },
-    onPanResponderTerminate: () => {
-      // Reset gesture tracking
-      gestureStartDistanceRef.current = 0;
-    },
-  });
 
   // Canvas preferences management
   const saveCanvasPreferences = async () => {
@@ -386,7 +302,7 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
   useEffect(() => {
     // Initialize PanResponder for moving/resizing the selection overlay (works for preview or canvas selection)
     selectionPanResponderRef.current = PanResponder.create({
-      onStartShouldSetPanResponder: (evt, gestureState) => {
+      onStartShouldSetPanResponder: (evt: GestureResponderEvent, gestureState: PanResponderGestureState) => {
         const activeLayout = useCanvasSelection ? canvasLayout : previewLayout;
         if (!selection || !activeLayout) return false;
         // Always handle touches that start inside the selection or on a handle
@@ -422,7 +338,7 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
   },
       onMoveShouldSetPanResponder: () => !!selectionModeRef.current,
       onPanResponderGrant: () => {},
-      onPanResponderMove: (evt, gestureState) => {
+      onPanResponderMove: (evt: GestureResponderEvent, gestureState: PanResponderGestureState) => {
         const activeLayout = useCanvasSelection ? canvasLayout : previewLayout;
         if (!selectionStartRef.current || !activeLayout) return;
         const start = selectionStartRef.current;
@@ -539,6 +455,9 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
   // Helper to save an image file URI to the user's Photos/Camera Roll and optionally share it
   const saveImageToPhotos = useCallback(async (fileUri: string, shareAfterSave = false) => {
     try {
+      // Notify download/export started
+      const exportName = `drawing_${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
+      pushNotificationService.notifyDownloadStarted(exportName).catch(() => {});
       const perm = await MediaLibrary.requestPermissionsAsync();
       if (!perm || (!perm.granted && perm.status !== 'granted')) {
         showWarningToast('Permission to save to Photos is required');
@@ -564,7 +483,8 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
         // Use the asset uri for sharing so other apps can access it
         await Share.share({ url: asset.uri, title: 'Exported drawing' } as any);
       }
-
+      // Notify completion
+      pushNotificationService.notifyDownloadComplete(exportName).catch(() => {});
       return asset.uri;
     } catch (err) {
       console.error('Failed to save image to photos', err);
@@ -577,6 +497,20 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
       ensureMediaPermission();
     }
   }, [showExportModal, ensureMediaPermission]);
+
+  // One-tap quick export: capture canvas and save to Photos
+  const handleQuickExport = useCallback(async () => {
+    setExporting(true);
+    try {
+      const uri = await captureRef(canvasCaptureRef.current || canvasCaptureRef, { format: 'png', quality: 1 });
+      await saveImageToPhotos(uri, false);
+      showSuccessToast('Saved to Photos');
+    } catch (e) {
+      showErrorToast('Failed to export');
+    } finally {
+      setExporting(false);
+    }
+  }, [canvasCaptureRef, saveImageToPhotos]);
 
   // Save canvas preferences when orientation changes
   useEffect(() => {
@@ -602,6 +536,47 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
       addStroke(drawingStroke);
     }
   }, [addStroke, eraseStrokes, currentPageIndex]);
+
+  // Rendering order rules to keep stacked strokes stable and predictable after erasing.
+  // Policy:
+  // - Highlighter sits below ink tools (pen/pencil/brush/calligraphy) so ink remains readable.
+  // - Within the same tool type, newer strokes render above older ones (timestamp ascending).
+  // - Preserve original order as a final tiebreaker to avoid jitter after segmentation.
+  const getToolPriority = useCallback((tool?: string) => {
+    switch (tool) {
+      case 'highlighter':
+        return 0; // lowest, drawn first (at the back)
+      case 'pencil':
+      case 'pen':
+        return 1;
+      case 'brush':
+        return 2;
+      case 'calligraphy':
+        return 3;
+      case 'eraser':
+        return 4; // not typically rendered; kept highest if present
+      default:
+        return 2; // neutral default
+    }
+  }, []);
+
+  const orderedStrokes = useMemo(() => {
+    // Map with original index to ensure a stable sort
+    const withIndex = strokes.map((s, i) => ({ s, i }));
+    withIndex.sort((a, b) => {
+      const ap = getToolPriority(a.s.tool);
+      const bp = getToolPriority(b.s.tool);
+      if (ap !== bp) return ap - bp; // tool priority first
+
+      const at = a.s.timestamp ?? 0;
+      const bt = b.s.timestamp ?? 0;
+      if (at !== bt) return at - bt; // older under newer
+
+      // Stable fallback by original position
+      return a.i - b.i;
+    });
+    return withIndex.map(x => x.s);
+  }, [strokes, getToolPriority]);
 
   // Fetch folders for folder selection
   const fetchFolders = useCallback(async () => {
@@ -1182,6 +1157,22 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
                   onRedo={redo}
                   onClear={handleClear}
                   onDropdownToggle={handleToolbarDropdownToggle}
+                  onQuickExport={async () => {
+                    try {
+                      setExporting(true);
+                      const uri = await captureRef(canvasCaptureRef.current || canvasCaptureRef, { format: 'png', quality: 1 });
+                      const saved = await saveImageToPhotos(uri, false);
+                      if (saved) {
+                        showSuccessToast('Saved to Photos');
+                      } else {
+                        showWarningToast('Could not save image');
+                      }
+                    } catch (e) {
+                      showErrorToast('Export failed');
+                    } finally {
+                      setExporting(false);
+                    }
+                  }}
                   onZoomIn={handleZoomIn}
                   onZoomOut={handleZoomOut}
                   onZoomReset={resetZoom}
@@ -1246,9 +1237,9 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
                   }}
                 >
                   <DrawingCanvas
-                    key={`canvas-${canvasRotation}-${currentZoom}`} // Force re-render on rotation/zoom
+                    key={`canvas-${canvasRotation}`} // Only remount on rotation to avoid pinch jitter
                     // Render directly from hook state to ensure undo/redo and eraser reflect immediately
-                    strokes={strokes}
+                    strokes={orderedStrokes}
                     currentTool={currentTool}
                     currentColor={currentColor}
                     currentWidth={currentWidth}
@@ -1262,6 +1253,9 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
                     scaleStrokesWithZoom={SCALE_STROKES_WITH_ZOOM}
                     currentZoom={currentZoom}
                     orientation={canvasOrientation}
+                    canvasWidth={800}
+                    canvasHeight={600}
+                    onZoomChange={setCurrentZoom}
                   />
                 </View>
 
@@ -1291,15 +1285,6 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
                 <View style={styles.zoomIndicator}>
                   <Text style={styles.zoomIndicatorText}>
                     {Math.round(currentZoom * 100)}%
-                  </Text>
-                </View>
-              )}
-              
-              {/* Gesture Hint */}
-              {!readOnly && (
-                <View style={styles.gestureHint}>
-                  <Text style={styles.gestureHintText}>
-                    Pinch to zoom • Double tap to reset • Scroll when zoomed
                   </Text>
                 </View>
               )}

@@ -105,6 +105,7 @@ export const API_ENDPOINTS = {
 
     // Notes endpoints
     NOTES: '/note_taking/notes/',
+    NOTE_TOUCH: (noteId: string) => `/note_taking/notes/${noteId}/touch/`,
     NOTE_CATEGORIES: '/note_taking/categories/',
     NOTE_FOLDERS: '/note_taking/folders/',
     MANAGE_NOTE_FOLDERS: '/note_taking/manage-note-folders/',

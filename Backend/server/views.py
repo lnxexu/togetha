@@ -66,7 +66,8 @@ def login_api(request):
                     message=f"User automatically logged out from other devices: {devices_str}",
                     action="Auto Logout Other Devices",
                     entity_type="User",
-                    entity_id=user.id
+                    entity_id=user.id,
+                    request=request
                 )
             except Exception as e:
                 print(f"Auto logout log creation error: {str(e)}")
@@ -93,7 +94,8 @@ def login_api(request):
                 message=f"User logged in from {device_info.get('device_name', 'Unknown Device')}",
                 action="Login",
                 entity_type="User",
-                entity_id=user.id
+                entity_id=user.id,
+                request=request
             )
         except Exception as e:
             print(f"Log creation error: {str(e)}")
@@ -138,7 +140,8 @@ def force_logout_all_sessions(request):
             message="User forced logout from all devices",
             action="Force Logout All",
             entity_type="User",
-            entity_id=user.id
+            entity_id=user.id,
+            request=request
         )
         
         return Response({

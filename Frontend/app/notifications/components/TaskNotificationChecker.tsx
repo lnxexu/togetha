@@ -12,7 +12,7 @@ export const TaskNotificationChecker = () => {
   const checkTaskDeadlines = async () => {
     if (!tasks || tasks.length === 0) return;
 
-    const now = NotificationUtils.getCurrentPhilippinesTime();
+  const now = NotificationUtils.now();
     const currentHour = now.getHours();
     
     // Only check between 8 AM and 10 PM to avoid night notifications
@@ -54,7 +54,7 @@ export const TaskNotificationChecker = () => {
           title: 'Task Reminder',
           message: `Task "${task.title}" ${notificationType.replace('_', ' ')}`,
           type: notificationType,
-          scheduledTime: NotificationUtils.formatPhilippinesDateTime(now),
+          scheduledTime: NotificationUtils.formatLocalDateTime(now),
           isRead: false
         });
       }

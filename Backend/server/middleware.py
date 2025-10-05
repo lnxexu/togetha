@@ -1,3 +1,33 @@
+from django.utils import timezone
+try:
+    from zoneinfo import ZoneInfo
+except Exception:
+    ZoneInfo = None
+
+class ClientTimezoneMiddleware:
+    """
+    Activate client's timezone for the duration of the request based on header
+    X-Client-Timezone (IANA name like 'Asia/Manila'). Falls back to settings.TIME_ZONE.
+    """
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        tzname = request.headers.get('X-Client-Timezone') or request.META.get('HTTP_X_CLIENT_TIMEZONE')
+        activated = False
+        if tzname and ZoneInfo:
+            try:
+                timezone.activate(ZoneInfo(tzname))
+                activated = True
+            except Exception:
+                activated = False
+        if not activated:
+            # Use project default
+            timezone.activate(timezone.get_default_timezone())
+
+        response = self.get_response(request)
+        # Optionally deactivate; leaving active is fine per request lifecycle
+        return response
 
 class CSRFExemptAPIMiddleware:
     """

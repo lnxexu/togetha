@@ -18,14 +18,14 @@ import {
   View,
   Vibration,
   Animated,
+  BackHandler,
 } from "react-native";
 import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
 import { LinearGradient } from "expo-linear-gradient";
 import { showSuccessToast, showErrorToast, showWarningToast } from "../utils/ToastUtils";
 import { useAutoSave } from "./hooks/useAutoSave";
 import { noteService, Note as NoteType, SaveStatus } from "./services/noteService";
-import { useNetworkStatus, getNetworkStatusText, getNetworkStatusColor } from "./services/networkService";
-import RenderHtml from "react-native-render-html";
+import { useNetworkStatus, getNetworkStatusText } from "./services/networkService";
 import { dictionaryService } from "./services/dictionaryService";
 
 const { RichEditor, RichToolbar } = require("react-native-pell-rich-editor");
@@ -141,6 +141,18 @@ const RinaButton: React.FC<RinaPopupProps> = ({
 const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   // Refs
   const richTextRef = useRef<any>(null);
+  // History management for undo/redo
+  const undoStackRef = useRef<string[]>([]);
+  const redoStackRef = useRef<string[]>([]);
+  const prevHtmlRef = useRef<string>(route.params?.initialNote?.formatted_content || route.params?.initialNote?.content || "");
+  const lastHistoryPushRef = useRef<number>(0);
+  const isApplyingHistoryRef = useRef<boolean>(false);
+  // Track second-click behavior for lists
+  const bulletSecondClickArmedRef = useRef<{ armed: boolean; at: number }>({ armed: false, at: 0 });
+  const orderedSecondClickArmedRef = useRef<{ armed: boolean; at: number }>({ armed: false, at: 0 });
+
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
 
   // State
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -178,6 +190,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   const [currentColorAction, setCurrentColorAction] = useState<
     "text" | "background" | null
   >(null);
+  // Removed Text Styles dropdown per request
   const [folders, setFolders] = useState<any[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(
     route.params?.initialNote?.folderId || null
@@ -222,6 +235,16 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
         useNativeDriver: true,
       }),
     ]).start();
+  }, []);
+
+  // Initialize history stacks based on initial content
+  useEffect(() => {
+    const initial = route.params?.initialNote?.formatted_content || route.params?.initialNote?.content || "";
+    prevHtmlRef.current = initial;
+    undoStackRef.current = [];
+    redoStackRef.current = [];
+    setCanUndo(false);
+    setCanRedo(false);
   }, []);
 
   // Modify the fetchFolders function to ensure the folder name is updated
@@ -297,6 +320,17 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     };
   }, []);
 
+  // Android hardware back: ensure save before exit
+  useEffect(() => {
+    const onHardwareBack = () => {
+      handleBackPress();
+      return true; // prevent default navigation
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onHardwareBack);
+    return () => sub.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formattedContent, title, selectedFolderId, currentNote]);
+
   // Auto-save setup with new Google Docs-style system
   const saveNote = async (note: NoteType, isAutoSave = true): Promise<NoteType | void> => {
     const result = await noteService.saveNote(note, isAutoSave);
@@ -355,9 +389,30 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     }
   }, [title, content, formattedContent, selectedFolderId]);
 
-  // Handle back button - auto-save handles saving automatically
-  const handleBackPress = () => {
-    navigation.goBack();
+  // Handle back button - ensure we save current rich text content before exiting
+  const handleBackPress = async () => {
+    try {
+      // Pull the freshest HTML from editor in case state lags while typing
+      const latestHtml: string = (await richTextRef.current?.getContentHtml?.()) ?? formattedContent ?? "";
+      const latestText = latestHtml.replace(/<[^>]*>/g, "");
+      const updatedNote: NoteType = {
+        ...currentNote,
+        title,
+        content: latestText,
+        formatted_content: latestHtml,
+        folderId: selectedFolderId,
+        updatedAt: new Date().toISOString(),
+      };
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
+        autoSaveTimeoutRef.current = null;
+      }
+      await forceSave(updatedNote);
+    } catch (e) {
+      // proceed regardless to avoid trapping the user
+    } finally {
+      navigation.goBack();
+    }
   };
 
 
@@ -404,11 +459,16 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   const applyColor = (colorName: string, colorHex: string) => {
     if (currentColorAction === "text") {
       setTextColor(colorName);
-      richTextRef.current?.sendAction('foreColor', colorHex);
+      // Try both the helper and command for maximum compatibility
+      try { richTextRef.current?.setForeColor?.(colorHex); } catch {}
+      richTextRef.current?.sendAction?.('foreColor', colorHex);
       showSuccessToast(`Text color changed to ${colorName}`);
     } else if (currentColorAction === "background") {
       setBgColor(colorName);
-      richTextRef.current?.sendAction('hiliteColor', colorHex);
+      // Some platforms prefer hiliteColor, others backColor – try both
+      try { richTextRef.current?.setHiliteColor?.(colorHex); } catch {}
+      richTextRef.current?.sendAction?.('hiliteColor', colorHex);
+      richTextRef.current?.sendAction?.('backColor', colorHex);
       showSuccessToast(`Background color changed to ${colorName}`);
     }
     setShowColorPicker(false);
@@ -427,8 +487,6 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     
     try {
       await forceSave(currentNote);
-      // Silent save - no toast notification for auto-save
-      console.log('Auto-saved note successfully');
     } catch (error) {
       console.error('Auto-save failed:', error);
       // Don't show error toast for auto-save failures to avoid spam
@@ -496,6 +554,196 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     askRinaForHelp(cleanText);
   };
 
+  // Simple HTML escape for safe insertion
+  const escapeHtml = (str: string) =>
+    str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+
+  // Build list HTML from possibly multi-line selected text
+  const buildListHtmlFromText = (text: string, type: 'ul' | 'ol') => {
+    const lines = (text || '')
+      .split(/\r?\n|\u2028|\u2029/g)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+    if (lines.length === 0) {
+      return `<${type}><li></li></${type}>`;
+    }
+    const items = lines.map((l) => `<li>${escapeHtml(l)}</li>`).join('');
+    return `<${type}>${items}</${type}>`;
+  };
+
+  // Create an explicit history checkpoint so toolbar actions are individually undoable
+  const checkpointHistoryForAction = async () => {
+    const prev = prevHtmlRef.current;
+    if (typeof prev === 'string') {
+      undoStackRef.current.push(prev);
+      if (undoStackRef.current.length > 100) undoStackRef.current.shift();
+      redoStackRef.current = [];
+      setCanUndo(true);
+      setCanRedo(false);
+      // Prevent onChange from adding another coalesced entry right away
+      lastHistoryPushRef.current = Date.now();
+    }
+  };
+
+  // Robust list application helpers with multiple fallbacks
+  const applyUnorderedList = async () => {
+    const editor = richTextRef.current;
+    if (!editor) return;
+    // If armed for second-click empty item within a short window, insert empty LI and reset
+    if (bulletSecondClickArmedRef.current.armed && Date.now() - bulletSecondClickArmedRef.current.at < 5000) {
+      await checkpointHistoryForAction();
+      try { editor.focusContentEditor?.(); } catch {}
+      await new Promise(res => setTimeout(res, 30));
+      // Insert an empty bullet item; using a small UL ensures a visible bullet even outside a list
+      try { editor.insertHTML?.('<ul><li></li></ul>'); } catch {}
+      bulletSecondClickArmedRef.current = { armed: false, at: 0 };
+      return;
+    }
+    await checkpointHistoryForAction();
+    try { editor.focusContentEditor?.(); } catch {}
+    // capture pre-change html
+    let before = '';
+    try { before = (await editor.getContentHtml?.()) ?? ''; } catch {}
+    // Give focus a moment to settle
+    await new Promise(res => setTimeout(res, 50));
+    // Try native method
+    if (typeof editor.insertBulletsList === 'function') {
+      try { await editor.insertBulletsList(); } catch {}
+    }
+    // Try multiple action names without extra args
+    const actions = ['insertBulletsList', 'insertUnorderedList', 'unorderedList'];
+    for (const act of actions) {
+      try { editor.sendAction?.(act); } catch {}
+    }
+    // If still unchanged, try switching from ordered to unordered (convert OL -> UL)
+    // Check if content changed; if not, fallback to HTML insert
+    let after = before;
+    try { after = (await editor.getContentHtml?.()) ?? before; } catch {}
+    if (after === before) {
+      try { editor.sendAction?.('insertOrderedList'); } catch {}
+      try { editor.sendAction?.('insertBulletsList'); } catch {}
+      try { after = (await editor.getContentHtml?.()) ?? before; } catch {}
+    }
+    // As last resort, insert selection wrapped as a list
+    if (after === before) {
+      const text = (selectedText || '').trim();
+      if (text) {
+        const html = buildListHtmlFromText(text, 'ul');
+        try { editor.insertHTML?.(html); } catch {}
+      } else {
+        try { editor.insertHTML?.('<ul><li></li></ul>'); } catch {}
+      }
+    }
+    // Arm second-click behavior so the next bullet click inserts an empty item
+    bulletSecondClickArmedRef.current = { armed: true, at: Date.now() };
+  };
+
+  const applyOrderedList = async () => {
+    const editor = richTextRef.current;
+    if (!editor) return;
+    if (orderedSecondClickArmedRef.current.armed && Date.now() - orderedSecondClickArmedRef.current.at < 5000) {
+      await checkpointHistoryForAction();
+      try { editor.focusContentEditor?.(); } catch {}
+      await new Promise(res => setTimeout(res, 30));
+      try { editor.insertHTML?.('<ol><li></li></ol>'); } catch {}
+      orderedSecondClickArmedRef.current = { armed: false, at: 0 };
+      return;
+    }
+    await checkpointHistoryForAction();
+    try { editor.focusContentEditor?.(); } catch {}
+    let before = '';
+    try { before = (await editor.getContentHtml?.()) ?? ''; } catch {}
+    await new Promise(res => setTimeout(res, 50));
+    if (typeof editor.insertOrderedList === 'function') {
+      try { await editor.insertOrderedList(); } catch {}
+    }
+    const actions = ['insertOrderedList', 'orderedList'];
+    for (const act of actions) {
+      try { editor.sendAction?.(act); } catch {}
+    }
+    let after = before;
+    try { after = (await editor.getContentHtml?.()) ?? before; } catch {}
+    if (after === before) {
+      try { editor.sendAction?.('insertBulletsList'); } catch {}
+      try { editor.sendAction?.('insertOrderedList'); } catch {}
+      try { after = (await editor.getContentHtml?.()) ?? before; } catch {}
+    }
+    if (after === before) {
+      const text = (selectedText || '').trim();
+      if (text) {
+        const html = buildListHtmlFromText(text, 'ol');
+        try { editor.insertHTML?.(html); } catch {}
+      }
+      else {
+        try { editor.insertHTML?.('<ol><li></li></ol>'); } catch {}
+      }
+    }
+    // Arm second-click behavior
+    orderedSecondClickArmedRef.current = { armed: true, at: Date.now() };
+  };
+
+  // Indentation handlers
+  const applyIndent = async () => {
+    const editor = richTextRef.current;
+    if (!editor) return;
+    await checkpointHistoryForAction();
+    try { editor.focusContentEditor?.(); } catch {}
+    // Small delay to ensure focus
+    await new Promise((res) => setTimeout(res, 30));
+    try { editor.sendAction?.('indent', 'result'); } catch {}
+    try { editor.sendAction?.('indent'); } catch {}
+  };
+
+  const applyOutdent = async () => {
+    const editor = richTextRef.current;
+    if (!editor) return;
+    await checkpointHistoryForAction();
+    try { editor.focusContentEditor?.(); } catch {}
+    await new Promise((res) => setTimeout(res, 30));
+    try { editor.sendAction?.('outdent', 'result'); } catch {}
+    try { editor.sendAction?.('outdent'); } catch {}
+  };
+
+  // Undo / Redo handlers using local history stacks
+  const handleUndo = () => {
+    if (!canUndo) return;
+    const undoStack = undoStackRef.current;
+    const redoStack = redoStackRef.current;
+    const current = formattedContent;
+    const prev = undoStack.pop();
+    if (prev === undefined) return;
+    redoStack.push(current);
+    isApplyingHistoryRef.current = true;
+    richTextRef.current?.setContentHTML(prev);
+    setFormattedContent(prev);
+    setContent(prev.replace(/<[^>]*>/g, ""));
+    prevHtmlRef.current = prev;
+    setCanUndo(undoStack.length > 0);
+    setCanRedo(true);
+  };
+
+  const handleRedo = () => {
+    if (!canRedo) return;
+    const undoStack = undoStackRef.current;
+    const redoStack = redoStackRef.current;
+    const current = formattedContent;
+    const next = redoStack.pop();
+    if (next === undefined) return;
+    undoStack.push(current);
+    isApplyingHistoryRef.current = true;
+    richTextRef.current?.setContentHTML(next);
+    setFormattedContent(next);
+    setContent(next.replace(/<[^>]*>/g, ""));
+    prevHtmlRef.current = next;
+    setCanUndo(true);
+    setCanRedo(redoStack.length > 0);
+  };
+
   const askRinaForHelp = async (text: string) => {
   try {
     setIsLoadingMeaning(true);
@@ -506,15 +754,6 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     const response = await dictionaryService.getConcept(text);
 
     if (response) {
-      // ✅ Store the whole JSON object, not just the meaning
-      // Example response:
-      // {
-      //   Meaning: "A greeting",
-      //   PartOfSpeech: "interjection",
-      //   Synonyms: ["greeting", "salutation"],
-      //   Antonyms: ["None"],
-      //   Examples: ["Hello, how are you?", "Hi, it's nice to meet you."]
-      // }
       setWordData(response);
     } else {
       setWordData(null);
@@ -676,25 +915,6 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
                   <MaterialIcons name="folder" size={16} color="#fff" />
                 </TouchableOpacity>
 
-                {keyboardHeight > 0 && (
-                  <TouchableOpacity
-                    style={styles.keyboardDismissButton}
-                    onPress={() => {
-                      Keyboard.dismiss();
-                      // Add haptic feedback
-                      if (Platform.OS === 'ios') {
-                        Vibration.vibrate(10);
-                      }
-                    }}
-                  >
-                    <MaterialIcons
-                      name="keyboard-hide"
-                      size={20}
-                      color="#fff"
-                    />
-                  </TouchableOpacity>
-                )}
-
                 <TouchableOpacity
                   style={[
                     styles.saveButton,
@@ -738,6 +958,27 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
                 bounces={false}
               >
                 <View style={styles.toolbarSection}>
+                  {/* Undo/Redo */}
+                  <TouchableOpacity
+                    style={[styles.toolButton, !canUndo && styles.toolButtonDisabled]}
+                    onPress={handleUndo}
+                    disabled={!canUndo}
+                  >
+                    <MaterialIcons name="undo" size={20} color="#374151" />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={[styles.toolButton, !canRedo && styles.toolButtonDisabled]}
+                    onPress={handleRedo}
+                    disabled={!canRedo}
+                  >
+                    <MaterialIcons name="redo" size={20} color="#374151" />
+                  </TouchableOpacity>
+                </View>
+                
+                <View style={styles.toolbarDivider} />
+
+                <View style={styles.toolbarSection}>
                   {/* Text Formatting */}
                   <TouchableOpacity
                     style={styles.toolButton}
@@ -774,16 +1015,30 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
                   {/* Lists */}
                   <TouchableOpacity
                     style={styles.toolButton}
-                    onPress={() => richTextRef.current?.sendAction('insertBulletsList', 'result')}
+                    onPress={async () => { await applyUnorderedList(); }}
                   >
                     <MaterialIcons name="format-list-bulleted" size={20} color="#374151" />
                   </TouchableOpacity>
                   
                   <TouchableOpacity
                     style={styles.toolButton}
-                    onPress={() => richTextRef.current?.sendAction('insertOrderedList', 'result')}
+                    onPress={async () => { await applyOrderedList(); }}
                   >
                     <MaterialIcons name="format-list-numbered" size={20} color="#374151" />
+                  </TouchableOpacity>
+                  
+                  {/* Indent / Outdent */}
+                  <TouchableOpacity
+                    style={styles.toolButton}
+                    onPress={async () => { await applyIndent(); }}
+                  >
+                    <MaterialIcons name="format-indent-increase" size={20} color="#374151" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.toolButton}
+                    onPress={async () => { await applyOutdent(); }}
+                  >
+                    <MaterialIcons name="format-indent-decrease" size={20} color="#374151" />
                   </TouchableOpacity>
                 </View>
                 
@@ -811,22 +1066,29 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
                   >
                     <MaterialIcons name="format-align-right" size={20} color="#374151" />
                   </TouchableOpacity>
+                  
+                  {/* Justify Full */}
+                  <TouchableOpacity
+                    style={styles.toolButton}
+                    onPress={() => richTextRef.current?.sendAction('justifyFull', 'result')}
+                  >
+                    <MaterialIcons name="format-align-justify" size={20} color="#374151" />
+                  </TouchableOpacity>
                 </View>
                 
                 <View style={styles.toolbarDivider} />
                 
                 <View style={styles.toolbarSection}>
-                  {/* Text Size */}
+                  {/* Text Resize */}
                   <TouchableOpacity
                     style={styles.toolButton}
-                    onPress={() => richTextRef.current?.sendAction('fontSize', '6')}
+                    onPress={() => { try { richTextRef.current?.focusContentEditor?.(); } catch {}; richTextRef.current?.sendAction('fontSize', '5'); }}
                   >
                     <MaterialIcons name="text-increase" size={20} color="#374151" />
                   </TouchableOpacity>
-                  
                   <TouchableOpacity
                     style={styles.toolButton}
-                    onPress={() => richTextRef.current?.sendAction('fontSize', '3')}
+                    onPress={() => { try { richTextRef.current?.focusContentEditor?.(); } catch {}; richTextRef.current?.sendAction('fontSize', '3'); }}
                   >
                     <MaterialIcons name="text-decrease" size={20} color="#374151" />
                   </TouchableOpacity>
@@ -855,53 +1117,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
                 
                 <View style={styles.toolbarDivider} />
                 
-                <View style={styles.toolbarSection}>
-                  {/* Undo/Redo */}
-                  <TouchableOpacity
-                    style={styles.toolButton}
-                    onPress={() => {
-                      richTextRef.current?.sendAction('undo', 'result');
-                      showSuccessToast('Undone');
-                    }}
-                  >
-                    <MaterialIcons name="undo" size={20} color="#374151" />
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity
-                    style={styles.toolButton}
-                    onPress={() => {
-                      richTextRef.current?.sendAction('redo', 'result');
-                      showSuccessToast('Redone');
-                    }}
-                  >
-                    <MaterialIcons name="redo" size={20} color="#374151" />
-                  </TouchableOpacity>
-                </View>
                 
-                <View style={styles.toolbarDivider} />
-                
-                <View style={styles.toolbarSection}>
-                  {/* Undo/Redo */}
-                  <TouchableOpacity
-                    style={styles.toolButton}
-                    onPress={() => {
-                      richTextRef.current?.sendAction('undo', 'result');
-                      showSuccessToast('Undone');
-                    }}
-                  >
-                    <MaterialIcons name="undo" size={20} color="#374151" />
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity
-                    style={styles.toolButton}
-                    onPress={() => {
-                      richTextRef.current?.sendAction('redo', 'result');
-                      showSuccessToast('Redone');
-                    }}
-                  >
-                    <MaterialIcons name="redo" size={20} color="#374151" />
-                  </TouchableOpacity>
-                </View>
                 
                 <View style={styles.toolbarDivider} />
                 
@@ -927,15 +1143,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
                     <MaterialIcons name="format-quote" size={20} color="#374151" />
                   </TouchableOpacity>
                   
-                  <TouchableOpacity
-                    style={styles.toolButton}
-                    onPress={() => {
-                      richTextRef.current?.insertHTML('<code style="background-color: #F3F4F6; padding: 4px 8px; border-radius: 4px; font-family: monospace; color: #1F2937;">Code here</code>');
-                      showSuccessToast('Code block inserted');
-                    }}
-                  >
-                    <MaterialIcons name="code" size={20} color="#374151" />
-                  </TouchableOpacity>
+                  {/* Code insert removed as requested */}
                 </View>
               </ScrollView>
             </View>
@@ -957,12 +1165,36 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
                   route.params?.initialNote?.formatted_content || content
                 }
                 onChange={(html: string) => {
-                  const plainText = html.replace(/<[^>]*>/g, "");
-                  setContent(plainText);
-                  setFormattedContent(html);
+                  const stripped = html.replace(/<[^>]*>/g, "");
+                  // If applying an undo/redo entry, don't push new history
+                  if (isApplyingHistoryRef.current) {
+                    isApplyingHistoryRef.current = false;
+                    setContent(stripped);
+                    setFormattedContent(html);
+                    prevHtmlRef.current = html;
+                  } else {
+                    setContent(stripped);
+                    setFormattedContent(html);
+                    // Any content change disarms the second-click empty-item for lists after a short time
+                    bulletSecondClickArmedRef.current = { armed: false, at: 0 };
+                    orderedSecondClickArmedRef.current = { armed: false, at: 0 };
+                    const now = Date.now();
+                    if (html !== prevHtmlRef.current && now - lastHistoryPushRef.current > 800) {
+                      if (prevHtmlRef.current !== undefined) {
+                        undoStackRef.current.push(prevHtmlRef.current);
+                        if (undoStackRef.current.length > 100) undoStackRef.current.shift();
+                      }
+                      // Clear redo on new edit
+                      redoStackRef.current = [];
+                      setCanUndo(undoStackRef.current.length > 0);
+                      setCanRedo(false);
+                      lastHistoryPushRef.current = now;
+                      prevHtmlRef.current = html;
+                    }
+                  }
                   
                   // Auto-save on every change with debouncing
-                  if (plainText.trim() || html.trim()) {
+                  if (stripped.trim() || html.trim()) {
                     // Clear existing timeout
                     if (autoSaveTimeoutRef.current) {
                       clearTimeout(autoSaveTimeoutRef.current);
@@ -989,6 +1221,10 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
                           x: data.x || 100,
                           y: data.y || 100,
                         });
+                      } else {
+                        // Clear selection if empty
+                        setSelectedText("");
+                        setShowRinaPopup(false);
                       }
                     } else if (data.type === "longpress" && data.word) {
                       const word = data.word.trim();
@@ -1011,6 +1247,9 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
                           setShowRinaPopup(false);
                         }, 8000);
                       }
+                    } else if (data.type === 'selection-clear') {
+                      setSelectedText("");
+                      setShowRinaPopup(false);
                     }
                   } catch (error) {
                     // Fallback to original message handling
@@ -1021,6 +1260,9 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
                           x: message.x || 100,
                           y: message.y || 100,
                         });
+                      } else {
+                        setSelectedText("");
+                        setShowRinaPopup(false);
                       }
                     }
                   }
@@ -1038,6 +1280,10 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
                     setTimeout(() => {
                       setShowRinaPopup(false);
                     }, 8000);
+                  } else {
+                    // Clear when selection becomes empty
+                    setSelectedText("");
+                    setShowRinaPopup(false);
                   }
                 }}
                 // Enhanced text interaction handling
@@ -1065,8 +1311,68 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
                         x: rect.left + rect.width / 2,
                         y: rect.top
                       }));
+                    } else {
+                      window.ReactNativeWebView.postMessage(JSON.stringify({
+                        type: 'selection-clear'
+                      }));
                     }
                   });
+
+                  // Prevent backspace at start of a list item from merging with previous line.
+                  document.addEventListener('keydown', function(e) {
+                    if (e.key === 'Backspace') {
+                      const sel = window.getSelection();
+                      if (!sel || !sel.rangeCount) return;
+                      const range = sel.getRangeAt(0);
+                      // Only when collapsed caret
+                      if (!range.collapsed) return;
+                      // Find nearest LI
+                      let node = range.startContainer;
+                      while (node && node.nodeType === 3) node = node.parentNode;
+                      function closest(el, selector) {
+                        while (el) {
+                          if (el.matches && el.matches(selector)) return el;
+                          el = el.parentElement;
+                        }
+                        return null;
+                      }
+                      const li = closest(node, 'li');
+                      if (li) {
+                        // Compute caret offset within LI by creating a temp range
+                        const liRange = document.createRange();
+                        liRange.selectNodeContents(li);
+                        liRange.setEnd(range.startContainer, range.startOffset);
+                        const pre = liRange.toString();
+                        // If caret is at logical start of the LI, prevent default merge
+                        if (!pre || /^\s*$/.test(pre)) {
+                          e.preventDefault();
+                          // Optionally keep caret where it is, and do nothing
+                          // If LI is empty (no text), delete the bullet entirely
+                          const textContent = li.textContent || '';
+                          if (!textContent.trim()) {
+                            // Remove empty list item safely
+                            const parent = li.parentNode;
+                            li.remove();
+                            // If list becomes empty, remove the list and insert a <p><br/></p> to keep caret in place
+                            if (parent && parent.children && parent.children.length === 0) {
+                              const p = document.createElement('p');
+                              p.innerHTML = '<br />';
+                              parent.parentNode && parent.parentNode.insertBefore(p, parent.nextSibling);
+                              parent.remove();
+                              // Place caret in the paragraph
+                              const newRange = document.createRange();
+                              newRange.setStart(p, 0);
+                              newRange.collapse(true);
+                              sel.removeAllRanges();
+                              sel.addRange(newRange);
+                            }
+                          }
+                          // Clear selection state in RN host
+                          try { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'selection-clear' })); } catch (err) {}
+                        }
+                      }
+                    }
+                  }, true);
                   
                   // Enhanced long press detection for mobile
                   let pressTimer;
@@ -1155,6 +1461,8 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
         </View>
 
         {/* More Options Menu removed for cleaner interface */}
+
+        {/* Text Styles Menu removed as requested */}
 
         {/* RINA Button for Text Selection */}
         <RinaButton
@@ -1576,6 +1884,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 1,
+  },
+  toolButtonDisabled: {
+    opacity: 0.4,
   },
   colorButton: {
     position: 'relative',

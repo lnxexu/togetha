@@ -11,6 +11,7 @@ import {
   PanResponder,
   Platform,
   Animated,
+  Easing,
   StatusBar,
   ActivityIndicator,
 } from "react-native";
@@ -38,6 +39,7 @@ import { getLocalPDFPathEnhanced } from '../utils/pdfUtils';
 import { PDFDocument as PDFLibDocument, rgb as pdfLibRgb } from "pdf-lib";
 import * as Sharing from "expo-sharing";
 import { drawingAPI, PDFSaveOptions } from '../services/drawingAPI';
+import { pushNotificationService } from '@/app/notifications/services/PushNotificationService';
 import { 
   embedAnnotationsInPDF, 
   saveAnnotationsDirectlyToPDF, 
@@ -195,6 +197,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const [hasError, setHasError] = useState(false);
   const fadeAnim = useState(new Animated.Value(0))[0];
   const slideAnim = useState(new Animated.Value(-50))[0];
+  const spinnerRotate = useRef(new Animated.Value(0)).current;
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   
@@ -601,9 +604,15 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
   const onAfterExportSaved = async (savedPath: string) => {
     try {
+      // Notify download/export started
+      const name = savedPath.split('/').pop() || fileName;
+      pushNotificationService.notifyDownloadStarted(name).catch(() => {});
+
       // Simplified version
       const result = await saveExportedPdfToDevice(savedPath);
       if (result.ok) {
+        // Notify completion
+        pushNotificationService.notifyDownloadComplete(name).catch(() => {});
         Alert.alert('PDF Saved', 'Exported PDF saved successfully.');
       } else {
         Alert.alert('Save Failed', 'Could not save exported PDF to device.');
@@ -906,6 +915,24 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       }
     };
   }, []);
+
+  // Keep the loading icon rotating while isLoading is true
+  useEffect(() => {
+    let cancelled = false;
+    const start = () => {
+      spinnerRotate.setValue(0);
+      Animated.timing(spinnerRotate, {
+        toValue: 1,
+        duration: 1000,
+        useNativeDriver: true,
+        easing: Easing.linear,
+      }).start(() => {
+        if (!cancelled && isLoading) start();
+      });
+    };
+    if (isLoading) start();
+    return () => { cancelled = true; };
+  }, [isLoading, spinnerRotate]);
 
   const validatePDFSource = async () => {
     try {
@@ -4195,7 +4222,7 @@ return (
               style={{
                 transform: [
                   {
-                    rotate: fadeAnim.interpolate({
+                    rotate: spinnerRotate.interpolate({
                       inputRange: [0, 1],
                       outputRange: ["0deg", "360deg"],
                     }),
@@ -4203,9 +4230,9 @@ return (
                 ],
               }}
             >
-              <MaterialIcons name="description" size={56} color="#667eea" />
+              <MaterialIcons name="sync" size={56} color="#667eea" />
             </Animated.View>
-            <Text style={styles.loadingText}>Loading your PDF...</Text>
+            <Text style={styles.loadingText}>Loading your PDF…</Text>
             <Text style={[styles.loadingText, { fontSize: 14, marginTop: 4 }]}>
               Please wait while we prepare your document
             </Text>

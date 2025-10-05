@@ -1,11 +1,7 @@
 import { Task, TaskFormData } from "../types/Task";
 import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import {
-  toPhilippineISOString,
-  convertToPhilippineTime,
-  getCurrentPhilippineDate,
-} from "@/app/utils/dateHelpers";
+import { parseISOToDate } from "@/app/utils/utcDate";
 import offlineTaskService from './offlineTaskService';
 import { pushNotificationService } from '@/app/notifications/services/PushNotificationService';
 
@@ -27,6 +23,7 @@ class TaskService {
     const token = await this.getAuthToken();
     const headers: HeadersInit = {
       "Content-Type": "application/json",
+      "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone || "",
     };
 
     if (token) {
@@ -68,19 +65,11 @@ class TaskService {
       task.priority?.replace(/_/g, "-") || "not-urgent-not-important";
     const status = task.status?.replace(/_/g, "-") || "not-started";
 
-    // Always convert all date fields to PH time
-    const createdAt = task.created_at
-      ? convertToPhilippineTime(new Date(task.created_at))
-      : convertToPhilippineTime(new Date());
-    const updatedAt = task.updated_at
-      ? convertToPhilippineTime(new Date(task.updated_at))
-      : convertToPhilippineTime(new Date());
-    const due_datetime = task.due_datetime
-      ? convertToPhilippineTime(new Date(task.due_datetime))
-      : undefined;
-    const completedAt = task.completed_at
-      ? convertToPhilippineTime(new Date(task.completed_at))
-      : undefined;
+    // Parse UTC timestamps and rely on device local time for display
+    const createdAt = task.created_at ? parseISOToDate(task.created_at) ?? new Date() : new Date();
+    const updatedAt = task.updated_at ? parseISOToDate(task.updated_at) ?? new Date() : new Date();
+    const due_datetime = task.due_datetime ? parseISOToDate(task.due_datetime) ?? undefined : undefined;
+    const completedAt = task.completed_at ? parseISOToDate(task.completed_at) ?? undefined : undefined;
 
     return {
       ...task,
@@ -93,7 +82,7 @@ class TaskService {
       completedAt,
       overdue:
         due_datetime && !task.completed
-          ? due_datetime < convertToPhilippineTime(new Date())
+          ? due_datetime < new Date()
           : false,
     };
   }
@@ -111,7 +100,7 @@ class TaskService {
     
     // Send push notification for task creation
     try {
-      await pushNotificationService.notifyTaskCreated(task.title);
+      await pushNotificationService.notifyTaskCreated(task.title, task.id);
       
       // Schedule reminder notifications if task has a due date
       if (task.due_datetime) {
@@ -135,13 +124,13 @@ class TaskService {
       // Schedule notification 1 hour before due date
       const oneHourBefore = new Date(dueDate.getTime() - 60 * 60 * 1000);
       if (oneHourBefore > now) {
-        await pushNotificationService.scheduleTaskReminderAtTime(task.title, oneHourBefore);
+        await pushNotificationService.scheduleTaskReminderAtTime(task.title, oneHourBefore, task.id);
       }
       
       // Schedule notification 30 minutes before due date
       const thirtyMinsBefore = new Date(dueDate.getTime() - 30 * 60 * 1000);
       if (thirtyMinsBefore > now) {
-        await pushNotificationService.scheduleTaskReminderAtTime(task.title, thirtyMinsBefore);
+        await pushNotificationService.scheduleTaskReminderAtTime(task.title, thirtyMinsBefore, task.id);
       }
       
       // Check if task is due today
@@ -151,7 +140,7 @@ class TaskService {
         dueDate.getMonth() === today.getMonth() &&
         dueDate.getFullYear() === today.getFullYear()
       ) {
-        await pushNotificationService.notifyTaskDueToday(task.title);
+        await pushNotificationService.notifyTaskDueToday(task.title, task.id);
       }
     } catch (error) {
       console.error('Error scheduling task reminders:', error);
@@ -171,7 +160,7 @@ class TaskService {
     
     // Send celebration notification
     try {
-      await pushNotificationService.scheduleTaskCompletionCelebration(task.title);
+      await pushNotificationService.scheduleTaskCompletionCelebration(task.title, task.id);
     } catch (error) {
       console.error('Error sending task completion notification:', error);
     }

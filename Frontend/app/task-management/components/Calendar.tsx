@@ -5,10 +5,11 @@ import {
   StyleSheet,
   TouchableOpacity,
   Modal,
-  FlatList,
+  TextInput,
   Dimensions,
+  Platform,
 } from 'react-native';
-import { MaterialIcons, Ionicons } from '@expo/vector-icons';
+import { MaterialIcons, Ionicons, FontAwesome } from '@expo/vector-icons';
 import { Task } from '../types/Task';
 
 interface GoogleCalendarProps {
@@ -28,6 +29,8 @@ const GoogleCalendar: React.FC<GoogleCalendarProps> = ({
 }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [showDateInput, setShowDateInput] = useState(false);
+  const [dateInputValue, setDateInputValue] = useState('');
 
   const { width } = Dimensions.get('window');
   const cellWidth = (width - 80) / 7; // Account for padding and margins
@@ -117,6 +120,48 @@ const GoogleCalendar: React.FC<GoogleCalendarProps> = ({
     const dateTasks = getTasksForDate(date);
     onDateSelect(date, dateTasks);
   };
+  
+  // Toggle date input visibility
+  const toggleDateInput = () => {
+    if (!showDateInput) {
+      // Format current date as YYYY-MM-DD for the input
+      const year = currentDate.getFullYear();
+      const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+      const day = String(currentDate.getDate()).padStart(2, '0');
+      setDateInputValue(`${year}-${month}-${day}`);
+    }
+    setShowDateInput(!showDateInput);
+  };
+  
+  // Handle date input change
+  const handleDateInputChange = (text: string) => {
+    setDateInputValue(text);
+  };
+  
+  // Handle date input submission
+  const handleDateInputSubmit = () => {
+    // Validate date format (YYYY-MM-DD)
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (dateRegex.test(dateInputValue)) {
+      try {
+        const [year, month, day] = dateInputValue.split('-').map(Number);
+        // Month is 0-indexed in JavaScript Date
+        const newDate = new Date(year, month - 1, day);
+        
+        // Check if it's a valid date
+        if (!isNaN(newDate.getTime())) {
+          setCurrentDate(newDate);
+          setSelectedDate(newDate);
+          const dateTasks = getTasksForDate(newDate);
+          onDateSelect(newDate, dateTasks);
+          setShowDateInput(false);
+        }
+      } catch (e) {
+        // Invalid date
+        console.error('Invalid date format');
+      }
+    }
+  };
 
   const monthNames = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -142,14 +187,38 @@ const GoogleCalendar: React.FC<GoogleCalendarProps> = ({
               <TouchableOpacity onPress={onClose} style={styles.closeButton}>
                 <Ionicons name="arrow-back" size={24} color="#202124" />
               </TouchableOpacity>
-              <Text style={styles.headerTitle}>
-                {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
-              </Text>
+              <Text style={styles.headerTitle}>Calendar</Text>
             </View>
-            <TouchableOpacity onPress={navigateToToday} style={styles.todayButton}>
-              <Text style={styles.todayButtonText}>Today</Text>
-            </TouchableOpacity>
+            <View style={styles.headerActions}>
+              <TouchableOpacity onPress={toggleDateInput} style={styles.dateInputButton}>
+                <FontAwesome name="calendar" size={18} color="#1a73e8" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={navigateToToday} style={styles.todayButton}>
+                <Text style={styles.todayButtonText}>Today</Text>
+              </TouchableOpacity>
+            </View>
           </View>
+
+          {/* Date Input */}
+          {showDateInput && (
+            <View style={styles.dateInputContainer}>
+              <TextInput
+                style={styles.dateInput}
+                placeholder="YYYY-MM-DD"
+                value={dateInputValue}
+                onChangeText={handleDateInputChange}
+                onSubmitEditing={handleDateInputSubmit}
+                keyboardType={Platform.OS === 'ios' ? 'default' : 'numeric'}
+                autoFocus
+              />
+              <TouchableOpacity 
+                style={styles.dateInputSubmitButton} 
+                onPress={handleDateInputSubmit}
+              >
+                <Text style={styles.dateInputSubmitText}>Go</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Month Navigation */}
           <View style={styles.monthNavigation}>
@@ -157,11 +226,11 @@ const GoogleCalendar: React.FC<GoogleCalendarProps> = ({
               <MaterialIcons name="chevron-left" size={24} color="#5f6368" />
             </TouchableOpacity>
             
-            <View style={styles.monthDisplay}>
+            <TouchableOpacity onPress={toggleDateInput} style={styles.monthDisplay}>
               <Text style={styles.monthText}>
                 {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
               </Text>
-            </View>
+            </TouchableOpacity>
             
             <TouchableOpacity onPress={navigateToNextMonth} style={styles.navButton}>
               <MaterialIcons name="chevron-right" size={24} color="#5f6368" />
@@ -208,11 +277,11 @@ const GoogleCalendar: React.FC<GoogleCalendarProps> = ({
                     {date.getDate()}
                   </Text>
                   
-                  {/* Enhanced Task indicators with annotations */}
+                  {/* Task indicators with dots only */}
                   {dayTasks.length > 0 && isCurrentMonthDate && (
                     <View style={styles.taskIndicatorsContainer}>
                       <View style={styles.taskDotsContainer}>
-                        {dayTasks.slice(0, 3).map((task, taskIndex) => {
+                        {dayTasks.slice(0, Math.min(5, dayTasks.length)).map((task, taskIndex) => {
                           const dotColor = task.completed 
                             ? '#10B981' // Green for completed
                             : task.overdue 
@@ -226,22 +295,12 @@ const GoogleCalendar: React.FC<GoogleCalendarProps> = ({
                               key={taskIndex}
                               style={[
                                 styles.taskIndicator,
-                                { backgroundColor: dotColor }
+                                { backgroundColor: dotColor, marginTop: 10}
                               ]}
                             />
                           );
                         })}
                       </View>
-                      {dayTasks.length > 3 && (
-                        <View style={styles.moreTasksBadge}>
-                          <Text style={styles.moreTasksText}>+{dayTasks.length - 3}</Text>
-                        </View>
-                      )}
-                      {dayTasks.length <= 3 && dayTasks.length > 0 && (
-                        <View style={styles.taskCountBadge}>
-                          <Text style={styles.taskCountText}>{dayTasks.length}</Text>
-                        </View>
-                      )}
                     </View>
                   )}
                 </TouchableOpacity>
@@ -291,6 +350,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
   },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   closeButton: {
     padding: 8,
     marginRight: 8,
@@ -313,6 +377,48 @@ const styles = StyleSheet.create({
   todayButtonText: {
     fontSize: 14,
     color: '#1a73e8',
+    fontWeight: '500',
+    fontFamily: 'Inter-Medium',
+  },
+  dateInputButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: '#f8f9fa',
+    borderWidth: 1,
+    borderColor: '#dadce0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dateInputContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f3f4',
+    alignItems: 'center',
+  },
+  dateInput: {
+    flex: 1,
+    height: 40,
+    borderWidth: 1,
+    borderColor: '#dadce0',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#f8f9fa',
+    color: '#202124',
+    fontFamily: 'Inter-Regular',
+  },
+  dateInputSubmitButton: {
+    marginLeft: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#1a73e8',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dateInputSubmitText: {
+    color: '#ffffff',
     fontWeight: '500',
     fontFamily: 'Inter-Medium',
   },
@@ -363,11 +469,11 @@ const styles = StyleSheet.create({
   },
   dateCell: {
     aspectRatio: 1,
-    justifyContent: 'flex-start',
+    justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
     marginVertical: 2,
-    paddingTop: 8,
+    paddingTop: 8, // Add padding at top to make room for indicators
   },
   inactiveDate: {
     opacity: 0.3,
@@ -403,24 +509,25 @@ const styles = StyleSheet.create({
   },
   taskIndicatorsContainer: {
     position: 'absolute',
-    bottom: 4,
+    top: 2,
     left: 0,
     right: 0,
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 2,
   },
   taskDotsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 3,
+    flexWrap: 'wrap',
+    maxWidth: '80%',
   },
   taskIndicator: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    marginHorizontal: 1,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
@@ -429,38 +536,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 1,
     elevation: 1,
-  },
-  moreTasksBadge: {
-    backgroundColor: '#5f6368',
-    borderRadius: 6,
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-    minWidth: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  moreTasksText: {
-    fontSize: 7,
-    color: '#ffffff',
-    fontWeight: '600',
-    fontFamily: 'Inter-SemiBold',
-  },
-  taskCountBadge: {
-    backgroundColor: '#E8F0FE',
-    borderRadius: 6,
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-    minWidth: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 0.5,
-    borderColor: '#1a73e8',
-  },
-  taskCountText: {
-    fontSize: 7,
-    color: '#1a73e8',
-    fontWeight: '700',
-    fontFamily: 'Inter-Bold',
   },
 });
 

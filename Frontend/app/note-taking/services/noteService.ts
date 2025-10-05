@@ -108,14 +108,20 @@ class NoteService {
    * Determines if note should be created or updated
    */
   private shouldCreateNewNote(note: Note): boolean {
-    // If note ID starts with 'note_' it's a local temporary ID
-    if (note.id.startsWith('note_')) {
-      return true;
-    }
+    // Only create when we clearly have a locally generated temporary ID.
+    // Any UUID-looking ID should be treated as an existing server note to avoid duplicates.
+    if (!note?.id) return true;
+    if (note.id.startsWith('note_')) return true;
 
-    // If note ID is a UUID but we don't have it in our version tracking, 
-    // it might be a new note that was just created
-    return !this.noteVersions.has(note.id);
+    // Heuristic: UUID v4 (8-4-4-4-12 hex) — treat as existing
+    const uuidLike = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(note.id);
+    if (uuidLike) return false;
+
+    // Fallback: if we have previously seen a version for this ID, it's definitely existing
+    if (this.noteVersions.has(note.id)) return false;
+
+    // Default to update for unknown non-temp IDs to be safe (server will 404 if not found)
+    return false;
   }
 
   /**
@@ -158,6 +164,7 @@ class NoteService {
       headers: {
         Authorization: `Token ${token}`,
         'Content-Type': 'application/json',
+        'X-Client-Timezone': Intl.DateTimeFormat().resolvedOptions().timeZone || '',
       },
       body: JSON.stringify(requestBody),
     });

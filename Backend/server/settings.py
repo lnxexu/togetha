@@ -101,6 +101,7 @@ MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'server.middleware.ClientTimezoneMiddleware',
     'django.middleware.common.CommonMiddleware',
     'server.middleware.CSRFExemptAPIMiddleware',  # Add before CSRF middleware
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -226,6 +227,8 @@ REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
     ],
+    # Ensure datetimes are timezone-aware and serialized in ISO 8601
+    'DATETIME_FORMAT': 'iso-8601',
 }
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
@@ -279,7 +282,7 @@ LOGGING = {
     },
 }
 
-TIME_ZONE = 'UTC' 
+TIME_ZONE = 'UTC'
 USE_TZ = True
 
 CELERY_BROKER_URL = 'redis://localhost:6379/0'  # Use Redis as the message broker
