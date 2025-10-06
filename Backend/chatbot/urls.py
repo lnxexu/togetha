@@ -10,13 +10,14 @@ from .views.documents import DocumentUploadView, DocumentListView
 from .views.RAG_view import ChatRAGView
 from .views.dictionary_views import ConceptHelpView
 
+
 urlpatterns = [
     path("chat/", ChatView.as_view(), name="chat"),
     path("upload_pdf/", FileUploadView.as_view(), name="upload_pdf"),
     path("upload_file/", FileUploadView.as_view(), name="upload_file"),
    
     # sa image to text (OCR)
-    path("ocr/extract_text/", OCRView.as_view(), name="extract_text"),
+    path("ocr/", OCRView.as_view(), name="ocr"),
 
     # Sa conversations ni handlers
     path("conversations/", ConversationViewSet.as_view({"get": "list", "post": "create"}), name="conversations_list"),

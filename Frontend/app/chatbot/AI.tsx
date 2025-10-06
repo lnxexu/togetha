@@ -9,7 +9,6 @@ import {
   View,
   ActivityIndicator,
   StyleSheet,
-  KeyboardAvoidingView,
   Modal,
   Platform,
   Alert,
@@ -66,7 +65,6 @@ function ChatBot(): React.ReactElement {
   const scrollViewRef = useRef<ScrollView>(null);
   const insets = useSafeAreaInsets();
 
-
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversation, setCurrentConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -96,15 +94,24 @@ function ChatBot(): React.ReactElement {
   const [ocrLoading, setOCRLoading] = useState(false);
 
 
-    // Disable chat head while on the main chat interface to prevent conflicts
-  
+  useEffect(() => {
+  const initChat = async () => {
+    try {
+      await loadConversations();        
+      await restoreActiveConversation(); 
+    } catch (error) {
+      console.warn("Failed to initialize chat:", error);
+    }
+  };
+
+  initChat();
+}, []);
 
     // Set up keyboard visibility listeners with frame information
     const keyboardDidShowListener = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
       (event) => {
         const kbHeight = event.endCoordinates?.height || 0;
-        console.log('Keyboard height:', kbHeight);
         setKeyboardHeight(kbHeight);
         setIsKeyboardVisible(true);
 
@@ -135,14 +142,6 @@ function ChatBot(): React.ReactElement {
         setIsKeyboardVisible(false);
       }
     );
-
-    // Re-enable when component unmounts and remove listeners
-    
-
-  // Update chat head context when current conversation changes
-  
-
-  // Scroll to bottom effect when messages change or keyboard visibility changes
   useEffect(() => {
     const timer = setTimeout(() => {
       scrollViewRef.current?.scrollToEnd({ animated: true });
@@ -171,7 +170,7 @@ function ChatBot(): React.ReactElement {
     try {
       const savedConversationId = await AsyncStorage.getItem('activeConversationId');
       if (savedConversationId) {
-        // Load the saved conversation
+  
         loadConversation(savedConversationId);
       }
     } catch (error) {
@@ -902,229 +901,182 @@ function ChatBot(): React.ReactElement {
     }
   };
 
-  const handleOCRModalOpen = () => {
-    setShowOCRModal(true);
-    setShowChatOptions(false);
-  };
+  // ✅ Opens the OCR modal manually
+const handleOCRModalOpen = () => {
+  setShowOCRModal(true);
+  setShowChatOptions(false);
+};
 
-  const handleOCRImageSelect = async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: 'image/*',
-        copyToCacheDirectory: true,
-        multiple: false
-      });
+// ✅ Shared OCR runner (used by both flows)
+const runOCR = async (file: any): Promise<string> => {
+  try {
+    console.log(`📸 Sending ${file.name} to backend for OCR...`);
+    const response = await chatbotAPI.extractTextFromImage(file);
 
-      if (result.canceled) return;
-
-      const file = result.assets[0];
-
-      if (!file) {
-        Alert.alert("Error", "No image selected");
-        return;
-      }
-
-      // Validate file size (50MB limit)
-      const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
-      if (file.size && file.size > MAX_FILE_SIZE) {
-        Alert.alert("Error", "File too large (max 50MB)");
-        return;
-      }
-
-      setOCRImage(file);
-      setOCRResult("");
-    } catch (error: any) {
-      console.error('Image selection error:', error);
-      Alert.alert("Error", "Failed to select image");
+    if (response?.text?.trim()) {
+      const cleanText = response.text.trim();
+      console.log(`✅ OCR successful for ${file.name}: ${cleanText.length} chars`);
+      return cleanText;
     }
-  };
 
-  const handleOCRProcess = async () => {
-    if (!ocrImage) {
-      Alert.alert("Error", "Please select an image first");
+    console.warn(`⚠️ No readable text detected in ${file.name}`);
+    return "[No readable text detected in this image]";
+  } catch (error: any) {
+    console.error(`❌ OCR failed for ${file.name}:`, error);
+    const status = error.response?.status;
+
+    if (status === 400) throw new Error("Invalid image format.");
+    if (status === 413) throw new Error("Image too large (max 20MB).");
+    if (status === 415) throw new Error("Unsupported image format.");
+    if (status === 422) throw new Error("Unreadable or corrupted image.");
+    if (status === 503) throw new Error("OCR service temporarily unavailable.");
+    throw new Error("Failed to process OCR. Please try again.");
+  }
+};
+
+// ✅ Select image manually for OCR modal
+const handleOCRImageSelect = async () => {
+  try {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: "image/*",
+      copyToCacheDirectory: true,
+      multiple: false,
+    });
+
+    if (result.canceled) return;
+
+    const file = result.assets?.[0];
+    if (!file) {
+      Alert.alert("Error", "No image selected");
       return;
     }
 
-    try {
-      setOCRLoading(true);
-      setOCRResult("");
-
-      console.log(`📸 Starting OCR for: ${ocrImage.name}`);
-
-      const ocrResponse = await chatbotAPI.extractTextFromImage(ocrImage);
-
-      if (ocrResponse.text && ocrResponse.text.trim().length > 0) {
-        setOCRResult(ocrResponse.text.trim());
-        console.log(`✅ OCR successful: ${ocrResponse.text.length} characters extracted`);
-      } else {
-        setOCRResult("No readable text found in the image.");
-      }
-    } catch (error: any) {
-      console.error(`❌ OCR processing error:`, error);
-
-      let errorMessage = "Failed to extract text from image";
-
-      if (error.message?.includes("413") || error.message?.includes("too large")) {
-        errorMessage = "Image file is too large (max 50MB)";
-      } else if (error.message?.includes("415") || error.message?.includes("not supported")) {
-        errorMessage = "Image format not supported. Please use JPG, PNG, or GIF.";
-      } else if (error.message?.includes("500")) {
-        errorMessage = "Server error during OCR processing";
-      } else if (error.message?.includes("timeout")) {
-        errorMessage = "OCR processing timed out. Please try with a smaller image.";
-      }
-
-      setOCRResult(`Error: ${errorMessage}`);
-      Alert.alert("OCR Error", errorMessage);
-    } finally {
-      setOCRLoading(false);
+    const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
+    if (file.size && file.size > MAX_FILE_SIZE) {
+      Alert.alert("Error", "File too large (max 20MB)");
+      return;
     }
-  };
 
-  const handleOCRCopyText = async () => {
-    if (!ocrResult) return;
-
-    // Copy to clipboard would need expo-clipboard
-    // For now, we'll just close the modal and put the text in input
-    setInput(ocrResult);
-    setShowOCRModal(false);
-    Alert.alert("Success", "Text copied to message input");
-  };
-
-  const handleOCRClose = () => {
-    setShowOCRModal(false);
-    setOCRImage(null);
+    setOCRImage(file);
     setOCRResult("");
+    setShowOCRModal(true);
+  } catch (error) {
+    console.error("Image selection error:", error);
+    Alert.alert("Error", "Failed to select image");
+  }
+};
+
+// ✅ Process single image (OCR Modal)
+const handleOCRProcess = async () => {
+  if (!ocrImage) {
+    Alert.alert("Error", "Please select an image first");
+    return;
+  }
+
+  try {
+    setOCRLoading(true);
+    setOCRResult("");
+
+    const extractedText = await runOCR(ocrImage);
+    setOCRResult(extractedText);
+
+    // ✅ Put the extracted text directly into the input box
+    setInput(extractedText);
+    setShowOCRModal(false); // optional - auto-close the modal
+
+  } catch (error: any) {
+    console.error("❌ OCR processing error:", error);
+    const message = error.message || "Failed to extract text from image.";
+    setOCRResult(`Error: ${message}`);
+    Alert.alert("OCR Error", message);
+  } finally {
     setOCRLoading(false);
-  };
+  }
+};
 
-  const handleOCR = async () => {
-    if (pendingFiles.length === 0) {
-      Alert.alert(
-        "No Files Selected", 
-        "Please upload image files first to extract text from them.",
-        [{ text: "OK" }]
-      );
-      return;
+// ✅ Copy OCR result from modal into message input
+const handleOCRCopyText = () => {
+  if (!ocrResult) return;
+  setInput(ocrResult);
+  setShowOCRModal(false);
+  Alert.alert("Copied", "Extracted text copied to chat input");
+};
+
+// ✅ Close modal & reset state
+const handleOCRClose = () => {
+  setShowOCRModal(false);
+  setOCRImage(null);
+  setOCRResult("");
+  setOCRLoading(false);
+};
+
+// ✅ Process all images attached to the chat (multi-image OCR)
+const handleOCR = async () => {
+  if (pendingFiles.length === 0) {
+    Alert.alert("No Files Selected", "Please upload image files first.", [{ text: "OK" }]);
+    return;
+  }
+
+  const imageFiles = pendingFiles.filter(f => f.mimeType?.startsWith("image/"));
+  if (imageFiles.length === 0) {
+    Alert.alert("No Images Found", "OCR can only extract text from image files.", [{ text: "OK" }]);
+    return;
+  }
+
+  setLoading(true);
+  setErrorMessage(null);
+
+  try {
+    console.log(`🔍 Starting OCR for ${imageFiles.length} image(s)...`);
+    let extractedText = "";
+    const processedResults: { name: string; result: string }[] = [];
+
+    for (const file of imageFiles) {
+      try {
+        const text = await runOCR(file);
+        extractedText += `\n\n📷 **${file.name}:**\n${text}`;
+        processedResults.push({
+          name: file.name,
+          result: text.length > 100 ? text.slice(0, 100) + "..." : text,
+        });
+      } catch (err: any) {
+        extractedText += `\n\n📷 **${file.name}:**\n[Error: ${err.message}]`;
+        processedResults.push({ name: file.name, result: `Error: ${err.message}` });
+      }
     }
 
-    const imageFiles = pendingFiles.filter(file => file.mimeType?.startsWith('image/'));
+    if (extractedText.trim()) {
+      const summary = `Here is the text extracted from ${imageFiles.length} image(s):${extractedText}`;
+      setMessages(prev => [...prev, {
+  role: "assistant",
+  content: `📸 Extracted text from ${ocrImage.name}:\n${extractedText}`,
+}]);
+      setInput(summary);
 
-    if (imageFiles.length === 0) {
-      Alert.alert(
-        "No Images Found", 
-        "OCR can only extract text from image files. Please upload some images first.",
-        [{ text: "OK" }]
-      );
-      return;
+      const summaryList = processedResults.map(r => `• ${r.name}: ${r.result}`).join("\n");
+      Alert.alert("OCR Complete", summaryList, [
+        { text: "Send Message", onPress: () => handleSend() },
+        { text: "Edit First", style: "cancel" },
+      ]);
+    } else {
+      Alert.alert("No Text Extracted", "No readable text found in the uploaded images.");
     }
+  } catch (error: any) {
+    console.error("❌ OCR processing error:", error);
+    const errorMessage =
+      error.message?.includes("timeout")
+        ? "Request timed out. Please try again."
+        : error.message?.includes("network")
+        ? "Network error. Please check your connection."
+        : "Failed to extract text from images.";
+    setErrorMessage(errorMessage);
+    Alert.alert("OCR Error", errorMessage);
+  } finally {
+    setLoading(false);
+  }
+};
 
-    setLoading(true);
-    setErrorMessage(null);
 
-    try {
-      let extractedText = "";
-      let successCount = 0;
-      let failureCount = 0;
-      let processedResults: { name: string; success: boolean; text?: string; error?: string }[] = [];
-
-      console.log(`🔍 Starting OCR for ${imageFiles.length} image(s)...`);
-
-      for (const file of imageFiles) {
-        try {
-          console.log(`📸 Extracting text from: ${file.name}`);
-          const ocrResponse = await chatbotAPI.extractTextFromImage(file);
-
-          if (ocrResponse.text && ocrResponse.text.trim().length > 0) {
-            const cleanText = ocrResponse.text.trim();
-            extractedText += `\n\n**📷 ${file.name}:**\n${cleanText}`;
-            successCount++;
-            processedResults.push({ 
-              name: file.name, 
-              success: true, 
-              text: cleanText.substring(0, 100) + (cleanText.length > 100 ? '...' : '')
-            });
-            console.log(`✅ OCR successful for ${file.name}: ${cleanText.length} characters`);
-          } else {
-            extractedText += `\n\n**📷 ${file.name}:**\n[No readable text detected in this image]`;
-            successCount++;
-            processedResults.push({ 
-              name: file.name, 
-              success: true, 
-              text: 'No text detected'
-            });
-            console.log(`⚠️ No text detected in ${file.name}`);
-          }
-        } catch (error: any) {
-          console.error(`❌ OCR error for ${file.name}:`, error);
-
-          let errorMsg = "OCR processing failed";
-          if (error.message?.includes("503")) {
-            errorMsg = "OCR service unavailable";
-          } else if (error.message?.includes("400")) {
-            errorMsg = "Invalid image format";
-          } else if (error.message?.includes("413")) {
-            errorMsg = "Image too large";
-          }
-
-          extractedText += `\n\n**📷 ${file.name}:**\n[Error: ${errorMsg}]`;
-          failureCount++;
-          processedResults.push({ 
-            name: file.name, 
-            success: false, 
-            error: errorMsg
-          });
-        }
-      }
-
-      if (extractedText.trim()) {
-        // Add the extracted text as user input
-        const summaryText = `Here is the text extracted from ${imageFiles.length} image(s):${extractedText}`;
-        setInput(summaryText);
-
-        // Show detailed results
-        const resultMessage = processedResults.map(result => 
-          `• ${result.name}: ${result.success ? (result.text || 'No text') : result.error}`
-        ).join('\n');
-
-        Alert.alert(
-          "Text Extraction Complete", 
-          `Successfully processed: ${successCount}/${imageFiles.length} image(s)\n\n${resultMessage}`,
-          [
-            { 
-              text: "Send Message", 
-              onPress: () => {
-                if (summaryText.trim()) {
-                  handleSend();
-                }
-              }
-            },
-            { text: "Edit First", style: "cancel" }
-          ]
-        );
-      } else {
-        Alert.alert(
-          "No Text Extracted", 
-          "Could not extract any readable text from the uploaded images. The images may not contain text or the text quality may be too poor for OCR.",
-          [{ text: "OK" }]
-        );
-      }
-    } catch (error: any) {
-      console.error("❌ OCR processing error:", error);
-
-      let errorMessage = "Failed to extract text from images.";
-      if (error.message?.includes("network")) {
-        errorMessage = "Network error. Please check your connection and try again.";
-      } else if (error.message?.includes("timeout")) {
-        errorMessage = "Request timed out. Please try again.";
-      }
-
-      setErrorMessage(errorMessage);
-      Alert.alert("OCR Error", errorMessage);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   return (
     <>

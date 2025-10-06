@@ -7,10 +7,10 @@ export interface EnvironmentConfig {
   environment: 'development' | 'staging' | 'production';
   debug: boolean;
 }
-
+//change ni sa IP address atm
 export const DEFAULT_CONFIG: EnvironmentConfig = {
-  apiUrl: 'http://192.168.1.187:8000',
-  ollamaApiUrl: 'http://192.168.1.187:11434',
+  apiUrl: 'http://192.168.1.187:8000/',
+  ollamaApiUrl: 'http://192.168.1.187:11434/',
   environment: 'development',
   debug: true,
 };
@@ -19,8 +19,8 @@ export const DEFAULT_CONFIG: EnvironmentConfig = {
 export const PLATFORM_DEFAULTS = {
   android: {
     emulator: {
-      apiUrl: 'http://10.0.2.2:8000',
-      ollamaApiUrl: 'http://10.0.2.2:11434',
+      apiUrl: 'http://10.0.2.2:8000/',
+      ollamaApiUrl: 'http://10.0.2.2:11434/',
     },
   },
   ios: {
