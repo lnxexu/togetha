@@ -1517,88 +1517,147 @@ function ChatBot(): React.ReactElement {
 
         {/* Floating Input Row - positioned to stay above keyboard with animation */}
         <Animated.View style={[
-          styles.floatingInputRow, 
-          { 
-            paddingBottom: insets.bottom + 8,
-            bottom: animatedBottomValue, // Animated value for smooth keyboard following
-          }
-        ]}>
-          <View style={styles.inputRow}>
-            <View style={styles.inputWrapper}>
-              <TextInput
-                style={styles.textInput}
-                value={input}
-                onChangeText={setInput}
-                placeholder="Type a message..."
-                placeholderTextColor="#94A3B8"
-                multiline
-                maxLength={1000}
-                accessibilityLabel="Message input"
-                accessibilityHint="Type your message to send to Rina"
-                onFocus={() => {
-                  // Ensure content scrolls when keyboard appears
-                  setTimeout(() => {
-                    scrollViewRef.current?.scrollToEnd({ animated: true });
-                  }, 300);
-                }}
-              />
+  styles.floatingInputRow, 
+  { 
+    paddingBottom: insets.bottom + 8,
+    bottom: animatedBottomValue, // follows keyboard height
+  }
+]}>
+  {/* Pending Files Preview */}
+  {pendingFiles.length > 0 && (
+    <View style={styles.pendingFilesContainer}>
+      <View style={styles.pendingFilesHeaderRow}>
+        <Text style={styles.pendingFilesHeader}>
+          📎 Files ready to send ({pendingFiles.length})
+        </Text>
+        <TouchableOpacity
+          style={styles.clearAllFilesButton}
+          onPress={() => setPendingFiles([])}
+          accessibilityLabel="Clear all files"
+        >
+          <Ionicons name="trash-outline" size={16} color="#DC2626" />
+          <Text style={styles.clearAllFilesText}>Clear All</Text>
+        </TouchableOpacity>
+      </View>
+      <ScrollView 
+        horizontal 
+        showsHorizontalScrollIndicator={false}
+        style={styles.pendingFilesScroll}
+        contentContainerStyle={styles.pendingFilesScrollContent}
+      >
+        {pendingFiles.map((file, index) => {
+          const isImage = file.mimeType?.startsWith('image/');
+          const fileSizeKB = file.size ? (file.size / 1024).toFixed(1) : 'Unknown';
+          const fileExtension = file.name?.split('.').pop()?.toUpperCase() || 'FILE';
+
+          return (
+            <View key={index} style={styles.pendingFileItem}>
+              <View style={styles.pendingFileIconContainer}>
+                <Ionicons 
+                  name={isImage ? 'image' : 'document-text'} 
+                  size={20} 
+                  color={isImage ? "#10B981" : "#6B46C1"} 
+                />
+                <Text style={styles.fileTypeIndicator}>{fileExtension}</Text>
+              </View>
+              <View style={styles.pendingFileDetails}>
+                <Text style={styles.pendingFileName} numberOfLines={1}>
+                  {file.name}
+                </Text>
+                <Text style={styles.pendingFileSize}>
+                  {fileSizeKB} KB • {isImage ? 'Image' : 'Document'}
+                </Text>
+              </View>
               <TouchableOpacity
-                style={styles.attachButton}
-                onPress={() => setAttachmentMenuVisible(!attachmentMenuVisible)}
-                accessibilityLabel="Attach file"
-                accessibilityHint="Import and upload a document or image"
+                style={styles.removePendingFile}
+                onPress={() => removePendingFile(index)}
+                accessibilityLabel={`Remove ${file.name}`}
               >
-                <Ionicons name="attach" size={24} color="#6B46C1" />
+                <Ionicons name="close-circle" size={18} color="#DC2626" />
               </TouchableOpacity>
-
-              {/* Attachment Menu */}
-              {attachmentMenuVisible && (
-                <View style={[styles.attachmentMenu, { bottom: 50 + insets.bottom, right: 8 }]}>
-                  <TouchableOpacity
-                    style={styles.attachmentOption}
-                    onPress={() => handleFileImport('file')}
-                  >
-                    <Ionicons name="document" size={20} color="#6B46C1" />
-                    <Text style={styles.attachmentOptionText}>Document</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.attachmentOption}
-                    onPress={() => handleFileImport('image')}
-                  >
-                    <Ionicons name="image" size={20} color="#6B46C1" />
-                    <Text style={styles.attachmentOptionText}>Image</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.attachmentOption}
-                    onPress={() => handleFileImport('camera')}
-                  >
-                    <Ionicons name="camera" size={20} color="#6B46C1" />
-                    <Text style={styles.attachmentOptionText}>Camera</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
             </View>
+          );
+        })}
+      </ScrollView>
+    </View>
+  )}
 
-            {/* Send Button */}
-            <TouchableOpacity
-              style={[
-                styles.sendButton,
-                (input.trim() === "" && pendingFiles.length === 0) && styles.sendButtonDisabled,
-              ]}
-              onPress={handleSend}
-              disabled={input.trim() === "" && pendingFiles.length === 0}
-              accessibilityLabel="Send message"
-              accessibilityHint="Send your message to Rina"
-            >
-              <LinearGradient
-                colors={["#6366F1", "#8B5CF6"]}
-                style={styles.sendButtonGradient}
-              >
-                <Ionicons name="send" size={20} color="#fff" />
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
-        </Animated.View>
+  {/* Input Row */}
+  <View style={styles.inputRow}>
+    <View style={styles.inputWrapper}>
+      <TextInput
+        style={styles.textInput}
+        value={input}
+        onChangeText={setInput}
+        placeholder="Type a message..."
+        placeholderTextColor="#94A3B8"
+        multiline
+        maxLength={1000}
+        accessibilityLabel="Message input"
+        accessibilityHint="Type your message to send to Rina"
+        onFocus={() => {
+          setTimeout(() => {
+            scrollViewRef.current?.scrollToEnd({ animated: true });
+          }, 300);
+        }}
+      />
+      <TouchableOpacity
+        style={styles.attachButton}
+        onPress={() => setAttachmentMenuVisible(!attachmentMenuVisible)}
+        accessibilityLabel="Attach file"
+        accessibilityHint="Import and upload a document or image"
+      >
+        <Ionicons name="attach" size={24} color="#6B46C1" />
+      </TouchableOpacity>
+
+      {/* Attachment Menu */}
+      {attachmentMenuVisible && (
+        <View style={[styles.attachmentMenu, { bottom: 50 + insets.bottom, right: 8 }]}>
+          <TouchableOpacity
+            style={styles.attachmentOption}
+            onPress={() => handleFileImport('file')}
+          >
+            <Ionicons name="document" size={20} color="#6B46C1" />
+            <Text style={styles.attachmentOptionText}>Document</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.attachmentOption}
+            onPress={() => handleFileImport('image')}
+          >
+            <Ionicons name="image" size={20} color="#6B46C1" />
+            <Text style={styles.attachmentOptionText}>Image</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.attachmentOption}
+            onPress={() => handleFileImport('camera')}
+          >
+            <Ionicons name="camera" size={20} color="#6B46C1" />
+            <Text style={styles.attachmentOptionText}>Camera</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+
+    {/* Send Button */}
+    <TouchableOpacity
+      style={[
+        styles.sendButton,
+        (input.trim() === "" && pendingFiles.length === 0) && styles.sendButtonDisabled,
+      ]}
+      onPress={handleSend}
+      disabled={input.trim() === "" && pendingFiles.length === 0}
+      accessibilityLabel="Send message"
+      accessibilityHint="Send your message to Rina"
+    >
+      <LinearGradient
+        colors={["#6366F1", "#8B5CF6"]}
+        style={styles.sendButtonGradient}
+      >
+        <Ionicons name="send" size={20} color="#fff" />
+      </LinearGradient>
+    </TouchableOpacity>
+  </View>
+</Animated.View>
 
       {/* OCR Modal */}
       <Modal
