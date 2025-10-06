@@ -1,6 +1,14 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_URL, API_ENDPOINTS } from "../../../constants/ApiConfig";
 
+async function getAuthHeaders() {
+  const token = await AsyncStorage.getItem("authToken");
+  return {
+    Authorization: `Token ${token}`,
+    "Content-Type": "application/json",
+  };
+}
+
 // Create fetch-based client with default config
 class ApiClient {
   private baseURL: string;
@@ -41,7 +49,29 @@ class ApiClient {
       throw error;
     }
   }
+  
+private async getAuthToken(): Promise<string | null> {
+  try {
+    const token = await AsyncStorage.getItem("authToken");
+    return token || null;
+  } catch (error) {
+    console.error("Error reading auth token:", error);
+    return null;
+  }
+}
 
+private async getAuthHeaders() {
+  const token = await this.getAuthToken();
+
+  // ✅ Only include Authorization header if token exists
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (token) {
+    headers.Authorization = `Token ${token}`; // Django REST Framework format
+  }
+  return headers;
+}
   async get(endpoint: string, headers?: Record<string, string>): Promise<any> {
     const url = `${this.baseURL}${endpoint}`;
     const response = await this.fetchWithTimeout(url, {
@@ -183,13 +213,14 @@ class ChatbotAPIService {
     }
   }
 
-  private async getAuthHeaders() {
-    const token = await this.getAuthToken();
-    return {
-      Authorization: `Token ${token}`,
-      "Content-Type": "application/json",
-    };
-  }
+ private async getAuthHeaders() {
+  const token = await this.getAuthToken();
+  return {
+    Authorization: `Token ${token}`,
+    "Content-Type": "application/json",
+  };
+}
+
 
   private handleNetworkError(error: any, operation: string) {
     console.error(`${operation} failed:`, error);
@@ -255,19 +286,19 @@ class ChatbotAPIService {
   }
 
   async createConversation(data: Partial<Conversation>): Promise<Conversation> {
-    try {
-      const headers = await this.getAuthHeaders();
-      const response = await apiClient.post(
-        API_ENDPOINTS.CHATBOT_CONVERSATIONS,
-        data,
-        headers
-      );
-      return response;
-    } catch (error) {
-      this.handleNetworkError(error, "Creating conversation");
-      throw error;
-    }
+  try {
+    const headers = await this.getAuthHeaders();
+    const response = await apiClient.post(
+      API_ENDPOINTS.CHATBOT_CONVERSATIONS,
+      data,
+      headers // ✅ correct usage: pass headers directly, not { headers }
+    );
+    return response; // apiClient.post() already returns parsed JSON
+  } catch (error) {
+    this.handleNetworkError(error, "Creating conversation");
+    throw error;
   }
+}
 
   async updateConversation(
     conversationId: string,
@@ -432,33 +463,33 @@ class ChatbotAPIService {
     }
   }
 
-  async extractTextFromImage(image: any): Promise<{ text: string }> {
-    try {
-      const token = await this.getAuthToken();
-      const formData = new FormData();
-      formData.append("image", {
-        uri: image.uri,
-        name: image.name || "image.jpg",
-        type: image.mimeType || "image/jpeg",
-      } as any);
-      
-      // Use pytesseract endpoint from API_ENDPOINTS with proper auth
-      const response = await apiClient.post(
-        API_ENDPOINTS.CHATBOT_OCR,
-        formData,
-        {
-          Authorization: `Token ${token}`,
-          // Don't set Content-Type for FormData
-        }
-      );
-      return response;
-    } catch (error) {
-      console.error("Error extracting text from image:", error);
-      this.handleNetworkError(error, "Image text extraction");
-      throw error;
-    }
-  }
+async extractTextFromImage(file: any): Promise<{ id: number; text: string }> {
+    const formData = new FormData();
+    formData.append("file", {
+      uri: file.uri,
+      name: file.name || "upload.jpg",
+      type: file.mimeType || "image/jpeg",
+    } as any);
 
+    const headers: any = {
+      ...(await this.getAuthHeaders()),
+      Accept: "application/json",
+      "Content-Type": "multipart/form-data",
+    };
+
+    const response = await fetch(`${API_URL}chatbot/ocr/`, {
+      method: "POST",
+      headers,
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`OCR failed: ${response.status} - ${errorText}`);
+    }
+
+    return await response.json(); // expected: { id, text }
+  }
   // Settings Management
   async getChatbotSettings() {
     try {

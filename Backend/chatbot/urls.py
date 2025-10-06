@@ -3,18 +3,21 @@ from .views.conversations import ConversationViewSet, get_messages
 from .views.messages import MessageViewSet, message_actions
 from .views.settings import chatbot_settings
 from .views.chat import ChatView
+from .views.ocr import OCRView
 from .views.files import FileUploadView
 from .utils.ocr_utils import extract_text_from_images
 from .views.documents import DocumentUploadView, DocumentListView
 from .views.RAG_view import ChatRAGView
 from .views.dictionary_views import ConceptHelpView
 
+
 urlpatterns = [
     path("chat/", ChatView.as_view(), name="chat"),
     path("upload_pdf/", FileUploadView.as_view(), name="upload_pdf"),
     path("upload_file/", FileUploadView.as_view(), name="upload_file"),
-    path("extract_text_from_images/", extract_text_from_images, name="extract_text_from_images"),
-    path("extract_text/", extract_text_from_images, name="extract_text"),
+   
+    # sa image to text (OCR)
+    path("ocr/", OCRView.as_view(), name="ocr"),
 
     # Sa conversations ni handlers
     path("conversations/", ConversationViewSet.as_view({"get": "list", "post": "create"}), name="conversations_list"),

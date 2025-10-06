@@ -2,10 +2,6 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { DEFAULT_CONFIG, PLATFORM_DEFAULTS, EnvironmentConfig } from './EnvironmentConfig';
 
-/**
- * Secure API configuration that uses environment variables.
- * No hardcoded IP addresses or sensitive URLs are stored in this file.
- */
 
 function getEnvironmentConfig(): EnvironmentConfig {
     // Try to get configuration from environment variables first
@@ -116,13 +112,12 @@ export const API_ENDPOINTS = {
     NOTE_DRAWING_CLEAR: (noteId: string) => `/note_taking/notes/${noteId}/drawing/clear/`,
 
     // Chatbot endpoints
-    CHATBOT_OCR: '/chatbot/extract_text_from_images/',
-    CHATBOT_CONVERSATIONS: '/chatbot/conversations/',
     CHATBOT_MESSAGES: '/chatbot/messages/',
     CHATBOT_CHAT: '/chatbot/chat/',
     CHATBOT_UPLOAD_PDF: '/chatbot/upload_pdf/',
-    CHATBOT_EXTRACT_TEXT: '/chatbot/extract_text/',
     CHATBOT_RAG: '/chatbot/chat/rag/',
+    OCR_EXTRACT_TEXT: '/chatbot/ocr/',
+    CHATBOT_CONVERSATIONS: '/chatbot/conversations/',
     
     // Dictionary endpoints
     CHATBOT_DICTIONARY_DEFINE: '/chatbot/dictionary/define/',
