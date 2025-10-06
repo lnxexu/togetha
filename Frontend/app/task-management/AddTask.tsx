@@ -22,6 +22,7 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import { Priority, TaskFormData, TaskCategory } from "./types/Task";
 import taskService from "./services/taskService";
+import { toLocalOffsetISOString } from "@/app/utils/utcDate";
 import { categoryService } from "./services/categoryService";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { showSuccessToast, showErrorToast } from "../utils/ToastUtils";
@@ -174,10 +175,18 @@ const AddTask: React.FC = () => {
   const handleTimeChange = (event: any, selectedTime?: Date) => {
     setShowTimePicker(false);
     if (selectedTime && formData.due_datetime) {
-      const dateWithTime = new Date(formData.due_datetime);
-      dateWithTime.setHours(selectedTime.getHours());
-      dateWithTime.setMinutes(selectedTime.getMinutes());
-      handleInputChange("due_datetime", dateWithTime);
+      // Merge selected time into the selected date using local time to prevent date shifts
+      const base = new Date(formData.due_datetime);
+      const merged = new Date(
+        base.getFullYear(),
+        base.getMonth(),
+        base.getDate(),
+        selectedTime.getHours(),
+        selectedTime.getMinutes(),
+        0,
+        0
+      );
+      handleInputChange("due_datetime", merged);
       
       // Update due_time for display purposes
       const timeString = selectedTime.toLocaleTimeString('en-US', {
@@ -199,21 +208,12 @@ const AddTask: React.FC = () => {
       let dueDate: Date | undefined = undefined;
 
       if (formData.due_datetime) {
+        // Use the locally combined date+time from the pickers as-is to avoid unwanted timezone shifts
         dueDate = new Date(formData.due_datetime);
-
-        // If time is also provided, add it to the date using UTC
-        if (formData.due_time) {
-          const [timeStr, period] = formData.due_time.split(" ");
-          let [hours, minutes] = timeStr.split(":").map(Number);
-
-          // Convert to 24-hour format
-          if (period === "PM" && hours < 12) hours += 12;
-          if (period === "AM" && hours === 12) hours = 0;
-
-          // Use UTC methods to avoid timezone conversion
-          dueDate.setUTCHours(hours, minutes, 0, 0);
-        }
+        // Note: handleTimeChange already merges the selected time into due_datetime using local hours.
+        // Avoid setUTCHours here, which caused dates to shift backward for early-morning times.
       }
+      console.log(dueDate);
 
       // Get username from storage if possible
       let username = formData.user;
@@ -231,6 +231,7 @@ const AddTask: React.FC = () => {
         description: formData.description || "",
         priority: formData.priority,
         category: formData.category,
+        // Keep as Date in form state; downstream services will serialize with local offset for server
         due_datetime: dueDate,
         completed: formData.completed || false,
         user: username,
@@ -433,249 +434,7 @@ const AddTask: React.FC = () => {
                   />
                 )}
 
-                {/* Clock Time Picker */}
-                {showTimePicker && formData.due_datetime && (
-                  <View style={[
-                    styles.dropdownOptions, 
-                    styles.clockDropdown,
-                    { 
-                      maxHeight: getClockMaxHeight(),
-                      ...(shouldDropdownAppearAbove() && {
-                        bottom: "100%",
-                        top: undefined,
-                        marginBottom: 8,
-                        marginTop: 0,
-                      })
-                    }
-                  ]}>
-                    <ScrollView 
-                      style={{ flex: 1 }}
-                      showsVerticalScrollIndicator={false}
-                      nestedScrollEnabled={true}
-                    >
-                      <View style={[
-                        styles.clockContainer,
-                        isLandscape && styles.clockContainerLandscape
-                      ]}>
-                        <Text style={[
-                          styles.clockTitle,
-                          isLandscape && styles.clockTitleLandscape
-                        ]}>Select Time</Text>
-                        <View style={styles.timeSelectorsRow}>
-                          {/* Hour Selector */}
-                          <View style={styles.timeSelector}>
-                            <Text style={[
-                              styles.timeSelectorLabel,
-                              isLandscape && styles.timeSelectorLabelLandscape
-                            ]}>Hour</Text>
-                            <ScrollView
-                              style={[
-                                styles.timeScrollView,
-                                isLandscape && styles.timeScrollViewLandscape
-                              ]}
-                              showsVerticalScrollIndicator={false}
-                              nestedScrollEnabled={true}
-                              scrollEnabled={true}
-                              bounces={true}
-                              alwaysBounceVertical={true}
-                            >
-                              {Array.from({ length: 12 }, (_, i) => i + 1).map(
-                                (hour) => {
-                                  const currentTime =
-                                    formData.due_time || "12:00 AM";
-                                  const match =
-                                    currentTime.match(/(\d+):(\d+) (AM|PM)/);
-                                  let currentHour = match
-                                    ? parseInt(match[1])
-                                    : 12;
-                                  // If hour is 0, treat as 12
-                                  if (currentHour === 0) currentHour = 12;
-                                  const isSelected = currentHour === hour;
-                                  const minute = match ? match[2] : "00";
-                                  const period = match ? match[3] : "AM";
-                                  return (
-                                    <TouchableOpacity
-                                      key={hour}
-                                      style={[
-                                        styles.timeOption,
-                                        isLandscape && styles.timeOptionLandscape,
-                                        isSelected && {
-                                          backgroundColor: "#f0e6ff",
-                                        },
-                                      ]}
-                                      onPress={() => {
-                                        const newTime = `${hour
-                                          .toString()
-                                          .padStart(2, "0")}:${minute} ${period}`;
-                                        handleInputChange("due_time", newTime);
-                                      }}
-                                    >
-                                      <Text
-                                        style={[
-                                          styles.timeOptionText,
-                                          isLandscape && styles.timeOptionTextLandscape,
-                                          isSelected && {
-                                            color: "#AD00FF",
-                                            fontWeight: "bold",
-                                          },
-                                        ]}
-                                      >
-                                        {hour.toString().padStart(2, "0")}
-                                      </Text>
-                                    </TouchableOpacity>
-                                  );
-                                }
-                              )}
-                            </ScrollView>
-                          </View>
-
-                          {/* Minute Selector */}
-                          <View style={styles.timeSelector}>
-                            <Text style={[
-                              styles.timeSelectorLabel,
-                              isLandscape && styles.timeSelectorLabelLandscape
-                            ]}>Min</Text>
-                            <ScrollView
-                              style={[
-                                styles.timeScrollView,
-                                isLandscape && styles.timeScrollViewLandscape
-                              ]}
-                              showsVerticalScrollIndicator={false}
-                              nestedScrollEnabled={true}
-                              scrollEnabled={true}
-                              bounces={true}
-                              alwaysBounceVertical={true}
-                            >
-                              {Array.from({ length: 60 }, (_, i) => i).map(
-                                (minute) => {
-                                  const minuteStr = minute
-                                    .toString()
-                                    .padStart(2, "0");
-                                  const currentTime =
-                                    formData.due_time || "12:00 AM";
-                                  const match =
-                                    currentTime.match(/(\d+):(\d+) (AM|PM)/);
-                                  const currentMinute = match ? match[2] : "00";
-                                  const isSelected = currentMinute === minuteStr;
-                                  return (
-                                    <TouchableOpacity
-                                      key={minuteStr}
-                                      style={[
-                                        styles.timeOption,
-                                        isLandscape && styles.timeOptionLandscape,
-                                        isSelected && {
-                                          backgroundColor: "#f0e6ff",
-                                        },
-                                      ]}
-                                      onPress={() => {
-                                        const hour = match ? match[1] : "12";
-                                        const period = match ? match[3] : "AM";
-                                        const newTime = `${hour}:${minuteStr} ${period}`;
-                                        handleInputChange("due_time", newTime);
-                                      }}
-                                    >
-                                      <Text
-                                        style={[
-                                          styles.timeOptionText,
-                                          isLandscape && styles.timeOptionTextLandscape,
-                                          isSelected && {
-                                            color: "#AD00FF",
-                                            fontWeight: "bold",
-                                          },
-                                        ]}
-                                      >
-                                        {minuteStr}
-                                      </Text>
-                                    </TouchableOpacity>
-                                  );
-                                }
-                              )}
-                            </ScrollView>
-                          </View>
-
-                          {/* AM/PM Selector */}
-                          <View style={styles.timeSelector}>
-                            <Text style={[
-                              styles.timeSelectorLabel,
-                              isLandscape && styles.timeSelectorLabelLandscape
-                            ]}>Period</Text>
-                            <ScrollView
-                              style={[
-                                styles.timeScrollView,
-                                isLandscape && styles.timeScrollViewLandscape
-                              ]}
-                              showsVerticalScrollIndicator={false}
-                              nestedScrollEnabled={true}
-                              scrollEnabled={true}
-                              bounces={true}
-                              alwaysBounceVertical={true}
-                            >
-                              {["AM", "PM"].map((period) => {
-                                const currentTime =
-                                  formData.due_time || "12:00 AM";
-                                const match =
-                                  currentTime.match(/(\d+):(\d+) (AM|PM)/);
-                                const currentPeriod = match ? match[3] : "AM";
-                                const hour = match ? match[1] : "12";
-                                const minute = match ? match[2] : "00";
-                                const isSelected = currentPeriod === period;
-                                return (
-                                  <TouchableOpacity
-                                    key={period}
-                                    style={[
-                                      styles.timeOption,
-                                      isLandscape && styles.timeOptionLandscape,
-                                      isSelected && {
-                                        backgroundColor: "#f0e6ff",
-                                      },
-                                    ]}
-                                    onPress={() => {
-                                      let newHour = parseInt(hour);
-                                      // Convert hour to 12-hour format if needed
-                                      if (period === "AM" && newHour === 12)
-                                        newHour = 12;
-                                      if (period === "PM" && newHour !== 12)
-                                        newHour = newHour;
-                                      const newTime = `${newHour
-                                        .toString()
-                                        .padStart(2, "0")}:${minute} ${period}`;
-                                      handleInputChange("due_time", newTime);
-                                    }}
-                                  >
-                                    <Text
-                                      style={[
-                                        styles.timeOptionText,
-                                        isLandscape && styles.timeOptionTextLandscape,
-                                        isSelected && {
-                                          color: "#AD00FF",
-                                          fontWeight: "bold",
-                                        },
-                                      ]}
-                                    >
-                                      {period}
-                                    </Text>
-                                  </TouchableOpacity>
-                                );
-                              })}
-                            </ScrollView>
-                          </View>
-                        </View>
-                        <TouchableOpacity
-                          style={[
-                            styles.clockDoneButton,
-                            isLandscape && styles.clockDoneButtonLandscape
-                          ]}
-                          onPress={() => setShowTimePicker(false)}
-                        >
-                          <Text style={[
-                            styles.clockDoneText,
-                            isLandscape && styles.clockDoneTextLandscape
-                          ]}>Done</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </ScrollView>
-                  </View>
-                )}
+                
               </View>
 
               {/* Priority and Subject Row */}

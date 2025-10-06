@@ -46,3 +46,25 @@ export function toUTCISOString(date: Date | null | undefined): string | null {
   if (!date) return null;
   return new Date(date.getTime()).toISOString();
 }
+
+/**
+ * Convert a local Date to an ISO 8601 string that includes the local timezone offset
+ * (e.g., 2025-10-06T02:00:00+08:00). This preserves the user's intended local date/time
+ * when parsed by servers that respect ISO offsets.
+ */
+export function toLocalOffsetISOString(date: Date | null | undefined): string | null {
+  if (!date) return null;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const year = date.getFullYear();
+  const month = pad(date.getMonth() + 1);
+  const day = pad(date.getDate());
+  const hours = pad(date.getHours());
+  const minutes = pad(date.getMinutes());
+  const seconds = pad(date.getSeconds());
+  const tz = -date.getTimezoneOffset(); // minutes east of UTC
+  const sign = tz >= 0 ? '+' : '-';
+  const tzAbs = Math.abs(tz);
+  const tzH = pad(Math.floor(tzAbs / 60));
+  const tzM = pad(tzAbs % 60);
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}${sign}${tzH}:${tzM}`;
+}

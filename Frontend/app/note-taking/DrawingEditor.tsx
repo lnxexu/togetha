@@ -203,6 +203,8 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
   const [currentColor, setCurrentColor] = useState('#000000');
   const [currentWidth, setCurrentWidth] = useState(2);
   const [currentZoom, setCurrentZoom] = useState(1); // Track canvas zoom level
+  // Toggle to enable/disable drawing tools from the toolbar
+  const [toolsEnabled, setToolsEnabled] = useState<boolean>(true);
   
   // Canvas orientation state
   const [canvasOrientation, setCanvasOrientation] = useState<'landscape' | 'portrait'>(initialOrientation);
@@ -1157,27 +1159,13 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
                   onRedo={redo}
                   onClear={handleClear}
                   onDropdownToggle={handleToolbarDropdownToggle}
-                  onQuickExport={async () => {
-                    try {
-                      setExporting(true);
-                      const uri = await captureRef(canvasCaptureRef.current || canvasCaptureRef, { format: 'png', quality: 1 });
-                      const saved = await saveImageToPhotos(uri, false);
-                      if (saved) {
-                        showSuccessToast('Saved to Photos');
-                      } else {
-                        showWarningToast('Could not save image');
-                      }
-                    } catch (e) {
-                      showErrorToast('Export failed');
-                    } finally {
-                      setExporting(false);
-                    }
-                  }}
                   onZoomIn={handleZoomIn}
                   onZoomOut={handleZoomOut}
                   onZoomReset={resetZoom}
                   canUndo={canUndo}
                   canRedo={canRedo}
+                  toolsEnabled={toolsEnabled}
+                  onToggleTools={() => setToolsEnabled((v: boolean) => !v)}
                 />
             )}
 
@@ -1246,7 +1234,7 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
                     onStrokeComplete={handleStrokeComplete}
                     onAddStroke={addStroke}
                     onStrokeUpdate={setCurrentStroke}
-                    disabled={readOnly}
+                    disabled={readOnly || !toolsEnabled}
                     backgroundColor={getTemplateBackgroundColor(activeTemplate)}
                     template={activeTemplate}
                     templateOptions={getTemplateOptionsForCanvas()}
@@ -2088,7 +2076,7 @@ const styles = StyleSheet.create({
   folderSearchRow: {
     paddingVertical: 8,
   },
-  folderSearchInput: {
+   folderSearchInput: {
     backgroundColor: '#F3F4F6',
     borderRadius: 10,
     paddingVertical: 8,

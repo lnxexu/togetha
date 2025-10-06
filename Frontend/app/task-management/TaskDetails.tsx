@@ -118,9 +118,9 @@ const TaskDetails: React.FC = () => {
   const formatTime = (datetime?: Date) => {
     if (!datetime) return "No time set";
 
-    // Use UTC methods to avoid timezone conversion
-    const hours = datetime.getUTCHours();
-    const minutes = datetime.getUTCMinutes();
+    // Use LOCAL time for display (store in UTC on the backend only)
+    const hours = datetime.getHours();
+    const minutes = datetime.getMinutes();
 
     const formattedMinutes = minutes.toString().padStart(2, "0");
 
@@ -279,17 +279,15 @@ const TaskDetails: React.FC = () => {
     if (period === "PM" && hour < 12) hour += 12;
     if (period === "AM" && hour === 12) hour = 0;
 
-    // Create a new Date using UTC values to avoid timezone inconsistencies
+    // Merge using LOCAL date components to preserve the user's wall-clock time
     const merged = new Date(
-      Date.UTC(
-        date.getUTCFullYear(),
-        date.getUTCMonth(),
-        date.getUTCDate(),
-        hour,
-        minute,
-        0,
-        0
-      )
+      date.getFullYear(),
+      date.getMonth(),
+      date.getDate(),
+      hour,
+      minute,
+      0,
+      0
     );
     return merged;
   };
@@ -297,12 +295,11 @@ const TaskDetails: React.FC = () => {
   const formatDate = (date?: Date) => {
     if (!date) return "No date set";
 
-    // Always use the UTC year, month, and date to avoid timezone shifting
-    const year = date.getUTCFullYear();
-    const month = (date.getUTCMonth() + 1).toString().padStart(2, "0");
-    const day = date.getUTCDate().toString().padStart(2, "0");
+    // Use LOCAL date parts for display
+    const year = date.getFullYear();
+    const monthIndex = date.getMonth();
+    const dayNum = date.getDate().toString().padStart(2, "0");
 
-    // make it by text
     const monthNames = [
       "January",
       "February",
@@ -327,9 +324,7 @@ const TaskDetails: React.FC = () => {
       "Saturday",
     ];
 
-    return `${dayNames[date.getUTCDay()]}, ${
-      monthNames[Number(month) - 1]
-    } ${day}, ${year}`;
+    return `${dayNames[date.getDay()]}, ${monthNames[monthIndex]} ${dayNum}, ${year}`;
   };
   const TimePicker = ({
     value,
@@ -607,17 +602,15 @@ const TaskDetails: React.FC = () => {
                                     isSelected && styles.selectedCalendarDay,
                                   ]}
                                   onPress={() => {
-                                    // Use UTC to avoid timezone shifts
+                                    // Use LOCAL date so the selected day matches the user's calendar
                                     const selectedDate = new Date(
-                                      Date.UTC(
-                                        currentDate.getFullYear(),
-                                        currentDate.getMonth(),
-                                        currentDate.getDate(),
-                                        0,
-                                        0,
-                                        0,
-                                        0
-                                      )
+                                      currentDate.getFullYear(),
+                                      currentDate.getMonth(),
+                                      currentDate.getDate(),
+                                      0,
+                                      0,
+                                      0,
+                                      0
                                     );
                                     setEditedDate(selectedDate);
                                     setShowDatePicker(false);
@@ -668,7 +661,13 @@ const TaskDetails: React.FC = () => {
                 onPress={() => setShowTimePicker(true)}
               >
                 <Text style={styles.cardValue}>
-                  {task.due_datetime ? formatTime(task.due_datetime ?? undefined) : "Select Time"}
+                  {editedTime
+                    ? editedTime
+                    : editedDate
+                    ? formatTime(editedDate)
+                    : task.due_datetime
+                    ? formatTime(task.due_datetime)
+                    : "Select Time"}
                 </Text>
                 <MaterialIcons
                   name="edit"

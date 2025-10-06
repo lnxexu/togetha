@@ -130,11 +130,11 @@ const EisenhowerListPage: React.FC = () => {
         if (task.due_time) {
           timeString = task.due_time;
         } else {
-          // Render in device-local timezone (no explicit timeZone override)
-          timeString = due.toLocaleTimeString('en-US', {
-            hour: '2-digit',
-            minute: '2-digit',
+          timeString = due.toLocaleTimeString("en-US", {
+            hour: "2-digit",
+            minute: "2-digit",
             hour12: true,
+            timeZone: "UTC",
           });
         }
         // Render date in device-local timezone

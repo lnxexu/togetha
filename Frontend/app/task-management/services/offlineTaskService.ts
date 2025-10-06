@@ -198,7 +198,8 @@ class OfflineTaskService {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             completed_at: taskData.completed_at ? taskData.completed_at.toISOString() : null,
-            due_datetime: taskData.due_datetime ? taskData.due_datetime.toISOString() : null,
+            // Store in UTC while basing on the user's local selection
+            due_datetime: taskData.due_datetime ? toUTCISOString(taskData.due_datetime) : null,
           };
 
           console.log("Creating task on server:", payload);
@@ -294,7 +295,7 @@ class OfflineTaskService {
           if (updates.completed !== undefined) apiUpdates.completed = updates.completed;
           
           if (updates.due_datetime !== undefined) {
-            apiUpdates.due_datetime = updates.due_datetime ? updates.due_datetime.toISOString() : null;
+            apiUpdates.due_datetime = updates.due_datetime ? toUTCISOString(updates.due_datetime) : null;
           }
           if (updates.completed_at !== undefined) {
             apiUpdates.completed_at = updates.completed_at ? updates.completed_at.toISOString() : null;
