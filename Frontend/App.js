@@ -15,6 +15,7 @@ import { navigationRef } from "./app/navigation/navigationRef";
 import Toast from "react-native-toast-message";
 import { TaskProvider } from "./app/contexts/TaskContext";
 import { TaskNotificationChecker } from "./app/notifications/components/TaskNotificationChecker";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -96,9 +97,11 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <TaskProvider>
-        <AppNavigator />
-        <TaskNotificationChecker />
-        <Toast />
+        <GestureHandlerRootView style={{ flex: 1 }}>
+          <AppNavigator />
+          <TaskNotificationChecker />
+          <Toast />
+        </GestureHandlerRootView>
       </TaskProvider>
     </SafeAreaProvider>
   );

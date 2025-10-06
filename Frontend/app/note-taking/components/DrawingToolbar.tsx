@@ -6,9 +6,12 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
+  Modal,
+  Pressable,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import * as ImagePicker from 'expo-image-picker';
+// Removed image picker per request
+// import * as ImagePicker from 'expo-image-picker';
 import TemplatePreview from './TemplatePreview';
 import { TemplateType } from './TemplateOverlay';
 import { TEMPLATE_CONFIGS, getTemplateConfig } from '../utils/templateConfig';
@@ -28,13 +31,16 @@ interface DrawingToolbarProps {
   onUndo?: () => void;
   onRedo?: () => void;
   onClear?: () => void;
-  onQuickExport?: () => void;
-  onImageImport?: (imageUri: string) => void;
+  // onQuickExport removed per request
+  // onImageImport removed per request
   onZoomIn?: () => void;
   onZoomOut?: () => void;
   onZoomReset?: () => void;
   canUndo?: boolean;
   canRedo?: boolean;
+  // New toggle to activate pen tools
+  toolsEnabled?: boolean;
+  onToggleTools?: () => void;
 }
 
 const COLORS = [
@@ -67,12 +73,11 @@ const WIDTHS = [
   { label: "Super Jumbo", value: 24 },
 ];
 
+// Limit tool options per request (pen, brush, highlighter, eraser)
 const TOOLS = [
   { name: "pen", icon: "create-outline", label: "Pen" },
-  { name: "pencil", icon: "pencil-outline", label: "Pencil" },
   { name: "brush", icon: "brush-outline", label: "Brush" },
   { name: "highlighter", icon: "color-fill-outline", label: "Highlighter" },
-  { name: "calligraphy", icon: "text-outline", label: "Calligraphy" },
   { name: "eraser", icon: "remove-outline", label: "Eraser" },
 ] as const;
 
@@ -93,22 +98,23 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
   onUndo,
   onRedo,
   onClear,
-  onQuickExport,
-  onImageImport,
+  // onQuickExport removed
+  // onImageImport removed
   onZoomIn,
   onZoomOut,
   onZoomReset,
   canUndo = false,
   canRedo = false,
+  toolsEnabled = true,
+  onToggleTools,
 }) => {
   // Use a single state to track which dropdown is open
-  const [activeDropdown, setActiveDropdown] = useState<"tools" | "color" | "width" | "image" | "template" | null>(null);
+  const [activeDropdown, setActiveDropdown] = useState<"tools" | "color" | "width" | "template" | null>(null);
   
   // Helper functions to check which dropdown is active
   const showToolSelector = activeDropdown === "tools";
   const showColorPicker = activeDropdown === "color";
   const showWidthPicker = activeDropdown === "width";
-  const showImageOptions = activeDropdown === "image";
   const showTemplateSelector = activeDropdown === "template";
 
   // notify parent when dropdown open state changes (used to hide template selector)
@@ -136,57 +142,6 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
     return tool || TOOLS[0]; // fallback to first tool
   };
 
-  const requestPermissions = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert(
-        'Permission Required',
-        'Sorry, we need camera roll permissions to make this work!'
-      );
-      return false;
-    }
-    return true;
-  };
-
-  const pickImageFromGallery = async () => {
-    const hasPermission = await requestPermissions();
-    if (!hasPermission) return;
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
-    });
-
-    if (!result.canceled && result.assets[0]) {
-      onImageImport?.(result.assets[0].uri);
-      setActiveDropdown(null);
-    }
-  };
-
-  const takePhotoWithCamera = async () => {
-    const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
-    if (cameraPermission.status !== 'granted') {
-      Alert.alert(
-        'Permission Required',
-        'Sorry, we need camera permissions to take photos!'
-      );
-      return;
-    }
-
-    const result = await ImagePicker.launchCameraAsync({
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
-    });
-
-    if (!result.canceled && result.assets[0]) {
-      onImageImport?.(result.assets[0].uri);
-      setActiveDropdown(null);
-    }
-  };
-
   return (
     <View style={styles.toolbarWrapper}>
       <ScrollView
@@ -196,19 +151,19 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
         contentContainerStyle={styles.contentContainer}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Actions Section - moved to first position for quick access */}
+        {/* Actions Section */}
         <View style={styles.section}>
           <View style={styles.actionsRow}>
-            {/* Quick Export: one-tap save to Photos */}
+            {/* Toggle drawing tools */}
             <TouchableOpacity
-              style={styles.actionButton}
-              onPress={onQuickExport}
-              disabled={!onQuickExport}
+              style={[styles.actionButton, toolsEnabled ? styles.toggleOn : styles.toggleOff]}
+              onPress={onToggleTools}
+              activeOpacity={0.8}
             >
               <Ionicons
-                name="download-outline"
+                name={toolsEnabled ? "brush" : "close-circle-outline"}
                 size={18}
-                color={onQuickExport ? "#333" : "#ccc"}
+                color={toolsEnabled ? "#fff" : "#64748b"}
               />
             </TouchableOpacity>
 
@@ -241,19 +196,19 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
             </TouchableOpacity>
           </View>
         </View>
+
         {/* Tools Section */}
         <View style={styles.section}>
           <View style={styles.toolsSection}>
             <TouchableOpacity
-              style={[
-                styles.dropdown,
-                showToolSelector && styles.dropdownActive
-              ]}
+              style={[styles.dropdown, showToolSelector && styles.dropdownActive]}
               onPress={() => {
+                if (!toolsEnabled) return;
                 setActiveDropdown(showToolSelector ? null : "tools");
               }}
               activeOpacity={0.7}
               hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+              disabled={!toolsEnabled}
             >
               <View style={styles.toolIndicator}>
                 <Ionicons
@@ -263,15 +218,8 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
                 />
               </View>
               <View style={styles.labelContainer}>
-                <Text style={[
-                  styles.dropdownLabel,
-                  showToolSelector && { color: '#FFFFFF' }
-                ]}>{getCurrentToolInfo().label}</Text>
-                <Ionicons 
-                  name={showToolSelector ? "chevron-up" : "chevron-down"} 
-                  size={12} 
-                  color={showToolSelector ? "#FFFFFF" : "#666"}
-                />
+                <Text style={[styles.dropdownLabel, showToolSelector && { color: '#FFFFFF' }]}>{getCurrentToolInfo().label}</Text>
+                <Ionicons name={showToolSelector ? "chevron-up" : "chevron-down"} size={12} color={showToolSelector ? "#FFFFFF" : "#666"} />
               </View>
             </TouchableOpacity>
           </View>
@@ -282,15 +230,14 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
           <View style={styles.section}>
             <View style={styles.templateSection}>
               <TouchableOpacity
-                style={[
-                  styles.dropdown,
-                  showTemplateSelector && styles.dropdownActive
-                ]}
+                style={[styles.dropdown, showTemplateSelector && styles.dropdownActive]}
                 onPress={() => {
+                  if (!toolsEnabled) return;
                   setActiveDropdown(showTemplateSelector ? null : "template");
                 }}
                 activeOpacity={0.7}
                 hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+                disabled={!toolsEnabled}
               >
                 <View style={styles.templateIndicator}>
                   <TemplatePreview 
@@ -300,20 +247,10 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
                   />
                 </View>
                 <View style={styles.labelContainer}>
-                  <Text style={[
-                    styles.dropdownLabel,
-                    showTemplateSelector && { color: '#FFFFFF' }
-                  ]}>{getCurrentTemplateName()}</Text>
-                  <Ionicons 
-                    name={showTemplateSelector ? "chevron-up" : "chevron-down"} 
-                    size={12} 
-                    color={showTemplateSelector ? "#FFFFFF" : "#666"}
-                  />
+                  <Text style={[styles.dropdownLabel, showTemplateSelector && { color: '#FFFFFF' }]}>{getCurrentTemplateName()}</Text>
+                  <Ionicons name={showTemplateSelector ? "chevron-up" : "chevron-down"} size={12} color={showTemplateSelector ? "#FFFFFF" : "#666"} />
                 </View>
               </TouchableOpacity>
-
-              {/* Template Selector Dropdown */}
-              {/* Moved to popout container below */}
             </View>
           </View>
         )}
@@ -322,34 +259,21 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
         <View style={styles.section}>
           <View style={styles.colorSection}>
             <TouchableOpacity
-              style={[
-                styles.dropdown,
-                showColorPicker && styles.dropdownActive
-              ]}
+              style={[styles.dropdown, showColorPicker && styles.dropdownActive]}
               onPress={() => {
+                if (!toolsEnabled) return;
                 setActiveDropdown(showColorPicker ? null : "color");
               }}
               activeOpacity={0.7}
               hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+              disabled={!toolsEnabled}
             >
-              <View
-                style={[styles.colorIndicator, { backgroundColor: currentColor }]}
-              />
+              <View style={[styles.colorIndicator, { backgroundColor: currentColor }]} />
               <View style={styles.labelContainer}>
-                <Text style={[
-                  styles.dropdownLabel,
-                  showColorPicker && { color: '#FFFFFF' }
-                ]}>{getCurrentColorName()}</Text>
-                <Ionicons 
-                  name={showColorPicker ? "chevron-up" : "chevron-down"} 
-                  size={12} 
-                  color={showColorPicker ? "#FFFFFF" : "#666"}
-                />
+                <Text style={[styles.dropdownLabel, showColorPicker && { color: '#FFFFFF' }]}>{getCurrentColorName()}</Text>
+                <Ionicons name={showColorPicker ? "chevron-up" : "chevron-down"} size={12} color={showColorPicker ? "#FFFFFF" : "#666"} />
               </View>
             </TouchableOpacity>
-
-            {/* Color Picker Dropdown */}
-            {/* Moved to popout container below */}
           </View>
         </View>
 
@@ -357,78 +281,28 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
         <View style={styles.section}>
           <View style={styles.widthSection}>
             <TouchableOpacity
-              style={[
-                styles.dropdown,
-                showWidthPicker && styles.dropdownActive
-              ]}
+              style={[styles.dropdown, showWidthPicker && styles.dropdownActive]}
               onPress={() => {
+                if (!toolsEnabled) return;
                 setActiveDropdown(showWidthPicker ? null : "width");
               }}
               activeOpacity={0.7}
               hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+              disabled={!toolsEnabled}
             >
               <View
-                style={[
-                  styles.sizeIndicator,
-                  {
-                    width: Math.min(currentWidth + 4, 16),
-                    height: Math.min(currentWidth + 4, 16),
-                    backgroundColor: currentColor,
-                  },
-                ]}
+                style={[styles.sizeIndicator, {
+                  width: Math.min(currentWidth + 4, 16),
+                  height: Math.min(currentWidth + 4, 16),
+                  backgroundColor: currentColor,
+                }]
+              }
               />
               <View style={styles.labelContainer}>
-                <Text style={[
-                  styles.dropdownLabel,
-                  showWidthPicker && { color: '#FFFFFF' }
-                ]}>{getCurrentWidthLabel()}</Text>
-                <Ionicons 
-                  name={showWidthPicker ? "chevron-up" : "chevron-down"} 
-                  size={12} 
-                  color={showWidthPicker ? "#FFFFFF" : "#666"}
-                />
+                <Text style={[styles.dropdownLabel, showWidthPicker && { color: '#FFFFFF' }]}>{getCurrentWidthLabel()}</Text>
+                <Ionicons name={showWidthPicker ? "chevron-up" : "chevron-down"} size={12} color={showWidthPicker ? "#FFFFFF" : "#666"} />
               </View>
             </TouchableOpacity>
-
-            {/* Width Picker Dropdown */}
-            {/* Moved to popout container below */}
-          </View>
-        </View>
-
-        {/* Image Import Section */}
-        <View style={styles.section}>
-          <View style={styles.imageSection}>
-            <TouchableOpacity
-              style={[
-                styles.dropdown,
-                showImageOptions && styles.dropdownActive
-              ]}
-              onPress={() => {
-                setActiveDropdown(showImageOptions ? null : "image");
-              }}
-              activeOpacity={0.7}
-              hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
-            >
-              <Ionicons 
-                name="image-outline" 
-                size={16} 
-                color={showImageOptions ? "#FFFFFF" : "#333"}
-              />
-              <View style={styles.labelContainer}>
-                <Text style={[
-                  styles.dropdownLabel,
-                  showImageOptions && { color: '#FFFFFF' }
-                ]}>Import</Text>
-                <Ionicons 
-                  name={showImageOptions ? "chevron-up" : "chevron-down"} 
-                  size={12} 
-                  color={showImageOptions ? "#FFFFFF" : "#666"}
-                />
-              </View>
-            </TouchableOpacity>
-
-            {/* Image Options Dropdown */}
-            {/* Moved to popout container below */}
           </View>
         </View>
 
@@ -460,215 +334,151 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
             </View>
           </View>
         )}
-
-        {/* Actions moved to the start of the toolbar for quick access */}
       </ScrollView>
-      
-      {/* Popout containers below the toolbar */}
-      <View style={styles.popoutContainer}>
-        {/* Tools Selector Popout */}
-        {showToolSelector && (
-          <View style={styles.toolsDropdown}>
-            <View style={styles.toolsGrid}>
-              {TOOLS.map((tool) => (
-                <TouchableOpacity
-                  key={tool.name}
-                  style={[
-                    styles.toolCard,
-                    currentTool === tool.name && styles.selectedToolCard
-                  ]}
-                  onPress={() => {
-                    onToolChange(tool.name as DrawingTool);
-                    setActiveDropdown(null);
-                  }}
-                  activeOpacity={0.7}
-                  hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
-                >
-                  <View style={[
-                    styles.toolCardIcon,
-                    currentTool === tool.name && styles.selectedToolIcon
-                  ]}>
-                    <Ionicons
-                      name={tool.icon as any}
-                      size={20}
-                      color={currentTool === tool.name ? "#FFFFFF" : "#374151"}
-                    />
-                  </View>
-                  <Text style={[
-                    styles.toolCardName,
-                    currentTool === tool.name && styles.selectedToolText
-                  ]}>
-                    {tool.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        )}
 
-        {/* Color Picker Popout */}
-        {showColorPicker && (
-          <View style={styles.colorDropdown}>
-            <View style={styles.colorGrid}>
-              {COLORS.map((color) => (
-                <TouchableOpacity
-                  key={color.value}
-                  style={[
-                    styles.colorCard,
-                    currentColor === color.value && styles.selectedColorCard
-                  ]}
-                  onPress={() => {
-                    onColorChange(color.value);
-                    setActiveDropdown(null);
-                  }}
-                  activeOpacity={0.7}
-                  hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
-                >
-                  <View style={[
-                    styles.colorCardPreview,
-                    { backgroundColor: color.value },
-                    currentColor === color.value && styles.selectedColorPreview
-                  ]} />
-                  <Text style={[
-                    styles.colorCardName,
-                    currentColor === color.value && styles.selectedColorText
-                  ]}>
-                    {color.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+      {/* Dropdowns via Modals for full visibility */}
+      {showToolSelector && (
+        <Modal transparent animationType="fade" onRequestClose={() => setActiveDropdown(null)}>
+          <Pressable style={styles.modalOverlay} onPress={() => setActiveDropdown(null)}>
+            <View style={styles.modalContent}>
+              <View style={styles.toolsDropdown}>
+                <View style={styles.toolsGrid}>
+                  {TOOLS.map((tool) => (
+                    <TouchableOpacity
+                      key={tool.name}
+                      style={[styles.toolCard, currentTool === tool.name && styles.selectedToolCard]}
+                      onPress={() => {
+                        onToolChange(tool.name as DrawingTool);
+                        setActiveDropdown(null);
+                      }}
+                      activeOpacity={0.7}
+                      hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+                    >
+                      <View style={[styles.toolCardIcon, currentTool === tool.name && styles.selectedToolIcon]}>
+                        <Ionicons
+                          name={tool.icon as any}
+                          size={20}
+                          color={currentTool === tool.name ? "#FFFFFF" : "#374151"}
+                        />
+                      </View>
+                      <Text style={[styles.toolCardName, currentTool === tool.name && styles.selectedToolText]}>
+                        {tool.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
             </View>
-          </View>
-        )}
+          </Pressable>
+        </Modal>
+      )}
 
-        {/* Width Picker Popout */}
-        {showWidthPicker && (
-          <View style={styles.widthDropdown}>
-            <View style={styles.widthGrid}>
-              {WIDTHS.map((width) => (
-                <TouchableOpacity
-                  key={width.value}
-                  style={[
-                    styles.widthCard,
-                    currentWidth === width.value && styles.selectedWidthCard
-                  ]}
-                  onPress={() => {
-                    onWidthChange(width.value);
-                    setActiveDropdown(null);
-                  }}
-                  activeOpacity={0.7}
-                  hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
-                >
-                  <View style={[
-                    styles.widthCardPreview,
-                    {
-                      width: Math.min(width.value + 8, 24),
-                      height: Math.min(width.value + 8, 24),
-                      backgroundColor: currentColor,
-                    },
-                    currentWidth === width.value && styles.selectedWidthPreview
-                  ]} />
-                  <Text style={[
-                    styles.widthCardLabel,
-                    currentWidth === width.value && styles.selectedWidthText
-                  ]}>
-                    {width.label}
-                  </Text>
-                  <Text style={[
-                    styles.widthCardValue,
-                    currentWidth === width.value && styles.selectedWidthValueText
-                  ]}>
-                    {width.value}px
-                  </Text>
-                </TouchableOpacity>
-              ))}
+      {showColorPicker && (
+        <Modal transparent animationType="fade" onRequestClose={() => setActiveDropdown(null)}>
+          <Pressable style={styles.modalOverlay} onPress={() => setActiveDropdown(null)}>
+            <View style={styles.modalContent}>
+              <View style={styles.colorDropdown}>
+                <View style={styles.colorGrid}>
+                  {COLORS.map((color) => (
+                    <TouchableOpacity
+                      key={color.value}
+                      style={[styles.colorCard, currentColor === color.value && styles.selectedColorCard]}
+                      onPress={() => {
+                        onColorChange(color.value);
+                        setActiveDropdown(null);
+                      }}
+                      activeOpacity={0.7}
+                      hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+                    >
+                      <View style={[styles.colorCardPreview, { backgroundColor: color.value }, currentColor === color.value && styles.selectedColorPreview]} />
+                      <Text style={[styles.colorCardName, currentColor === color.value && styles.selectedColorText]}>
+                        {color.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
             </View>
-          </View>
-        )}
+          </Pressable>
+        </Modal>
+      )}
 
-        {/* Template Selector Popout */}
-        {showTemplateSelector && onTemplateChange && (
-          <View style={styles.templateDropdown}>
-            <View style={styles.templateGrid}>
-              {TEMPLATE_TYPES.map((templateType) => {
-                const config = getTemplateConfig(templateType);
-                return (
-                  <TouchableOpacity
-                    key={templateType}
-                    style={[
-                      styles.templateCard,
-                      currentTemplate === templateType && styles.selectedTemplateCard
-                    ]}
-                    onPress={() => {
-                      onTemplateChange(templateType);
-                      setActiveDropdown(null);
-                    }}
-                    activeOpacity={0.7}
-                    hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
-                  >
-                    <View style={[
-                      styles.templateCardIcon,
-                      currentTemplate === templateType && styles.selectedTemplateIcon
-                    ]}>
-                      <TemplatePreview 
-                        template={templateType} 
-                        width={28}
-                        height={28}
+      {showWidthPicker && (
+        <Modal transparent animationType="fade" onRequestClose={() => setActiveDropdown(null)}>
+          <Pressable style={styles.modalOverlay} onPress={() => setActiveDropdown(null)}>
+            <View style={styles.modalContent}>
+              <View style={styles.widthDropdown}>
+                <View style={styles.widthGrid}>
+                  {WIDTHS.map((width) => (
+                    <TouchableOpacity
+                      key={width.value}
+                      style={[styles.widthCard, currentWidth === width.value && styles.selectedWidthCard]}
+                      onPress={() => {
+                        onWidthChange(width.value);
+                        setActiveDropdown(null);
+                      }}
+                      activeOpacity={0.7}
+                      hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+                    >
+                      <View
+                        style={[styles.widthCardPreview, {
+                          width: Math.min(width.value + 8, 24),
+                          height: Math.min(width.value + 8, 24),
+                          backgroundColor: currentColor,
+                        }, currentWidth === width.value && styles.selectedWidthPreview]}
                       />
-                    </View>
-                    <Text style={[
-                      styles.templateCardName,
-                      currentTemplate === templateType && styles.selectedTemplateText
-                    ]}>
-                      {config.name}
-                    </Text>
-                    <Text style={[
-                      styles.templateCardDescription,
-                      currentTemplate === templateType && styles.selectedTemplateDescText
-                    ]}>
-                      {config.description.length > 25 ? 
-                        config.description.substring(0, 25) + '...' : 
-                        config.description
-                      }
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
+                      <Text style={[styles.widthCardLabel, currentWidth === width.value && styles.selectedWidthText]}>
+                        {width.label}
+                      </Text>
+                      <Text style={[styles.widthCardValue, currentWidth === width.value && styles.selectedWidthValueText]}>
+                        {width.value}px
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
             </View>
-          </View>
-        )}
+          </Pressable>
+        </Modal>
+      )}
 
-        {/* Image Options Popout */}
-        {showImageOptions && (
-          <View style={styles.imageDropdown}>
-            <View style={styles.imageGrid}>
-              <TouchableOpacity
-                style={styles.imageCard}
-                onPress={pickImageFromGallery}
-                activeOpacity={0.7}
-                hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
-              >
-                <View style={styles.imageCardIcon}>
-                  <Ionicons name="images-outline" size={20} color="#6A009C" />
+      {showTemplateSelector && onTemplateChange && (
+        <Modal transparent animationType="fade" onRequestClose={() => setActiveDropdown(null)}>
+          <Pressable style={styles.modalOverlay} onPress={() => setActiveDropdown(null)}>
+            <View style={styles.modalContent}>
+              <View style={styles.templateDropdown}>
+                <View style={styles.templateGrid}>
+                  {TEMPLATE_TYPES.map((templateType) => {
+                    const config = getTemplateConfig(templateType);
+                    return (
+                      <TouchableOpacity
+                        key={templateType}
+                        style={[styles.templateCard, currentTemplate === templateType && styles.selectedTemplateCard]}
+                        onPress={() => {
+                          onTemplateChange(templateType);
+                          setActiveDropdown(null);
+                        }}
+                        activeOpacity={0.7}
+                        hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+                      >
+                        <View style={[styles.templateCardIcon, currentTemplate === templateType && styles.selectedTemplateIcon]}>
+                          <TemplatePreview template={templateType} width={28} height={28} />
+                        </View>
+                        <Text style={[styles.templateCardName, currentTemplate === templateType && styles.selectedTemplateText]}>
+                          {config.name}
+                        </Text>
+                        <Text style={[styles.templateCardDescription, currentTemplate === templateType && styles.selectedTemplateDescText]}>
+                          {config.description.length > 25 ? config.description.substring(0, 25) + '...' : config.description}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
-                <Text style={styles.imageCardText}>Gallery</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={styles.imageCard}
-                onPress={takePhotoWithCamera}
-                activeOpacity={0.7}
-                hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
-              >
-                <View style={styles.imageCardIcon}>
-                  <Ionicons name="camera-outline" size={20} color="#28a745" />
-                </View>
-                <Text style={styles.imageCardText}>Camera</Text>
-              </TouchableOpacity>
+              </View>
             </View>
-          </View>
-        )}
-      </View>
+          </Pressable>
+        </Modal>
+      )}
     </View>
   );
 };
@@ -693,21 +503,7 @@ const styles = StyleSheet.create({
     borderRadius: 0,
     borderWidth: 0,
     elevation: 0,
-    height: 36, // Reduce height
-  },
-
-  popoutContainer: {
-    position: 'absolute',
-    top: '100%',
-    left: 0,
-    right: 0,
-    paddingHorizontal: 8,
-    paddingBottom: 8,
-    backgroundColor: "transparent",
-    alignItems: 'center',
-    zIndex: 99999,
-    elevation: 999,
-    pointerEvents: 'box-none', // Allow touch events to pass through to children
+    height: 36,
   },
 
   contentContainer: {
@@ -717,16 +513,14 @@ const styles = StyleSheet.create({
     justifyContent: "flex-start",
     paddingHorizontal: 4,
     paddingVertical: 4,
-    gap: 6, // Reduced gap between items
+    gap: 6,
   },
 
   section: {
     alignItems: "center",
-    minWidth: 44, // Reduce minimum width
+    minWidth: 44,
     justifyContent: "center",
   },
-
-
 
   // Section Styles
   toolsSection: {
@@ -871,7 +665,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.15,
     shadowRadius: 15,
-    elevation: 999,
+    elevation: 6,
     padding: 8,
     pointerEvents: 'auto'
   },
@@ -886,7 +680,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.15,
     shadowRadius: 15,
-    elevation: 999,
+    elevation: 6,
     padding: 8,
     pointerEvents: 'auto',
   },
@@ -909,23 +703,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.15,
     shadowRadius: 15,
-    elevation: 999,
-    padding: 8,
-    pointerEvents: 'auto',
-  },
-
-  // Image Dropdown Styles
-  imageDropdown: {
-    width: 140,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#EEF2FF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.15,
-    shadowRadius: 15,
-    elevation: 999,
+    elevation: 6,
     padding: 8,
     pointerEvents: 'auto',
   },
@@ -941,7 +719,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.15,
     shadowRadius: 15,
-    elevation: 999,
+    elevation: 6,
     padding: 8,
     pointerEvents: 'auto',
   },
@@ -962,6 +740,15 @@ const styles = StyleSheet.create({
     borderColor: "#EEF2FF",
     width: 26,
     height: 26,
+  },
+
+  toggleOn: {
+    backgroundColor: '#6A009C',
+    borderColor: '#6A009C',
+  },
+  toggleOff: {
+    backgroundColor: '#F1F5F9',
+    borderColor: '#E2E8F0',
   },
 
   disabledButton: {
@@ -1090,42 +877,6 @@ const styles = StyleSheet.create({
     color: '#E5E7EB',
   },
 
-  // Image Card Styles
-  imageGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    gap: 6,
-  },
-  imageCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    padding: 10,
-    width: 64,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#EEF2FF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  imageCardIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: '#F3F4F6',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  imageCardText: {
-    fontSize: 10,
-    fontFamily: 'Inter-Medium',
-    color: '#374151',
-    textAlign: 'center',
-  },
-
   // Template Card Styles (matching original TemplateSelector styles)
   templateGrid: {
     flexDirection: 'row',
@@ -1246,6 +997,20 @@ const styles = StyleSheet.create({
   },
   selectedToolText: {
     color: '#FFFFFF',
+  },
+
+  // Modal helpers
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'transparent',
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+  },
+  modalContent: {
+    marginTop: 56,
+    paddingHorizontal: 8,
+    width: '100%',
+    alignItems: 'center',
   },
 });
 
