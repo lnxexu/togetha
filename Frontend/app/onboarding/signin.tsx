@@ -523,17 +523,6 @@ export default function LogIn() {
       </ScrollView>
     </LinearGradient>
     </View>
-
-    {/* Loading Screen Overlay */}
-    {showLoadingScreen && (
-      <LoadingScreen 
-        message="Logging You In"
-        isVisible={showLoadingScreen}
-        showSuccessIcon={false}
-        onAnimationComplete={() => {
-        }}
-      />
-    )}
     <Modal
       visible={showLoadingScreen}
       transparent

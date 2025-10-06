@@ -50,8 +50,8 @@ EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 465  # SSL port - less commonly blocked than 587
 EMAIL_USE_SSL = True  # Use SSL instead of TLS for port 465
 EMAIL_USE_TLS = False  # Don't use TLS when using SSL
-EMAIL_HOST_USER = 'kcorpuz_220000002183@uic.edu.ph'  # Your Gmail
-EMAIL_HOST_PASSWORD = 'tjsw zzdo piwn zjea'  # Your Gmail App Password
+EMAIL_HOST_USER = 'wlage35@gmail.com'  # Your Gmail
+EMAIL_HOST_PASSWORD = 'lbqi deda bbux ebxd'  # Your Gmail App Password
 
 # Alternative: Use SendGrid for production (recommended for ISP-restricted environments)
 # Uncomment these lines and sign up for SendGrid if Gmail continues to fail

@@ -16,14 +16,12 @@ import {
   ActivityIndicator,
 } from "react-native";
 import ViewShot from "react-native-view-shot";
-import { DrawingToolbar } from "./DrawingToolbar";
+import { PDFToolbar } from "./PDFToolbar";
+import type { DrawingTool } from "./DrawingCanvas";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { LinearGradient } from "expo-linear-gradient";
-// Conditionally import PDF component only for native platforms
 const Pdf = Platform.OS !== "web" ? require("react-native-pdf").default : null;
-// Note: react-native-pdf doesn't support native text selection
-// We'll use manual text input as the solution
 import { ScrollView } from "react-native";
 import {
   MaterialIcons,
@@ -43,11 +41,12 @@ import AnimatedRe, {
   useSharedValue,
   useAnimatedStyle,
   useAnimatedProps,
+  useAnimatedReaction,
   withSpring,
   withDecay,
   runOnJS,
 } from "react-native-reanimated";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as FileSystem from "expo-file-system";
 import * as MediaLibrary from "expo-media-library";
@@ -132,12 +131,10 @@ const ANNOTATION_COLORS = [
   "#A8E6CF", // Light Green
 ];
 
-// Configuration: control whether visual thickness / font sizes scale with PDF zoom.
+// Configuration: default for whether visual thickness / font sizes scale with PDF zoom.
 // When false, annotations remain visually stable (positions still follow zoom via coordinate conversion)
 // preventing highlights, pen strokes, note bubbles from becoming thicker when zooming.
-// This matches the DrawingCanvas implementation for consistent behavior.
-
-const SCALE_STROKES_WITH_ZOOM = false;
+const DEFAULT_SCALE_STROKES_WITH_ZOOM = true;
 
 // --- Drawing Stroke Helpers ---
 const pointsToPath = (pts: { x: number; y: number }[]) => {
@@ -212,6 +209,10 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  // Runtime toggle for stroke scaling behavior
+  const [scaleStrokesWithZoom, setScaleStrokesWithZoom] = useState<boolean>(
+    DEFAULT_SCALE_STROKES_WITH_ZOOM
+  );
   const [currentPage, setCurrentPage] = useState(1); // UI no longer uses this; kept for backward compat
   const [totalPages, setTotalPages] = useState(0); // UI no longer uses this; kept for backward compat
     const currentPageRef = useRef(1); 
@@ -246,6 +247,16 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const spinnerRotate = useRef(new Animated.Value(0)).current;
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  // Edit/View mode: default to View on first encounter
+  const [isEditMode, setIsEditMode] = useState(false);
+  // Remember last non-null drawing tool to restore when re-entering Edit mode
+  const lastEditToolRef = useRef<
+    | "pen"
+    | "pencil"
+    | "brush"
+    | "highlight"
+    | "eraser"
+  >("pen");
   // Live drawing optimization: incremental smoothing to avoid recalculating full path every frame
   const USE_INCREMENTAL_SMOOTHING = true;
   const livePathRef = useRef<string>("");
@@ -351,7 +362,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const chatScrollViewRef = useRef<ScrollView>(null);
 
   // Toolbar integration helpers
-  type ToolbarTool = "pen" | "pencil" | "brush" | "highlighter" | "calligraphy" | "eraser";
+  type ToolbarTool = DrawingTool;
   const mapToolbarToolToViewer = (t: ToolbarTool): typeof selectedTool => {
     switch (t) {
       case "pen":
@@ -389,8 +400,24 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   };
 
   const handleToolbarToolChange = (t: ToolbarTool) => {
+    // Choosing a tool should enter Edit mode
+    if (!isEditMode) setIsEditMode(true);
+    // Remember this tool for future when toggling back to Edit
+    if (t !== "calligraphy") {
+      lastEditToolRef.current =
+        t === "highlighter" ? "highlight" : (t as any);
+    }
     setSelectedTool(mapToolbarToolToViewer(t));
   };
+
+  // Keep mode consistent if selectedTool is cleared elsewhere
+  useEffect(() => {
+    if (!isEditMode) return;
+    if (selectedTool === null) {
+      // Still in edit mode but no tool: keep as selection (view-like) but allow pinch-zoom overlay
+      // No change needed; scroll enabling logic already handles this case
+    }
+  }, [selectedTool, isEditMode]);
 
   const handleToolbarColorChange = (color: string) => {
     setSelectedColor(color);
@@ -399,6 +426,31 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const handleToolbarWidthChange = (width: number) => {
     setStrokeWidth(width);
   };
+
+  // Toggle between Edit and View modes
+  const handleModeToggle = useCallback(() => {
+    const next = !isEditMode;
+    setIsEditMode(next);
+    if (next) {
+      // Entering Edit: ensure a drawing tool is selected
+      if (selectedTool === null) {
+        const tool = lastEditToolRef.current;
+        setSelectedTool(tool as any);
+      }
+    } else {
+      // Entering View: clear drawing state and disable tools
+      if (isDrawing) {
+        setIsDrawing(false);
+      }
+      setCurrentPath("");
+      currentPathRef.current = "";
+      try {
+        svLivePath.value = "";
+      } catch {}
+      setSelectedTool(null);
+      setShouldCaptureGestures(false);
+    }
+  }, [isEditMode, selectedTool, isDrawing]);
 
   const handleToolbarUndo = () => handleUndo();
   const handleToolbarRedo = () => handleRedo();
@@ -641,13 +693,13 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     svLiveStrokeColor.value = selectedColor;
   }, [selectedColor]);
   useEffect(() => {
-    const width =
+    const base =
       selectedTool === "brush"
         ? strokeWidth * 1.8
         : selectedTool === "pencil"
         ? strokeWidth * 0.8
         : strokeWidth;
-    svLiveStrokeWidth.value = width;
+    svLiveStrokeWidth.value = base;
   }, [strokeWidth, selectedTool]);
   useEffect(() => {
     svLiveOpacity.value = selectedTool === "highlight" ? Math.max(0.1, Math.min(1, highlightOpacity)) : 0.95;
@@ -662,12 +714,27 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   // Single zoom state - simplified approach from DrawingEditor
   const [currentZoom, setCurrentZoom] = useState(1); // Track PDF zoom level
 
+  // When zoom or toggle changes, update live stroke width to reflect scaling behavior
+  useEffect(() => {
+    const base =
+      selectedTool === "brush"
+        ? strokeWidth * 1.8
+        : selectedTool === "pencil"
+        ? strokeWidth * 0.8
+        : strokeWidth;
+    svLiveStrokeWidth.value = scaleStrokesWithZoom
+      ? base * (currentZoom || 1)
+      : base;
+  }, [currentZoom, scaleStrokesWithZoom, selectedTool, strokeWidth]);
+
   // PDF transformation state with pan support
   const [pdfTransform, setPdfTransform] = useState({
     scale: 1,
     translateX: 0,
     translateY: 0,
   });
+  // Track active pinch to temporarily disable ScrollView and reduce jitter
+  const [isPinching, setIsPinching] = useState(false);
   // Keep a mutable ref of the transform for synchronous updates inside gesture handlers
   const pdfTransformRef = useRef(pdfTransform);
   useEffect(() => {
@@ -762,6 +829,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   // Removed annotation animations to make annotations static
   // Dynamically control whether the gesture overlay should capture touches
   const [shouldCaptureGestures, setShouldCaptureGestures] = useState(false);
+  const pinchHysteresisTimerRef = useRef<any>(null);
 
   // Keep page fully opaque; no scale/rotate animations on page changes
   useEffect(() => {
@@ -800,8 +868,19 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const gestureMidpointPdfRef = useRef({ x: 0, y: 0 }); // container/pdf coords
 
   // Scale constants
-  const MIN_PDF_SCALE = 0.5;
+  // Enforce min zoom at 100% (no zoom-out)
+  const MIN_PDF_SCALE = 1.0;
   const MAX_PDF_SCALE = 3.0; // Match DrawingEditor limit
+  // Pinch sensitivity gain (>1 accelerates). Keep 1.0 to avoid violent shaking.
+  const PINCH_SENSITIVITY = 1.0;
+  // Smoothing factors to reduce shake during pinch
+  const PINCH_SMOOTH_SCALE = 0.25; // 0..1
+  const PINCH_SMOOTH_TRANSLATION = 0.30; // 0..1
+  // Pan sensitivity tuning
+  const PAN_MIN_DISTANCE = 1; // pixels to activate pan quickly
+  const PAN_ACTIVE_OFFSET_X = 3; // activate when horizontal exceeds ~3px
+  const PAN_X_GAIN = 1.15; // slightly amplify horizontal movement for sensitivity
+  const PAN_Y_GAIN = 1.0; // keep vertical neutral
 
   // Reanimated shared values for better gesture performance
   const svScale = useSharedValue(1);
@@ -814,6 +893,23 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const svAnchorY = useSharedValue(0);
   const svStartTX = useSharedValue(0);
   const svStartTY = useSharedValue(0);
+  // Absolute window offset of the transform container (for mapping pageX/pageY)
+  const transformContainerRef = useRef<any>(null);
+  const containerWindowOffsetRef = useRef<{ left: number; top: number; width: number; height: number }>({ left: 0, top: 0, width: 0, height: 0 });
+
+  // Mirror animated transform into a JS ref so coordinate mapping during drawing is accurate.
+  const liveTransformRef = useRef({ scale: 1, translateX: 0, translateY: 0 });
+  const updateLiveTransform = useCallback((scale: number, translateX: number, translateY: number) => {
+    liveTransformRef.current = { scale, translateX, translateY };
+  }, []);
+
+  // Keep JS ref in sync with Reanimated shared values in real time (runs on UI thread, updates JS via runOnJS)
+  useAnimatedReaction(
+    () => ({ s: svScale.value, tx: svTranslateX.value, ty: svTranslateY.value }),
+    (vals) => {
+      runOnJS(updateLiveTransform)(vals.s, vals.tx, vals.ty);
+    }
+  );
 
   // Animated style for the PDF + annotations transform container
   const pdfAnimatedStyle = useAnimatedStyle(() => {
@@ -836,70 +932,108 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   // Pinch-to-zoom gesture using Reanimated + RNGH
   const pinchGesture = useMemo(() => {
     return Gesture.Pinch()
-      .onStart((e) => {
+      .shouldCancelWhenOutside(false)
+      .onStart((e: any) => {
         'worklet';
         svStartScale.value = svScale.value;
         // Compute anchor point in content coords
         svAnchorX.value = (e.focalX - svTranslateX.value) / svScale.value;
         svAnchorY.value = (e.focalY - svTranslateY.value) / svScale.value;
+        runOnJS(setShouldCaptureGestures)(true);
+        runOnJS(setIsPinching)(true);
       })
-      .onUpdate((e) => {
+      .onUpdate((e: any) => {
         'worklet';
-        const nextScale = clamp(
-          svStartScale.value * (e.scale || 1),
+        // Apply gain then clamp target scale
+        const gainedScale = Math.pow(e.scale || 1, PINCH_SENSITIVITY);
+        const nextScaleRaw = clamp(
+          svStartScale.value * gainedScale,
           MIN_PDF_SCALE,
           MAX_PDF_SCALE
         );
-        const nextTX = e.focalX - svAnchorX.value * nextScale;
-        const nextTY = e.focalY - svAnchorY.value * nextScale;
-
-        const maxOffsetX = (svContainerW.value * (nextScale - 1)) / 2;
-        const maxOffsetY = (svContainerH.value * (nextScale - 1)) / 2;
-        svScale.value = nextScale;
-        svTranslateX.value = clamp(nextTX, -maxOffsetX, maxOffsetX);
-        svTranslateY.value = clamp(nextTY, -maxOffsetY, maxOffsetY);
+        // Smooth scale to reduce shake
+        const smoothedScale = svScale.value + PINCH_SMOOTH_SCALE * (nextScaleRaw - svScale.value);
+        // Compute target translation from smoothed scale (anchor at focal)
+        const targetTX = e.focalX - svAnchorX.value * smoothedScale;
+        const targetTY = e.focalY - svAnchorY.value * smoothedScale;
+        // Soft clamp with small margin
+        const maxOffsetX = (svContainerW.value * (smoothedScale - 1)) / 2;
+        const maxOffsetY = (svContainerH.value * (smoothedScale - 1)) / 2;
+        const margin = 6;
+        const softClamp = (v: number, min: number, max: number) => {
+          'worklet';
+          if (v < min - margin) return min - margin;
+          if (v > max + margin) return max + margin;
+          return v;
+        };
+        const targetTXClamped = softClamp(targetTX, -maxOffsetX, maxOffsetX);
+        const targetTYClamped = softClamp(targetTY, -maxOffsetY, maxOffsetY);
+        // Smooth translation toward target to avoid jitter
+        svScale.value = smoothedScale;
+        svTranslateX.value = svTranslateX.value + PINCH_SMOOTH_TRANSLATION * (targetTXClamped - svTranslateX.value);
+        svTranslateY.value = svTranslateY.value + PINCH_SMOOTH_TRANSLATION * (targetTYClamped - svTranslateY.value);
       })
       .onEnd(() => {
         'worklet';
+        // On end, clamp strictly to bounds and spring to reduce wobble
+        const scale = svScale.value || 1;
+        const maxOffsetX = (svContainerW.value * (scale - 1)) / 2;
+        const maxOffsetY = (svContainerH.value * (scale - 1)) / 2;
+        const clampedTX = clamp(svTranslateX.value, -maxOffsetX, maxOffsetX);
+        const clampedTY = clamp(svTranslateY.value, -maxOffsetY, maxOffsetY);
+  svTranslateX.value = withSpring(clampedTX, { damping: 20, stiffness: 200 });
+  svTranslateY.value = withSpring(clampedTY, { damping: 20, stiffness: 200 });
         // Sync JS state with final values
-        const final = {
-          scale: svScale.value,
-          translateX: svTranslateX.value,
-          translateY: svTranslateY.value,
-        };
-        runOnJS(setCurrentZoom)(final.scale);
-        runOnJS(setPdfTransform)(final);
+        runOnJS(setCurrentZoom)(scale);
+        runOnJS(setPdfTransform)({ scale, translateX: clampedTX, translateY: clampedTY });
+        runOnJS(setIsPinching)(false);
       });
   }, [MIN_PDF_SCALE, MAX_PDF_SCALE]);
 
-  // One-finger pan for panning when zoomed (disabled at scale<=1 or when drawing tool active)
-  const panEnabled = currentZoom > 1 && selectedTool === null;
+  // One-finger pan:
+  // - View mode: allow panning at any zoom (including < 1 and > 1) when no tool is active
+  // - Edit mode: allow panning only when zoomed in (> 1), to avoid interfering with drawing
+  const panEnabled = (!isEditMode && selectedTool === null) || (selectedTool === null && currentZoom > 1);
   const panGesture = useMemo(() => {
     return Gesture.Pan()
+      .shouldCancelWhenOutside(false)
       .enabled(panEnabled)
+      .minDistance(PAN_MIN_DISTANCE)
+      .activeOffsetX([-PAN_ACTIVE_OFFSET_X, PAN_ACTIVE_OFFSET_X])
       .minPointers(1)
       .maxPointers(1)
       .onStart(() => {
         'worklet';
         svStartTX.value = svTranslateX.value;
         svStartTY.value = svTranslateY.value;
+        // Temporarily disable ScrollView while panning to avoid conflicts
+        runOnJS(setShouldCaptureGestures)(true);
       })
       .onUpdate((e) => {
         'worklet';
         const scale = svScale.value || 1;
-        const maxOffsetX = (svContainerW.value * (scale - 1)) / 2;
-        const maxOffsetY = (svContainerH.value * (scale - 1)) / 2;
-        const nextTX = svStartTX.value + e.translationX;
-        const nextTY = svStartTY.value + e.translationY;
+        // Compute symmetric clamps for both zoomed-in (scale>1) and zoomed-out (scale<1)
+        const maxOffsetX = scale >= 1
+          ? (svContainerW.value * (scale - 1)) / 2
+          : (svContainerW.value * (1 - scale)) / 2;
+        const maxOffsetY = scale >= 1
+          ? (svContainerH.value * (scale - 1)) / 2
+          : (svContainerH.value * (1 - scale)) / 2;
+        const nextTX = svStartTX.value + (e.translationX * PAN_X_GAIN);
+        const nextTY = svStartTY.value + (e.translationY * PAN_Y_GAIN);
         svTranslateX.value = clamp(nextTX, -maxOffsetX, maxOffsetX);
         svTranslateY.value = clamp(nextTY, -maxOffsetY, maxOffsetY);
       })
       .onEnd((e) => {
         'worklet';
-        // apply decay (inertial) with clamping
         const scale = svScale.value || 1;
-        const maxOffsetX = (svContainerW.value * (scale - 1)) / 2;
-        const maxOffsetY = (svContainerH.value * (scale - 1)) / 2;
+        // Apply decay (inertial) with clamping for both zoomed-in and zoomed-out
+        const maxOffsetX = scale >= 1
+          ? (svContainerW.value * (scale - 1)) / 2
+          : (svContainerW.value * (1 - scale)) / 2;
+        const maxOffsetY = scale >= 1
+          ? (svContainerH.value * (scale - 1)) / 2
+          : (svContainerH.value * (1 - scale)) / 2;
         svTranslateX.value = withDecay({
           velocity: e.velocityX ?? 0,
           clamp: [-maxOffsetX, maxOffsetX],
@@ -915,6 +1049,12 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         };
         runOnJS(setCurrentZoom)(final.scale);
         runOnJS(setPdfTransform)(final);
+        runOnJS(setShouldCaptureGestures)(false);
+      })
+      .onFinalize(() => {
+        'worklet';
+        // Safety: ensure ScrollView is re-enabled if gesture cancels
+        runOnJS(setShouldCaptureGestures)(false);
       });
   }, [panEnabled]);
 
@@ -935,7 +1075,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         const nextTY = e.y - anchorY * target;
         const maxOffsetX = (svContainerW.value * (target - 1)) / 2;
         const maxOffsetY = (svContainerH.value * (target - 1)) / 2;
-        svScale.value = withSpring(target, { damping: 18, stiffness: 180 });
+  svScale.value = withSpring(target, { damping: 16, stiffness: 220 });
         svTranslateX.value = withSpring(clamp(nextTX, -maxOffsetX, maxOffsetX));
         svTranslateY.value = withSpring(clamp(nextTY, -maxOffsetY, maxOffsetY));
         runOnJS(setCurrentZoom)(target);
@@ -1798,22 +1938,32 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         createBackup: true,
         saveDirectly: false, // Create new file to preserve original
         outputFileName: `annotated_${Date.now()}_${fileName}`,
+        viewerInfo: {
+          totalPages: Math.max(1, totalPagesRef.current || displayTotalPages || 1),
+          viewerWidth: Math.max(1, pdfContainerLayout?.width || containerSize.width || screenWidth),
+          viewerHeight: Math.max(1, pdfContainerLayout?.height || containerSize.height || screenHeight),
+          pdfPageDimensions: {
+            width: Math.max(1, pdfPageDimensions?.width || 595),
+            height: Math.max(1, pdfPageDimensions?.height || 842),
+          },
+        },
       };
 
       let result;
+      const pdfUriToSave = currentSource?.uri || source.uri;
 
       if (noteId) {
         // Save to both backend and PDF
         result = await drawingAPI.savePDFAnnotationsWithBackend(
           noteId,
-          source.uri,
+          pdfUriToSave,
           pdfAnnotations,
           saveOptions
         );
       } else {
         // Save only to PDF
         result = await drawingAPI.savePDFAnnotations(
-          source.uri,
+          pdfUriToSave,
           pdfAnnotations,
           saveOptions
         );
@@ -2298,18 +2448,19 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
   // WebView text selection functionality has been removed
 
-  // Convert touch coordinates (overlay space) to SVG viewBox coordinates
-  const touchToSvg = useCallback((x: number, y: number) => {
-    const { displayW } = getLayoutMetrics();
-    const containerW =
-      pdfViewerBounds?.width ||
-      pdfContainerLayout?.width ||
-      containerSize.width ||
-      screenWidth;
-    const xv = containerW ? (x / containerW) * displayW : x;
-    const yv = y; // vertical scaling is 1:1 (height uses contentHeight)
-    return { x: xv, y: yv };
-  }, [pdfViewerBounds?.width, pdfContainerLayout?.width, containerSize.width]);
+  // Convert touch coordinates (overlay screen space) to SVG viewBox coordinates,
+  // inverting the current PDF transform and accounting for page horizontal offset.
+  // Map overlay-local touch (locationX/locationY) directly to SVG viewBox coords.
+  // Overlay resides inside the same transform+scroll container as the PDF and SVG,
+  // so local coords already correspond to content space.
+  const localToSvg = useCallback((localX: number, localY: number) => {
+    const { displayW, contentHeight } = getLayoutMetrics();
+    const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+    return {
+      x: clamp(localX, 0, displayW),
+      y: clamp(localY, 0, contentHeight),
+    };
+  }, []);
 
   // Sync status functions
   const getSyncStatusIcon = () => {
@@ -2448,6 +2599,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       const touches = (evt.nativeEvent as any).touches || [];
       // Only capture for drawing/annotation tools (single touch)
       if (
+        isEditMode &&
         touches.length === 1 &&
         selectedTool !== null &&
         selectedTool !== "selection"
@@ -2458,6 +2610,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     onMoveShouldSetPanResponder: (evt) => {
       const touches = (evt.nativeEvent as any).touches || [];
       if (
+        isEditMode &&
         touches.length === 1 &&
         selectedTool !== null &&
         selectedTool !== "selection"
@@ -2468,6 +2621,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     onMoveShouldSetPanResponderCapture: (evt) => {
       const touches = (evt.nativeEvent as any).touches || [];
       if (
+        isEditMode &&
         touches.length === 1 &&
         selectedTool !== null &&
         selectedTool !== "selection"
@@ -2479,6 +2633,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     onStartShouldSetPanResponderCapture: (evt) => {
       const touches = (evt.nativeEvent as any).touches || [];
       return (
+        isEditMode &&
         touches.length === 1 &&
         selectedTool !== null &&
         selectedTool !== "selection"
@@ -2491,8 +2646,8 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       const touches = (evt.nativeEvent as any).touches || [];
       if (touches.length === 1 && selectedTool) {
         // Single touch drawing gesture
-        const touch = touches[0];
-        const { locationX, locationY } = touch;
+  const touch = touches[0];
+  const { locationX, locationY } = touch as any;
 
         if (selectedTool === "selection" || selectedTool === "textSelect") {
           // Text selection functionality has been removed
@@ -2507,18 +2662,13 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
           setIsDrawing(true);
           // Initialize point buffer with higher-precision timestamp
           const now = Date.now();
-          currentPointsRef.current = [
-            {
-              x: locationX,
-              y: locationY,
-              timestamp: now, // Add timestamp for speed-based smoothing
-            },
-          ];
+          const p0svg = localToSvg(locationX, locationY);
+          currentPointsRef.current = [{ x: p0svg.x, y: p0svg.y, timestamp: now }];
           // Reset rendering timers
           lastRenderTimeRef.current = performance.now();
           pendingPathUpdateRef.current = false;
           // Initialize incremental smoothing path in SVG coordinates
-          const p0 = touchToSvg(locationX, locationY);
+          const p0 = localToSvg(locationX, locationY);
           livePathRef.current = `M${p0.x.toFixed(2)},${p0.y.toFixed(2)}`;
           incLastPointRef.current = { x: p0.x, y: p0.y };
           incLastMidRef.current = null;
@@ -2528,22 +2678,19 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
           // Pre-allocate space for better performance
           currentPointsRef.current.length = 0; // Clear
-          currentPointsRef.current.push({
-            x: locationX,
-            y: locationY,
-            timestamp: now,
-          });
+          currentPointsRef.current.push({ x: p0svg.x, y: p0svg.y, timestamp: now });
         } else {
           // Start drawing path for pen, brush, pencil, freehand highlight, eraser
           setIsDrawing(true);
 
           // Initialize with optimized settings
           const now = Date.now();
-          const initialPoint = { x: locationX, y: locationY, timestamp: now };
+          const p0svg2 = localToSvg(locationX, locationY);
+          const initialPoint = { x: p0svg2.x, y: p0svg2.y, timestamp: now };
           currentPointsRef.current = [initialPoint];
           lastPointRef.current = initialPoint;
           // Initialize incremental smoothing path for pen tools in SVG coords
-          const p0 = touchToSvg(locationX, locationY);
+          const p0 = p0svg2;
           livePathRef.current = `M${p0.x.toFixed(2)},${p0.y.toFixed(2)}`;
           incLastPointRef.current = { x: p0.x, y: p0.y };
           incLastMidRef.current = null;
@@ -2580,8 +2727,8 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         selectedTool
       ) {
         // Handle drawing with real-time path updates
-        const touch = touches[0];
-        const { locationX, locationY } = touch;
+  const touch = touches[0];
+  const { locationX, locationY } = touch as any;
 
         if (selectedTool === "textSelect") {
           // textSelect now extracts all page text automatically
@@ -2595,7 +2742,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
           selectedTool === "eraser"
         ) {
           // Optimize point collection with distance-based filtering for smoother performance
-          const p = touchToSvg(locationX, locationY);
+          const p = localToSvg(locationX, locationY);
           const newPoint = { x: p.x, y: p.y, timestamp: Date.now() };
 
           // Skip points that are too close to reduce computational overhead
@@ -2710,6 +2857,16 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
           pendingPathUpdateRef.current = false;
         }
       }
+
+      // Trigger autosave shortly after stroke completes
+      try {
+        if (autoSave) {
+          if (autoSaveTimeoutRef.current) clearTimeout(autoSaveTimeoutRef.current);
+          autoSaveTimeoutRef.current = setTimeout(() => {
+            handleSaveAnnotations();
+          }, 500);
+        }
+      } catch {}
 
       // Reset gesture tracking (drawing only)
       gestureStartDistanceRef.current = 0;
@@ -4620,7 +4777,10 @@ Your original file is unchanged. Try exporting to a new file instead.`
                   annotation.path,
                   page
                 );
-                const highlightStrokeWidth = annotation.strokeWidth || 12;
+                const highlightBase = annotation.strokeWidth || 12;
+                const highlightStrokeWidth = scaleStrokesWithZoom
+                  ? highlightBase * (currentZoom || 1)
+                  : highlightBase;
                 return (
                   <Path
                     key={annotation.id}
@@ -4659,6 +4819,9 @@ Your original file is unchanged. Try exporting to a new file instead.`
             case "pencil":
               const baseStroke = annotation.strokeWidth || 3;
               const penStyle = getPenStyle(annotation.type, baseStroke);
+              const strokeW = scaleStrokesWithZoom
+                ? (penStyle.strokeWidth as number) * (currentZoom || 1)
+                : (penStyle.strokeWidth as number);
               const penPath = convertNormalizedPathToScreenForPage(
                 annotation.path || "",
                 page
@@ -4668,7 +4831,7 @@ Your original file is unchanged. Try exporting to a new file instead.`
                   key={annotation.id}
                   d={penPath}
                   stroke={annotation.color}
-                  strokeWidth={penStyle.strokeWidth}
+                  strokeWidth={strokeW}
                   strokeLinecap={penStyle.strokeLinecap}
                   strokeLinejoin={penStyle.strokeLinejoin}
                   strokeDasharray={penStyle.strokeDasharray}
@@ -4767,7 +4930,7 @@ Your original file is unchanged. Try exporting to a new file instead.`
               }
 
               const baseStrokeWidth = stroke.width ?? 2;
-              const strokeWidth = SCALE_STROKES_WITH_ZOOM
+              const strokeWidth = scaleStrokesWithZoom
                 ? baseStrokeWidth * (currentZoom || 1)
                 : baseStrokeWidth;
 
@@ -4794,7 +4957,7 @@ Your original file is unchanged. Try exporting to a new file instead.`
             const livePath = strokePathCacheRef.current.get(liveKey);
             if (livePath) {
               const baseStroke = strokeWidth || 3;
-              const liveStrokeWidth = SCALE_STROKES_WITH_ZOOM
+              const liveStrokeWidth = scaleStrokesWithZoom
                 ? baseStroke * (currentZoom || 1)
                 : baseStroke;
               let liveOpacity = 1;
@@ -4828,7 +4991,8 @@ Your original file is unchanged. Try exporting to a new file instead.`
             const smoothedLivePath =
               pathCacheRef.current || currentPathRef.current || currentPath;
             // Don't scale stroke width since the transform container handles all scaling
-            const baseStrokeWidth = strokeWidth;
+            const factor = scaleStrokesWithZoom ? (currentZoom || 1) : 1;
+            const baseStrokeWidth = strokeWidth * factor;
 
             switch (selectedTool) {
               case "highlight":
@@ -4930,7 +5094,7 @@ Your original file is unchanged. Try exporting to a new file instead.`
   };
 
   return (
-    <View style={styles.container}>
+    <GestureHandlerRootView style={styles.container}>
       {/* Floating AI Button */}
       <Animated.View
         style={[
@@ -5089,19 +5253,25 @@ Your original file is unchanged. Try exporting to a new file instead.`
         {/* Annotation Toolbar: replaced with shared DrawingToolbar (keeps zoom controls) */}
         {!uiHidden && (
           <View style={styles.toolbarScrollContainer}>
-            <DrawingToolbar
+            <PDFToolbar
               currentTool={mapViewerToolToToolbar()}
               currentColor={selectedColor}
               currentWidth={strokeWidth}
+              highlighterOpacity={highlightOpacity}
+              eraserSize={eraserSize}
               currentZoom={currentZoom}
+              compact
+              isEditMode={isEditMode}
+              onModeToggle={handleModeToggle}
               onToolChange={handleToolbarToolChange}
               onColorChange={handleToolbarColorChange}
               onWidthChange={handleToolbarWidthChange}
+              scaleStrokesWithZoom={scaleStrokesWithZoom}
+              onToggleScaleStrokes={() => setScaleStrokesWithZoom((v) => !v)}
               onUndo={handleToolbarUndo}
               onRedo={handleToolbarRedo}
               onClear={handleToolbarClear}
               onQuickExport={handleToolbarQuickExport}
-              onImageImport={handleToolbarImageImport}
               onZoomIn={handleZoomIn}
               onZoomOut={handleZoomOut}
               onZoomReset={resetZoom}
@@ -5183,16 +5353,30 @@ Your original file is unchanged. Try exporting to a new file instead.`
                 // but if two fingers start, enable our overlay to handle pinch zoom
                 onTouchStart={(e) => {
                   const touches = (e.nativeEvent as any)?.touches || [];
+                  if (pinchHysteresisTimerRef.current) {
+                    clearTimeout(pinchHysteresisTimerRef.current);
+                    pinchHysteresisTimerRef.current = null;
+                  }
                   if (touches.length >= 2) setShouldCaptureGestures(true);
+                }}
+                onTouchMove={(e) => {
+                  const touches = (e.nativeEvent as any)?.touches || [];
+                  if (touches.length >= 2 && !shouldCaptureGestures) {
+                    setShouldCaptureGestures(true);
+                  }
                 }}
                 onTouchEnd={(e) => {
                   const touches = (e.nativeEvent as any)?.touches || [];
-                  if (
-                    touches.length < 2 &&
-                    currentZoomRef.current <= 1 &&
-                    !selectedTool
-                  ) {
-                    setShouldCaptureGestures(false);
+                  if (touches.length < 2 && !selectedTool) {
+                    // Add a small hysteresis before giving control back to ScrollView
+                    // Remove zoom level restriction to ensure pinch works at all zoom levels
+                    if (pinchHysteresisTimerRef.current) {
+                      clearTimeout(pinchHysteresisTimerRef.current);
+                    }
+                    pinchHysteresisTimerRef.current = setTimeout(() => {
+                      setShouldCaptureGestures(false);
+                      pinchHysteresisTimerRef.current = null;
+                    }, 80); // Reduced hysteresis for more responsive pinch
                   }
                 }}
                 onLayout={(event) => {
@@ -5215,6 +5399,7 @@ Your original file is unchanged. Try exporting to a new file instead.`
                   {/* Opacity is controlled by RN Animated to avoid mixing with Reanimated style */}
                   <Animated.View style={{ flex: 1, opacity: pageOpacity }}>
                     <AnimatedRe.View
+                      ref={transformContainerRef}
                       onLayout={(event) => {
                       const { x, y, width, height } = event.nativeEvent.layout;
                       if (width && height) {
@@ -5224,6 +5409,14 @@ Your original file is unchanged. Try exporting to a new file instead.`
                         // Keep shared container dims for clamping in worklets
                         svContainerW.value = width;
                         svContainerH.value = height;
+                        // Also capture absolute window position for precise touch mapping
+                        try {
+                          requestAnimationFrame(() => {
+                            (transformContainerRef.current as any)?.measureInWindow?.((absX: number, absY: number, w: number, h: number) => {
+                              containerWindowOffsetRef.current = { left: absX, top: absY, width: w, height: h };
+                            });
+                          });
+                        } catch {}
                       }
                       }}
                       // Apply Reanimated transform style
@@ -5238,8 +5431,13 @@ Your original file is unchanged. Try exporting to a new file instead.`
                           contentContainerStyle={{ height: contentHeight }}
                           scrollEventThrottle={16}
                           showsVerticalScrollIndicator={false}
+                          horizontal={false}
                           scrollEnabled={
-                            currentZoom <= 1 && (selectedTool === null || selectedTool === "selection")
+                            // View mode: allow native vertical scroll when not actively pinching (overlay handles gestures)
+                            // Edit mode: allow vertical scroll only when not capturing multi-touch and no drawing tool is active
+                            !isEditMode
+                              ? (!shouldCaptureGestures && !isPinching)
+                              : (!shouldCaptureGestures && !isPinching && (selectedTool === null || selectedTool === 'selection'))
                           }
                           onScroll={(e) => {
                             const y = e.nativeEvent.contentOffset.y;
@@ -5303,10 +5501,17 @@ Your original file is unchanged. Try exporting to a new file instead.`
                             <GestureDetector gesture={combinedGesture}>
                               <View
                                 pointerEvents={
-                                  selectedTool !== null || currentZoom > 1 ? "auto" : "none"
+                                  // View mode: always allow overlay to capture gestures at any zoom
+                                  // Edit mode: allow when a tool is active or we're capturing multi-touch
+                                  !isEditMode
+                                    ? "auto"
+                                    : selectedTool !== null || shouldCaptureGestures
+                                    ? "auto"
+                                    : "none"
                                 }
-                                style={{ position: "absolute", left: 0, top: 0, right: 0, height: contentHeight, zIndex: 20, backgroundColor: "transparent" }}
-                                {...panResponder.panHandlers}
+                                style={{ position: "absolute", left: 0, top: 0, right: 0, height: contentHeight, zIndex: 9999, backgroundColor: "transparent" }}
+                                collapsable={false}
+                                {...(isEditMode ? panResponder.panHandlers : ({} as any))}
                               />
                             </GestureDetector>
                           </View>
@@ -5322,7 +5527,7 @@ Your original file is unchanged. Try exporting to a new file instead.`
             {/* Page indicator removed in favor of floating buttons */}
           </View>
         )}
-      </View>
+  </View>
 
       {/* Focus mode exit controls */}
       {uiHidden && (
@@ -6316,7 +6521,7 @@ Your original file is unchanged. Try exporting to a new file instead.`
           </View>
         </View>
       </Modal>
-    </View>
+    </GestureHandlerRootView>
   );
 };
 
@@ -6410,16 +6615,21 @@ const styles = StyleSheet.create({
     padding: 0,
   },
   toolbarScrollContainer: {
-    backgroundColor: "#F8FAFC",
-    borderRadius: 12,
-    marginBottom: 10,
-    marginLeft: 12,
-    marginRight: 12,
-    marginTop: 12,
-    shadowColor: "#000",
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 9999,
+    elevation: 9999,
+    backgroundColor: "transparent",
+    borderRadius: 0,
+    marginBottom: 0,
+    marginLeft: 0,
+    marginRight: 0,
+    marginTop: 0,
+    paddingVertical: 0,
+    borderWidth: 0,
+    borderColor: "transparent",
   },
   toolbarContent: {
     flexDirection: "row",

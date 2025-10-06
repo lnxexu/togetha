@@ -749,13 +749,13 @@ async function embedAnnotationsInMemory(
     console.warn('Initial PDFDocument.load failed:', loadErr && loadErr.message ? loadErr.message : loadErr);
     // If the error indicates encryption, retry with ignoreEncryption option
     const msg = loadErr && loadErr.message ? loadErr.message.toLowerCase() : String(loadErr || '').toLowerCase();
-    if (msg.includes('encrypted') || msg.includes('password')) {
+  if (msg.includes('encrypted') || msg.includes('password')) {
       try {
         console.log('PDF appears to be encrypted - retrying load with ignoreEncryption:true');
         console.warn('⚠️ WARNING: Loading encrypted PDF with ignoreEncryption may result in compatibility issues');
         
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        pdfDoc = await (PDFDocument as any).load(pdfArrayBuffer, { ignoreEncryption: true });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  pdfDoc = await (PDFDocument as any).load(pdfArrayBuffer, { ignoreEncryption: true });
         wasEncrypted = true;
         
         // For encrypted PDFs, we need to create a new clean PDF to ensure compatibility
@@ -763,6 +763,7 @@ async function embedAnnotationsInMemory(
         
       } catch (retryErr) {
         console.error('Retry with ignoreEncryption failed:', retryErr);
+        // If we still cannot load, rethrow to caller
         throw new Error(`Cannot process encrypted PDF: ${retryErr instanceof Error ? retryErr.message : 'Unknown encryption error'}`);
       }
     } else {
@@ -987,11 +988,21 @@ async function embedAnnotationsInMemory(
     encoding: FileSystem.EncodingType.Base64,
   });
 
-  // Validate saved PDF by attempting to load it with pdf-lib
+  // Validate saved PDF by attempting to load it with pdf-lib (support encrypted PDFs)
   try {
     const savedBase64 = await FileSystem.readAsStringAsync(outputPath, { encoding: FileSystem.EncodingType.Base64 });
     const validateBuffer = Uint8Array.from(atob(savedBase64), (c) => c.charCodeAt(0)).buffer;
-    await PDFDocument.load(validateBuffer);
+    try {
+      await PDFDocument.load(validateBuffer);
+    } catch (loadErr: any) {
+      const msg = (loadErr?.message || '').toLowerCase();
+      if (msg.includes('encrypted') || msg.includes('password')) {
+        // Retry validation ignoring encryption
+        await (PDFDocument as any).load(validateBuffer, { ignoreEncryption: true });
+      } else {
+        throw loadErr;
+      }
+    }
     console.log('✅ Saved annotated PDF validated successfully');
   } catch (validationErr) {
     console.error('❌ Saved PDF validation failed:', validationErr);
@@ -1051,7 +1062,7 @@ async function embedAnnotationsInMemory(
         } catch (loadErr: any) {
           // If it's encrypted, try with ignoreEncryption
           const msg = (loadErr?.message || '').toLowerCase();
-          if (msg.includes('encrypted')) {
+          if (msg.includes('encrypted') || msg.includes('password')) {
             console.log('🔍 Validation: Saved PDF is encrypted, testing with ignoreEncryption...');
             validateDoc = await (PDFDocument as any).load(validateBuffer, { ignoreEncryption: true });
           } else {

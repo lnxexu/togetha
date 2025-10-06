@@ -30,6 +30,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { captureRef } from "react-native-view-shot";
 import * as FileSystem from "expo-file-system";
 import * as MediaLibrary from 'expo-media-library';
+import * as ImagePicker from 'expo-image-picker';
 import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
 import { showSuccessToast, showErrorToast, showWarningToast, showInfoToast } from "../utils/ToastUtils";
 import DrawingCanvas, { Stroke, DrawingTool, CanvasOrientation } from "./components/DrawingCanvas";
@@ -203,8 +204,6 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
   const [currentColor, setCurrentColor] = useState('#000000');
   const [currentWidth, setCurrentWidth] = useState(2);
   const [currentZoom, setCurrentZoom] = useState(1); // Track canvas zoom level
-  // Toggle to enable/disable drawing tools from the toolbar
-  const [toolsEnabled, setToolsEnabled] = useState<boolean>(true);
   
   // Canvas orientation state
   const [canvasOrientation, setCanvasOrientation] = useState<'landscape' | 'portrait'>(initialOrientation);
@@ -1164,8 +1163,6 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
                   onZoomReset={resetZoom}
                   canUndo={canUndo}
                   canRedo={canRedo}
-                  toolsEnabled={toolsEnabled}
-                  onToggleTools={() => setToolsEnabled((v: boolean) => !v)}
                 />
             )}
 
@@ -1234,7 +1231,7 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
                     onStrokeComplete={handleStrokeComplete}
                     onAddStroke={addStroke}
                     onStrokeUpdate={setCurrentStroke}
-                    disabled={readOnly || !toolsEnabled}
+                    disabled={readOnly}
                     backgroundColor={getTemplateBackgroundColor(activeTemplate)}
                     template={activeTemplate}
                     templateOptions={getTemplateOptionsForCanvas()}
@@ -1487,7 +1484,6 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
         <UnsavedChangesModal
           visible={showUnsavedChangesModal}
           onSave={handleSaveAndExit}
-          onDiscard={handleDiscardAndExit}
           onCancel={handleContinueEditing}
           isSaving={isSaving}
         />
@@ -2076,7 +2072,7 @@ const styles = StyleSheet.create({
   folderSearchRow: {
     paddingVertical: 8,
   },
-   folderSearchInput: {
+  folderSearchInput: {
     backgroundColor: '#F3F4F6',
     borderRadius: 10,
     paddingVertical: 8,
