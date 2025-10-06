@@ -25,21 +25,12 @@ import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Markdown from "react-native-markdown-display";
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import chatbotAPI, { 
+import {chatbotAPI,
   Conversation, 
   Message as APIMessage, 
   ConversationFile,
   ChatResponse 
 } from "./services/chatbotAPIService";
-// Guarded import for ChatHeadContext (fallback if not available)
-let useChatHead: any = () => ({ setActiveConversation: () => {}, setHasActiveConversation: () => {}, disableChatHead: () => {}, enableChatHead: () => {}, resetUnreadCount: () => {} });
-try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const ctx = require('../contexts/ChatHeadContext');
-  if (ctx && typeof ctx.useChatHead === 'function') {
-    useChatHead = ctx.useChatHead;
-  }
-} catch {}
 
 type Role = "user" | "assistant";
 
@@ -74,8 +65,8 @@ function ChatBot(): React.ReactElement {
   const navigation = useNavigation();
   const scrollViewRef = useRef<ScrollView>(null);
   const insets = useSafeAreaInsets();
-  const { setActiveConversation, setHasActiveConversation, disableChatHead, enableChatHead } = useChatHead();
-  
+
+
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversation, setCurrentConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -97,21 +88,17 @@ function ChatBot(): React.ReactElement {
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   // Animated value for smooth keyboard movement
   const animatedBottomValue = useRef(new Animated.Value(0)).current;
-  const [inputContainerHeight, setInputContainerHeight] = useState(0);
-  
+
   // OCR Modal states
   const [showOCRModal, setShowOCRModal] = useState(false);
   const [ocrImage, setOCRImage] = useState<any>(null);
   const [ocrResult, setOCRResult] = useState<string>("");
   const [ocrLoading, setOCRLoading] = useState(false);
 
-  useEffect(() => {
-    loadConversations();
-    restoreActiveConversation();
-    
+
     // Disable chat head while on the main chat interface to prevent conflicts
-    disableChatHead();
-    
+  
+
     // Set up keyboard visibility listeners with frame information
     const keyboardDidShowListener = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
@@ -120,7 +107,7 @@ function ChatBot(): React.ReactElement {
         console.log('Keyboard height:', kbHeight);
         setKeyboardHeight(kbHeight);
         setIsKeyboardVisible(true);
-        
+
         // Animate the bottom value
         Animated.timing(animatedBottomValue, {
           toValue: kbHeight,
@@ -134,7 +121,7 @@ function ChatBot(): React.ReactElement {
         }, 100);
       }
     );
-    
+
     const keyboardDidHideListener = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
       () => {
@@ -148,34 +135,19 @@ function ChatBot(): React.ReactElement {
         setIsKeyboardVisible(false);
       }
     );
-    
+
     // Re-enable when component unmounts and remove listeners
-    return () => {
-      enableChatHead();
-      keyboardDidShowListener.remove();
-      keyboardDidHideListener.remove();
-    };
-  }, [disableChatHead, enableChatHead]);
+    
 
   // Update chat head context when current conversation changes
-  useEffect(() => {
-    if (currentConversation) {
-      setActiveConversation(currentConversation.id);
-      // Save active conversation to storage
-      saveActiveConversation(currentConversation.id);
-    } else {
-      setActiveConversation(null);
-      // Clear active conversation from storage
-      clearActiveConversation();
-    }
-  }, [currentConversation, setActiveConversation]);
   
+
   // Scroll to bottom effect when messages change or keyboard visibility changes
   useEffect(() => {
     const timer = setTimeout(() => {
       scrollViewRef.current?.scrollToEnd({ animated: true });
     }, 100);
-    
+
     return () => clearTimeout(timer);
   }, [messages, isKeyboardVisible]);
 
@@ -219,7 +191,7 @@ function ChatBot(): React.ReactElement {
         setIsOnline(false);
         setErrorMessage(error.message || "Failed to load conversations");
       }
-      
+
       // Auto-retry logic only if not already retrying
       if (retryCount < 2 && !silent) {
         setTimeout(() => {
@@ -234,13 +206,13 @@ function ChatBot(): React.ReactElement {
     try {
       const conversation = await chatbotAPI.getConversation(conversationId);
       setCurrentConversation(conversation);
-      
+
       // Update chat head context with active conversation
-      setActiveConversation(conversationId);
-      
+    
+
       // Save as active conversation
       await saveActiveConversation(conversationId);
-      
+
       // Convert API messages to local format
       const formattedMessages: Message[] = conversation.messages.map(msg => ({
         id: msg.id,
@@ -248,7 +220,7 @@ function ChatBot(): React.ReactElement {
         content: msg.content,
         created_at: msg.created_at
       }));
-      
+
       setMessages(formattedMessages);
       setShowChatHistory(false);
     } catch (error) {
@@ -265,13 +237,13 @@ function ChatBot(): React.ReactElement {
       setCurrentConversation(newConversation);
       setMessages([]);
       setShowChatOptions(false);
-      
+
       // Update chat head context with new active conversation
-      setActiveConversation(newConversation.id);
-      
+    
+
       // Save the new conversation as active
       await saveActiveConversation(newConversation.id);
-      
+
       await loadConversations();
     } catch (error) {
       console.error("Error creating conversation:", error);
@@ -282,17 +254,17 @@ function ChatBot(): React.ReactElement {
   const deleteConversation = async (conversationId: string) => {
     try {
       await chatbotAPI.deleteConversation(conversationId);
-      
+
       // If we deleted the current conversation, clear it
       if (currentConversation?.id === conversationId) {
         setCurrentConversation(null);
         setMessages([]);
         // Remove chat head when no active conversation
-        setActiveConversation(null);
+  
         // Clear from AsyncStorage
         await clearActiveConversation();
       }
-      
+
       await loadConversations();
     } catch (error) {
       console.error("Error deleting conversation:", error);
@@ -304,7 +276,7 @@ function ChatBot(): React.ReactElement {
     try {
       await chatbotAPI.updateConversation(conversationId, { title: newTitle });
       await loadConversations();
-      
+
       // Update current conversation if it's the one being edited
       if (currentConversation?.id === conversationId) {
         setCurrentConversation({ ...currentConversation, title: newTitle });
@@ -320,10 +292,10 @@ function ChatBot(): React.ReactElement {
       if (messageId) {
         await chatbotAPI.deleteMessage(messageId);
       }
-      
+
       // Remove message from local state
       setMessages(prev => prev.filter((_, index) => index !== messageIndex));
-      
+
       Alert.alert("Success", "Message deleted successfully");
     } catch (error) {
       console.error("Error deleting message:", error);
@@ -333,7 +305,7 @@ function ChatBot(): React.ReactElement {
 
   const resetCurrentConversation = () => {
     if (!currentConversation) return;
-    
+
     Alert.alert(
       "Reset Conversation",
       "Are you sure you want to reset this conversation? All messages will be cleared.",
@@ -353,7 +325,7 @@ function ChatBot(): React.ReactElement {
 
   const deleteCurrentConversation = () => {
     if (!currentConversation) return;
-    
+
     Alert.alert(
       "Delete Conversation",
       "Are you sure you want to delete this conversation? This action cannot be undone.",
@@ -394,45 +366,45 @@ function ChatBot(): React.ReactElement {
 
   const saveEditMessage = async (messageIndex: number) => {
     if (!editingContent.trim()) return;
-    
+
     // Update the message content locally
     const updatedMessages = [...messages];
     updatedMessages[messageIndex].content = editingContent.trim();
-    
+
     // Remove all messages after the edited message (like Perplexity)
     const messagesUpToEdit = updatedMessages.slice(0, messageIndex + 1);
     setMessages(messagesUpToEdit);
-    
+
     // Clear edit state
     setEditingMessageIndex(null);
     setEditingContent("");
-    
+
     // If the edited message was a user message, regenerate response
     if (messagesUpToEdit[messageIndex].role === "user") {
       setLoading(true);
       setErrorMessage(null);
-      
+
       try {
         const response = await mutation.mutateAsync({ messageContent: editingContent.trim() });
-        
+
         // Add AI response
         const aiMessage: Message = {
           role: "assistant",
           content: response.content,
           timestamp: new Date()
         };
-        
+
         setMessages(prev => [...prev, aiMessage]);
-        
+
         // Auto-scroll to bottom
         setTimeout(() => {
           scrollViewRef.current?.scrollToEnd({ animated: true });
         }, 100);
-        
+
       } catch (err: any) {
         const errorMsg = err?.message || "Error regenerating response. Please try again.";
         setErrorMessage(errorMsg);
-        
+
         // Add error message to chat
         setMessages(prev => [...prev, { 
           role: "assistant", 
@@ -448,13 +420,13 @@ function ChatBot(): React.ReactElement {
     try {
       // Create a smart title from the first prompt
       let smartTitle = firstPrompt.trim();
-      
+
       // Remove common question words and clean up
       smartTitle = smartTitle
         .replace(/^(what|how|why|when|where|who|can you|could you|please|help me|i need)/i, '')
         .replace(/[?!.]+$/, '')
         .trim();
-      
+
       // Capitalize first letter and limit length
       if (smartTitle.length > 0) {
         smartTitle = smartTitle.charAt(0).toUpperCase() + smartTitle.slice(1);
@@ -464,10 +436,10 @@ function ChatBot(): React.ReactElement {
       } else {
         smartTitle = 'New Conversation';
       }
-      
+
       // Update the conversation title
       await updateConversationTitle(conversationId, smartTitle);
-      
+
     } catch (error) {
       console.warn('Failed to generate conversation title:', error);
       // Don't throw - title generation failure shouldn't break the conversation
@@ -481,18 +453,18 @@ function ChatBot(): React.ReactElement {
         role: msg.role,
         content: msg.content
       }));
-      
+
       // Add the new user message
       formattedMessages.push({ role: "user", content: messageContent });
-      
+
       console.log(`Sending ${formattedMessages.length} messages to backend`);
-      
+
       const response = await chatbotAPI.sendMessage(
         messageContent, 
         currentConversation?.id, 
         formattedMessages
       );
-      
+
       return {
         content: response.content,
         source: response.source,
@@ -540,7 +512,7 @@ function ChatBot(): React.ReactElement {
 
   const handleSend = async () => {
     if (!input.trim() && pendingFiles.length === 0) return;
-    
+
     // Check if we're online
     if (!isOnline) {
       Alert.alert(
@@ -553,13 +525,13 @@ function ChatBot(): React.ReactElement {
       );
       return;
     }
-    
+
     setErrorMessage(null);
-    
+
     // Store current message and files for this specific message
     const currentInput = input.trim();
     const currentFiles = [...pendingFiles];
-    
+
     // Clear input and pending files immediately for better UX
     setInput("");
     setPendingFiles([]);
@@ -570,21 +542,21 @@ function ChatBot(): React.ReactElement {
       let fileContext = "";
       let successfulFiles: string[] = [];
       let failedFiles: string[] = [];
-      
+
       // Process files attached to THIS message
       if (currentFiles.length > 0) {
         console.log(`📁 Processing ${currentFiles.length} files...`);
-        
+
         for (const file of currentFiles) {
           try {
             console.log(`🔄 Processing file: ${file.name} (${file.mimeType})`);
-            
+
             // Handle images with OCR
             if (file.mimeType?.startsWith('image/')) {
               try {
                 console.log(`📸 Extracting text from image: ${file.name}`);
                 const ocrResponse = await chatbotAPI.extractTextFromImage(file);
-                
+
                 if (ocrResponse.text && ocrResponse.text.trim().length > 0) {
                   fileContext += `\n\n**📷 Image: ${file.name}**\n`;
                   fileContext += `*Extracted text:*\n${ocrResponse.text.trim()}\n`;
@@ -608,21 +580,21 @@ function ChatBot(): React.ReactElement {
               try {
                 console.log(`📄 Uploading document: ${file.name}`);
                 const uploadResponse = await chatbotAPI.uploadFile(file, currentConversation?.id);
-                
+
                 fileContext += `\n\n**📄 Document: ${file.name}**\n`;
                 fileContext += `*Document uploaded successfully and available for analysis*\n`;
-                
+
                 if ((uploadResponse as any).extracted_preview) {
                   fileContext += `*Preview:* ${(uploadResponse as any).extracted_preview}...\n`;
                 }
-                
+
                 successfulFiles.push(file.name);
                 console.log(`✅ Document uploaded successfully: ${file.name}`);
               } catch (uploadError: any) {
                 console.error(`❌ Upload failed for ${file.name}:`, uploadError);
-                
+
                 let errorMessage = "Upload failed";
-                
+
                 // Provide specific error messages based on the error
                 if (uploadError.message?.includes("413") || uploadError.message?.includes("too large")) {
                   errorMessage = "File too large (max 50MB)";
@@ -637,7 +609,7 @@ function ChatBot(): React.ReactElement {
                 } else if (uploadError.message?.includes("404")) {
                   errorMessage = "Upload service unavailable";
                 }
-                
+
                 fileContext += `\n\n**📄 Document: ${file.name}**\n`;
                 fileContext += `*Error: ${errorMessage}*\n`;
                 failedFiles.push(`${file.name} (${errorMessage})`);
@@ -662,14 +634,14 @@ function ChatBot(): React.ReactElement {
           }
         }
       }
-      
+
       // Create the final message content
       const finalMessageContent = messageContent + fileContext;
-      
+
       // Validate that we have some content to send
       const hasContent = finalMessageContent.trim().length > 0;
       const hasValidFiles = successfulFiles.length > 0;
-      
+
       if (!hasContent && !hasValidFiles) {
         setLoading(false);
         Alert.alert(
@@ -679,7 +651,7 @@ function ChatBot(): React.ReactElement {
         );
         return;
       }
-      
+
       // Add user message to local state immediately for better UX
       const userMessage: Message = { 
         role: "user", 
@@ -695,21 +667,21 @@ function ChatBot(): React.ReactElement {
       setTimeout(() => {
         scrollViewRef.current?.scrollToEnd({ animated: true });
       }, 100);
-      
+
       // Send to AI with the message and file context
       const response = await mutation.mutateAsync({ 
         messageContent: finalMessageContent || "Please analyze the attached files and their content." 
       });
-      
+
       // Add AI response to local state
       const aiMessage: Message = {
         role: "assistant",
         content: response.content,
         timestamp: new Date()
       };
-      
+
       setMessages(prev => [...prev, aiMessage]);
-      
+
       // Show file processing results to user if there were any issues
       if (failedFiles.length > 0) {
         setTimeout(() => {
@@ -722,19 +694,19 @@ function ChatBot(): React.ReactElement {
           );
         }, 1000);
       }
-      
+
       // Update current conversation if we got an ID back
       if (response.conversation_id && !currentConversation) {
         try {
           const newConversation = await chatbotAPI.getConversation(response.conversation_id);
           setCurrentConversation(newConversation);
-          
+
           // Update chat head context with new active conversation
-          setActiveConversation(newConversation.id);
-          
+       
+
           // Save the new conversation as active
           await saveActiveConversation(newConversation.id);
-          
+
           await loadConversations(); // Refresh conversation list
         } catch (convError) {
           console.warn("Failed to load conversation details, but message was sent successfully");
@@ -749,24 +721,24 @@ function ChatBot(): React.ReactElement {
           console.warn("Failed to generate title, but conversation continues normally");
         }
       }
-      
+
       // Auto-scroll to bottom
       setTimeout(() => {
         scrollViewRef.current?.scrollToEnd({ animated: true });
       }, 100);
-      
+
     } catch (err: any) {
       // Error already handled by mutation, just remove the message from UI if send failed
       setMessages(prev => prev.slice(0, -1)); // Remove the last message (the failed one)
-      
+
       const errorMsg = err?.message || "Error communicating with AI. Please try again.";
-      
+
       // Add error message to chat
       setMessages((prev) => [...prev, { 
         role: "assistant", 
         content: `[Error] ${errorMsg}` 
       }]);
-      
+
       // Show alert for serious errors
       if (errorMsg.includes("authentication") || errorMsg.includes("login")) {
         Alert.alert(
@@ -782,17 +754,17 @@ function ChatBot(): React.ReactElement {
 
   const handleRetry = async () => {
     if (messages.length === 0) return;
-    
+
     // Get the last user message
     const lastUserMessage = [...messages].reverse().find(m => m.role === "user");
     if (!lastUserMessage) return;
-    
+
     setErrorMessage(null);
     setLoading(true);
-    
+
     try {
       const response = await mutation.mutateAsync({ messageContent: lastUserMessage.content });
-      
+
       // Remove any error messages and add new response
       setMessages((prev) => {
         const withoutError = prev.filter(
@@ -815,7 +787,7 @@ function ChatBot(): React.ReactElement {
   const handleFileImport = async (type: 'file' | 'image' | 'camera') => {
     try {
       let result;
-      
+
       if (type === 'image') {
         result = await DocumentPicker.getDocumentAsync({
           type: "image/*",
@@ -841,7 +813,7 @@ function ChatBot(): React.ReactElement {
       if (result.canceled) return;
 
       const file = result.assets[0];
-      
+
       // Validate file size (50MB limit)
       const maxSize = 50 * 1024 * 1024; // 50MB
       if (file.size && file.size > maxSize) {
@@ -852,7 +824,7 @@ function ChatBot(): React.ReactElement {
         );
         return;
       }
-      
+
       // Validate file type for images
       if (type === 'image' || type === 'camera') {
         const imageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/bmp', 'image/tiff', 'image/webp'];
@@ -865,12 +837,12 @@ function ChatBot(): React.ReactElement {
           return;
         }
       }
-      
+
       // Check if file is already pending
       const isDuplicate = pendingFiles.some(pendingFile => 
         pendingFile.name === file.name && pendingFile.size === file.size
       );
-      
+
       if (isDuplicate) {
         Alert.alert(
           "File Already Added",
@@ -879,24 +851,24 @@ function ChatBot(): React.ReactElement {
         );
         return;
       }
-      
+
       // Add file to pending list
       setPendingFiles(prev => [...prev, file]);
       setAttachmentMenuVisible(false);
-      
+
       // Show success message
       console.log(`✅ File added: ${file.name} (${file.mimeType}, ${file.size} bytes)`);
-      
+
     } catch (err: any) {
       console.error("File selection error:", err);
-      
+
       let errorMessage = "Failed to select file. Please try again.";
       if (err.message?.includes("permissions")) {
         errorMessage = "Permission denied. Please check app permissions.";
       } else if (err.message?.includes("cancelled")) {
         return; // User cancelled, no need to show error
       }
-      
+
       Alert.alert("Error", errorMessage);
     }
   };
@@ -942,23 +914,23 @@ function ChatBot(): React.ReactElement {
         copyToCacheDirectory: true,
         multiple: false
       });
-      
+
       if (result.canceled) return;
-      
+
       const file = result.assets[0];
-      
+
       if (!file) {
         Alert.alert("Error", "No image selected");
         return;
       }
-      
+
       // Validate file size (50MB limit)
       const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
       if (file.size && file.size > MAX_FILE_SIZE) {
         Alert.alert("Error", "File too large (max 50MB)");
         return;
       }
-      
+
       setOCRImage(file);
       setOCRResult("");
     } catch (error: any) {
@@ -976,11 +948,11 @@ function ChatBot(): React.ReactElement {
     try {
       setOCRLoading(true);
       setOCRResult("");
-      
+
       console.log(`📸 Starting OCR for: ${ocrImage.name}`);
-      
+
       const ocrResponse = await chatbotAPI.extractTextFromImage(ocrImage);
-      
+
       if (ocrResponse.text && ocrResponse.text.trim().length > 0) {
         setOCRResult(ocrResponse.text.trim());
         console.log(`✅ OCR successful: ${ocrResponse.text.length} characters extracted`);
@@ -989,9 +961,9 @@ function ChatBot(): React.ReactElement {
       }
     } catch (error: any) {
       console.error(`❌ OCR processing error:`, error);
-      
+
       let errorMessage = "Failed to extract text from image";
-      
+
       if (error.message?.includes("413") || error.message?.includes("too large")) {
         errorMessage = "Image file is too large (max 50MB)";
       } else if (error.message?.includes("415") || error.message?.includes("not supported")) {
@@ -1001,7 +973,7 @@ function ChatBot(): React.ReactElement {
       } else if (error.message?.includes("timeout")) {
         errorMessage = "OCR processing timed out. Please try with a smaller image.";
       }
-      
+
       setOCRResult(`Error: ${errorMessage}`);
       Alert.alert("OCR Error", errorMessage);
     } finally {
@@ -1011,7 +983,7 @@ function ChatBot(): React.ReactElement {
 
   const handleOCRCopyText = async () => {
     if (!ocrResult) return;
-    
+
     // Copy to clipboard would need expo-clipboard
     // For now, we'll just close the modal and put the text in input
     setInput(ocrResult);
@@ -1035,9 +1007,9 @@ function ChatBot(): React.ReactElement {
       );
       return;
     }
-    
+
     const imageFiles = pendingFiles.filter(file => file.mimeType?.startsWith('image/'));
-    
+
     if (imageFiles.length === 0) {
       Alert.alert(
         "No Images Found", 
@@ -1046,23 +1018,23 @@ function ChatBot(): React.ReactElement {
       );
       return;
     }
-    
+
     setLoading(true);
     setErrorMessage(null);
-    
+
     try {
       let extractedText = "";
       let successCount = 0;
       let failureCount = 0;
       let processedResults: { name: string; success: boolean; text?: string; error?: string }[] = [];
-      
+
       console.log(`🔍 Starting OCR for ${imageFiles.length} image(s)...`);
-      
+
       for (const file of imageFiles) {
         try {
           console.log(`📸 Extracting text from: ${file.name}`);
           const ocrResponse = await chatbotAPI.extractTextFromImage(file);
-          
+
           if (ocrResponse.text && ocrResponse.text.trim().length > 0) {
             const cleanText = ocrResponse.text.trim();
             extractedText += `\n\n**📷 ${file.name}:**\n${cleanText}`;
@@ -1085,7 +1057,7 @@ function ChatBot(): React.ReactElement {
           }
         } catch (error: any) {
           console.error(`❌ OCR error for ${file.name}:`, error);
-          
+
           let errorMsg = "OCR processing failed";
           if (error.message?.includes("503")) {
             errorMsg = "OCR service unavailable";
@@ -1094,7 +1066,7 @@ function ChatBot(): React.ReactElement {
           } else if (error.message?.includes("413")) {
             errorMsg = "Image too large";
           }
-          
+
           extractedText += `\n\n**📷 ${file.name}:**\n[Error: ${errorMsg}]`;
           failureCount++;
           processedResults.push({ 
@@ -1104,17 +1076,17 @@ function ChatBot(): React.ReactElement {
           });
         }
       }
-      
+
       if (extractedText.trim()) {
         // Add the extracted text as user input
         const summaryText = `Here is the text extracted from ${imageFiles.length} image(s):${extractedText}`;
         setInput(summaryText);
-        
+
         // Show detailed results
         const resultMessage = processedResults.map(result => 
           `• ${result.name}: ${result.success ? (result.text || 'No text') : result.error}`
         ).join('\n');
-        
+
         Alert.alert(
           "Text Extraction Complete", 
           `Successfully processed: ${successCount}/${imageFiles.length} image(s)\n\n${resultMessage}`,
@@ -1139,14 +1111,14 @@ function ChatBot(): React.ReactElement {
       }
     } catch (error: any) {
       console.error("❌ OCR processing error:", error);
-      
+
       let errorMessage = "Failed to extract text from images.";
       if (error.message?.includes("network")) {
         errorMessage = "Network error. Please check your connection and try again.";
       } else if (error.message?.includes("timeout")) {
         errorMessage = "Request timed out. Please try again.";
       }
-      
+
       setErrorMessage(errorMessage);
       Alert.alert("OCR Error", errorMessage);
     } finally {
@@ -1216,7 +1188,7 @@ function ChatBot(): React.ReactElement {
                <Ionicons name="add" size={20} color="#6B46C1" />
                <Text style={styles.chatOptionText}>New Chat</Text>
              </TouchableOpacity>
-            
+
             {currentConversation && (
               <>
                 <TouchableOpacity 
@@ -1226,7 +1198,7 @@ function ChatBot(): React.ReactElement {
                   <Ionicons name="trash" size={20} color="#EF4444" />
                   <Text style={[styles.chatOptionText, { color: "#EF4444" }]}>Delete Conversation</Text>
                 </TouchableOpacity>
-                
+
                 <TouchableOpacity 
                   style={styles.chatOption} 
                   onPress={resetCurrentConversation}
@@ -1247,13 +1219,9 @@ function ChatBot(): React.ReactElement {
           contentContainerStyle={[
             styles.messagesContentContainer,
             { 
-              // Ensure enough bottom padding for both keyboard presence and the actual input container height
-              paddingBottom: Math.max(
-                isKeyboardVisible 
-                  ? (keyboardHeight > 0 ? keyboardHeight + 90 : 180) + insets.bottom 
-                  : 130 + insets.bottom,
-                inputContainerHeight + insets.bottom + 8
-              )
+              paddingBottom: isKeyboardVisible ? 
+                (keyboardHeight > 0 ? keyboardHeight + 90 : 180) + insets.bottom : // Adjust padding based on keyboard height
+                130 + insets.bottom   // Padding when keyboard is hidden to ensure messages aren't behind input
             },
           ]}
           showsVerticalScrollIndicator={false}
@@ -1422,24 +1390,6 @@ function ChatBot(): React.ReactElement {
         { backgroundColor: 'transparent' }
       ]}>
 
-        {/* Input Container - Always positioned at bottom */}
-        <KeyboardAvoidingView
-          style={styles.keyboardAvoidingView}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          keyboardVerticalOffset={Platform.OS === "ios" ? insets.top : 0}
-          enabled={true}
-        >
-          <View style={[
-            styles.inputContainer, 
-            { paddingBottom: insets.bottom, paddingTop: 8}
-          ]}
-          onLayout={(e) => {
-            const h = e.nativeEvent.layout.height;
-            if (Math.abs(h - inputContainerHeight) > 1) {
-              setInputContainerHeight(h);
-            }
-          }}
-          >
             {errorMessage && (
               <View style={styles.errorBanner}>
                 <Text style={styles.errorText}>{errorMessage}</Text>
@@ -1480,7 +1430,7 @@ function ChatBot(): React.ReactElement {
                   >
                     <Ionicons name="help-circle" size={18} color="#6B46C1" />
                   </TouchableOpacity>
-                  
+
                   <TouchableOpacity 
                     style={styles.compactActionButton} 
                     onPress={() => handlePromptSelection("Please analyze the key concepts from our conversation and provide a detailed study guide.")}
@@ -1488,7 +1438,7 @@ function ChatBot(): React.ReactElement {
                   >
                     <Ionicons name="library" size={18} color="#6B46C1" />
                   </TouchableOpacity>
-                  
+
                   <TouchableOpacity 
                     style={styles.compactActionButton} 
                     onPress={handleOCR}
@@ -1528,7 +1478,7 @@ function ChatBot(): React.ReactElement {
                       const isImage = file.mimeType?.startsWith('image/');
                       const fileSizeKB = file.size ? (file.size / 1024).toFixed(1) : 'Unknown';
                       const fileExtension = file.name?.split('.').pop()?.toUpperCase() || 'FILE';
-                      
+
                       return (
                         <View key={index} style={styles.pendingFileItem}>
                           <View style={styles.pendingFileIconContainer}>
@@ -1649,9 +1599,6 @@ function ChatBot(): React.ReactElement {
             </TouchableOpacity>
           </View>
         </Animated.View>
-        {/* Close wrappers for input area */}
-        </KeyboardAvoidingView>
-      </View>
 
       {/* OCR Modal */}
       <Modal
@@ -1672,7 +1619,7 @@ function ChatBot(): React.ReactElement {
                 <Ionicons name="close" size={24} color="#FFFFFF" />
               </TouchableOpacity>
             </LinearGradient>
-            
+
             <ScrollView style={styles.ocrModalContent} showsVerticalScrollIndicator={false}>
               {/* Image Selection */}
               <View style={styles.ocrSection}>
@@ -1765,7 +1712,7 @@ function ChatBot(): React.ReactElement {
                 <Ionicons name="close" size={24} color="#FFFFFF" />
               </TouchableOpacity>
             </LinearGradient>
-            
+
             <ScrollView style={styles.chatHistoryList}>
               {conversations.map((conversation) => (
                 <View key={conversation.id} style={styles.chatSessionItem}>
@@ -1781,7 +1728,7 @@ function ChatBot(): React.ReactElement {
                       {new Date(conversation.updated_at).toLocaleDateString()} • {conversation.message_count} messages
                     </Text>
                   </TouchableOpacity>
-                  
+
                   <View style={styles.chatSessionActions}>
                     <TouchableOpacity 
                       style={styles.actionButtonSmall}
@@ -1803,7 +1750,7 @@ function ChatBot(): React.ReactElement {
                     >
                       <Ionicons name="pencil" size={16} color="#6B46C1" />
                     </TouchableOpacity>
-                    
+
                     <TouchableOpacity 
                       style={styles.actionButtonSmall}
                       onPress={() => {
@@ -1822,7 +1769,7 @@ function ChatBot(): React.ReactElement {
                   </View>
                 </View>
               ))}
-              
+
               {conversations.length === 0 && (
                 <View style={styles.emptyChatHistory}>
                   <Text style={styles.emptyChatText}>No chat history yet</Text>
@@ -1830,7 +1777,7 @@ function ChatBot(): React.ReactElement {
                 </View>
               )}
             </ScrollView>
-            
+
             <TouchableOpacity 
               style={styles.newChatButton} 
               onPress={createNewConversation}
@@ -1845,6 +1792,7 @@ function ChatBot(): React.ReactElement {
             </TouchableOpacity>
           </SafeAreaView>
         </Modal>
+
     </>
   );
 }
@@ -1861,10 +1809,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#F8FAFC",
   },
   keyboardAvoidingView: {
-    position: 'absolute',
+    position: 'relative',
     width: '100%',
     height: '100%',
-    justifyContent: 'flex-end'
   },
   keyboardAvoidingContainer: {
     width: '100%',
@@ -2264,10 +2211,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 6,
     elevation: 8
+
   },
   inputAreaContainer: {
     backgroundColor: "transparent",
-    bottom: 0,
   },
   touchOverlay: {
     position: "absolute",
@@ -2368,8 +2315,8 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 6,
     alignItems: "flex-end",
-    gap: 8,
-    borderRadius: 30
+    gap: 10,
+    borderRadius: 30,
   },
   inputWrapper: {
     flex: 1,
@@ -2433,10 +2380,17 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   sendButton: {
+
     borderRadius: 25,
     overflow: 'hidden',
     shadowColor: "#6366F1",
     shadowOffset: { width: 0, height: 4 },
+
+
+
+
+
+
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 6,
@@ -2505,6 +2459,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     padding: 20,
     borderRadius: 16,
+
     width: "48%",
     shadowColor: "#1E293B",
     shadowOffset: {
@@ -2523,6 +2478,7 @@ const styles = StyleSheet.create({
   },
   promptIcon: {
     fontSize: 28,
+
     textAlign: "center",
   },
   promptTitle: {
@@ -2757,6 +2713,11 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   newChatButton: {
+
+
+
+
+
     margin: 16,
     borderRadius: 16,
     overflow: 'hidden',

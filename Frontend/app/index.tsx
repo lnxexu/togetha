@@ -3,6 +3,7 @@ import React from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import AppNavigator from './navigation/AppNavigator';
 
+
 export default function Index() {
   const [fontsLoaded] = useFonts({
     'Inter-Medium': require('../assets/fonts/Inter_24pt-Medium.ttf'),

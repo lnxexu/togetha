@@ -18,8 +18,8 @@ class FileUploadView(APIView):
             return Response({"error": "No file provided"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            # Save file temporarily
-            upload_dir = os.path.join(settings.MEDIA_ROOT, "uploads")
+            # Save into chatbot/upload
+            upload_dir = os.path.join(settings.BASE_DIR, "chatbot", "upload")
             os.makedirs(upload_dir, exist_ok=True)
 
             file_path = os.path.join(upload_dir, uploaded_file.name)
