@@ -7,6 +7,7 @@ import {
   AppState,
   Platform,
   StatusBar,
+  LogBox,
 } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import AppNavigator from "./app/navigation/AppNavigator";
@@ -18,6 +19,26 @@ import { TaskNotificationChecker } from "./app/notifications/components/TaskNoti
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 SplashScreen.preventAutoHideAsync();
+
+// Disable in-app warning overlays (LogBox) and optionally silence console output
+// so logs don't appear inside the app UI. Keep this limited to development
+// so production behavior isn't changed unexpectedly.
+try {
+  LogBox.ignoreAllLogs(true);
+} catch (e) {
+  // If LogBox isn't available for any reason, fail silently
+}
+
+if (__DEV__) {
+  // Optional: silence console methods to avoid printing logs in the in-app UI
+  // Remove or change these assignments if you still want to see logs in the
+  // native debugger/terminal.
+  console.log = () => {};
+  console.debug = () => {};
+  console.info = () => {};
+  // Keep console.error so real errors still surface
+  console.warn = () => {};
+}
 
 export default function App() {
   const [fontsLoaded] = useFonts({

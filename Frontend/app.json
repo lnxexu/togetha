@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "togetha-app",
-    "slug": "togetha-app",
+  "name": "Togetha",
+  "slug": "togetha",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "togethaapp",
+  "scheme": "togetha",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -27,7 +27,7 @@
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.MANAGE_EXTERNAL_STORAGE"
       ],
-      "package": "com.anonymous.togethaapp"
+  "package": "com.anonymous.togetha"
     },
     "web": {
       "bundler": "metro",
