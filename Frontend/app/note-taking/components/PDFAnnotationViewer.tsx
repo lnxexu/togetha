@@ -64,7 +64,7 @@ import {
   calculatePDFCoordinates,
   debugCoordinateConversion as debugPDFCoordinates,
 } from "../utils/pdfUtils";
-import { API_URL } from "@/constants/ApiConfig";
+import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
 import type { RootStackParamList } from "../../navigation/AppNavigator";
 // WebView functionality has been removed
 
@@ -1256,6 +1256,8 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [folderName, setFolderName] = useState("PDF Documents");
   const [showFolderModal, setShowFolderModal] = useState(false);
+  const [folderFilter, setFolderFilter] = useState("");
+  const [isLoadingFolders, setIsLoadingFolders] = useState(false);
 
   // Sync status state
   const [syncStatus, setSyncStatus] = useState<"saved" | "syncing" | "offline">(
@@ -2506,6 +2508,50 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     }
     setShowFolderModal(false);
   };
+
+  // Fetch folders from API when needed
+  const fetchFolders = useCallback(async () => {
+    try {
+      setIsLoadingFolders(true);
+      const token = await AsyncStorage.getItem("authToken");
+      if (!token) {
+        Alert.alert("Authentication required", "Please log in again.");
+        return;
+      }
+
+      const res = await fetch(`${API_URL}${API_ENDPOINTS.NOTE_FOLDERS}`, {
+        method: "GET",
+        headers: {
+          Authorization: `Token ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+      if (!res.ok) throw new Error("Failed to fetch folders");
+
+      const data = await res.json();
+      setFolders(Array.isArray(data) ? data : []);
+
+      // Keep displayed name in sync if a folder is already selected
+      if (selectedFolderId) {
+        const match = (Array.isArray(data) ? data : []).find(
+          (f: any) => f.id?.toString() === selectedFolderId
+        );
+        if (match) setFolderName(match.name);
+      }
+    } catch (e) {
+      console.warn("Failed to load folders:", e);
+      Alert.alert("Error", "Failed to load folders. Please try again.");
+    } finally {
+      setIsLoadingFolders(false);
+    }
+  }, [API_URL, selectedFolderId]);
+
+  // Load folders when opening the modal
+  useEffect(() => {
+    if (showFolderModal) {
+      fetchFolders();
+    }
+  }, [showFolderModal, fetchFolders]);
 
   // Reset zoom function for double-tap with immediate response
   const resetZoom = () => {
@@ -5723,10 +5769,8 @@ Your original file is unchanged. Try exporting to a new file instead.`
                 placeholder="Search folders"
                 placeholderTextColor="#9CA3AF"
                 style={styles.folderSearchInput}
-                onChangeText={(v) => {
-                  // local filter; keep minimal - no folder state in this viewer
-                }}
-                defaultValue={""}
+                onChangeText={(v) => setFolderFilter(v)}
+                value={folderFilter}
                 returnKeyType="search"
               />
             </View>
@@ -5736,8 +5780,12 @@ Your original file is unchanged. Try exporting to a new file instead.`
               contentContainerStyle={styles.folderListContent}
             >
               <TouchableOpacity
-                style={[styles.folderCard, styles.selectedFolderCard]}
-                onPress={() => setShowFolderModal(false)}
+                style={[
+                  styles.folderCard,
+                  !selectedFolderId && styles.selectedFolderCard,
+                ]}
+                onPress={() => handleFolderSelect(null)}
+                activeOpacity={0.8}
               >
                 <View
                   style={[
@@ -5751,7 +5799,9 @@ Your original file is unchanged. Try exporting to a new file instead.`
                   <Text style={styles.folderCardTitle}>Unorganized Notes</Text>
                   <Text style={styles.folderCardSubtitle}>No folder</Text>
                 </View>
-                <MaterialIcons name="check-circle" size={20} color="#8B5CF6" />
+                {!selectedFolderId && (
+                  <MaterialIcons name="check-circle" size={20} color="#8B5CF6" />
+                )}
               </TouchableOpacity>
 
               <View style={styles.folderDividerRow}>
@@ -5760,7 +5810,51 @@ Your original file is unchanged. Try exporting to a new file instead.`
                 <View style={styles.folderDividerLine} />
               </View>
 
-              {/* Placeholder: no remote folders in this viewer - keep list minimal */}
+              {isLoadingFolders ? (
+                <View style={{ paddingVertical: 16, alignItems: "center" }}>
+                  <ActivityIndicator size="small" color="#8B5CF6" />
+                  <Text style={{ color: "#6B7280", marginTop: 8 }}>Loading folders...</Text>
+                </View>
+              ) : (
+                (folders || [])
+                  .filter((f: any) =>
+                    folderFilter
+                      ? f.name?.toLowerCase?.().includes(folderFilter.toLowerCase())
+                      : true
+                  )
+                  .map((folder: any) => {
+                    const selected = selectedFolderId?.toString() === folder.id?.toString();
+                    return (
+                      <TouchableOpacity
+                        key={folder.id}
+                        style={[styles.folderCard, selected && styles.selectedFolderCard]}
+                        onPress={() => handleFolderSelect(folder)}
+                        activeOpacity={0.8}
+                      >
+                        <View
+                          style={[
+                            styles.folderCardIcon,
+                            { backgroundColor: "#8B5CF6" },
+                          ]}
+                        >
+                          <MaterialIcons name="folder" size={20} color="#fff" />
+                        </View>
+                        <View style={styles.folderCardTextWrap}>
+                          <Text style={styles.folderCardTitle}>{folder.name}</Text>
+                          {!!folder.note_count && (
+                            <Text style={styles.folderCardSubtitle}>
+                              {folder.note_count} {folder.note_count === 1 ? "item" : "items"}
+                            </Text>
+                          )}
+                        </View>
+                        {selected && (
+                          <MaterialIcons name="check-circle" size={20} color="#8B5CF6" />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })
+              )}
+
             </ScrollView>
           </View>
         </View>

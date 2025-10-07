@@ -1469,7 +1469,11 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
                       </View>
                       <View style={styles.folderCardTextWrap}>
                         <Text style={styles.folderCardTitle}>{folder.name}</Text>
-                        <Text style={styles.folderCardSubtitle}>Folder ID: {folder.id}</Text>
+                        {!!(folder as any).note_count && (
+                          <Text style={styles.folderCardSubtitle}>
+                            {(folder as any).note_count} {(folder as any).note_count === 1 ? 'item' : 'items'}
+                          </Text>
+                        )}
                       </View>
                       {selectedFolderId === folder.id && <MaterialIcons name="check-circle" size={20} color="#8B5CF6" />}
                     </TouchableOpacity>

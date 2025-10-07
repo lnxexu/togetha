@@ -269,11 +269,18 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
       }
 
       const data = await response.json();
-      setFolders(data);
+      const mapped = (Array.isArray(data) ? data : []).map((folder: any) => ({
+        id: folder.id?.toString?.() ?? String(folder.id),
+        name: folder.name,
+        color: folder.color || "#667EEA",
+        icon: folder.icon || "folder",
+        note_count: folder.note_count,
+      }));
+      setFolders(mapped);
 
       // Update folder name if we have a selected folder
       if (selectedFolderId) {
-        const selectedFolder = data.find(
+        const selectedFolder = mapped.find(
           (f: any) => f.id.toString() === selectedFolderId
         );
         if (selectedFolder) {
@@ -1549,7 +1556,11 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
                       </View>
                       <View style={styles.folderCardTextWrap}>
                         <Text style={styles.folderCardTitle}>{folder.name}</Text>
-                        <Text style={styles.folderCardSubtitle}>Folder ID: {folder.id}</Text>
+                        {!!folder.note_count && (
+                          <Text style={styles.folderCardSubtitle}>
+                            {folder.note_count} {folder.note_count === 1 ? 'item' : 'items'}
+                          </Text>
+                        )}
                       </View>
                       {selectedFolderId === folder.id && <MaterialIcons name="check-circle" size={20} color="#8B5CF6" />}
                     </TouchableOpacity>
