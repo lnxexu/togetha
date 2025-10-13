@@ -57,10 +57,10 @@ export default function LogIn() {
   const { initializeAfterLogin } = usePushNotifications({
     userId: userId || undefined,
     onNotificationReceived: (notification) => {
-      console.log('Login screen - Notification received:', notification);
+      // Notification received
     },
     onNotificationPressed: (response) => {
-      console.log('Login screen - Notification pressed:', response);
+      // Notification pressed
     }
   });
   const [error, setError] = useState("");

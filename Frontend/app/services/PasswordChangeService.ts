@@ -1,7 +1,7 @@
 // Enhanced Password Change Service with Security Verification
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const API_BASE_URL = 'http://192.168.1.134:8000';
+import { API_URL, joinUrl } from '../../constants/ApiConfig';
+const API_BASE_URL = API_URL;
 
 export interface PasswordChangeData {
   currentPassword: string;
@@ -22,17 +22,17 @@ export const sendPasswordChangeVerification = async (): Promise<{
   email?: string;
 }> => {
   try {
-    const token = await AsyncStorage.getItem('access_token');
+  const token = await AsyncStorage.getItem('authToken') || await AsyncStorage.getItem('access_token');
     
     if (!token) {
       throw new Error('Authentication token not found');
     }
 
-    const response = await fetch(`${API_BASE_URL}/users/send-password-change-verification/`, {
+    const response = await fetch(joinUrl(API_BASE_URL, '/users/send-password-change-verification/'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        'Authorization': `Token ${token}`,
       },
     });
 
@@ -61,17 +61,17 @@ export const verifyAndChangePassword = async (data: SecurityVerificationData): P
   message: string;
 }> => {
   try {
-    const token = await AsyncStorage.getItem('access_token');
+  const token = await AsyncStorage.getItem('authToken') || await AsyncStorage.getItem('access_token');
     
     if (!token) {
       throw new Error('Authentication token not found');
     }
 
-    const response = await fetch(`${API_BASE_URL}/users/verify-password-change/`, {
+    const response = await fetch(joinUrl(API_BASE_URL, '/users/verify-password-change/'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        'Authorization': `Token ${token}`,
       },
       body: JSON.stringify({
         verification_code: data.verificationCode,

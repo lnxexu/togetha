@@ -1,5 +1,5 @@
 import { Task, TaskFormData } from "../types/Task";
-import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
+import { API_URL, API_ENDPOINTS, joinUrl } from "@/constants/ApiConfig";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { parseISOToDate, toUTCISOString } from "@/app/utils/utcDate";
 import offlineStorageService, { OfflineTask } from './offlineStorageService';
@@ -41,8 +41,7 @@ class OfflineTaskService {
     }
 
     try {
-      console.log(`Making ${method} request to ${API_URL}${endpoint}`);
-      const response = await fetch(`${API_URL}${endpoint}`, options);
+      const response = await fetch(joinUrl(API_URL, endpoint), options);
 
       if (!response.ok) {
         throw new Error(`API Error: ${response.status} ${response.statusText}`);
@@ -133,17 +132,15 @@ class OfflineTaskService {
           await offlineStorageService.saveOfflineTasks(allOfflineTasks);
           
           // Trigger sync for any pending operations
-          syncService.syncWithServer().catch(console.error);
+          syncService.syncWithServer().catch(() => {});
           
           return allOfflineTasks.map(t => this.offlineTaskToTask(t));
         } catch (error) {
-          console.warn("Failed to fetch from server, falling back to offline storage:", error);
           // Fall through to offline mode
         }
       }
 
       // Offline mode or server fetch failed
-      console.log("Using offline storage for getAllTasks");
       const offlineTasks = await offlineStorageService.getOfflineTasks();
       return offlineTasks.map(task => this.offlineTaskToTask(task));
     } catch (error) {
@@ -168,7 +165,7 @@ class OfflineTaskService {
           
           return formattedTask;
         } catch (error) {
-          console.warn(`Failed to fetch task ${id} from server, checking offline storage:`, error);
+          // Failed to fetch from server, check offline storage
         }
       }
 
@@ -202,7 +199,6 @@ class OfflineTaskService {
             due_datetime: taskData.due_datetime ? toUTCISOString(taskData.due_datetime) : null,
           };
 
-          console.log("Creating task on server:", payload);
           const serverTask = await this.apiRequest<any>(API_ENDPOINTS.TASKS, "POST", payload);
           const formattedTask = await this.formatTaskDates(serverTask);
           
@@ -212,13 +208,11 @@ class OfflineTaskService {
           
           return formattedTask;
         } catch (error) {
-          console.warn("Failed to create task on server, creating offline:", error);
-          // Fall through to offline creation
+          // Failed to create task on server, creating offline
         }
       }
 
       // Create task offline
-      console.log("Creating task offline");
       const localId = offlineStorageService.generateLocalId();
       const offlineTask = offlineStorageService.taskFormDataToOfflineTask({
         ...taskData,
@@ -301,7 +295,6 @@ class OfflineTaskService {
             apiUpdates.completed_at = updates.completed_at ? updates.completed_at.toISOString() : null;
           }
 
-          console.log("Updating task on server:", apiUpdates);
           const serverTask = await this.apiRequest<any>(
             API_ENDPOINTS.TASK_DETAIL(id),
             "PATCH",
@@ -316,8 +309,7 @@ class OfflineTaskService {
           
           return formattedTask;
         } catch (error) {
-          console.warn("Failed to update task on server, saved offline for sync:", error);
-          // Queue for sync when online
+          // Failed to update task on server, saved offline for sync
           await syncService.queueOperation('update', id, updates);
         }
       } else {
@@ -341,10 +333,8 @@ class OfflineTaskService {
         try {
           // Try to delete from server
           await this.apiRequest(API_ENDPOINTS.TASK_DETAIL(id), "DELETE");
-          console.log(`Task ${id} deleted from server`);
         } catch (error) {
-          console.warn("Failed to delete task from server, queuing for sync:", error);
-          // Queue for sync when online
+          // Failed to delete task from server, queuing for sync
           await syncService.queueOperation('delete', id);
         }
       } else {

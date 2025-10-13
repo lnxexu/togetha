@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
+import { API_URL, API_ENDPOINTS, joinUrl } from "@/constants/ApiConfig";
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
@@ -33,7 +33,6 @@ class AuthService {
       }
       
       this.deviceId = id;
-      console.log("Device ID initialized:", this.deviceId);
     } catch (error) {
       console.error("Failed to initialize device ID:", error);
       // Fallback to generate ID in memory if AsyncStorage fails
@@ -98,8 +97,6 @@ class AuthService {
       if (keysToRemove.length > 0) {
         await AsyncStorage.multiRemove(keysToRemove);
       }
-      
-      console.log("All user data cleared:", keysToRemove.length, "items");
     } catch (error) {
       console.error("Error clearing user data:", error);
     }
@@ -114,7 +111,7 @@ class AuthService {
       const deviceInfo = await this.getDeviceInfo();
       
       // First, get a CSRF token from the backend
-      const csrfResponse = await fetch(`${API_URL}/users/csrf-token/`, {
+  const csrfResponse = await fetch(joinUrl(API_URL, '/users/csrf-token/'), {
         method: "GET",
         headers: {
           "Content-Type": "application/json"
@@ -125,7 +122,7 @@ class AuthService {
       const csrfToken = csrfData.csrfToken;
       
       // Now make the login request with the CSRF token
-      const response = await fetch(`${API_URL}${API_ENDPOINTS.LOGIN}`, {
+  const response = await fetch(joinUrl(API_URL, API_ENDPOINTS.LOGIN), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -176,7 +173,6 @@ class AuthService {
           await AsyncStorage.setItem("userData", JSON.stringify(data.user));
         }
         
-        console.log("Login successful for user:", username);
         return data;
       } else {
         throw new Error("No token received from server");
@@ -198,7 +194,7 @@ class AuthService {
       // If we have a token, invalidate it on the server
       if (token) {
         try {
-          await fetch(`${API_URL}${API_ENDPOINTS.LOGOUT}`, {
+          await fetch(joinUrl(API_URL, API_ENDPOINTS.LOGOUT), {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -209,9 +205,8 @@ class AuthService {
               device_info: deviceInfo
             }),
           });
-          console.log("Logout request sent to server");
         } catch (serverError) {
-          console.warn("Error during server logout:", serverError);
+          // Error during server logout
         }
       }
       
@@ -232,11 +227,10 @@ class AuthService {
       const sessionId = await AsyncStorage.getItem("session_id");
 
       if (!token) {
-        console.log("No token found for testing");
         return false;
       }
 
-      const response = await fetch(`${API_URL}${API_ENDPOINTS.TEST_TOKEN}`, {
+  const response = await fetch(joinUrl(API_URL, API_ENDPOINTS.TEST_TOKEN), {
         method: "GET",
         headers: {
           Authorization: `Token ${token}`,
@@ -250,14 +244,12 @@ class AuthService {
         
         // Check if this is still the active session
         if (data.is_active_session === false) {
-          console.log("Session has been invalidated by another login");
           await this.clearUserData();
           return false;
         }
         
         return true;
       } else {
-        console.log("Token test failed, status:", response.status);
         // If token is invalid, clear user data
         if (response.status === 401 || response.status === 403) {
           await this.clearUserData();

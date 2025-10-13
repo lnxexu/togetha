@@ -1,6 +1,6 @@
 import offlineStorage, { OfflineNote, OfflineFolder, PendingSync } from './offlineStorage';
 import { DrawingData, PDFAnnotationData } from './drawingAPI';
-import { API_URL, API_ENDPOINTS } from '@/constants/ApiConfig';
+import { API_URL, API_ENDPOINTS, joinUrl } from '@/constants/ApiConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Import network service from task management (reuse it)
@@ -52,7 +52,7 @@ class NoteSyncService {
       options.body = JSON.stringify(body);
     }
 
-    const response = await fetch(`${API_URL}${endpoint}`, options);
+  const response = await fetch(joinUrl(API_URL, endpoint), options);
 
     if (!response.ok) {
       throw new Error(`API Error: ${response.status} ${response.statusText}`);

@@ -3,7 +3,7 @@ import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_URL, API_ENDPOINTS } from '@/constants/ApiConfig';
+import { API_URL, API_ENDPOINTS, joinUrl } from '@/constants/ApiConfig';
 import AuthService from './AuthService';
 
 // Complete the auth session for better UX
@@ -128,7 +128,7 @@ class GoogleAuthService {
       const authService = AuthService.getInstance();
       const deviceInfo = await authService.getDeviceInfo();
 
-      const response = await fetch(`${API_URL}/auth/google/`, {
+  const response = await fetch(joinUrl(API_URL, '/auth/google/'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

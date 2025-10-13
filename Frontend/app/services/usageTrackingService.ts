@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { API_URL } from "../../constants/ApiConfig";
+import { API_URL, joinUrl } from "../../constants/ApiConfig";
 import * as Device from 'expo-device';
 import { AppState, AppStateStatus } from 'react-native';
 
@@ -89,7 +89,7 @@ class UsageTrackingService {
       const deviceType = Device.deviceType === Device.DeviceType.PHONE ? 'mobile' : 
                         Device.deviceType === Device.DeviceType.TABLET ? 'tablet' : 'desktop';
       
-      const response = await fetch(`${API_URL}/usage/session/`, {
+  const response = await fetch(joinUrl(API_URL, '/usage/session/'), {
         method: 'POST',
         headers,
         body: JSON.stringify({
@@ -120,7 +120,7 @@ class UsageTrackingService {
     try {
       const headers = await this.getAuthHeaders();
       
-      await fetch(`${API_URL}/usage/session/`, {
+  await fetch(joinUrl(API_URL, '/usage/session/'), {
         method: 'POST',
         headers,
         body: JSON.stringify({
@@ -172,7 +172,7 @@ class UsageTrackingService {
 
     try {
       const headers = await this.getAuthHeaders();
-      await fetch(`${API_URL}/usage/idle/`, {
+  await fetch(joinUrl(API_URL, '/usage/idle/'), {
         method: 'POST',
         headers,
         body: JSON.stringify({
@@ -194,7 +194,7 @@ class UsageTrackingService {
 
     try {
       const headers = await this.getAuthHeaders();
-      await fetch(`${API_URL}/usage/idle/`, {
+  await fetch(joinUrl(API_URL, '/usage/idle/'), {
         method: 'POST',
         headers,
         body: JSON.stringify({
@@ -227,7 +227,7 @@ class UsageTrackingService {
       if (this.sessionId && !this.isIdle) {
         try {
           const headers = await this.getAuthHeaders();
-          await fetch(`${API_URL}/usage/session/`, {
+          await fetch(joinUrl(API_URL, '/usage/session/'), {
             method: 'POST',
             headers,
             body: JSON.stringify({
@@ -274,7 +274,7 @@ class UsageTrackingService {
   async getUsageStats(period: 'today' | 'week' | 'month' | 'comprehensive' = 'comprehensive'): Promise<UsageStats | null> {
     try {
       const headers = await this.getAuthHeaders();
-      const response = await fetch(`${API_URL}/usage/stats/?period=${period}`, {
+  const response = await fetch(joinUrl(API_URL, `/usage/stats/?period=${period}`), {
         method: 'GET',
         headers,
       });

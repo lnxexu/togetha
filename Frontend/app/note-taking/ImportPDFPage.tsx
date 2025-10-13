@@ -120,18 +120,6 @@ const ImportPDFPage = () => {
     navigation.goBack();
   };
 
-  const handleDiscardAndExit = () => {
-    setShowUnsavedChangesModal(false);
-    setHasUnsavedAnnotations(false);
-    showInfoToast("Changes discarded");
-    
-    // Clear any pending save timeout
-    clearTimeout((window as any).annotationSaveTimeout);
-    
-    // Navigate back without saving
-    navigation.goBack();
-  };
-
   const handleContinueEditing = () => {
     setShowUnsavedChangesModal(false);
   };
@@ -172,7 +160,6 @@ const ImportPDFPage = () => {
       }
 
       const file = result.assets[0];
-      console.log('Selected file:', file);
       
       // Validate file
       if (!file.uri || !file.name) {
@@ -185,8 +172,6 @@ const ImportPDFPage = () => {
         throw new Error('Selected file is not accessible');
       }
       
-      console.log('File info:', fileInfo);
-      
       // Create document directory if it doesn't exist
       const docDir = `${FileSystem.documentDirectory}pdf_documents/`;
       const dirInfo = await FileSystem.getInfoAsync(docDir);
@@ -197,8 +182,6 @@ const ImportPDFPage = () => {
       // Copy file to permanent location
       const fileName = `${Date.now()}_${file.name}`;
       const permanentUri = `${docDir}${fileName}`;
-      
-      console.log('Copying from:', file.uri, 'to:', permanentUri);
       
       await FileSystem.copyAsync({
         from: file.uri,
@@ -225,7 +208,6 @@ const ImportPDFPage = () => {
       const updatedDocs = [...documents, newDocument];
       await saveDocuments(updatedDocs);
       
-      console.log('PDF imported successfully:', newDocument);
       Alert.alert("Success", "PDF imported successfully!");
       
     } catch (error) {
@@ -253,14 +235,12 @@ const ImportPDFPage = () => {
         return;
       }
       
-      console.log('Opening PDF:', document.name, 'at URI:', document.uri);
       setSelectedDocument(document);
       
       // Load existing annotations for this document
       try {
         const loadedAnnotations = await loadAnnotations(document.id);
         setAnnotations(loadedAnnotations);
-        console.log(`Loaded ${loadedAnnotations.length} annotations for document:`, document.name);
       } catch (error) {
         console.error('Failed to load annotations:', error);
         setAnnotations([]);
@@ -665,7 +645,6 @@ const ImportPDFPage = () => {
       <UnsavedChangesModal
         visible={showUnsavedChangesModal}
         onSave={handleSaveAndExit}
-        onDiscard={handleDiscardAndExit}
         onCancel={handleContinueEditing}
       />
     </SafeAreaView>

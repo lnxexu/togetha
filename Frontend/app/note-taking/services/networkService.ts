@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import NetInfo from '@react-native-community/netinfo';
-import { API_URL } from '@/constants/ApiConfig';
+import { API_URL, joinUrl } from '@/constants/ApiConfig';
 
 export interface NetworkStatus {
   isConnected: boolean;
@@ -69,7 +69,7 @@ class NetworkService {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);
       
-      const response = await fetch(`${API_URL}/health/`, {
+  const response = await fetch(joinUrl(API_URL, '/health/'), {
         method: 'HEAD',
         signal: controller.signal,
       });

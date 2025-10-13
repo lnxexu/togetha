@@ -30,14 +30,10 @@ export const usePushNotifications = ({
       
       const alreadyInitialized = await arePushNotificationsInitialized();
       if (alreadyInitialized) {
-        console.log('Push notifications already initialized');
         return true;
       }
       
       const success = await initializePushNotificationsAfterLogin();
-      if (success) {
-        console.log('Push notifications initialized successfully after login');
-      }
       
       return success;
     } catch (error) {
@@ -110,13 +106,10 @@ export const usePushNotifications = ({
   const handleAppStateChange = useCallback(async (nextAppState: AppStateStatus) => {
     if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
       // App has come to the foreground
-      console.log('App has come to the foreground');
-      
       // Cancel any pending inactivity reminders
       // You could implement logic here to cancel specific notifications
     } else if (appState.current === 'active' && nextAppState.match(/inactive|background/)) {
       // App has gone to the background
-      console.log('App has gone to the background');
       
       // Schedule inactivity reminder (e.g., after 24 hours)
       try {
@@ -158,12 +151,10 @@ export const usePushNotifications = ({
   useEffect(() => {
     // Set up notification listeners
     notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
-      console.log('Notification received:', notification);
       onNotificationReceived?.(notification);
     });
 
     responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
-      console.log('Notification response:', response);
       onNotificationPressed?.(response);
     });
 

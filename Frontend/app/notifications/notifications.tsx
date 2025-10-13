@@ -22,7 +22,7 @@ import DatePicker from 'react-native-date-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RootStackParamList } from "../navigation/AppNavigator";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
+import { API_URL, API_ENDPOINTS, joinUrl } from "@/constants/ApiConfig";
 import { NotificationService } from './services/notificationService';
 import { NotificationManager, useNotificationManager } from './components/NotificationManager';
 
@@ -107,8 +107,16 @@ export default function Notifications() {
         task_details: item.task_details,
       }));
       
-      setAllNotifications(formattedNotifications);
-      setNotifications(formattedNotifications);
+      // Sort notifications properly: by scheduled_time first (desc), then by timestamp (desc)
+      // This ensures newest notifications appear at the top
+      const sortedNotifications = formattedNotifications.sort((a, b) => {
+        const aTime = new Date(a.scheduled_time || a.timestamp).getTime();
+        const bTime = new Date(b.scheduled_time || b.timestamp).getTime();
+        return bTime - aTime; // Descending order (newest first)
+      });
+      
+      setAllNotifications(sortedNotifications);
+      setNotifications(sortedNotifications);
     } catch (error) {
       console.error('Error fetching notifications:', error);
       setAllNotifications([]);
@@ -163,7 +171,7 @@ export default function Notifications() {
       const token = await AsyncStorage.getItem('authToken');
       if (!token) return null;
       
-      const response = await fetch(`${API_URL}/tasks/${taskId}/`, {
+      const response = await fetch(joinUrl(API_URL, API_ENDPOINTS.TASK_DETAIL(taskId)), {
         headers: {
           'Authorization': `Token ${token}`,
           'Content-Type': 'application/json',
@@ -396,9 +404,10 @@ export default function Notifications() {
 
   // Handle task navigation based on task status
   const handleTaskNavigation = async (notification: any) => {
-    if (!notification.related_task) return;
+    if (!notification.related_task && !notification.action_id) return;
     
     const taskStatus = notification.task_status;
+    const taskId = notification.related_task || notification.action_id;
     
     if (taskStatus?.deleted) {
       Alert.alert('Task Not Found', 'This task has been deleted and is no longer available.');
@@ -415,7 +424,7 @@ export default function Notifications() {
             text: 'View Completed',
             onPress: () => {
               setShowDetailModal(false);
-              navigation.navigate('Home');
+              navigation.navigate('CompletedTasks');
             }
           }
         ]
@@ -425,7 +434,13 @@ export default function Notifications() {
     
     // Task is active, navigate to task details
     setShowDetailModal(false);
-    navigation.navigate('Home'); // You might want to navigate to a specific task detail screen
+    try {
+      navigation.navigate('TaskDetails', { taskId: taskId });
+    } catch (error) {
+      console.error('Navigation error:', error);
+      // Fallback to home if TaskDetails route doesn't exist or fails
+      navigation.navigate('Home');
+    }
   };
 
   const unreadCount = notifications.filter(notif => !notif.read).length;

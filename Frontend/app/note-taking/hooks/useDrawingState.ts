@@ -40,15 +40,9 @@ export const useDrawingState = ({
   const [history, setHistory] = useState<DrawingStroke[][]>([[]]);
   const [historyStep, setHistoryStep] = useState<number>(0);
 
-  // Debug effect to monitor strokes changes
-  useEffect(() => {
-    console.log('useDrawingState: Strokes updated, count:', strokes.length);
-  }, [strokes]);
-
   // Load drawing when noteId changes, but only if we're not skipping initial load
   useEffect(() => {
     if (currentNoteId && !skipInitialLoad) {
-      console.log('useDrawingState: Loading drawing for noteId:', currentNoteId);
       loadDrawing();
     }
   }, [currentNoteId, skipInitialLoad]);
@@ -65,20 +59,14 @@ export const useDrawingState = ({
   }, [strokes, hasUnsavedChanges, autoSave, autoSaveInterval, currentNoteId]);
 
   const loadDrawing = async () => {
-    console.log('useDrawingState: loadDrawing called for noteId:', currentNoteId);
-    
     if (!currentNoteId) {
-      console.log('useDrawingState: No currentNoteId, skipping load');
       return;
     }
 
-    console.log('useDrawingState: Starting to load drawing from API...');
     setIsLoading(true);
     setError(null);
     try {
       const drawingData = await drawingAPI.getDrawing(currentNoteId);
-      console.log('useDrawingState: Loaded drawing data from API:', drawingData);
-      console.log('useDrawingState: API returned strokes:', drawingData.strokes.length);
       setStrokes(drawingData.strokes);
       setHasUnsavedChanges(false);
     } catch (error) {
@@ -91,16 +79,7 @@ export const useDrawingState = ({
   };
 
  const saveDrawing = useCallback(async (options?: SaveOptions) => {
-  console.log('useDrawingState.saveDrawing called with:', {
-    strokesCount: strokes?.length || 0,
-    hasStrokes: !!strokes && strokes.length > 0,
-    currentNoteId,
-    options
-  });
-
   // Allow saving empty strokes to persist a full erase
-
-  console.log('Proceeding with save, setting isSaving to true...');
   setIsSaving(true);
   setError(null);
 
@@ -108,19 +87,14 @@ export const useDrawingState = ({
     let noteId = currentNoteId;
     let result;
 
-    console.log('Save logic - noteId:', noteId);
-
     if (!noteId) {
       // Create new note
-      console.log('Creating new note...');
       const title = options?.title || defaultTitle || 'Untitled Drawing';
       result = await drawingAPI.createDrawingNote(title, strokes, options?.folderId, options?.tags);
       noteId = result.noteId;
       setCurrentNoteId(noteId);
-      console.log('Created new note with ID:', noteId);
     } else {
       // Update existing note - combine drawing data and metadata in a single request
-      console.log('Updating existing note:', noteId);
       
       // Prepare the update data combining drawing data and metadata
       const updateData: any = {
@@ -131,12 +105,6 @@ export const useDrawingState = ({
       if (options?.folderId !== undefined) updateData.folder = options.folderId;
       if (options?.template) updateData.template = options.template;
       if (options?.tags) updateData.tag_names = options.tags;
-      
-      console.log('Sending combined update:', {
-        hasDrawingData: !!updateData.drawing_data,
-        drawingDataLength: updateData.drawing_data.length,
-        metadata: { title: updateData.title, folder: updateData.folder, template: updateData.template, tags: updateData.tag_names }
-      });
       
       try {
         const token = await AsyncStorage.getItem('authToken');
@@ -156,7 +124,6 @@ export const useDrawingState = ({
           }
           
           result = await response.json();
-          console.log('Combined update result:', result);
         }
       } catch (updateError) {
         console.error('Failed to update note with combined data:', updateError);
@@ -167,7 +134,6 @@ export const useDrawingState = ({
     setHasUnsavedChanges(false);
     setLastSaveTime(Date.now());
 
-    console.log('Save completed successfully');
     return result;
   } catch (error) {
     console.error('Failed to save drawing:', error);
@@ -457,7 +423,6 @@ export const useDrawingState = ({
           const previousState = prevHistory[newStep] || [];
           setStrokes([...previousState]);
           setHasUnsavedChanges(true);
-          console.log('Undo: Reverted to step', newStep, 'with', previousState.length, 'strokes');
           return prevHistory;
         });
         return newStep;
@@ -474,7 +439,6 @@ export const useDrawingState = ({
           const nextState = prevHistory[newStep] || [];
           setStrokes([...nextState]);
           setHasUnsavedChanges(true);
-          console.log('Redo: Advanced to step', newStep, 'with', nextState.length, 'strokes');
           return prevHistory;
         }
         return prevHistory;
@@ -500,7 +464,6 @@ export const useDrawingState = ({
       try {
         setIsSaving(true);
         await drawingAPI.clearDrawing(currentNoteId);
-        console.log('Drawing cleared successfully on server');
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to clear drawing on server';
         setError(errorMessage);
@@ -530,14 +493,6 @@ export const useDrawingState = ({
   }, []);
 
   const importDrawing = useCallback((drawingData: any) => {
-    console.log('=== useDrawingState: importDrawing called ===');
-    console.log('useDrawingState: Importing drawing data:', drawingData);
-    console.log('useDrawingState: DrawingData type:', typeof drawingData);
-    console.log('useDrawingState: DrawingData keys:', drawingData ? Object.keys(drawingData) : 'null');
-    console.log('useDrawingState: Has strokes field:', !!drawingData?.strokes);
-    console.log('useDrawingState: Strokes field type:', Array.isArray(drawingData?.strokes) ? 'array' : typeof drawingData?.strokes);
-    console.log('useDrawingState: Strokes length:', drawingData?.strokes?.length || 0);
-    
     if (drawingData) {
       let strokesToImport = [];
       
@@ -545,64 +500,35 @@ export const useDrawingState = ({
       if (drawingData.strokes && Array.isArray(drawingData.strokes)) {
         // Primary format: { strokes: [...] } (passed from notes.tsx)
         strokesToImport = drawingData.strokes;
-        console.log('useDrawingState: Found strokes array at root level:', strokesToImport.length);
       } else if (Array.isArray(drawingData)) {
         // Direct array of strokes
         strokesToImport = drawingData;
-        console.log('useDrawingState: Direct strokes array:', strokesToImport.length);
       } else if (drawingData.drawing_data) {
         // Handle nested drawing_data
         if (typeof drawingData.drawing_data === 'string') {
           try {
             const parsed = JSON.parse(drawingData.drawing_data);
             strokesToImport = Array.isArray(parsed) ? parsed : parsed.strokes || [];
-            console.log('useDrawingState: Parsed drawing_data string:', strokesToImport.length);
           } catch (error) {
             console.error('Failed to parse drawing_data:', error);
             strokesToImport = [];
           }
         } else if (Array.isArray(drawingData.drawing_data)) {
           strokesToImport = drawingData.drawing_data;
-          console.log('useDrawingState: Array drawing_data:', strokesToImport.length);
         } else if (drawingData.drawing_data?.strokes) {
           strokesToImport = drawingData.drawing_data.strokes;
-          console.log('useDrawingState: Nested strokes in drawing_data:', strokesToImport.length);
         }
       }
 
-      // Validate stroke format and log details
-      if (strokesToImport.length > 0) {
-        console.log('useDrawingState: First stroke sample:', strokesToImport[0]);
-        console.log('useDrawingState: Stroke validation:', {
-          hasId: !!strokesToImport[0]?.id,
-          hasPoints: Array.isArray(strokesToImport[0]?.points),
-          pointsLength: strokesToImport[0]?.points?.length,
-          pointsType: typeof strokesToImport[0]?.points?.[0],
-          hasColor: !!strokesToImport[0]?.color,
-          hasWidth: !!strokesToImport[0]?.width,
-          hasTool: !!strokesToImport[0]?.tool,
-        });
-      }
-
-      console.log('useDrawingState: About to setStrokes with:', strokesToImport.length, 'strokes');
       setStrokes(strokesToImport);
       // Initialize history with the imported strokes
       setHistory([strokesToImport]);
       setHistoryStep(0);
-      console.log('useDrawingState: setStrokes called and history initialized');
       setHasUnsavedChanges(false);
 
       // Set the note ID if available and not already set
       // Don't set currentNoteId here as it will trigger loadDrawing which overwrites imported data
-      if (drawingData.id && !currentNoteId) {
-        console.log('useDrawingState: Would set note ID but skipping to avoid loadDrawing override:', drawingData.id);
-        // We'll set it later if needed, but for now avoid triggering the loadDrawing effect
-        // setCurrentNoteId(drawingData.id.toString());
-      }
-    } else {
-      console.log('useDrawingState: No drawing data provided');
     }
-    console.log('=== useDrawingState: importDrawing completed ===');
   }, [currentNoteId]);
 
   const exportDrawing = useCallback(() => {
@@ -618,7 +544,6 @@ export const useDrawingState = ({
   }, [clearDrawing]);
 
   const setNoteId = useCallback((noteId: string) => {
-    console.log('useDrawingState: Setting note ID:', noteId);
     setCurrentNoteId(noteId);
   }, []);
 

@@ -154,13 +154,9 @@ const ToDo: React.FC = () => {
   const loadTasks = async () => {
     try {
       setIsLoading(true);
-      console.log("Loading tasks...");
 
       const loadedTasks = await taskService.getAllTasks();
 
-      console.log(
-        `Successfully loaded ${loadedTasks.length} tasks`
-      );
       setTasks(loadedTasks);
     } catch (error) {
       console.error("Error loading tasks:", error);
@@ -169,7 +165,6 @@ const ToDo: React.FC = () => {
       const isOnline = taskService.isOnline();
       if (!isOnline) {
         // Offline - tasks might still load from local storage
-        console.log("Device is offline, loaded tasks from local storage");
       } else {
         // Online but failed - show error
         Alert.alert(

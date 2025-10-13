@@ -198,7 +198,6 @@ export default function SignUp() {
     try {
       // Test server connectivity first
       const connectivityTest = await testServerConnectivity();
-      console.log('Connectivity test result:', connectivityTest);
       
       if (!connectivityTest.success) {
         setLoading(false);

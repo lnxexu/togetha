@@ -151,7 +151,6 @@ class NetworkService {
       clearTimeout(timeoutId);
       return true;
     } catch (error) {
-      console.log('Connectivity test failed:', error);
       return false;
     }
   }

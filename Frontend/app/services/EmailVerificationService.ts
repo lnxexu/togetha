@@ -1,6 +1,6 @@
 // Email Verification Service for Multi-Factor Authentication
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_URL } from '../../constants/ApiConfig';
+import { API_URL, joinUrl } from '../../constants/ApiConfig';
 
 const API_BASE_URL = API_URL;
 
@@ -11,8 +11,7 @@ export const testServerConnectivity = async (): Promise<{
   url: string;
 }> => {
   try {
-    console.log('Testing connectivity to:', API_BASE_URL);
-    const response = await fetch(`${API_BASE_URL}/users/csrf-token/`, {
+    const response = await fetch(joinUrl(API_BASE_URL, '/health/'), {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -52,10 +51,7 @@ export const sendEmailVerification = async (data: EmailVerificationData): Promis
   email?: string;
 }> => {
   try {
-    console.log('Attempting to send email verification to:', `${API_BASE_URL}/users/send-email-verification/`);
-    console.log('Request data:', data);
-    
-    const response = await fetch(`${API_BASE_URL}/users/send-email-verification/`, {
+    const response = await fetch(joinUrl(API_BASE_URL, '/users/send-email-verification/'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -67,8 +63,6 @@ export const sendEmailVerification = async (data: EmailVerificationData): Promis
     });
 
     const result = await response.json();
-    console.log('Response status:', response.status);
-    console.log('Response data:', result);
 
     if (!response.ok) {
       throw new Error(result.message || 'Failed to send verification email');
@@ -105,7 +99,7 @@ export const verifyEmailAndSignup = async (data: SignupVerificationData): Promis
   user?: any;
 }> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/users/verify-email-and-signup/`, {
+    const response = await fetch(joinUrl(API_BASE_URL, '/users/verify-email-and-signup/'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

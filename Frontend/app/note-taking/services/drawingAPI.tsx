@@ -1,5 +1,5 @@
 
-import { API_URL, API_ENDPOINTS } from '@/constants/ApiConfig';
+import { API_URL, API_ENDPOINTS, joinUrl } from '@/constants/ApiConfig';
 import { parseServerDate } from '../utils/localDate';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { 
@@ -53,7 +53,7 @@ export class DrawingAPI {
 
    private async getCSRFToken(): Promise<string | null> {
     try {
-      const response = await fetch(`${API_URL}${API_ENDPOINTS.CSRF_TOKEN}`, {
+  const response = await fetch(joinUrl(API_URL, API_ENDPOINTS.CSRF_TOKEN), {
         method: 'GET',
         credentials: 'include',
       });
@@ -90,20 +90,7 @@ export class DrawingAPI {
   }
   async saveDrawing(noteId: string, strokes: DrawingStroke[], tags?: string[]): Promise<any> {
     try {
-      console.log('drawingAPI.saveDrawing called with:', {
-        noteId,
-        strokesCount: strokes.length,
-        firstStroke: strokes.length > 0 ? strokes[0] : null,
-        tags: tags
-      });
-
       const drawingDataString = JSON.stringify(strokes);
-      console.log('Serialized drawing data:', {
-        length: drawingDataString.length,
-        preview: drawingDataString.substring(0, 200) + '...',
-        strokesPreview: strokes.map(s => ({ id: s.id, pointsCount: s.points.length, tool: s.tool }))
-      });
-
       const headers = await this.getAuthHeaders();
       
       // Try using the regular notes endpoint with PATCH instead of the drawing-specific endpoint
@@ -115,23 +102,13 @@ export class DrawingAPI {
       if (tags) {
         requestBody.tag_names = tags;
       }
-      
-      console.log('Request body structure:', {
-        hasDrawingData: !!requestBody.drawing_data,
-        drawingDataLength: requestBody.drawing_data.length,
-        drawingDataType: typeof requestBody.drawing_data,
-        hasTags: !!requestBody.tag_names,
-        tagsCount: requestBody.tag_names?.length || 0
-      });
 
       // Use the regular notes endpoint for updating drawing data
-      const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTES}${noteId}/`, {
+  const response = await fetch(joinUrl(API_URL, `${API_ENDPOINTS.NOTES}${noteId}/`), {
         method: 'PATCH',
         headers,
         body: JSON.stringify(requestBody),
       });
-
-      console.log('API response status:', response.status);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -140,7 +117,6 @@ export class DrawingAPI {
       }
 
       const result = await response.json();
-      console.log('API success response:', result);
       
       // Return a consistent format
       return {
@@ -159,7 +135,7 @@ export class DrawingAPI {
     try {
       const headers = await this.getAuthHeaders();
       // Use the regular notes endpoint instead of drawing-specific endpoint
-      const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTES}${noteId}/`, {
+  const response = await fetch(joinUrl(API_URL, `${API_ENDPOINTS.NOTES}${noteId}/`), {
         headers,
       });
       

@@ -2,7 +2,7 @@ import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import * as Crypto from 'expo-crypto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_URL, API_ENDPOINTS } from '@/constants/ApiConfig';
+import { API_URL, API_ENDPOINTS, joinUrl } from '@/constants/ApiConfig';
 
 // Complete the auth session for better UX
 WebBrowser.maybeCompleteAuthSession();
@@ -27,10 +27,6 @@ class GoogleAuthService {
   private constructor() {
     this.clientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '';
     this.redirectUri = AuthSession.makeRedirectUri();
-    
-    if (!this.clientId) {
-      console.warn('Google Client ID not configured. Please set EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID in your environment variables.');
-    }
   }
 
   static getInstance(): GoogleAuthService {
@@ -162,7 +158,7 @@ class GoogleAuthService {
     user_info: any;
   }): Promise<{ success: boolean; token?: string; error?: string }> {
     try {
-      const response = await fetch(`${API_URL}${API_ENDPOINTS.GOOGLE_AUTH}`, {
+  const response = await fetch(joinUrl(API_URL, API_ENDPOINTS.GOOGLE_AUTH), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -216,7 +212,7 @@ class GoogleAuthService {
       }
 
       // Verify token with your backend
-      const response = await fetch(`${API_URL}${API_ENDPOINTS.VERIFY_TOKEN}`, {
+  const response = await fetch(joinUrl(API_URL, API_ENDPOINTS.VERIFY_TOKEN), {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,

@@ -109,13 +109,11 @@ class PushNotificationServiceImpl implements PushNotificationService {
         }
         
         if (finalStatus !== 'granted') {
-          console.log('Failed to get push token for push notification!');
           return false;
         }
         
         return true;
       } else {
-        console.log('Must use physical device for Push Notifications');
         return false;
       }
     } catch (error) {
@@ -298,13 +296,11 @@ class PushNotificationServiceImpl implements PushNotificationService {
     const now = new Date();
     if (reminderDate <= now) {
       // If reminder time has passed, skip immediate notification to avoid duplicates
-      console.log('[PushNotificationService] Skipping immediate reminder for past reminderDate to avoid duplicates');
       return 'skipped';
     }
     // Dedup scheduled reminders by task + exact reminder timestamp
     const key = `TASK_REMINDER:${taskId || taskTitle}:${reminderDate.toISOString()}`;
     if (await this.hasScheduledKey(key)) {
-      console.log('[PushNotificationService] Duplicate scheduled reminder prevented for', key);
       return 'deduped';
     }
 
@@ -385,14 +381,10 @@ export type NotificationType = typeof NotificationTypes[keyof typeof Notificatio
 // Helper function to initialize push notifications after login
 export const initializePushNotificationsAfterLogin = async () => {
   try {
-    console.log('Initializing push notifications after login...');
-    
     // Register for push notifications
     const token = await pushNotificationService.registerForPushNotifications();
     
     if (token) {
-      console.log('Push notification token:', token);
-      
       // Schedule welcome notification
       await pushNotificationService.scheduleWelcomeNotification();
       

@@ -175,9 +175,7 @@ function resolveDocumentUri(note: Note): {
   const raw = note.document_url || note.document_file || null;
   if (!raw) return { uri: null, ext: null };
   const hasProtocol = /^https?:\/\//i.test(raw) || raw.startsWith("file://");
-  const uri = hasProtocol
-    ? raw
-    : `${API_URL}${raw.startsWith("/") ? "" : "/"}${raw}`;
+  const uri = hasProtocol ? raw : require("@/constants/ApiConfig").joinUrl(API_URL, raw);
   const lower = uri.toLowerCase();
   const ext = lower.endsWith(".pdf")
     ? "pdf"

@@ -49,7 +49,6 @@ const EditProfile: React.FC = () => {
 
       // Get fresh data from endpoint
       const userInfo = await userService.getUserInfo(true);
-      console.log("Profile picture path:", userInfo.profile?.profile_picture);
 
       // Properly combine profile data ensuring all fields are preserved
       const profile = {
@@ -144,7 +143,6 @@ const EditProfile: React.FC = () => {
     try {
       // Debug: Check if token exists before proceeding
       const debugToken = await userService.getAuthToken();
-      console.log("Debug - Auth token available:", !!debugToken);
 
       // Request permission to access the photo library
       const { status } =
@@ -288,9 +286,6 @@ const EditProfile: React.FC = () => {
                     : `${API_URL}${userData.profile.profile_picture}`,
                 }}
                 style={styles.profilePic}
-                onError={(e) =>
-                  console.log("Image loading error:", e.nativeEvent.error)
-                }
               />
             ) : (
               <View style={styles.defaultProfilePic}>

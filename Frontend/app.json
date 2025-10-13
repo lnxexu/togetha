@@ -1,11 +1,11 @@
 {
   "expo": {
-  "name": "Togetha",
-  "slug": "togetha",
+    "name": "Togetha",
+    "slug": "togetha",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-  "scheme": "togetha",
+    "scheme": "togetha",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -27,7 +27,7 @@
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.MANAGE_EXTERNAL_STORAGE"
       ],
-  "package": "com.anonymous.togetha"
+      "package": "com.anonymous.togetha"
     },
     "web": {
       "bundler": "metro",
@@ -44,6 +44,11 @@
           "backgroundColor": "#ffffff"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "deab8bd9-3501-4534-ab51-34f4638cfd8b"
+      }
+    }
   }
 }

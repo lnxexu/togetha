@@ -88,7 +88,7 @@ const PrivacySecurity: React.FC = () => {
       'We will prepare your data for download and send you an email when ready.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Request Export', onPress: () => console.log('Data export requested') },
+        { text: 'Request Export', onPress: () => {} },
       ]
     );
   };
@@ -282,21 +282,21 @@ const PrivacySecurity: React.FC = () => {
             'Privacy Policy',
             'Read our privacy policy and data practices',
             'policy',
-            () => console.log('Privacy Policy')
+            () => {}
           )}
           
           {renderActionItem(
             'Terms of Service',
             'View terms and conditions of use',
             'description',
-            () => console.log('Terms of Service')
+            () => {}
           )}
           
           {renderActionItem(
             'Cookie Policy',
             'Learn about our cookie usage',
             'cookie',
-            () => console.log('Cookie Policy')
+            () => {}
           )}
         </View>
 

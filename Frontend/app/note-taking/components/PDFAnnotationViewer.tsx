@@ -1412,12 +1412,9 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     // Use external annotations if provided, otherwise load from storage
     if (externalAnnotations && externalAnnotations.length > 0) {
       updateAnnotations(externalAnnotations);
-      console.log(`Loaded ${externalAnnotations.length} external annotations`);
     } else {
       loadAnnotations();
     }
-
-    console.log("PDFAnnotationViewer initialized with local source:", source);
 
     // If source is remote, download it to local storage first then validate
     (async () => {
@@ -1427,10 +1424,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
           (source.uri.startsWith("http://") ||
             source.uri.startsWith("https://"))
         ) {
-          console.log(
-            "Remote PDF source detected, downloading to local storage:",
-            source.uri
-          );
           setIsLoading(true);
 
           // Normalize URL to use configured API_URL (Django's build_absolute_uri might use different host)
@@ -1448,14 +1441,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
             const sourcePort = getActualPort(sourceUrl);
             const apiPort = getActualPort(apiUrl);
 
-            console.log("URL normalization check:", {
-              sourceHost: sourceUrl.hostname,
-              sourcePort,
-              apiHost: apiUrl.hostname,
-              apiPort,
-              API_URL,
-            });
-
             // If the source URL is from the same backend but different host (e.g., Django using 192.168.x.x)
             // replace it with our configured API_URL
             const isPrivateIP =
@@ -1471,16 +1456,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
               sourceUrl.hostname !== apiUrl.hostname
             ) {
               downloadUrl = API_URL + sourceUrl.pathname + sourceUrl.search;
-              console.log(
-                "✅ Normalized URL from",
-                source.uri,
-                "to",
-                downloadUrl
-              );
-            } else {
-              console.log(
-                "❌ URL normalization skipped - not matching criteria"
-              );
             }
           } catch (urlParseError) {
             console.warn(
@@ -1503,26 +1478,19 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
                   Authorization: `Token ${token}`,
                   Accept: "application/pdf",
                 };
-                console.log("Using auth headers for backend PDF download");
               }
             }
 
             const result = await getLocalPDFPathEnhanced(
               downloadUrl,
               fileName,
-              (progress) => {
-                console.log("Download progress:", progress);
-              },
+              undefined, // Remove progress logging
               fetchHeaders
             );
             // Replace source with local file URI for the PDF viewer
             // Note: FileSystem.documentDirectory paths are file:// URIs on native
             const localUri = result.uri;
             setCurrentSource({ uri: localUri });
-            console.log(
-              "Downloaded PDF to local path and updated currentSource:",
-              localUri
-            );
           } catch (err) {
             console.error("Failed to download remote PDF before loading:", err);
             setHasError(true);
@@ -1592,7 +1560,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     // Add a shorter backup timeout to clear loading if PDF is actually loaded but onLoadComplete didn't fire
     const backupTimeout = setTimeout(() => {
       if (isLoading && !hasError) {
-        console.log("Backup timeout: clearing loading state after 5 seconds");
         setIsLoading(false);
       }
     }, 5000); // 5 seconds backup
@@ -1627,8 +1594,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
   const validatePDFSource = async () => {
     try {
-      console.log("Validating PDF source:", currentSource?.uri);
-
       const uriToCheck = currentSource?.uri || source?.uri;
 
       // Only call FileSystem.getInfoAsync for local file URIs
@@ -1639,7 +1604,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       ) {
         // For local files, check if file exists
         const fileInfo = await FileSystem.getInfoAsync(uriToCheck);
-        console.log("PDF file info:", fileInfo);
         if (!fileInfo.exists) {
           console.error("PDF file not found at:", uriToCheck);
           setHasError(true);
@@ -1656,17 +1620,8 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
           );
           return;
         }
-        console.log(
-          "PDF validation successful. File size:",
-          fileInfo.size,
-          "bytes"
-        );
       } else {
         // For remote URLs we won't call FileSystem.getInfoAsync (not supported)
-        console.log(
-          "Skipping FileSystem info check for non-local URI:",
-          uriToCheck
-        );
       }
     } catch (error) {
       console.error("Error validating PDF file:", error);
@@ -1823,12 +1778,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         throw new Error("Save verification failed - annotation count mismatch");
       }
 
-      console.log(
-        "✅ Annotations saved to AsyncStorage (percentage-based):",
-        validatedAnnotations.length,
-        "items"
-      );
-
       setHasUnsavedChanges(true);
 
       // Auto-save after 2 seconds of no changes (for PDF export if enabled)
@@ -1877,22 +1826,16 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         timestamp: a.timestamp,
       }));
       // Reuse existing savePDFAnnotationsWithBackend for consistency; set lightweight options.
-      await drawingAPI.savePDFAnnotationsWithBackend(
+        await drawingAPI.savePDFAnnotationsWithBackend(
         noteId,
         source.uri,
         pdfAnnotations,
         { createBackup: false, saveDirectly: false }
       );
-      console.log(
-        "🌐 Backend sync complete for annotations:",
-        pdfAnnotations.length
-      );
     } catch (err) {
       console.warn("⚠️ Non-fatal backend sync error:", err);
     }
-  };
-
-  const handleSaveAnnotations = async () => {
+  };  const handleSaveAnnotations = async () => {
     if (!hasUnsavedChanges) return;
 
     try {
@@ -1910,7 +1853,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       }
 
       setHasUnsavedChanges(false);
-      console.log(`Annotations saved successfully using ${saveMode} mode!`);
     } catch (error) {
       console.error("Error saving annotations:", error);
       Alert.alert(
@@ -1926,7 +1868,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     annotationsToSave: Annotation[]
   ) => {
     try {
-      console.log("Saving annotations directly to PDF...");
 
       // Convert UI annotations to PDF annotations format
       const pdfAnnotations: PDFAnnotation[] = annotationsToSave.map(
@@ -2114,12 +2055,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     filePath: string,
     { width, height }: { width?: number; height?: number } = {}
   ) => {
-    console.log("onPdfLoadComplete called with:", {
-      numberOfPages,
-      filePath,
-      width,
-      height,
-    });
   setTotalPages(numberOfPages);
   if (displayTotalPages !== numberOfPages) setDisplayTotalPages(numberOfPages);
   totalPagesRef.current = numberOfPages;
@@ -2130,7 +2065,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
     // Set actual PDF page dimensions if available
     if (width && height) {
-      console.log("Setting PDF page dimensions:", { width, height });
       setPdfPageDimensions({ width, height });
 
       // Calculate aspect ratio for a single page
@@ -2140,12 +2074,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       // We still compute a nominal single-page size for annotation mapping.
       const pageWidth = screenWidth;
       const pageHeight = pageWidth * aspectRatio;
-
-      console.log("🔍 Single page dimensions:", {
-        width: pageWidth,
-        height: pageHeight,
-        aspectRatio,
-      });
 
       // Set container size for a single page view (will be refined by onLayout)
       setContainerSize({ width: pageWidth, height: pageHeight });
@@ -2167,7 +2095,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       "pages from:",
       filePath
     );
-    console.log("✅ Vertical paging enabled - scrolling one page per snap");
   };
 
   // Fallback: sometimes the native PDF viewer reports 1 page even for multi-page PDFs
@@ -2326,10 +2253,8 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   }, [currentSource?.uri, source?.uri, totalPages]);
 
   const onPdfLoadProgress = (percent: number) => {
-    console.log("PDF loading progress:", percent + "%");
     // If we're getting progress events, the PDF is loading
     if (percent > 0) {
-      console.log("PDF is loading, clearing any error state");
       setHasError(false);
     }
   };
@@ -2377,7 +2302,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       pageNumber: number;
       bounds: { x: number; y: number; width: number; height: number };
     }) => {
-      console.log("PDF text selected:", selection);
       if (selection.text && selection.text.trim().length > 0) {
         setSelectedText(selection.text);
         // Convert PDF coordinates to screen coordinates if needed
@@ -3023,23 +2947,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     }
 
     if (__DEV__) {
-      console.log("📏 Coordinate Conversion:", {
-        input: { screenX, screenY },
-        container: { width: containerW, height: containerH },
-        pdfPageDimensions,
-        display: { width: displayW, height: displayH },
-        offsetX,
-        pageIndex,
-        pageStartX,
-        pageStartY,
-        pageX,
-        pageY,
-        normalizedX,
-        normalizedY,
-        scale,
-        translateX,
-        translateY,
-      });
     }
 
     return {

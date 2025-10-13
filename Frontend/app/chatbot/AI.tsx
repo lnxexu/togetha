@@ -456,8 +456,6 @@ function ChatBot(): React.ReactElement {
       // Add the new user message
       formattedMessages.push({ role: "user", content: messageContent });
 
-      console.log(`Sending ${formattedMessages.length} messages to backend`);
-
       const response = await chatbotAPI.sendMessage(
         messageContent, 
         currentConversation?.id, 
@@ -544,28 +542,22 @@ function ChatBot(): React.ReactElement {
 
       // Process files attached to THIS message
       if (currentFiles.length > 0) {
-        console.log(`📁 Processing ${currentFiles.length} files...`);
-
         for (const file of currentFiles) {
           try {
-            console.log(`🔄 Processing file: ${file.name} (${file.mimeType})`);
 
-            // Handle images with OCR
+            // Handle images with OCR (with HEIC/HEIF conversion support)
             if (file.mimeType?.startsWith('image/')) {
               try {
-                console.log(`📸 Extracting text from image: ${file.name}`);
-                const ocrResponse = await chatbotAPI.extractTextFromImage(file);
+                const text = await runOCR(file);
 
-                if (ocrResponse.text && ocrResponse.text.trim().length > 0) {
+                if (text && text.trim().length > 0) {
                   fileContext += `\n\n**📷 Image: ${file.name}**\n`;
-                  fileContext += `*Extracted text:*\n${ocrResponse.text.trim()}\n`;
+                  fileContext += `*Extracted text:*\n${text.trim()}\n`;
                   successfulFiles.push(file.name);
-                  console.log(`✅ OCR successful for ${file.name}: ${ocrResponse.text.length} characters`);
                 } else {
                   fileContext += `\n\n**📷 Image: ${file.name}**\n`;
                   fileContext += `*No readable text detected in this image*\n`;
                   successfulFiles.push(file.name);
-                  console.log(`⚠️ No text detected in ${file.name}`);
                 }
               } catch (ocrError: any) {
                 console.error(`❌ OCR failed for ${file.name}:`, ocrError);
@@ -577,7 +569,6 @@ function ChatBot(): React.ReactElement {
             // Handle documents with upload
             else {
               try {
-                console.log(`📄 Uploading document: ${file.name}`);
                 const uploadResponse = await chatbotAPI.uploadFile(file, currentConversation?.id);
 
                 fileContext += `\n\n**📄 Document: ${file.name}**\n`;
@@ -588,7 +579,6 @@ function ChatBot(): React.ReactElement {
                 }
 
                 successfulFiles.push(file.name);
-                console.log(`✅ Document uploaded successfully: ${file.name}`);
               } catch (uploadError: any) {
                 console.error(`❌ Upload failed for ${file.name}:`, uploadError);
 
@@ -826,11 +816,12 @@ function ChatBot(): React.ReactElement {
 
       // Validate file type for images
       if (type === 'image' || type === 'camera') {
-        const imageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/bmp', 'image/tiff', 'image/webp'];
-        if (!imageTypes.includes(file.mimeType || '')) {
+        // Allow HEIC/HEIF too; we'll convert them prior to OCR
+        const imageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/bmp', 'image/tiff', 'image/webp', 'image/heic', 'image/heif'];
+        if (!imageTypes.includes((file.mimeType || '').toLowerCase())) {
           Alert.alert(
             "Invalid Image Type",
-            "Please select a valid image file (JPEG, PNG, BMP, TIFF, WEBP).",
+            "Please select a valid image file (JPEG, PNG, BMP, TIFF, WEBP, HEIC).",
             [{ text: "OK" }]
           );
           return;
@@ -854,9 +845,6 @@ function ChatBot(): React.ReactElement {
       // Add file to pending list
       setPendingFiles(prev => [...prev, file]);
       setAttachmentMenuVisible(false);
-
-      // Show success message
-      console.log(`✅ File added: ${file.name} (${file.mimeType}, ${file.size} bytes)`);
 
     } catch (err: any) {
       console.error("File selection error:", err);
@@ -907,28 +895,78 @@ const handleOCRModalOpen = () => {
   setShowChatOptions(false);
 };
 
+// ✅ Utility: Detect HEIC/HEIF images
+const isHeicLike = (file: any): boolean => {
+  const mt = (file?.mimeType || '').toLowerCase();
+  const name = (file?.name || '').toLowerCase();
+  return mt.includes('heic') || mt.includes('heif') || name.endsWith('.heic') || name.endsWith('.heif');
+};
+
+// ✅ Utility: Convert HEIC/HEIF to JPEG using expo-image-manipulator (no backend changes)
+const ensureOCRCompatibleImage = async (file: any): Promise<any> => {
+  try {
+    if (!file || !file.uri) return file;
+
+    if (!isHeicLike(file)) {
+      // Already a compatible format
+      return file;
+    }
+
+    // Load at runtime to avoid import issues
+    let ImageManipulator: any;
+    try {
+      ImageManipulator = require('expo-image-manipulator');
+    } catch (e) {
+      console.warn('expo-image-manipulator not available; cannot convert HEIC -> JPEG');
+      // Provide actionable error so user can retry with a different format
+      const err: any = new Error('Unsupported HEIC image; please convert to JPEG/PNG and try again.');
+      err.code = 'HEIC_CONVERSION_UNAVAILABLE';
+      throw err;
+    }
+
+    const { manipulateAsync, SaveFormat } = ImageManipulator;
+    const result = await manipulateAsync(
+      file.uri,
+      [],
+      { compress: 1, format: SaveFormat.JPEG }
+    );
+
+    const newName = (file.name || 'image').replace(/\.(heic|heif)$/i, '.jpg');
+    const converted = {
+      ...file,
+      uri: result.uri,
+      name: newName.endsWith('.jpg') ? newName : `${newName}.jpg`,
+      mimeType: 'image/jpeg',
+    };
+
+    return converted;
+  } catch (err) {
+    console.error('HEIC conversion failed:', err);
+    throw err;
+  }
+};
+
 // ✅ Shared OCR runner (used by both flows)
 const runOCR = async (file: any): Promise<string> => {
   try {
-    console.log(`📸 Sending ${file.name} to backend for OCR...`);
-    const response = await chatbotAPI.extractTextFromImage(file);
+    // Pre-convert HEIC/HEIF to JPEG to match backend OCR capabilities
+    const preparedFile = await ensureOCRCompatibleImage(file);
+    const response = await chatbotAPI.extractTextFromImage(preparedFile);
 
     if (response?.text?.trim()) {
       const cleanText = response.text.trim();
-      console.log(`✅ OCR successful for ${file.name}: ${cleanText.length} chars`);
       return cleanText;
     }
 
-    console.warn(`⚠️ No readable text detected in ${file.name}`);
     return "[No readable text detected in this image]";
   } catch (error: any) {
-    console.error(`❌ OCR failed for ${file.name}:`, error);
+    console.error(`❌ OCR failed for ${file?.name || 'image'}:`, error);
     const status = error.response?.status;
 
     if (status === 400) throw new Error("Invalid image format.");
     if (status === 413) throw new Error("Image too large (max 20MB).");
     if (status === 415) throw new Error("Unsupported image format.");
-    if (status === 422) throw new Error("Unreadable or corrupted image.");
+    if (status === 422) throw new Error("Unreadable image. If this is HEIC, it was not converted; please try a JPEG/PNG.");
     if (status === 503) throw new Error("OCR service temporarily unavailable.");
     throw new Error("Failed to process OCR. Please try again.");
   }
@@ -980,9 +1018,7 @@ const handleOCRProcess = async () => {
     const extractedText = await runOCR(ocrImage);
     setOCRResult(extractedText);
 
-    // ✅ Put the extracted text directly into the input box
-    setInput(extractedText);
-    setShowOCRModal(false); // optional - auto-close the modal
+    // Don't auto-populate input - let user decide via "Use in Chat" button
 
   } catch (error: any) {
     console.error("❌ OCR processing error:", error);
@@ -999,7 +1035,7 @@ const handleOCRCopyText = () => {
   if (!ocrResult) return;
   setInput(ocrResult);
   setShowOCRModal(false);
-  Alert.alert("Copied", "Extracted text copied to chat input");
+  Alert.alert("Added to Chat", "Extracted text added to chat input");
 };
 
 // ✅ Close modal & reset state
@@ -1027,7 +1063,6 @@ const handleOCR = async () => {
   setErrorMessage(null);
 
   try {
-    console.log(`🔍 Starting OCR for ${imageFiles.length} image(s)...`);
     let extractedText = "";
     const processedResults: { name: string; result: string }[] = [];
 

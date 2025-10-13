@@ -27,7 +27,7 @@ import {
 } from '../services/PasswordChangeService';
 import { RootStackParamList } from "../navigation/AppNavigator";
 import { userService } from "./services/userService";
-import { API_URL, API_ENDPOINTS } from "../../constants/ApiConfig";
+import { API_URL, API_ENDPOINTS, joinUrl } from "../../constants/ApiConfig";
 import { OnboardingColors } from "../../constants/Colors";
 import Toast from "react-native-toast-message";
 import { showSuccessToast, showErrorToast } from "../utils/ToastUtils";
@@ -122,7 +122,7 @@ const ChangePassword: React.FC = () => {
       setUserEmail(userInfo.email || "");
 
       // Send verification code to user's email for identity confirmation
-      const response = await fetch(`${API_URL}/users/send-password-change-verification/`, {
+  const response = await fetch(joinUrl(API_URL, '/users/send-password-change-verification/'), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -172,7 +172,7 @@ const ChangePassword: React.FC = () => {
     setLoading(true);
     try {
       // Verify the security code and change password
-      const response = await fetch(`${API_URL}/users/verify-password-change/`, {
+  const response = await fetch(joinUrl(API_URL, '/users/verify-password-change/'), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

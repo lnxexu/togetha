@@ -1,7 +1,7 @@
 import { Task, TaskFormData } from '../types/Task';
 import offlineStorageService, { OfflineTask, PendingSync } from './offlineStorageService';
 import networkService from './networkService';
-import { API_URL, API_ENDPOINTS } from '@/constants/ApiConfig';
+import { API_URL, API_ENDPOINTS, joinUrl } from '@/constants/ApiConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export interface SyncResult {
@@ -48,7 +48,7 @@ class SyncService {
       options.body = JSON.stringify(body);
     }
 
-    const response = await fetch(`${API_URL}${endpoint}`, options);
+  const response = await fetch(joinUrl(API_URL, endpoint), options);
 
     if (!response.ok) {
       throw new Error(`API Error: ${response.status} ${response.statusText}`);
@@ -64,12 +64,10 @@ class SyncService {
   // Sync all pending operations with the server
   async syncWithServer(): Promise<SyncResult> {
     if (this.isSyncing) {
-      console.log('Sync already in progress, skipping...');
       return { success: true, synced: 0, failed: 0, errors: [] };
     }
 
     if (!networkService.isOnline()) {
-      console.log('Device is offline, skipping sync');
       return { success: false, synced: 0, failed: 0, errors: [{ operation: 'sync', error: 'Device is offline' }] };
     }
 
@@ -82,7 +80,6 @@ class SyncService {
 
       // Then sync pending operations
       const pendingOps = await offlineStorageService.getPendingSyncOperations();
-      console.log(`Starting sync with ${pendingOps.length} pending operations`);
 
       for (const operation of pendingOps) {
         if (this.syncInProgress.has(operation.id)) {
@@ -95,7 +92,6 @@ class SyncService {
           await this.syncOperation(operation);
           await offlineStorageService.removePendingSync(operation.id);
           result.synced++;
-          console.log(`Successfully synced operation: ${operation.action} ${operation.id}`);
         } catch (error) {
           console.error(`Failed to sync operation ${operation.id}:`, error);
           result.failed++;
@@ -113,8 +109,6 @@ class SyncService {
 
       // Update sync status of all tasks to 'synced'
       await this.updateTasksSyncStatus();
-
-      console.log(`Sync completed: ${result.synced} synced, ${result.failed} failed`);
     } catch (error) {
       console.error('Sync process failed:', error);
       result.success = false;

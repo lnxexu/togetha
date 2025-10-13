@@ -1,4 +1,4 @@
-import { API_URL, API_ENDPOINTS } from '@/constants/ApiConfig';
+import { API_URL, API_ENDPOINTS, joinUrl } from '@/constants/ApiConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import offlineStorage, { OfflineNote, OfflineFolder } from './offlineStorage';
 import noteSyncService from './noteSyncService';
@@ -62,7 +62,7 @@ class OfflineNotesService {
       options.body = JSON.stringify(body);
     }
 
-    const response = await fetch(`${API_URL}${endpoint}`, options);
+  const response = await fetch(joinUrl(API_URL, endpoint), options);
 
     if (!response.ok) {
       throw new Error(`API Error: ${response.status} ${response.statusText}`);

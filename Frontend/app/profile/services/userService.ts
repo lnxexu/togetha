@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { API_URL, API_ENDPOINTS } from "../../../constants/ApiConfig";
+import { API_URL, API_ENDPOINTS, joinUrl } from "../../../constants/ApiConfig";
 
 export interface UserProfile {
   id?: string;
@@ -55,7 +55,7 @@ class UserService {
       body: data ? JSON.stringify(data) : undefined,
     };
 
-    const response = await fetch(`${API_URL}${endpoint}`, config);
+  const response = await fetch(joinUrl(API_URL, endpoint), config);
 
     // First check if response is OK
     if (!response.ok) {
@@ -170,7 +170,7 @@ class UserService {
     if (updates.profile?.birthdate) formData.append("profile.birthdate", updates.profile.birthdate);
 
     // Send the update request
-    const response = await fetch(`${API_URL}${API_ENDPOINTS.USER_PROFILE}`, {
+  const response = await fetch(joinUrl(API_URL, API_ENDPOINTS.USER_PROFILE), {
       method: "PATCH", // PATCH is better for partial updates
       headers: {
         Authorization: `Token ${token}`,
@@ -211,7 +211,7 @@ class UserService {
     } as any);
 
     // Uncommented and fixed the implementation to ensure a return value
-    const response = await fetch(`${API_URL}${API_ENDPOINTS.USER_PROFILE}`, {
+  const response = await fetch(joinUrl(API_URL, API_ENDPOINTS.USER_PROFILE), {
       method: "PATCH",
       headers: {
         Authorization: `Token ${token}`,
@@ -240,7 +240,7 @@ class UserService {
         throw new Error("Authentication token not found");
       }
 
-      const response = await fetch(`${API_URL}${API_ENDPOINTS.USER_PROFILE}`, {
+  const response = await fetch(joinUrl(API_URL, API_ENDPOINTS.USER_PROFILE), {
         method: "PATCH",
         headers: {
           Authorization: `Token ${token}`,
@@ -269,7 +269,7 @@ class UserService {
         throw new Error("No authentication token found");
       }
 
-      const response = await fetch(`${API_URL}${API_ENDPOINTS.CHANGE_PASSWORD}`, {
+  const response = await fetch(joinUrl(API_URL, API_ENDPOINTS.CHANGE_PASSWORD), {
         method: "POST",
         headers: {
           Authorization: `Token ${token}`,

@@ -213,7 +213,6 @@ const AddTask: React.FC = () => {
         // Note: handleTimeChange already merges the selected time into due_datetime using local hours.
         // Avoid setUTCHours here, which caused dates to shift backward for early-morning times.
       }
-      console.log(dueDate);
 
       // Get username from storage if possible
       let username = formData.user;
@@ -223,7 +222,7 @@ const AddTask: React.FC = () => {
           username = storedUsername;
         }
       } catch (e) {
-        console.warn("Could not retrieve username from storage");
+        // Could not retrieve username from storage
       }
 
       const payload: TaskFormData = {

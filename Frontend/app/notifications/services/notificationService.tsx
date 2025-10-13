@@ -1,4 +1,4 @@
-import { API_URL, API_ENDPOINTS } from '@/constants/ApiConfig';
+import { API_URL, API_ENDPOINTS, joinUrl } from '@/constants/ApiConfig';
 import { NotificationUtils, TaskNotification } from '../utils/NotificationUtils';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -7,7 +7,7 @@ export class NotificationService {
 
   static async saveNotification(notification: Omit<TaskNotification, 'id' | 'createdAt'>): Promise<void> {
     try {
-      const response = await fetch(`${this.baseUrl}${API_ENDPOINTS.NOTIFICATIONS}/save/`, {
+  const response = await fetch(joinUrl(this.baseUrl, `${API_ENDPOINTS.NOTIFICATIONS}/save/`), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -34,7 +34,7 @@ export class NotificationService {
       throw new Error('No auth token found');
     }
 
-    const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTIFICATIONS}`, {
+  const response = await fetch(joinUrl(API_URL, API_ENDPOINTS.NOTIFICATIONS), {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -61,7 +61,7 @@ export class NotificationService {
         throw new Error('No auth token found');
       }
 
-      const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTIFICATIONS}${notificationId}/mark_read/`, {
+  const response = await fetch(joinUrl(API_URL, `${API_ENDPOINTS.NOTIFICATIONS}${notificationId}/mark_read/`), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -88,7 +88,7 @@ export class NotificationService {
         throw new Error('No auth token found');
       }
 
-      const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTIFICATIONS}${notificationId}/`, {
+  const response = await fetch(joinUrl(API_URL, `${API_ENDPOINTS.NOTIFICATIONS}${notificationId}/`), {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -115,7 +115,7 @@ export class NotificationService {
         throw new Error('No auth token found');
       }
 
-      const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTIFICATIONS}unread_count/`, {
+  const response = await fetch(joinUrl(API_URL, `${API_ENDPOINTS.NOTIFICATIONS}unread_count/`), {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',

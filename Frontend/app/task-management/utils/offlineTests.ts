@@ -6,12 +6,17 @@ import networkService from '../services/networkService';
 import syncService from '../services/syncService';
 import taskService from '../services/taskService';
 
+// Set to false in production to disable test logging
+const ENABLE_TEST_LOGS = false;
+const testLog = (...args: any[]) => { if (ENABLE_TEST_LOGS) testLog(...args); };
+const testError = (...args: any[]) => { if (ENABLE_TEST_LOGS) testError(...args); };
+
 // Example test functions for offline functionality
 export const testOfflineFunctionality = {
   
   // Test creating tasks offline
   async testCreateTaskOffline() {
-    console.log('Testing offline task creation...');
+    testLog('Testing offline task creation...');
     
     try {
       const taskData = {
@@ -24,23 +29,23 @@ export const testOfflineFunctionality = {
       };
 
       const newTask = await taskService.createTask(taskData);
-      console.log('✅ Task created offline:', newTask);
+      testLog('✅ Task created offline:', newTask);
       
       // Verify it's stored locally
       const localTasks = await offlineStorageService.getOfflineTasks();
       const foundTask = localTasks.find(t => t.id === newTask.id);
-      console.log('✅ Task found in local storage:', !!foundTask);
+      testLog('✅ Task found in local storage:', !!foundTask);
       
       return newTask;
     } catch (error) {
-      console.error('❌ Error creating offline task:', error);
+      testError('❌ Error creating offline task:', error);
       throw error;
     }
   },
 
   // Test updating tasks offline
   async testUpdateTaskOffline() {
-    console.log('Testing offline task update...');
+    testLog('Testing offline task update...');
     
     try {
       // First create a task
@@ -52,98 +57,98 @@ export const testOfflineFunctionality = {
         completed: true
       });
       
-      console.log('✅ Task updated offline:', updatedTask);
+      testLog('✅ Task updated offline:', updatedTask);
       
       // Verify changes in local storage
       const localTask = await offlineStorageService.getOfflineTaskById(task.id);
-      console.log('✅ Updated task in local storage:', localTask?.title === 'Updated Offline Task');
+      testLog('✅ Updated task in local storage:', localTask?.title === 'Updated Offline Task');
       
       return updatedTask;
     } catch (error) {
-      console.error('❌ Error updating offline task:', error);
+      testError('❌ Error updating offline task:', error);
       throw error;
     }
   },
 
   // Test getting all tasks offline
   async testGetAllTasksOffline() {
-    console.log('Testing offline task retrieval...');
+    testLog('Testing offline task retrieval...');
     
     try {
       const tasks = await taskService.getAllTasks();
-      console.log(`✅ Retrieved ${tasks.length} tasks offline`);
+      testLog(`✅ Retrieved ${tasks.length} tasks offline`);
       
       // Verify they're coming from local storage when offline
       if (!networkService.isOnline()) {
         const localTasks = await offlineStorageService.getOfflineTasks();
-        console.log('✅ Offline mode: tasks from local storage:', localTasks.length === tasks.length);
+        testLog('✅ Offline mode: tasks from local storage:', localTasks.length === tasks.length);
       }
       
       return tasks;
     } catch (error) {
-      console.error('❌ Error getting offline tasks:', error);
+      testError('❌ Error getting offline tasks:', error);
       throw error;
     }
   },
 
   // Test sync when back online
   async testSyncWhenOnline() {
-    console.log('Testing sync when back online...');
+    testLog('Testing sync when back online...');
     
     try {
       if (!networkService.isOnline()) {
-        console.log('⚠️ Device is offline, cannot test sync');
+        testLog('⚠️ Device is offline, cannot test sync');
         return false;
       }
 
       const result = await syncService.syncWithServer();
-      console.log('✅ Sync result:', result);
+      testLog('✅ Sync result:', result);
       
       if (result.success) {
-        console.log(`✅ Successfully synced ${result.synced} operations`);
+        testLog(`✅ Successfully synced ${result.synced} operations`);
         if (result.failed > 0) {
-          console.log(`⚠️ ${result.failed} operations failed to sync`);
+          testLog(`⚠️ ${result.failed} operations failed to sync`);
         }
       } else {
-        console.log('❌ Sync failed:', result.errors);
+        testLog('❌ Sync failed:', result.errors);
       }
       
       return result.success;
     } catch (error) {
-      console.error('❌ Error during sync:', error);
+      testError('❌ Error during sync:', error);
       throw error;
     }
   },
 
   // Test network status monitoring
   async testNetworkStatusMonitoring() {
-    console.log('Testing network status monitoring...');
+    testLog('Testing network status monitoring...');
     
     try {
       const status = await networkService.getCurrentNetworkStatus();
-      console.log('✅ Current network status:', status);
+      testLog('✅ Current network status:', status);
       
       // Test listener
       const unsubscribe = networkService.addNetworkStatusListener((newStatus) => {
-        console.log('📡 Network status changed:', newStatus);
+        testLog('📡 Network status changed:', newStatus);
       });
       
       // Clean up listener after 10 seconds
       setTimeout(() => {
         unsubscribe();
-        console.log('✅ Network listener cleaned up');
+        testLog('✅ Network listener cleaned up');
       }, 10000);
       
       return status;
     } catch (error) {
-      console.error('❌ Error testing network monitoring:', error);
+      testError('❌ Error testing network monitoring:', error);
       throw error;
     }
   },
 
   // Test local storage operations
   async testLocalStorageOperations() {
-    console.log('Testing local storage operations...');
+    testLog('Testing local storage operations...');
     
     try {
       // Test saving and retrieving tasks
@@ -156,10 +161,10 @@ export const testOfflineFunctionality = {
       });
 
       await offlineStorageService.saveOfflineTask(testTask);
-      console.log('✅ Task saved to local storage');
+      testLog('✅ Task saved to local storage');
 
       const retrievedTask = await offlineStorageService.getOfflineTaskById(testTask.id);
-      console.log('✅ Task retrieved from local storage:', !!retrievedTask);
+      testLog('✅ Task retrieved from local storage:', !!retrievedTask);
 
       // Test pending sync operations
       await offlineStorageService.addPendingSync({
@@ -169,23 +174,23 @@ export const testOfflineFunctionality = {
       });
 
       const pendingOps = await offlineStorageService.getPendingSyncOperations();
-      console.log('✅ Pending sync operations:', pendingOps.length);
+      testLog('✅ Pending sync operations:', pendingOps.length);
 
       // Clean up
       await offlineStorageService.deleteOfflineTask(testTask.id);
       await offlineStorageService.clearPendingSyncOperations();
-      console.log('✅ Local storage cleaned up');
+      testLog('✅ Local storage cleaned up');
       
       return true;
     } catch (error) {
-      console.error('❌ Error testing local storage:', error);
+      testError('❌ Error testing local storage:', error);
       throw error;
     }
   },
 
   // Run all tests
   async runAllTests() {
-    console.log('🧪 Starting offline functionality tests...');
+    testLog('🧪 Starting offline functionality tests...');
     
     const results = {
       localStorage: false,
@@ -206,18 +211,18 @@ export const testOfflineFunctionality = {
       if (networkService.isOnline()) {
         results.sync = await this.testSyncWhenOnline();
       } else {
-        console.log('⚠️ Skipping sync test - device is offline');
+        testLog('⚠️ Skipping sync test - device is offline');
         results.sync = true; // Consider it passed since we can't test while offline
       }
 
-      console.log('🎉 Test results:', results);
+      testLog('🎉 Test results:', results);
       
       const passed = Object.values(results).every(result => result === true);
-      console.log(passed ? '✅ All tests passed!' : '❌ Some tests failed');
+      testLog(passed ? '✅ All tests passed!' : '❌ Some tests failed');
       
       return { passed, results };
     } catch (error) {
-      console.error('❌ Test suite failed:', error);
+      testError('❌ Test suite failed:', error);
       return { passed: false, results, error };
     }
   }

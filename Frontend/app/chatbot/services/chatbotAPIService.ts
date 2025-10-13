@@ -409,8 +409,6 @@ class ChatbotAPIService {
       const token = await this.getAuthToken();
       const formData = new FormData();
       
-      console.log("📁 Uploading file:", file.name, "Type:", file.mimeType, "Size:", file.size);
-      
       formData.append("file", {
         uri: file.uri,
         name: file.name,
@@ -420,8 +418,6 @@ class ChatbotAPIService {
       if (conversationId) {
         formData.append("conversation_id", conversationId);
       }
-
-      console.log("🔗 Upload URL:", `${API_URL}${API_ENDPOINTS.CHATBOT_UPLOAD_PDF}`);
 
       // Use extended timeout for file uploads (3 minutes)
       const response = await apiClient.post(
@@ -433,7 +429,6 @@ class ChatbotAPIService {
         180000 // 3 minutes timeout for file processing
       );
       
-      console.log("✅ Upload successful:", response);
       return response;
     } catch (error: any) {
       console.error("❌ Upload error details:", {
@@ -477,7 +472,7 @@ async extractTextFromImage(file: any): Promise<{ id: number; text: string }> {
       "Content-Type": "multipart/form-data",
     };
 
-    const response = await fetch(`${API_URL}chatbot/ocr/`, {
+    const response = await fetch(`${API_URL}/chatbot/ocr/`, {
       method: "POST",
       headers,
       body: formData,

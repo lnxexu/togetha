@@ -219,8 +219,8 @@ const StorageData: React.FC = () => {
       'Choose export format:',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'JSON', onPress: () => console.log('Export as JSON') },
-        { text: 'CSV', onPress: () => console.log('Export as CSV') },
+        { text: 'JSON', onPress: () => {} },
+        { text: 'CSV', onPress: () => {} },
       ]
     );
   };

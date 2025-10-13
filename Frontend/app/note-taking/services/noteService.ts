@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_URL, API_ENDPOINTS } from '@/constants/ApiConfig';
+import { API_URL, API_ENDPOINTS, joinUrl } from '@/constants/ApiConfig';
 import { networkService } from './networkService';
 
 export interface Note {
@@ -154,8 +154,8 @@ class NoteService {
     }
 
     const url = isNewNote
-      ? `${API_URL}${API_ENDPOINTS.NOTES}`
-      : `${API_URL}${API_ENDPOINTS.NOTES}${note.id}/`;
+      ? joinUrl(API_URL, API_ENDPOINTS.NOTES)
+      : joinUrl(API_URL, `${API_ENDPOINTS.NOTES}${note.id}/`);
 
     const method = isNewNote ? 'POST' : 'PUT';
 

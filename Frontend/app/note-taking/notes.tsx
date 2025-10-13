@@ -432,8 +432,6 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
     const unorganizedCount = notes.filter((note) => !note.folderId).length;
     counts["unorganized"] = unorganizedCount;
 
-    console.log("Calculated folder counts:", counts); // ✅ Add logging to debug
-
     setFolderCounts(counts);
   }, [notes, folders]);
 
@@ -1008,12 +1006,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
           // For PDF files, download to local storage if it's a remote URL
           if (documentType === "pdf" && isRemoteURL(documentUrl)) {
             try {
-              console.log(
-                "PDF is remote URL, downloading to local storage:",
-                documentUrl
-              );
               finalDocumentUri = await getLocalPDFPath(documentUrl);
-              console.log("PDF downloaded to local path:", finalDocumentUri);
             } catch (error) {
               console.error("Failed to download PDF to local storage:", error);
               // Fall back to original URL - PDFAnnotationViewer will handle the error
@@ -1084,13 +1077,6 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
             parsedDrawingData = note.drawing_data;
             strokesArray = parsedDrawingData.strokes || [];
           }
-
-          console.log("Parsed drawing data successfully:", {
-            originalType: typeof note.drawing_data,
-            isString: typeof note.drawing_data === "string",
-            parsedStrokesCount: strokesArray.length,
-            firstStrokeSample: strokesArray[0],
-          });
         } catch (error) {
           console.error("Failed to parse drawing data:", error);
           console.error("Raw drawing_data:", note.drawing_data);
@@ -1115,14 +1101,6 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
           // Also include the strokes at root level for importDrawing compatibility
           ...parsedDrawingData,
         };
-
-        console.log("Opening drawing note with data:", {
-          noteId: note.id,
-          title: drawingData.title,
-          strokeCount: strokesArray.length,
-          hasValidStrokes: strokesArray.length > 0,
-          template: drawingData.template,
-        });
 
         navigation.navigate("DrawingEditor", {
           noteId: note.id,
@@ -1153,13 +1131,6 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
           createdAt: note.createdAt?.toISOString(),
           updatedAt: note.updatedAt?.toISOString(),
         };
-
-        console.log("Opening text note with data:", {
-          noteId: note.id,
-          title: noteForEditor.title,
-          hasContent: !!noteForEditor.content,
-          hasFormattedContent: !!noteForEditor.formatted_content,
-        });
 
         navigation.navigate("NoteEditor", {
           noteId: note.id,
@@ -2083,15 +2054,7 @@ const handleCreateFolder = async () => {
                   // For PDF files, download to local storage if it's a remote URL
                   if (docType === "pdf" && isRemoteURL(documentUrl)) {
                     try {
-                      console.log(
-                        "PDF is remote URL, downloading to local storage:",
-                        documentUrl
-                      );
                       finalDocumentUri = await getLocalPDFPath(documentUrl);
-                      console.log(
-                        "PDF downloaded to local path:",
-                        finalDocumentUri
-                      );
                     } catch (error) {
                       console.error(
                         "Failed to download PDF to local storage:",
@@ -2317,10 +2280,6 @@ const handleCreateFolder = async () => {
                     <TouchableOpacity
                       onPress={() => {
                         handleAddToFolder(item.id);
-                        console.log(
-                          "Add to/Move to Folder pressed for note:",
-                          item.id
-                        );
                         setActiveNoteOptions(null);
                         setDropdownPosition(null);
                       }}
@@ -2409,10 +2368,6 @@ const handleCreateFolder = async () => {
                   <TouchableOpacity
                     onPress={() => {
                       handleDeleteNote(item.id);
-                      console.log(
-                        "Delete Note/Drawing pressed for note:",
-                        item.id
-                      );
                       setActiveNoteOptions(null);
                       setDropdownPosition(null);
                     }}

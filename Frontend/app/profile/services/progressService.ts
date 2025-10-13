@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { API_URL, API_ENDPOINTS } from "../../../constants/ApiConfig";
+import { API_URL, API_ENDPOINTS, joinUrl } from "../../../constants/ApiConfig";
 import usageTrackingService, { UsageStats } from "../../services/usageTrackingService";
 
 export interface ProgressData {
@@ -104,7 +104,7 @@ class ProgressService {
       body: data ? JSON.stringify(data) : undefined,
     };
 
-    const response = await fetch(`${API_URL}${endpoint}`, config);
+  const response = await fetch(joinUrl(API_URL, endpoint), config);
 
     if (!response.ok) {
       const contentType = response.headers.get("content-type");

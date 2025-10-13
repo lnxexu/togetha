@@ -74,6 +74,13 @@ function getOllamaApiUrl(): string {
 export const API_URL = getApiBaseUrl();
 export const OLLAMA_API_URL = getOllamaApiUrl();
 
+// Safely join base URL and path to avoid accidental double slashes
+export function joinUrl(base: string, path: string): string {
+    const trimmedBase = base.replace(/\/+$/, '');
+    const trimmedPath = path.replace(/^\/+/, '');
+    return `${trimmedBase}/${trimmedPath}`;
+}
+
 // API endpoint paths
 export const API_ENDPOINTS = {
     // Task Manager endpoints

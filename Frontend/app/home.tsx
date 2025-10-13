@@ -272,7 +272,6 @@ export default function Home() {
 
         const token = await AsyncStorage.getItem("authToken");
         if (!token) {
-          console.log("No auth token found");
           return;
         }
 
@@ -353,7 +352,7 @@ export default function Home() {
                 }
               }
             } catch (error) {
-              console.warn("Error processing response:", error);
+              // Error processing response
             }
           }
         }
@@ -573,7 +572,7 @@ export default function Home() {
           );
         } catch (error: any) {
           if (error.name === "AbortError") {
-            console.warn("Fetch tasks request timed out");
+            // Request timed out
           } else {
             throw error;
           }
@@ -684,7 +683,7 @@ export default function Home() {
           );
         } catch (error: any) {
           if (error.name === "AbortError") {
-            console.warn("Fetch folders request timed out");
+            // Request timed out
           } else {
             throw error;
           }

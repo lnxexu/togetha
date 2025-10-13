@@ -82,7 +82,6 @@ const LanguageSettings: React.FC = () => {
             text: 'OK',
             onPress: () => {
               // In a real app, you would restart or reload the app here
-              console.log('App would restart to apply language changes');
             }
           }
         ]

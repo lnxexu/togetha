@@ -22,7 +22,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from "react-native-toast-message";
 import type { RootStackParamList } from "../navigation/AppNavigator";
-import { API_URL, API_ENDPOINTS } from "../../constants/ApiConfig";
+import { API_URL, API_ENDPOINTS, joinUrl } from "../../constants/ApiConfig";
 import { OnboardingColors } from "../../constants/Colors";
 import { showSuccessToast, showErrorToast } from "../utils/ToastUtils";
 import { getEnhancedSafeAreaConfig, getStatusBarConfig, getSafeAreaContainerStyle } from '../utils/SafeAreaUtils';
@@ -114,7 +114,7 @@ export default function ForgotPassword() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 15000); // Increased timeout
 
-      const response = await fetch(`${API_URL}${API_ENDPOINTS.FORGOT_PASSWORD}`, {
+  const response = await fetch(joinUrl(API_URL, API_ENDPOINTS.FORGOT_PASSWORD), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -214,7 +214,7 @@ export default function ForgotPassword() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-      const response = await fetch(`${API_URL}${API_ENDPOINTS.VERIFY_RESET_CODE}`, {
+  const response = await fetch(joinUrl(API_URL, API_ENDPOINTS.VERIFY_RESET_CODE), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

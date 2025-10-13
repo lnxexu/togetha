@@ -72,12 +72,10 @@ class UtilityService {
           try {
             await FileSystem.deleteAsync(`${documentDir}${tempFile}`, { idempotent: true });
           } catch (fileError) {
-            console.warn(`Could not delete temp file ${tempFile}:`, fileError);
+            // Could not delete temp file
           }
         }
       }
-
-      console.log('Cache cleared successfully');
     } catch (error) {
       console.error('Error clearing cache:', error);
       throw new Error('Failed to clear cache. Some files may still be cached.');
@@ -104,7 +102,7 @@ class UtilityService {
             totalSize += new Blob([value]).size;
           }
         } catch (error) {
-          console.warn(`Could not read cache item ${key}:`, error);
+          // Could not read cache item
         }
       }
 
@@ -260,7 +258,7 @@ async function getCacheInfo() {
           totalSize += new Blob([value]).size;
         }
       } catch (error) {
-        console.warn(`Could not read cache item ${key}:`, error);
+        // Could not read cache item
       }
     }
 

@@ -40,7 +40,6 @@ class TaskService {
     }
 
     try {
-      console.log(`Making ${method} request to ${API_URL}${endpoint}`);
       const response = await fetch(`${API_URL}${endpoint}`, options);
 
       if (!response.ok) {

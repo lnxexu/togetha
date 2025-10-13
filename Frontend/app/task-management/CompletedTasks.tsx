@@ -42,12 +42,10 @@ const CompletedTasks: React.FC = () => {
   const loadCompletedTasks = async () => {
     try {
       setIsLoading(true);
-      console.log("Fetching completed tasks from the server...");
 
       const allTasks = await taskService.getAllTasks();
       const completed = allTasks.filter(task => task.completed);
 
-      console.log(`Successfully loaded ${completed.length} completed tasks from the server`);
       setCompletedTasks(completed);
     } catch (error) {
       console.error("Error loading completed tasks:", error);
