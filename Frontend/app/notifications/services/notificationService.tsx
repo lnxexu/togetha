@@ -1,4 +1,4 @@
-import { API_URL, API_ENDPOINTS, joinUrl } from '@/constants/ApiConfig';
+import { API_URL, API_ENDPOINTS, joinUrl } from '../../../constants/ApiConfig';
 import { NotificationUtils, TaskNotification } from '../utils/NotificationUtils';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 

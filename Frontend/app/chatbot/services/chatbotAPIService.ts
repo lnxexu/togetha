@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_URL, API_ENDPOINTS } from "../../../constants/ApiConfig";
+import offlineChatService from "./offlineServices";
 
 async function getAuthHeaders() {
   const token = await AsyncStorage.getItem("authToken");
@@ -380,6 +381,20 @@ class ChatbotAPIService {
       );
       return response;
     } catch (error: any) {
+      // Check if it's a network error and offline model is available
+      const isNetworkError = error.message?.includes('connect') || 
+                            error.message?.includes('Network') || 
+                            error.message?.includes('timeout') ||
+                            error.code === 'NETWORK_ERROR';
+      
+      if (isNetworkError) {
+        const modelDownloaded = await offlineChatService.isModelDownloaded();
+        if (modelDownloaded) {
+          console.log('📡 Network error detected, switching to offline mode...');
+          return await offlineChatService.sendMessage(message, conversationId, messages);
+        }
+      }
+      
       this.handleNetworkError(error, "Sending message");
       throw error;
     }

@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "llama.rn": "^0.7.1",
+    "react-native-fs": "^2.20.0"
+  }
+ 
+}

@@ -129,4 +129,8 @@ declare module 'react-native-fs' {
   export function exists(filepath: string): Promise<boolean>;
   export function copyFile(filepath: string, destPath: string): Promise<void>;
   export const DocumentDirectoryPath: string;
+
+    export function downloadFile(arg0: { fromUrl: string; toFile: string; progressDivider: number; begin: (res: any) => void; progress: (res: any) => void; }) {
+        throw new Error("Function not implemented.");
+    }
 }

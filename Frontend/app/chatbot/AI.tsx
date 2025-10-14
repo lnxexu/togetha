@@ -30,6 +30,7 @@ import {chatbotAPI,
   ConversationFile,
   ChatResponse 
 } from "./services/chatbotAPIService";
+import offlineChatService from "./services/offlineServices";
 
 type Role = "user" | "assistant";
 
@@ -93,12 +94,20 @@ function ChatBot(): React.ReactElement {
   const [ocrResult, setOCRResult] = useState<string>("");
   const [ocrLoading, setOCRLoading] = useState(false);
 
+  // Offline mode states
+  const [isOfflineMode, setIsOfflineMode] = useState(false);
+  const [modelDownloaded, setModelDownloaded] = useState(false);
+  const [downloadingModel, setDownloadingModel] = useState(false);
+
 
   useEffect(() => {
   const initChat = async () => {
     try {
       await loadConversations();        
-      await restoreActiveConversation(); 
+      await restoreActiveConversation();
+      // Check if offline model is downloaded
+      const downloaded = await offlineChatService.isModelDownloaded();
+      setModelDownloaded(downloaded);
     } catch (error) {
       console.warn("Failed to initialize chat:", error);
     }
@@ -467,21 +476,50 @@ function ChatBot(): React.ReactElement {
       // Add the new user message
       formattedMessages.push({ role: "user", content: messageContent });
 
-      const response = await chatbotAPI.sendMessage(
-        messageContent, 
-        currentConversation?.id, 
-        formattedMessages
-      );
+      // Try online API first
+      try {
+        const response = await chatbotAPI.sendMessage(
+          messageContent, 
+          currentConversation?.id, 
+          formattedMessages
+        );
 
-      return {
-        content: response.content,
-        source: response.source,
-        conversation_id: response.conversation_id,
-        message_id: response.message_id
-      };
+        // Update offline mode status based on response source
+        setIsOfflineMode(false);
+        setIsOnline(true);
+
+        return {
+          content: response.content,
+          source: response.source,
+          conversation_id: response.conversation_id,
+          message_id: response.message_id
+        };
+      } catch (apiError: any) {
+        // If online API fails and offline model is available, use offline mode
+        if (modelDownloaded) {
+          console.log("📴 Online API failed, switching to offline mode...");
+          setIsOfflineMode(true);
+          setIsOnline(false);
+
+          const offlineResponse = await offlineChatService.sendMessage(
+            messageContent,
+            currentConversation?.id,
+            formattedMessages
+          );
+
+          return {
+            content: `🔌 [Offline Mode]\n\n${offlineResponse.content}`,
+            source: 'offline',
+            conversation_id: offlineResponse.conversation_id,
+            message_id: offlineResponse.message_id
+          };
+        }
+
+        // No offline model available, throw the original error
+        throw apiError;
+      }
     } catch (err: any) {
       console.error("fetchOllamaMessage error:", err);
-      // Re-throw with more specific error message
       throw new Error(err.message || "Failed to send message. Please check your connection and try again.");
     }
   };
@@ -521,11 +559,11 @@ function ChatBot(): React.ReactElement {
   const handleSend = async () => {
     if (!input.trim() && pendingFiles.length === 0) return;
 
-    // Check if we're online
-    if (!isOnline) {
+    // Check if we're online or have offline model
+    if (!isOnline && !modelDownloaded) {
       Alert.alert(
         "Connection Error", 
-        "You appear to be offline. Please check your internet connection and try again.",
+        "You appear to be offline and no offline model is available. Please check your internet connection or download the offline model.",
         [
           { text: "Retry", onPress: () => loadConversations() },
           { text: "Cancel", style: "cancel" }
@@ -900,6 +938,33 @@ function ChatBot(): React.ReactElement {
     }
   };
 
+  const handleDownloadOfflineModel = async () => {
+    if (downloadingModel) return;
+    
+    Alert.alert(
+      "Download Offline Model",
+      "This will download a 1.5GB AI model for offline use. Continue?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Download",
+          onPress: async () => {
+            try {
+              setDownloadingModel(true);
+              await offlineChatService.preloadModel();
+              setModelDownloaded(true);
+              Alert.alert("Success", "Offline model downloaded successfully!");
+            } catch (error: any) {
+              Alert.alert("Error", error.message || "Failed to download model");
+            } finally {
+              setDownloadingModel(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
   // ✅ Opens the OCR modal manually
 const handleOCRModalOpen = () => {
   setShowOCRModal(true);
@@ -1196,7 +1261,33 @@ const handleOCR = async () => {
                   <Ionicons name="trash" size={20} color="#EF4444" />
                   <Text style={[styles.chatOptionText, { color: "#EF4444" }]}>Delete Conversation</Text>
                 </TouchableOpacity>
+              </>
+            )}
 
+            <TouchableOpacity 
+              style={styles.chatOption} 
+              onPress={handleDownloadOfflineModel}
+              disabled={downloadingModel || modelDownloaded}
+            >
+              <Ionicons 
+                name={modelDownloaded ? "checkmark-circle" : "cloud-download"} 
+                size={20} 
+                color={modelDownloaded ? "#10B981" : "#6B46C1"} 
+              />
+              <Text style={styles.chatOptionText}>
+                {downloadingModel ? "Downloading..." : modelDownloaded ? "Offline Model Ready" : "Download Offline Model"}
+              </Text>
+            </TouchableOpacity>
+
+            {isOfflineMode && (
+              <View style={styles.offlineBadge}>
+                <Ionicons name="cloud-offline" size={16} color="#F59E0B" />
+                <Text style={styles.offlineBadgeText}>Offline Mode Active</Text>
+              </View>
+            )}
+
+            {currentConversation && (
+              <>
                 <TouchableOpacity 
                   style={styles.chatOption} 
                   onPress={resetCurrentConversation}
@@ -2620,6 +2711,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#1E293B",
     fontWeight: "500",
+  },
+  offlineBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: "#FEF3C7",
+    borderRadius: 8,
+    marginHorizontal: 8,
+    marginVertical: 4,
+  },
+  offlineBadgeText: {
+    marginLeft: 8,
+    fontSize: 13,
+    color: "#92400E",
+    fontWeight: "600",
   },
 
   // Messages Container

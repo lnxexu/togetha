@@ -64,6 +64,7 @@ class ChatView(APIView):
                 "- If documents are uploaded, they are available for analysis throughout the conversation"
                 "- Never reference previous conversations or unrelated topics"
                 "- If you don't have enough context, ask for clarification"
+                "- If the user asks about "
                 ""
                 "FILE HANDLING:"
                 "- When text is extracted from images (OCR), treat it as direct content from the user and ignore it as the pytesseract source will be processed separatelySS"

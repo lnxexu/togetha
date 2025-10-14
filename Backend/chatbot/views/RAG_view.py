@@ -2,13 +2,9 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 import numpy as np
-
-
-# import the shared embedding model from rag helper
 from .. import rag as rag_helper
 from ..models import DocumentChunk
 
-# views/rag_chat.py
 class ChatRAGView(APIView):
     def post(self, request):
         query = request.data.get("query")

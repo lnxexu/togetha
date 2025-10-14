@@ -46,6 +46,7 @@
     "expo-splash-screen": "~0.30.10",
     "expo-status-bar": "~2.2.3",
     "expo-web-browser": "~14.2.0",
+    "llama.rn": "^0.7.1",
     "pdf-lib": "^1.17.1",
     "perfect-freehand": "^1.2.2",
     "react": "19.0.0",
