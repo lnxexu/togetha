@@ -338,12 +338,43 @@ class PushNotificationServiceImpl implements PushNotificationService {
   }
 
   async scheduleTaskCompletionCelebration(taskTitle: string, taskId?: string): Promise<string> {
-    return this.schedulePushNotification(
-      'Task Completed! 🎉',
-      `Great job completing "${taskTitle}"!`,
-      { seconds: 2 },
-      taskId ? { type: 'task', action: 'open_task', taskId } : undefined
-    );
+    // When completing multiple tasks rapidly, schedule notifications in a short
+    // sequence so the OS shows each one instead of coalescing them.
+    try {
+      const QUEUE_KEY = 'completionNotificationNextTime';
+      const SPACING_MS = 1200; // time between banners
+      const BASE_DELAY_MS = 500; // minimal initial delay
+
+      const now = Date.now();
+      const raw = await AsyncStorage.getItem(QUEUE_KEY);
+      const nextTime = raw ? parseInt(raw, 10) : 0;
+
+      // Schedule at least BASE_DELAY_MS in the future, or after the queued time
+      const scheduledAt = Math.max(now + BASE_DELAY_MS, isFinite(nextTime) ? nextTime : 0);
+
+      // Update queue for the next completion
+      await AsyncStorage.setItem(QUEUE_KEY, String(scheduledAt + SPACING_MS));
+
+      // Small jitter to avoid exact same timestamp collisions
+      const jitter = Math.floor(Math.random() * 150);
+      const triggerDate = new Date(scheduledAt + jitter);
+
+      return this.schedulePushNotification(
+        'Task Completed! 🎉',
+        `Great job completing "${taskTitle}"!`,
+        { date: triggerDate },
+        taskId ? { type: 'task', action: 'open_task', taskId } : undefined
+      );
+    } catch (e) {
+      // Fallback to immediate schedule if queue handling fails
+      console.warn('Falling back to immediate completion notification:', e);
+      return this.schedulePushNotification(
+        'Task Completed! 🎉',
+        `Great job completing "${taskTitle}"!`,
+        { seconds: 2 },
+        taskId ? { type: 'task', action: 'open_task', taskId } : undefined
+      );
+    }
   }
 
   async scheduleInactivityReminder(): Promise<string> {

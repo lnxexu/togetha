@@ -107,11 +107,13 @@ export default function Notifications() {
         task_details: item.task_details,
       }));
       
-      // Sort notifications properly: by scheduled_time first (desc), then by timestamp (desc)
-      // This ensures newest notifications appear at the top
+      // Sort notifications to show newest first
+      // Priority: Use timestamp as the primary sort field (when notification was created)
+      // This ensures newly added notifications always appear at the top
       const sortedNotifications = formattedNotifications.sort((a, b) => {
-        const aTime = new Date(a.scheduled_time || a.timestamp).getTime();
-        const bTime = new Date(b.scheduled_time || b.timestamp).getTime();
+        // Use timestamp as primary, fallback to scheduled_time if timestamp is missing, then use current time
+        const aTime = new Date(a.timestamp || a.scheduled_time || new Date()).getTime();
+        const bTime = new Date(b.timestamp || b.scheduled_time || new Date()).getTime();
         return bTime - aTime; // Descending order (newest first)
       });
       
@@ -334,6 +336,13 @@ export default function Notifications() {
         return true;
       });
     }
+    
+    // Re-sort filtered results to maintain newest-first order
+    filtered.sort((a, b) => {
+      const aTime = new Date(a.timestamp || a.scheduled_time || new Date()).getTime();
+      const bTime = new Date(b.timestamp || b.scheduled_time || new Date()).getTime();
+      return bTime - aTime;
+    });
     
     setNotifications(filtered);
   };

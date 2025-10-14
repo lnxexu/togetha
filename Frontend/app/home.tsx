@@ -406,6 +406,142 @@ export default function Home() {
     }
   };
 
+  // Fetch priority tasks - moved outside useEffect so it can be called from handleTaskAction
+  const fetchTasks = async () => {
+    try {
+      setLoadingTasks(true);
+      setTasksError(null);
+
+      // Try to get cached tasks first for immediate display
+      const cachedTasks = await AsyncStorage.getItem("priorityTasks");
+      if (cachedTasks) {
+        setPriorityTasks(JSON.parse(cachedTasks));
+      }
+
+      const token = await AsyncStorage.getItem("authToken");
+      if (!token) {
+        navigation.navigate("Login");
+        return;
+      }
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      try {
+        const response = await fetch(
+          `${API_URL}${API_ENDPOINTS.TASKS}?filter=active`,
+          {
+            headers: {
+              Authorization: `Token ${token}`,
+              "Cache-Control": "no-cache",
+            },
+            signal: controller.signal,
+          }
+        );
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch tasks");
+        }
+
+        const tasks = await response.json();
+
+        // Transform the tasks data with proper priority sorting
+        const transformedTasks = tasks
+          .filter((task: any) => !task.completed)
+          .sort((a: any, b: any) => {
+            // Sort by priority: urgent-important > not-urgent-important > urgent-not-important > not-urgent-not-important
+            const priorityOrder = {
+              "urgent-important": 4,
+              "not-urgent-important": 3,
+              "urgent-not-important": 2,
+              "not-urgent-not-important": 1,
+            };
+
+            const aPriority =
+              priorityOrder[a.priority as keyof typeof priorityOrder] || 1;
+            const bPriority =
+              priorityOrder[b.priority as keyof typeof priorityOrder] || 1;
+
+            if (aPriority !== bPriority) {
+              return bPriority - aPriority;
+            }
+
+            // If same priority, sort by due date (earliest first)
+            if (a.due_datetime && b.due_datetime) {
+              return (
+                new Date(a.due_datetime).getTime() -
+                new Date(b.due_datetime).getTime()
+              );
+            }
+
+            // If one has due date and other doesn't, prioritize the one with due date
+            if (a.due_datetime && !b.due_datetime) return -1;
+            if (!a.due_datetime && b.due_datetime) return 1;
+
+            // If neither has due date, sort by created date (newest first)
+            return (
+              new Date(b.created_at).getTime() -
+              new Date(a.created_at).getTime()
+            );
+          })
+          .slice(0, 5) // Get top 5 priority tasks
+          .map((task: any) => ({
+            id: task.id,
+            title: task.title,
+            description: task.description,
+            category: task.category || "General",
+            time: task.due_datetime
+              ? new Date(task.due_datetime).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })
+              : "No due time",
+            priority: mapPriority(task.priority),
+            status: task.completed ? "Completed" : "Pending",
+            due_datetime: task.due_datetime,
+            created_at: task.created_at,
+            updated_at: task.updated_at,
+          }));
+
+        setPriorityTasks(transformedTasks);
+
+        // Update today's tasks count
+        const today = new Date();
+        const todayTasks = tasks.filter((task: any) => {
+          if (!task.due_datetime) return false;
+          const taskDate = new Date(task.due_datetime);
+          return taskDate.toDateString() === today.toDateString();
+        });
+        const completedTodayTasks = todayTasks.filter(
+          (task: any) => task.completed
+        );
+        setTodayTasksCount({
+          completed: completedTodayTasks.length,
+          total: todayTasks.length,
+        });
+
+        // Cache the tasks for faster loading next time
+        await AsyncStorage.setItem(
+          "priorityTasks",
+          JSON.stringify(transformedTasks)
+        );
+      } catch (error: any) {
+        if (error.name === "AbortError") {
+          // Request timed out
+        } else {
+          throw error;
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching tasks:", error);
+      setTasksError("Failed to load tasks");
+    } finally {
+      setLoadingTasks(false);
+    }
+  };
+
   const handleTaskAction = async (action: string, taskId: string) => {
     try {
       switch (action) {
@@ -417,8 +553,8 @@ export default function Home() {
           break;
         case "complete":
           await taskService.markTaskComplete(taskId);
-          // Refresh the tasks
-          fetchTasks();
+          // Refresh the tasks to update Today's Focus
+          await fetchTasks();
           Alert.alert("Success", "Task marked as completed");
           break;
         case "delete":
@@ -432,7 +568,8 @@ export default function Home() {
                 style: "destructive",
                 onPress: async () => {
                   await taskService.deleteTask(taskId);
-                  fetchTasks();
+                  // Refresh the tasks to update Today's Focus
+                  await fetchTasks();
                   Alert.alert("Success", "Task deleted successfully");
                 },
               },
@@ -450,141 +587,6 @@ export default function Home() {
 
   // Fetch priority tasks with optimized performance
   useEffect(() => {
-    const fetchTasks = async () => {
-      try {
-        setLoadingTasks(true);
-        setTasksError(null);
-
-        // Try to get cached tasks first for immediate display
-        const cachedTasks = await AsyncStorage.getItem("priorityTasks");
-        if (cachedTasks) {
-          setPriorityTasks(JSON.parse(cachedTasks));
-        }
-
-        const token = await AsyncStorage.getItem("authToken");
-        if (!token) {
-          navigation.navigate("Login");
-          return;
-        }
-
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-        try {
-          const response = await fetch(
-            `${API_URL}${API_ENDPOINTS.TASKS}?filter=active`,
-            {
-              headers: {
-                Authorization: `Token ${token}`,
-                "Cache-Control": "no-cache",
-              },
-              signal: controller.signal,
-            }
-          );
-
-          clearTimeout(timeoutId);
-
-          if (!response.ok) {
-            throw new Error("Failed to fetch tasks");
-          }
-
-          const tasks = await response.json();
-
-          // Transform the tasks data with proper priority sorting
-          const transformedTasks = tasks
-            .filter((task: any) => !task.completed)
-            .sort((a: any, b: any) => {
-              // Sort by priority: urgent-important > not-urgent-important > urgent-not-important > not-urgent-not-important
-              const priorityOrder = {
-                "urgent-important": 4,
-                "not-urgent-important": 3,
-                "urgent-not-important": 2,
-                "not-urgent-not-important": 1,
-              };
-
-              const aPriority =
-                priorityOrder[a.priority as keyof typeof priorityOrder] || 1;
-              const bPriority =
-                priorityOrder[b.priority as keyof typeof priorityOrder] || 1;
-
-              if (aPriority !== bPriority) {
-                return bPriority - aPriority;
-              }
-
-              // If same priority, sort by due date (earliest first)
-              if (a.due_datetime && b.due_datetime) {
-                return (
-                  new Date(a.due_datetime).getTime() -
-                  new Date(b.due_datetime).getTime()
-                );
-              }
-
-              // If one has due date and other doesn't, prioritize the one with due date
-              if (a.due_datetime && !b.due_datetime) return -1;
-              if (!a.due_datetime && b.due_datetime) return 1;
-
-              // If neither has due date, sort by created date (newest first)
-              return (
-                new Date(b.created_at).getTime() -
-                new Date(a.created_at).getTime()
-              );
-            })
-            .slice(0, 5) // Get top 5 priority tasks
-            .map((task: any) => ({
-              id: task.id,
-              title: task.title,
-              description: task.description,
-              category: task.category || "General",
-              time: task.due_datetime
-                ? new Date(task.due_datetime).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })
-                : "No due time",
-              priority: mapPriority(task.priority),
-              status: task.completed ? "Completed" : "Pending",
-              due_datetime: task.due_datetime,
-              created_at: task.created_at,
-              updated_at: task.updated_at,
-            }));
-
-          setPriorityTasks(transformedTasks);
-
-          // Update today's tasks count
-          const today = new Date();
-          const todayTasks = tasks.filter((task: any) => {
-            if (!task.due_datetime) return false;
-            const taskDate = new Date(task.due_datetime);
-            return taskDate.toDateString() === today.toDateString();
-          });
-          const completedTodayTasks = todayTasks.filter(
-            (task: any) => task.completed
-          );
-          setTodayTasksCount({
-            completed: completedTodayTasks.length,
-            total: todayTasks.length,
-          });
-
-          // Cache the tasks for faster loading next time
-          await AsyncStorage.setItem(
-            "priorityTasks",
-            JSON.stringify(transformedTasks)
-          );
-        } catch (error: any) {
-          if (error.name === "AbortError") {
-            // Request timed out
-          } else {
-            throw error;
-          }
-        }
-      } catch (error) {
-        console.error("Error fetching tasks:", error);
-        setTasksError("Failed to load tasks");
-      } finally {
-        setLoadingTasks(false);
-      }
-    };
-
     fetchTasks();
 
     // Set up a refresh interval
