@@ -11,6 +11,8 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
+import os
+from decouple import config, Csv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -20,24 +22,21 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-+^2p59aom-1u1r7%z0pg_vi4wg^y%10swf-=1!rpp!q6sr)q0p'
+# Load from environment variable, fallback to insecure default for development only
+SECRET_KEY = config('SECRET_KEY', default='django-insecure-+^2p59aom-1u1r7%z0pg_vi4wg^y%10swf-=1!rpp!q6sr)q0p')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# Load from environment variable, default to True for development
+DEBUG = config('DEBUG', default=True, cast=bool)
 
-ALLOWED_HOSTS = [
-    '*',  # Temporarily allow all hosts for testing
-    '192.168.0.153',  # Local network IP, adjust as needed
-    'localhost',
-    '127.0.0.1',    
-]
+# Load allowed hosts from environment variable
+# Format: localhost,127.0.0.1,your-domain.com
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='*,192.168.0.153,localhost,127.0.0.1', cast=Csv())
 
 DEFAULT_FROM_EMAIL = 'kcorpuz_220000002183@uic.edu.ph'
 
 # Email Configuration with ISP-resistant fallback
 # Try multiple SMTP configurations to bypass ISP blocking
-import os
-
 # Use custom fallback backend for ISP-resistant email sending
 # For development/testing in restricted networks, uncomment the line below:
 # EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
@@ -116,10 +115,23 @@ MIDDLEWARE = [
 CSRF_USE_SESSIONS = False  # Store CSRF in cookie instead
 CSRF_COOKIE_HTTPONLY = False  # Allow JavaScript to access CSRF cookie
 CSRF_COOKIE_SAMESITE = 'Lax'  # Less strict for better user experience
-CSRF_TRUSTED_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:8000', 'http://192.168.0.153:8000']  # Add your frontend URLs
+# Load CSRF trusted origins from environment or use defaults
+CSRF_TRUSTED_ORIGINS = config(
+    'CSRF_TRUSTED_ORIGINS',
+    default='http://localhost:3000,http://127.0.0.1:8000,http://192.168.0.153:8000',
+    cast=Csv()
+)
 
 # CORS settings
-CORS_ALLOW_ALL_ORIGINS = True  # For development only, restrict in production
+# For production, set CORS_ALLOWED_ORIGINS in .env as comma-separated list
+# Example: CORS_ALLOWED_ORIGINS=http://localhost:3000,https://your-domain.com
+CORS_ALLOWED_ORIGINS = config(
+    'CORS_ALLOWED_ORIGINS', 
+    default='http://localhost:3000,http://127.0.0.1:8000,http://192.168.0.153:8000',
+    cast=Csv()
+)
+# Only allow all origins in development when DEBUG is True
+CORS_ALLOW_ALL_ORIGINS = DEBUG  # Will be False in production when DEBUG=False
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_METHODS = [
     'DELETE',

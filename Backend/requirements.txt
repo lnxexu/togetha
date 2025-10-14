@@ -7,6 +7,7 @@ django-debug-toolbar==6.0.0
 # Celery and Redis for background tasks
 celery==5.5.3
 redis==6.4.0
+django-redis==5.4.0
 django-celery-beat==2.8.1
 django-celery-results==2.6.0
 django-timezone-field==7.1

@@ -294,15 +294,7 @@ If you encounter issues:
 
 Happy coding! 🚀
 
-
-
-
-
-
-
 --------------------------------------------------------------------------------------------------
-
-
 
 # Togetha PDF Annotation App – Setup Guide
 

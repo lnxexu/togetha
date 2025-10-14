@@ -107,7 +107,8 @@ function ChatBot(): React.ReactElement {
   initChat();
 }, []);
 
-    // Set up keyboard visibility listeners with frame information
+  // Set up keyboard visibility listeners with frame information
+  useEffect(() => {
     const keyboardDidShowListener = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
       (event) => {
@@ -142,6 +143,14 @@ function ChatBot(): React.ReactElement {
         setIsKeyboardVisible(false);
       }
     );
+
+    // CRITICAL: Cleanup function to prevent memory leaks
+    return () => {
+      keyboardDidShowListener.remove();
+      keyboardDidHideListener.remove();
+    };
+  }, []);
+
   useEffect(() => {
     const timer = setTimeout(() => {
       scrollViewRef.current?.scrollToEnd({ animated: true });
@@ -179,28 +188,30 @@ function ChatBot(): React.ReactElement {
   };
 
   const loadConversations = async (silent = false) => {
-    try {
-      if (!silent) setErrorMessage(null);
-      const conversationList = await chatbotAPI.getConversations();
-      setConversations(conversationList);
-      setIsOnline(true);
-      setRetryCount(0);
-    } catch (error: any) {
-      if (!silent) {
-        setIsOnline(false);
-        setErrorMessage(error.message || "Failed to load conversations");
-      }
-
-      // Auto-retry logic only if not already retrying
-      if (retryCount < 2 && !silent) {
-        setTimeout(() => {
-          setRetryCount(prev => prev + 1);
-          loadConversations(true); // Silent retry
-        }, 3000 * (retryCount + 1)); // Exponential backoff
-      }
+  try {
+    if (!silent) setErrorMessage(null);
+    const conversationList = await chatbotAPI.getConversations();
+    setConversations(conversationList);
+    setIsOnline(true);
+    setRetryCount(0);
+  } catch (error: any) {
+    if (!silent) {
+      setIsOnline(false);
+      setErrorMessage(error.message || "Failed to load conversations");
     }
-  };
 
+    // Auto-retry logic with proper cleanup
+    if (retryCount < 2 && !silent) {
+      const timeoutId = setTimeout(() => {
+        setRetryCount(prev => prev + 1);
+        loadConversations(true);
+      }, 3000 * (retryCount + 1));
+      
+      // Store timeout ID for cleanup
+      return () => clearTimeout(timeoutId);
+    }
+  }
+};
   const loadConversation = async (conversationId: string) => {
     try {
       const conversation = await chatbotAPI.getConversation(conversationId);
