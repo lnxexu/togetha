@@ -31,7 +31,7 @@ DEBUG = config('DEBUG', default=True, cast=bool)
 
 # Load allowed hosts from environment variable
 # Format: localhost,127.0.0.1,your-domain.com
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='*,192.168.0.153,localhost,127.0.0.1', cast=Csv())
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='*,192.168.0.153,localhost,127.0.0.1,192.168.1.187', cast=Csv())
 
 DEFAULT_FROM_EMAIL = 'kcorpuz_220000002183@uic.edu.ph'
 
@@ -118,7 +118,8 @@ CSRF_COOKIE_SAMESITE = 'Lax'  # Less strict for better user experience
 # Load CSRF trusted origins from environment or use defaults
 CSRF_TRUSTED_ORIGINS = config(
     'CSRF_TRUSTED_ORIGINS',
-    default='http://localhost:3000,http://127.0.0.1:8000,http://192.168.0.153:8000',
+    # Include the development device/laptop IP:port so mobile app requests are trusted
+    default='http://localhost:3000,http://127.0.0.1:8000,http://192.168.0.153:8000,http://192.168.1.187:8000',
     cast=Csv()
 )
 
@@ -127,7 +128,7 @@ CSRF_TRUSTED_ORIGINS = config(
 # Example: CORS_ALLOWED_ORIGINS=http://localhost:3000,https://your-domain.com
 CORS_ALLOWED_ORIGINS = config(
     'CORS_ALLOWED_ORIGINS', 
-    default='http://localhost:3000,http://127.0.0.1:8000,http://192.168.0.153:8000',
+    default='http://localhost:3000,http://127.0.0.1:8000,http://192.168.0.153:8000,http://192.168.1.187:8000',
     cast=Csv()
 )
 # Only allow all origins in development when DEBUG is True

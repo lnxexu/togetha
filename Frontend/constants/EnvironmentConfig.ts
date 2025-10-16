@@ -19,8 +19,8 @@ export const DEFAULT_CONFIG: EnvironmentConfig = {
 export const PLATFORM_DEFAULTS = {
   android: {
     emulator: {
-      apiUrl: 'http://10.0.2.2:8000/',
-      ollamaApiUrl: 'http://10.0.2.2:11434/',
+      apiUrl: 'http://192.168.1.187:8000/',
+      ollamaApiUrl: 'http://192.168.1.187:11434/',
     },
   },
   ios: {
