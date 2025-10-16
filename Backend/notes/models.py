@@ -103,18 +103,52 @@ class Note(models.Model):
         return self.content_hash != current_hash
     
     def save_drawing_strokes(self, strokes_data):
-        """Helper method to save drawing strokes"""
-        self.drawing_data = strokes_data
-        self.has_drawing = True
+        """Helper method to save drawing strokes as JSON string in TextField"""
+        # Normalize to JSON string for consistent storage
+        try:
+            if isinstance(strokes_data, (list, dict)):
+                json_str = json.dumps(strokes_data)
+            elif isinstance(strokes_data, str):
+                # If it's a valid JSON string, keep as-is; else try to coerce
+                try:
+                    json.loads(strokes_data)
+                    json_str = strokes_data
+                except Exception:
+                    # Fallback: best-effort to coerce to JSON string
+                    try:
+                        import ast
+                        parsed = ast.literal_eval(strokes_data)
+                        json_str = json.dumps(parsed)
+                    except Exception:
+                        json_str = json.dumps([])
+            else:
+                # Last resort: serialize arbitrary type
+                json_str = json.dumps(strokes_data)
+        except Exception:
+            json_str = json.dumps([])
+
+        self.drawing_data = json_str
+        # has_drawing true only if non-empty array/object
+        try:
+            parsed = json.loads(json_str)
+            self.has_drawing = bool(parsed) and (isinstance(parsed, (list, dict))) and (len(parsed) > 0 if isinstance(parsed, list) else True)
+        except Exception:
+            self.has_drawing = bool(json_str and json_str.strip())
+
         # Automatically set note type to drawing when saving drawing data
-        if strokes_data and (isinstance(strokes_data, list) and len(strokes_data) > 0 or 
-                           isinstance(strokes_data, str) and strokes_data.strip()):
+        if self.has_drawing:
             self.type = 'drawing'
+
         self.save()
     
     def get_drawing_strokes(self):
-        """Helper method to retrieve drawing strokes"""
-        return self.drawing_data if self.drawing_data else []
+        """Helper method to retrieve drawing strokes as Python object"""
+        if not self.drawing_data:
+            return []
+        try:
+            return json.loads(self.drawing_data)
+        except Exception:
+            return []
 
     def __str__(self):
         return self.title

@@ -9,8 +9,8 @@ export interface EnvironmentConfig {
 }
 //change ni sa IP address atm
 export const DEFAULT_CONFIG: EnvironmentConfig = {
-  apiUrl: 'http://192.168.1.187:8000/',
-  ollamaApiUrl: 'http://192.168.1.187:11434/',
+  apiUrl: 'http://192.168.254.109:8000/',
+  ollamaApiUrl: 'http://192.168.254.109:11434/',
   environment: 'development',
   debug: true,
 };

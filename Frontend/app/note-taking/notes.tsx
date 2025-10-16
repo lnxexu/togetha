@@ -48,6 +48,7 @@ import SkeletonLoader from "../components/SkeletonLoader";
 import { folderCacheUtils } from "../utils/FolderCacheUtils";
 import { getLocalPDFPath, isRemoteURL } from "./utils/pdfUtils";
 import { parseServerDate, formatShortLocalDate } from "./utils/localDate";
+import offlineNotesService from "./services/offlineNotesService";
 
 const { width } = Dimensions.get("window");
 
@@ -502,12 +503,9 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
   );
 
   const fetchFolders = async () => {
-    // Implement fetch throttling - don't fetch if it's been less than 10 seconds
+    // Throttle to 10s if we already have folders
     const now = Date.now();
-    if (now - lastFolderFetch < 10000 && folders.length > 0) {
-      return; // Skip this fetch if we already have folders and it's too soon
-    }
-
+    if (now - lastFolderFetch < 10000 && folders.length > 0) return;
     setLastFolderFetch(now);
 
     try {
@@ -517,36 +515,20 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
         return;
       }
 
-      const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTE_FOLDERS}`, {
-        method: "GET",
-        headers: {
-          Authorization: `Token ${token}`,
-          "Content-Type": "application/json",
-          "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone || "",
-        },
-        // Improve caching behavior
-        cache: "default",
-      });
+      // Use offlineNotesService to allow online-first with offline fallback and local caching
+      const data = await offlineNotesService.getAllFolders();
 
-      if (!response.ok) {
-        throw new Error("Failed to fetch folders");
-      }
-
-      const data = await response.json();
-
-      // Transform the data to match your Folder interface
-      const fetchedFolders: Folder[] = data.map((folder: any) => ({
-        id: folder.id.toString(),
+      const fetchedFolders: Folder[] = (data || []).map((folder: any) => ({
+        id: folder.id?.toString?.() ?? String(folder.id),
         name: folder.name,
-        color: folder.color || "#667EEA", // Default color if not provided
-        icon: "folder" as keyof typeof MaterialIcons.glyphMap, // Default icon
-        notes_count: folder.notes_count || 0,
+        color: folder.color || "#667EEA",
+        icon: "folder" as keyof typeof MaterialIcons.glyphMap,
+        notes_count: folder.notes_count || folder.note_count || 0,
         description: folder.description,
         created_at: folder.created_at,
         updated_at: folder.updated_at,
       }));
 
-      // Only update state if folders have actually changed
       const currentFoldersJson = JSON.stringify(
         folders.map((f) => ({ id: f.id, name: f.name }))
       );
@@ -624,77 +606,83 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
   const fetchNotes = React.useCallback(
     async (showLoading = true) => {
       const now = Date.now();
-      if (!showLoading && now - lastNoteFetch < 5000) {
-        return; // Skip this fetch
-      }
+      if (!showLoading && now - lastNoteFetch < 5000) return;
 
-      if (showLoading) {
-        setIsLoading(true);
-      }
+      if (showLoading) setIsLoading(true);
       setError(null);
       setLastNoteFetch(now);
 
       try {
         const token = await AsyncStorage.getItem("authToken");
         if (!token) {
-          // Navigate to login if no token
           navigation.navigate("Login");
           return;
         }
 
-        // Add pagination parameters to reduce data load
-        let endpoint = `${API_URL}${API_ENDPOINTS.NOTES}?limit=50`;
+        // Use offline service so notes appear when offline and are cached when online
+        let data = await offlineNotesService.getAllNotes();
 
-        // Add filter for selected folder if one is chosen
+        // Client-side filter by selected folder if provided
         if (selectedFilterFolder) {
-          endpoint += `&folder=${selectedFilterFolder}`;
+          data = (data || []).filter((n: any) => {
+            const fid = n.folderId || n.folder?.toString?.();
+            return fid ? fid.toString() === selectedFilterFolder : false;
+          });
         }
 
-        const response = await fetch(endpoint, {
-          method: "GET",
-          headers: {
-            Authorization: `Token ${token}`,
-            "Content-Type": "application/json",
-            "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone || "",
-          },
-          // Improve caching with cache control headers
-          cache: "default",
+        // Normalize into local Note type where necessary
+        const toDate = (val: any): Date | undefined => {
+          if (!val) return undefined;
+          if (val instanceof Date) return val;
+          if (typeof val === 'string') return parseServerDate(val) || new Date(val);
+          if (typeof val === 'number') return new Date(val);
+          return undefined;
+        };
+
+        const fetchedNotes: Note[] = (data || []).map((n: any) => {
+          const createdAt = toDate(n.createdAt) || toDate(n.created_at) || new Date(0);
+          const updatedAt = toDate(n.updatedAt) || toDate(n.updated_at) || toDate(n.lastModified) || createdAt;
+          const lastAccessedAt = toDate(n.lastAccessedAt) || toDate(n.last_accessed);
+          return {
+            id: n.id?.toString?.() ?? String(n.id),
+            title: n.title || "",
+            content: n.content || "",
+            formatted_content: n.formatted_content || "",
+            folder: n.folder || n.folder_name || null,
+            folderId: n.folderId || (n.folder ? n.folder.toString() : null),
+            createdAt,
+            updatedAt,
+            lastAccessedAt,
+            type: n.type || "text",
+            is_archived: n.is_archived || false,
+            tags: n.tags || [],
+            template: n.template || null,
+            drawing_data: n.drawing_data || null,
+            document_file: n.document_file || null,
+            document_annotations: n.document_annotations || null,
+          };
         });
 
-        if (!response.ok) {
-          throw new Error("Failed to fetch notes");
-        }
-
-        const data = await response.json();
-
-        // Transform the data to match your Note interface with optimized processing
-        const fetchedNotes: Note[] = data.map((note: any) => ({
-          id: note.id.toString(),
-          title: note.title || "",
-          content: note.content || "",
-          formatted_content: note.formatted_content || "",
-          folder: note.folder_name || null, // Use folder_name from backend
-          folderId: note.folder ? note.folder.toString() : null, // Map the folder ID
-          createdAt: parseServerDate(note.created_at) || new Date(),
-          updatedAt: parseServerDate(note.updated_at) || new Date(),
-          lastAccessedAt: parseServerDate(note.last_accessed),
-          type: note.type || "text",
-          is_archived: note.is_archived || false,
-          tags: note.tags || [],
-          template: note.template || null,
-          drawing_data: note.drawing_data || null,
-          document_file: note.document_file || null, // Add document file URL
-          document_annotations: note.document_annotations || null, // Add document annotations
-        }));
-
-        // Sort by last accessed, then by updatedAt
+        // Sort by latest update primarily: updatedAt desc, then lastAccessedAt desc, then createdAt desc
         fetchedNotes.sort((a, b) => {
-          const aTime = (a.lastAccessedAt || a.updatedAt || a.createdAt)?.getTime?.() || 0;
-          const bTime = (b.lastAccessedAt || b.updatedAt || b.createdAt)?.getTime?.() || 0;
-          return bTime - aTime;
+          const getNum = (d?: Date) => {
+            if (d instanceof Date) {
+              const t = d.getTime();
+              return isNaN(t) ? 0 : t;
+            }
+            return 0;
+          };
+          const aU = getNum(a.updatedAt);
+          const bU = getNum(b.updatedAt);
+          if (aU !== bU) return bU - aU;
+          const aL = getNum(a.lastAccessedAt);
+          const bL = getNum(b.lastAccessedAt);
+          if (aL !== bL) return bL - aL;
+          const aC = getNum(a.createdAt);
+          const bC = getNum(b.createdAt);
+          return bC - aC;
         });
 
-        // Check if notes have changed before updating state - only compare relevant fields
         const currentNotesJson = JSON.stringify(
           notes.map((n) => ({ id: n.id, updatedAt: n.updatedAt }))
         );
@@ -710,9 +698,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
         console.error("Error fetching notes:", error);
         setError("Failed to load notes. Please try again.");
       } finally {
-        if (showLoading) {
-          setIsLoading(false);
-        }
+        if (showLoading) setIsLoading(false);
       }
     },
     [lastNoteFetch, navigation, notes, selectedFilterFolder]
@@ -1089,17 +1075,33 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
           strokesArray = [];
         }
 
+        // If we couldn't derive strokes from the note payload, try fetching cached/server drawing
+        if (!strokesArray || strokesArray.length === 0) {
+          try {
+            const dd = await offlineNotesService.getDrawing(note.id);
+            if (dd?.strokes?.length) {
+              strokesArray = dd.strokes;
+            }
+          } catch {}
+        }
+
         // Prepare drawing data for editor - ensure proper format for importDrawing
+        // IMPORTANT: Do not let parsedDrawingData.strokes overwrite our computed strokesArray
+        const { strokes: _ignoredStrokes, ...restParsed } = (parsedDrawingData && typeof parsedDrawingData === 'object')
+          ? (parsedDrawingData as any)
+          : ({} as any);
+
         const drawingData = {
           id: note.id,
           title: note.title || "Untitled Drawing",
+          // Spread other parsed fields first (without strokes)
+          ...restParsed,
+          // Then set the correct strokes explicitly so they win
           strokes: strokesArray,
           template: parsedDrawingData?.template || note.template || "blank",
           drawing_data: parsedDrawingData,
           createdAt: note.createdAt?.toISOString(),
           updatedAt: note.updatedAt?.toISOString(),
-          // Also include the strokes at root level for importDrawing compatibility
-          ...parsedDrawingData,
         };
 
         navigation.navigate("DrawingEditor", {

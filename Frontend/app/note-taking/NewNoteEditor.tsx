@@ -26,6 +26,8 @@ import { showSuccessToast, showErrorToast, showWarningToast } from "../utils/Toa
 import { useAutoSave } from "./hooks/useAutoSave";
 import { noteService, Note as NoteType, SaveStatus } from "./services/noteService";
 import { useNetworkStatus, getNetworkStatusText } from "./services/networkService";
+import offlineStorage, { OfflineNote } from "./services/offlineStorage";
+import noteSyncService from "./services/noteSyncService";
 import { dictionaryService } from "./services/dictionaryService";
 
 const { RichEditor, RichToolbar } = require("react-native-pell-rich-editor");
@@ -301,6 +303,23 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     return () => subscription?.remove();
   }, []);
 
+  // Periodic auto-sync when online, silent
+  useEffect(() => {
+    if (!isOnline) return;
+    let cancelled = false;
+    const t = setInterval(async () => {
+      try {
+        const hasPending = await noteSyncService.hasPendingOperations();
+        if (cancelled || !hasPending) return;
+        await noteSyncService.syncWithServer();
+        setSaveStatus({ status: 'saved' });
+      } catch {
+        // silent fail; next tick will retry
+      }
+    }, 10000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [isOnline]);
+
   useEffect(() => {
     const keyboardDidShowListener = Keyboard.addListener(
       "keyboardDidShow",
@@ -340,9 +359,74 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
 
   // Auto-save setup with new Google Docs-style system
   const saveNote = async (note: NoteType, isAutoSave = true): Promise<NoteType | void> => {
+    // Helper to decide create vs update similar to noteService
+    const shouldCreate = (n: NoteType) => {
+      if (!n?.id) return true;
+      if (n.id.startsWith('note_')) return true;
+      const uuidLike = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(n.id);
+      if (uuidLike) return false;
+      return false;
+    };
+
+    // Persist to server (or local) via noteService first
     const result = await noteService.saveNote(note, isAutoSave);
     setSaveStatus(result.status);
-    
+
+    // Ensure device storage always has the latest copy for offline use
+    try {
+      if (result?.note) {
+        const offlineCopy = offlineStorage.noteToOfflineNote(result.note, result.status.status === 'saved' ? 'synced' : 'pending');
+        await offlineStorage.saveOfflineNote(offlineCopy);
+      }
+    } catch (e) {
+      // Non-fatal; local cache update failed
+      console.warn('Failed to persist note to offline storage:', e);
+    }
+
+    // When offline or error, persist to offline storage and queue sync
+    if (result.status.status === 'offline' || result.status.status === 'error') {
+      try {
+        const now = new Date().toISOString();
+        const offlineNote: OfflineNote = {
+          id: note.id,
+          localId: shouldCreate(note) ? note.id : undefined,
+          title: note.title || '',
+          content: note.content || '',
+          formatted_content: note.formatted_content || '',
+          folderId: note.folderId || undefined,
+          folder: note.folderId || undefined,
+          createdAt: note.createdAt || now,
+          updatedAt: now,
+          type: 'text',
+          tags: [],
+          is_archived: false,
+          template: undefined,
+          document_annotations: undefined,
+          drawing_data: undefined,
+          has_drawing: false,
+          syncStatus: 'pending',
+          lastModified: now,
+        };
+        await offlineStorage.saveOfflineNote(offlineNote);
+        // Queue operation for later sync
+        await noteSyncService.queueOperation(
+          shouldCreate(note) ? 'create' : 'update',
+          'note',
+          note.id,
+          {
+            title: note.title,
+            content: note.content,
+            formatted_content: note.formatted_content,
+            folderId: note.folderId,
+          },
+          shouldCreate(note) ? note.id : undefined
+        );
+      } catch (e) {
+        // Swallow to avoid blocking editor; status already set
+        console.error('Failed to queue offline save:', e);
+      }
+    }
+
     if (result.note.id !== note.id) {
       // Note ID changed (server assigned new ID)
       setNoteId(result.note.id);
@@ -395,6 +479,41 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
       triggerSave(updatedNote);
     }
   }, [title, content, formattedContent, selectedFolderId]);
+
+  // Trigger sync when coming back online, and reconcile local->server IDs
+  const prevOnlineRef = useRef<boolean>(isOnline);
+  useEffect(() => {
+    const prev = prevOnlineRef.current;
+    prevOnlineRef.current = isOnline;
+    if (!prev && isOnline) {
+      // Just reconnected: attempt sync
+      (async () => {
+        try {
+          const syncResult = await noteSyncService.syncWithServer();
+          if (!syncResult.success) {
+            showWarningToast('Some changes failed to sync');
+          } else {
+            showSuccessToast('All changes synced');
+          }
+          // If our current note was created offline, its ID may now be a server ID
+          try {
+            const updated = await offlineStorage.getOfflineNoteById(noteId);
+            if (updated && updated.id && updated.id !== noteId) {
+              setNoteId(updated.id);
+              setCurrentNote((prevNote) => ({
+                ...prevNote,
+                id: updated.id,
+              }));
+            }
+          } catch {}
+          setSaveStatus({ status: 'saved' });
+        } catch (err) {
+          console.warn('Sync on reconnect failed:', err);
+          showWarningToast('Sync failed. Will retry later.');
+        }
+      })();
+    }
+  }, [isOnline, noteId]);
 
   // Handle back button - ensure we save current rich text content before exiting
   const handleBackPress = async () => {

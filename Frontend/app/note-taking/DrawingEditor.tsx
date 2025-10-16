@@ -37,6 +37,7 @@ import DrawingCanvas, { Stroke, DrawingTool, CanvasOrientation } from "./compone
 import DrawingToolbar from "./components/DrawingToolbar";
 import { useDrawingState } from "./hooks/useDrawingState";
 import { DrawingStroke, drawingAPI } from "./services/drawingAPI";
+import offlineNotesService from "./services/offlineNotesService";
 import { TemplateType } from "./components/TemplateOverlay";
 import UnsavedChangesModal from "./components/UnsavedChangesModal";
 import { pushNotificationService } from '@/app/notifications/services/PushNotificationService';
@@ -119,6 +120,26 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
   
   // Route params loaded
 
+  // Determine if initial data actually contains strokes
+  const extractInitialStrokes = (data: any): DrawingStroke[] => {
+    if (!data) return [];
+    if (Array.isArray(data.strokes)) return data.strokes as DrawingStroke[];
+    if (Array.isArray(data)) return data as DrawingStroke[];
+    if (data.drawing_data) {
+      if (typeof data.drawing_data === 'string') {
+        try {
+          const parsed = JSON.parse(data.drawing_data);
+          return Array.isArray(parsed) ? parsed : (parsed?.strokes || []);
+        } catch { return []; }
+      }
+      if (Array.isArray(data.drawing_data)) return data.drawing_data as DrawingStroke[];
+      if (data.drawing_data?.strokes) return data.drawing_data.strokes as DrawingStroke[];
+    }
+    return [];
+  };
+
+  const initialStrokes = extractInitialStrokes(effectiveInitialDrawingData);
+
   const {
     strokes,
     isLoading,
@@ -142,7 +163,9 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
   } = useDrawingState({ 
     noteId: effectiveNoteId?.toString(), 
     defaultTitle: initialTitle,
-    skipInitialLoad: !!effectiveInitialDrawingData // Skip initial load if we have initial data
+    // Only skip server load if we truly have non-empty initial strokes to render
+    skipInitialLoad: initialStrokes.length > 0,
+    autoSave: false // We'll manage autosave manually via offlineNotesService to avoid duplicate saves
   });
   // New API from useDrawingState for removing strokes when deleting pages
   // (note: removeStrokesByIds is returned by the hook)
@@ -708,27 +731,39 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
       if (!effectiveNoteId && !currentNoteId && setupParams) {
         // Create initial blank drawing when component mounts from setup
         try {
-          const result = await drawingAPI.createDrawingNote(
-            drawingTitle || "Untitled Drawing", 
-            strokes, // Use current strokes (could be empty or have data)
-            selectedFolderId,
-            tags
-          );
-          // Set the note ID in the useDrawingState hook
-          setNoteId(result.noteId);
+          const created = await offlineNotesService.createNote({
+            title: drawingTitle || "Untitled Drawing",
+            content: "",
+            type: "drawing",
+            folderId: selectedFolderId || undefined,
+            tags: tags,
+            drawing_data: strokes,
+            template: activeTemplate,
+          });
+          if (created?.id) {
+            setNoteId(created.id.toString());
+          }
         } catch (createError) {
           // Error handled silently during auto-save
         }
       } else if (currentNoteId || effectiveNoteId) {
         // Auto-save existing drawing
         if (strokes.length > 0) {
-          await saveDrawing({ 
-            type: "drawing",
-            title: drawingTitle,
-            template: activeTemplate,
-            folderId: selectedFolderId,
-            tags: tags
-          });
+          const id = (currentNoteId || effectiveNoteId)!.toString();
+          setSyncStatus("syncing");
+          try {
+            await offlineNotesService.updateNote(id, {
+              title: drawingTitle,
+              template: activeTemplate,
+              folderId: selectedFolderId || undefined,
+              tags: tags,
+              drawing_data: strokes,
+              type: "drawing",
+            });
+            setSyncStatus(isOnline ? "saved" : "offline");
+          } catch (e) {
+            setSyncStatus("offline");
+          }
         }
       }
     } catch (error) {
@@ -825,12 +860,15 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
   // Initialize with provided data
   React.useEffect(() => {    
     if (effectiveInitialDrawingData) {
-      // Import the drawing data
-      importDrawing(effectiveInitialDrawingData);
+      // Import only if we truly have strokes to render; avoid importing empty data
+      if (initialStrokes.length > 0) {
+        importDrawing({ strokes: initialStrokes });
+      }
 
       // Set the note ID if available
       if (effectiveInitialDrawingData.id && !currentNoteId) {
-        // Don't set currentNoteId here as it might cause a re-load that overwrites our imported data
+        // Set the current note id so subsequent saves target the correct note
+        try { setNoteId(String(effectiveInitialDrawingData.id)); } catch {}
       }
 
       // Restore template if available
@@ -870,7 +908,7 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
         setFolderName(effectiveInitialDrawingData.folder);
       }
     }
-  }, [effectiveInitialDrawingData, importDrawing]);
+  }, [effectiveInitialDrawingData, initialStrokes, importDrawing]);
 
   // Apply template and setup configurations
   React.useEffect(() => {
@@ -901,15 +939,85 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
     }
   }, [setupParams]);
 
+  // If offline and we have an id but empty strokes, load drawing from device cache
+  useEffect(() => {
+    const loadOffline = async () => {
+      const id = (currentNoteId || effectiveNoteId)?.toString();
+      if (!isOnline && id && strokes.length === 0) {
+        try {
+          const data = await offlineNotesService.getDrawing(id);
+          if (data?.strokes?.length) {
+            importDrawing({ strokes: data.strokes });
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+    };
+    void loadOffline();
+  }, [isOnline, currentNoteId, effectiveNoteId, strokes.length, importDrawing]);
+
+  // Sync on reconnect
+  const wasOnlineRef = useRef<boolean>(false);
+  useEffect(() => {
+    if (isOnline && !wasOnlineRef.current) {
+      (async () => {
+        try {
+          const hasPending = await offlineNotesService.hasPendingChanges();
+          if (hasPending) {
+            setSyncStatus("syncing");
+            await offlineNotesService.syncWithServer();
+          }
+          setSyncStatus("saved");
+        } catch {
+          setSyncStatus("offline");
+        }
+      })();
+    }
+    wasOnlineRef.current = isOnline;
+  }, [isOnline]);
+
+  // Periodic sync every 10s while online
+  useEffect(() => {
+    let h: any;
+    if (isOnline) {
+      h = setInterval(async () => {
+        try {
+          const hasPending = await offlineNotesService.hasPendingChanges();
+          if (hasPending) {
+            await offlineNotesService.syncWithServer();
+          }
+        } catch {}
+      }, 10000);
+    }
+    return () => h && clearInterval(h);
+  }, [isOnline]);
+
   const handleManualSave = async () => {
     try {
-      await saveDrawing({
-        type: "drawing",
-        title: drawingTitle,
-        template: activeTemplate,
-        folderId: selectedFolderId,
-        tags: tags
-      });
+      const id = (currentNoteId || effectiveNoteId)?.toString();
+      if (!id) {
+        const created = await offlineNotesService.createNote({
+          title: drawingTitle || "Untitled Drawing",
+          content: "",
+          type: "drawing",
+          folderId: selectedFolderId || undefined,
+          tags: tags,
+          drawing_data: strokes,
+          template: activeTemplate,
+        });
+        if (created?.id) setNoteId(created.id.toString());
+      } else {
+        await offlineNotesService.updateNote(id, {
+          title: drawingTitle,
+          template: activeTemplate,
+          folderId: selectedFolderId || undefined,
+          tags: tags,
+          drawing_data: strokes,
+          type: "drawing",
+        });
+      }
+      setSyncStatus(isOnline ? "saved" : "offline");
       // Wait a brief moment to ensure save state is updated
       await new Promise(resolve => setTimeout(resolve, 100));
       showSuccessToast("Drawing saved successfully");
@@ -927,12 +1035,21 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
         { 
           text: "Clear", 
           style: "destructive", 
-          onPress: () => {
+          onPress: async () => {
             // Clear everything thoroughly
             setCurrentStroke(null); // Clear any current stroke
             setPages([[]]);          // Reset pages to empty array
             setCurrentPageIndex(0);  // Reset to first page
             clear();                 // Call the hook's clear function
+            const id = (currentNoteId || effectiveNoteId)?.toString();
+            if (id) {
+              try {
+                await offlineNotesService.clearDrawing(id);
+                setSyncStatus(isOnline ? "saved" : "offline");
+              } catch (e) {
+                setSyncStatus("offline");
+              }
+            }
           }
         },
       ]
@@ -974,13 +1091,28 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
     setShowUnsavedChangesModal(false);
     try {
       if (strokes.length > 0 || hasUnsavedChanges) {
-        await saveDrawing({
-          type: "drawing",
-          title: drawingTitle,
-          template: activeTemplate,
-          folderId: selectedFolderId,
-          tags: tags
-        });
+        const id = (currentNoteId || effectiveNoteId)?.toString();
+        if (!id) {
+          const created = await offlineNotesService.createNote({
+            title: drawingTitle || "Untitled Drawing",
+            content: "",
+            type: "drawing",
+            folderId: selectedFolderId || undefined,
+            tags: tags,
+            drawing_data: strokes,
+            template: activeTemplate,
+          });
+          if (created?.id) setNoteId(created.id.toString());
+        } else {
+          await offlineNotesService.updateNote(id, {
+            title: drawingTitle,
+            template: activeTemplate,
+            folderId: selectedFolderId || undefined,
+            tags: tags,
+            drawing_data: strokes,
+            type: "drawing",
+          });
+        }
         // Wait a brief moment to ensure save completion
         await new Promise(resolve => setTimeout(resolve, 100));
         showSuccessToast("Drawing saved successfully");

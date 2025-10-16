@@ -200,6 +200,13 @@ class OfflineStorage {
   async saveOfflineDrawing(noteId: string, drawingData: DrawingData): Promise<void> {
     try {
       const drawings = await this.getOfflineDrawings();
+      const existing = drawings[noteId];
+      const incomingHas = Array.isArray(drawingData?.strokes) && drawingData.strokes.length > 0;
+      const existingHas = Array.isArray(existing?.strokes) && existing.strokes.length > 0;
+      // Guard: do not overwrite a non-empty cached drawing with an empty one (server might be stale)
+      if (!incomingHas && existingHas) {
+        return; // keep existing cache
+      }
       drawings[noteId] = {
         ...drawingData,
         lastUpdate: new Date().toISOString()
@@ -353,8 +360,23 @@ class OfflineStorage {
   async addPendingSync(operation: PendingSync): Promise<void> {
     try {
       const pendingOps = await this.getPendingSyncOperations();
-      pendingOps.push(operation);
-      await AsyncStorage.setItem(this.PENDING_SYNC_KEY, JSON.stringify(pendingOps));
+      const key = `${operation.entityType}:${operation.id}`;
+      const newOps = pendingOps.filter(op => `${op.entityType}:${op.id}` !== key || op.action === 'create' || operation.action === 'delete');
+      // If existing op is create and new is update, keep create; if new is delete, replace
+      const existingIdx = newOps.findIndex(op => `${op.entityType}:${op.id}` === key);
+      if (existingIdx >= 0) {
+        const existing = newOps[existingIdx];
+        if (existing.action === 'create' && operation.action !== 'delete') {
+          // keep create; nothing to do
+        } else if (operation.action === 'delete') {
+          newOps[existingIdx] = operation;
+        } else {
+          newOps[existingIdx] = operation;
+        }
+      } else {
+        newOps.push(operation);
+      }
+      await AsyncStorage.setItem(this.PENDING_SYNC_KEY, JSON.stringify(newOps));
     } catch (error) {
       console.error('Error adding pending sync operation:', error);
     }
@@ -364,7 +386,31 @@ class OfflineStorage {
   async getPendingSyncOperations(): Promise<PendingSync[]> {
     try {
       const opsJson = await AsyncStorage.getItem(this.PENDING_SYNC_KEY);
-      return opsJson ? JSON.parse(opsJson) : [];
+      const ops: PendingSync[] = opsJson ? JSON.parse(opsJson) : [];
+      // Compact: keep only the latest op per (entityType,id); if a create exists, drop later updates; coalesce multiple updates to last one
+      const byKey = new Map<string, PendingSync>();
+      for (const op of ops) {
+        const key = `${op.entityType}:${op.id}`;
+        const existing = byKey.get(key);
+        if (!existing) {
+          byKey.set(key, op);
+          continue;
+        }
+        // If existing is create, keep it (updates will be represented by the data at create time)
+        if (existing.action === 'create') {
+          continue;
+        }
+        // If new op is delete, it overrides previous ones
+        if (op.action === 'delete') {
+          byKey.set(key, op);
+          continue;
+        }
+        // Otherwise both are updates: keep the newer one
+        const existingTs = Date.parse(existing.timestamp) || 0;
+        const newTs = Date.parse(op.timestamp) || 0;
+        byKey.set(key, newTs >= existingTs ? op : existing);
+      }
+      return Array.from(byKey.values());
     } catch (error) {
       console.error('Error getting pending sync operations:', error);
       return [];
@@ -428,11 +474,28 @@ class OfflineStorage {
 
   // Convert regular objects to offline objects
   noteToOfflineNote(note: any, syncStatus: 'synced' | 'pending' | 'failed' = 'synced'): OfflineNote {
-    return {
+    // Normalize drawing data: some APIs return `drawing_strokes` instead of `drawing_data`
+    const hasNonEmpty = (val: any): boolean => {
+      if (!val) return false;
+      try {
+        if (typeof val === 'string') { const p = JSON.parse(val); return Array.isArray(p) ? p.length>0 : Array.isArray(p?.strokes) ? p.strokes.length>0 : !!p; }
+        if (Array.isArray(val)) return val.length>0;
+        if (typeof val === 'object') { if (Array.isArray((val as any).strokes)) return (val as any).strokes.length>0; return Object.keys(val).length>0; }
+      } catch {}
+      return false;
+    };
+    const srcA = note.drawing_data;
+    const srcB = (note as any).drawing_strokes;
+    // Prefer the non-empty source; if both non-empty, prefer drawing_data; if both empty, keep drawing_data (could be '')
+    const normalizedDrawing = hasNonEmpty(srcA) ? srcA : (hasNonEmpty(srcB) ? srcB : srcA ?? srcB);
+    const normalized: OfflineNote = {
       ...note,
+      drawing_data: normalizedDrawing !== undefined ? normalizedDrawing : note.drawing_data,
+      has_drawing: hasNonEmpty(normalizedDrawing) || note.has_drawing || false,
       syncStatus,
       lastModified: new Date().toISOString(),
     };
+    return normalized;
   }
 
   folderToOfflineFolder(folder: any, syncStatus: 'synced' | 'pending' | 'failed' = 'synced'): OfflineFolder {
