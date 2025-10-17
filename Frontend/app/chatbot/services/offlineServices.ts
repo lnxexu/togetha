@@ -3,7 +3,7 @@ import { ensureModel } from "../../../src/llama/setup";
 import { Message, ChatResponse } from "./chatbotAPIService";
 import RNFS from "react-native-fs";
 
-const MODEL_NAME = "gemma-2-2b-it-Q4_K_M.gguf";
+const MODEL_NAME = "llama-3-2b-Q4_K_M.gguf";
 
 class OfflineChatService {
   private context: LlamaContext | null = null;

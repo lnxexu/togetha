@@ -1,8 +1,8 @@
 import RNFS from "react-native-fs";
 
-const MODEL_NAME = "gemma-2-2b-it-Q4_K_M.gguf";
+const MODEL_NAME = "llama-3-2b-Q4_K_M.gguf";
 const MODEL_URL =
-  "https://huggingface.co/lmstudio-community/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf";
+  "https://huggingface.co/stellali0115/Llama-3.2-1B-Q4_K_M-GGUF/resolve/main/llama-3.2-1b-q4_k_m.gguf";
 
 export async function ensureModel(): Promise<string> {
   const modelPath = `${RNFS.DocumentDirectoryPath}/${MODEL_NAME}`;
@@ -14,7 +14,7 @@ export async function ensureModel(): Promise<string> {
     return modelPath;
   }
 
-  console.log("⬇️ Downloading Gemma model...");
+  console.log("⬇️ Downloading Llama model...");
 
   const download: any = RNFS.downloadFile({
     fromUrl: MODEL_URL,
