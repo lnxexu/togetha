@@ -7,6 +7,7 @@ class ConversationFileSerializer(serializers.ModelSerializer):
         model = ConversationFile
         fields = [
             "id",
+            "doc_id",
             "file_name",
             "file_type",
             "file_size",

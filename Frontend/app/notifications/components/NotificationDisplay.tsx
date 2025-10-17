@@ -92,7 +92,7 @@ export const StatusNotification: React.FC<NotificationProps> = ({
       ]}
     >
       <LinearGradient
-        colors={getStatusColor()}
+        colors={getStatusColor() as any as [string, string]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
         style={styles.statusGradient}

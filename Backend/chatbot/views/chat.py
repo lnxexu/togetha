@@ -6,6 +6,7 @@ import requests
 from django.conf import settings
 from .. import rag
 from ..models import Conversation, Message
+from ..models import DocumentChunk
 import traceback
 
 OLLAMA_URL = "http://127.0.0.1:11434/api/chat"
@@ -79,18 +80,56 @@ class ChatView(APIView):
                     "content": msg.content
                 })
 
-            # RAG context check
-            use_rag = any(k in query_text.lower() for k in ["document", "file", "pdf", "uploaded"])
+            # RAG context: allow specifying doc_ids in request, or derive from
+            # conversation attached files (matching by filename -> document_name).
             context = ""
-            if use_rag:
-                try:
-                    # search_similar_for_user returns tuples of
-                    # (id, chunk_text, score, document_name, page_num)
-                    chunks = rag.search_similar_for_user(query_text, request.user.id, top_k=3)
-                    # take the chunk_text (index 1) from each result
-                    context = "\n\n".join([c[1] for c in chunks]) if chunks else ""
-                except Exception as e:
-                    print("RAG failed:", e)
+            try:
+                doc_ids = request.data.get('doc_ids', []) or []
+
+                # If no doc_ids supplied, derive from conversation attached files
+                if not doc_ids and hasattr(conversation, 'attached_files'):
+                    file_names = [f.file_name for f in conversation.attached_files.all() if getattr(f, 'file_name', None)]
+                    if file_names:
+                        # Find distinct doc_ids for these filenames
+                        qs = DocumentChunk.objects.filter(user=request.user, document_name__in=file_names).values_list('doc_id', flat=True).distinct()
+                        doc_ids = [str(d) for d in qs]
+
+                if doc_ids:
+                    # Use the provided doc_ids to compute RAG over those documents
+                    # Embed query once
+                    try:
+                        query_emb = rag.EMBED_MODEL.encode([query_text])[0]
+                    except Exception:
+                        query_emb = rag.embed_texts([query_text])[0]
+
+                    # Fetch chunks for these doc_ids belonging to this user
+                    chunks_qs = DocumentChunk.objects.filter(user=request.user, doc_id__in=doc_ids)
+                    results = []
+                    import numpy as np
+                    for chunk in chunks_qs:
+                        emb = chunk.embedding
+                        try:
+                            emb_arr = np.array(emb, dtype=np.float32)
+                        except Exception:
+                            continue
+                        denom = (np.linalg.norm(query_emb) * np.linalg.norm(emb_arr))
+                        if denom == 0:
+                            score = 0.0
+                        else:
+                            score = float(np.dot(query_emb, emb_arr) / denom)
+                        results.append((chunk.id, chunk.chunk_text, score, chunk.document_name, getattr(chunk, 'page_num', None)))
+
+                    results.sort(key=lambda x: x[2], reverse=True)
+                    top_hits = results[:3]
+                    context = "\n\n".join([r[1] for r in top_hits]) if top_hits else ""
+                else:
+                    # Fallback: keyword-based user-level search
+                    use_rag = any(k in query_text.lower() for k in ["document", "file", "pdf", "uploaded"])
+                    if use_rag:
+                        chunks = rag.search_similar_for_user(query_text, request.user.id, top_k=3)
+                        context = "\n\n".join([c[1] for c in chunks]) if chunks else ""
+            except Exception as e:
+                print("RAG failed:", e)
 
             current_query = f"Answer using:\n{context}\n\nUser: {query_text}" if context else query_text
             conversation_messages.append({"role": "user", "content": current_query})

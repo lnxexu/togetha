@@ -184,6 +184,7 @@ export interface Conversation {
 
 export interface ConversationFile {
   id: string;
+  doc_id?: string | null;
   file_name: string;
   file_type: string;
   file_size: number;
@@ -201,6 +202,9 @@ export interface ChatResponse {
 
 // API Service Class
 class ChatbotAPIService {
+  // Prevent duplicate simultaneous requests for the conversations list by
+  // caching the in-flight promise and returning the same promise to callers.
+  private inFlightGetConversations: Promise<Conversation[]> | null = null;
   private async getAuthToken(): Promise<string | null> {
     try {
       const token = await AsyncStorage.getItem("authToken");
@@ -260,13 +264,22 @@ class ChatbotAPIService {
   // Conversation Management
   async getConversations(filter?: string, search?: string): Promise<Conversation[]> {
     try {
+      // If a request is already in progress, return that promise to dedupe
+      if (this.inFlightGetConversations) {
+        return this.inFlightGetConversations;
+      }
       const headers = await this.getAuthHeaders();
       const params = new URLSearchParams();
       if (filter) params.append("filter", filter);
       if (search) params.append("search", search);
 
       const endpoint = `${API_ENDPOINTS.CHATBOT_CONVERSATIONS}?${params.toString()}`;
-      const response = await apiClient.get(endpoint, headers);
+      // Store the in-flight promise
+      this.inFlightGetConversations = apiClient.get(endpoint, headers).then((res) => res as Conversation[]).finally(() => {
+        this.inFlightGetConversations = null;
+      });
+
+      const response = await this.inFlightGetConversations;
       return response;
     } catch (error) {
       this.handleNetworkError(error, "Fetching conversations");
@@ -371,14 +384,26 @@ class ChatbotAPIService {
       const messagesWithSystem = [systemInstruction, ...formattedMessages];
       
       // Using CHATBOT_CHAT endpoint for sending messages (correct backend endpoint)
-      const response = await apiClient.post(
-        API_ENDPOINTS.CHATBOT_CHAT,
-        {
-          messages: messagesWithSystem,
-          conversation_id: conversationId,
-        },
-        headers
-      );
+      // If messages include attached_files on the conversation, extract doc_ids
+      let doc_ids: string[] = [];
+      try {
+        // try to infer from the conversation object if present in the messages array
+        // messages may include attached_files on the conversation state passed from UI
+        const conv = (messages as any)?.find?.((m: any) => m.__conversation)?.__conversation;
+        if (conv && Array.isArray(conv.attached_files)) {
+          doc_ids = conv.attached_files.map((f: any) => f.doc_id).filter(Boolean).slice(0, 4);
+        }
+      } catch (e) {
+        // ignore
+      }
+
+      const payload: any = {
+        messages: messagesWithSystem,
+        conversation_id: conversationId,
+      };
+      if (doc_ids && doc_ids.length > 0) payload.doc_ids = doc_ids;
+
+      const response = await apiClient.post(API_ENDPOINTS.CHATBOT_CHAT, payload, headers);
       return response;
     } catch (error: any) {
       // Check if it's a network error and offline model is available
@@ -509,6 +534,24 @@ async extractTextFromImage(file: any): Promise<{ id: number; text: string }> {
       return response;
     } catch (error) {
       console.error("Error fetching settings:", error);
+      throw error;
+    }
+  }
+
+  // Export embeddings for a user (paginated). Returns the server JSON structure.
+  async exportEmbeddings(docId?: string, page: number = 1, pageSize: number = 1000) {
+    try {
+      const headers = await this.getAuthHeaders();
+      const params = new URLSearchParams();
+      if (docId) params.append('doc_id', docId);
+      params.append('page', String(page));
+      params.append('page_size', String(pageSize));
+
+      const endpoint = `/documents/export_embeddings/?${params.toString()}`;
+      const response = await apiClient.get(endpoint, headers);
+      return response;
+    } catch (error) {
+      this.handleNetworkError(error, 'Exporting embeddings');
       throw error;
     }
   }

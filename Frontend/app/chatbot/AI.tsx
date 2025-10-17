@@ -83,6 +83,7 @@ function ChatBot(): React.ReactElement {
   const [previewFile, setPreviewFile] = useState<any>(null);
   const [attachmentMenuVisible, setAttachmentMenuVisible] = useState(false);
   const [processingFiles, setProcessingFiles] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   // Animated value for smooth keyboard movement
@@ -176,6 +177,71 @@ function ChatBot(): React.ReactElement {
     }
   };
 
+  // Local cache keys for offline chat history
+  const CACHE_CONVERSATIONS_KEY = 'chat_conversations_cache_v1';
+  const CACHE_CONVERSATION_PREFIX = 'chat_conversation_';
+
+  // Persist the list of conversations (summary) to AsyncStorage
+  const saveConversationsCache = async (list: any[]) => {
+    try {
+      await AsyncStorage.setItem(CACHE_CONVERSATIONS_KEY, JSON.stringify(list || []));
+    } catch (err) {
+      console.warn('Failed to save conversations cache:', err);
+    }
+  };
+
+  const loadConversationsCache = async (): Promise<any[]> => {
+    try {
+      const raw = await AsyncStorage.getItem(CACHE_CONVERSATIONS_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch (err) {
+      console.warn('Failed to load conversations cache:', err);
+      return [];
+    }
+  };
+
+  // Persist a full conversation (including messages)
+  const saveConversationToCache = async (conversation: any) => {
+    try {
+      const key = `${CACHE_CONVERSATION_PREFIX}${conversation.id}`;
+      // Preserve sync_meta if present
+      const existingRaw = await AsyncStorage.getItem(key);
+      const existing = existingRaw ? JSON.parse(existingRaw) : {};
+      const toSave = { ...existing, ...conversation };
+      await AsyncStorage.setItem(key, JSON.stringify(toSave));
+
+      // Also update the conversations list cache (summary)
+      const list = await loadConversationsCache();
+      const summary = {
+        id: conversation.id,
+        title: conversation.title || 'Conversation',
+        updated_at: conversation.updated_at || new Date().toISOString(),
+        message_count: (conversation.messages || []).length,
+        last_message: conversation.messages && conversation.messages.length > 0 ? { content: conversation.messages[conversation.messages.length - 1].content, created_at: conversation.messages[conversation.messages.length - 1].created_at || new Date().toISOString(), message_type: conversation.messages[conversation.messages.length - 1].role === 'user' ? 'user' : 'assistant' } : null,
+        is_archived: false,
+        is_pinned: false,
+        icon: '💬',
+      };
+
+      const updated = list.filter((c: any) => c.id !== summary.id);
+      updated.unshift(summary); // put most recent first
+      await saveConversationsCache(updated);
+    } catch (err) {
+      console.warn('Failed to save conversation cache:', err);
+    }
+  };
+
+  const loadConversationFromCache = async (conversationId: string) => {
+    try {
+      const key = `${CACHE_CONVERSATION_PREFIX}${conversationId}`;
+      const raw = await AsyncStorage.getItem(key);
+      return raw ? JSON.parse(raw) : null;
+    } catch (err) {
+      console.warn('Failed to load conversation from cache:', err);
+      return null;
+    }
+  };
+
   const clearActiveConversation = async () => {
     try {
       await AsyncStorage.removeItem('activeConversationId');
@@ -201,12 +267,25 @@ function ChatBot(): React.ReactElement {
     if (!silent) setErrorMessage(null);
     const conversationList = await chatbotAPI.getConversations();
     setConversations(conversationList);
+    // Persist cache for offline use
+    await saveConversationsCache(conversationList);
     setIsOnline(true);
     setRetryCount(0);
+    // After loading from server, try to sync any cached local conversations/messages
+    try { await syncCachedConversations(); } catch (e) { console.warn('Sync after load failed:', e); }
   } catch (error: any) {
     if (!silent) {
       setIsOnline(false);
       setErrorMessage(error.message || "Failed to load conversations");
+    }
+    // Try to load cached conversations when network fails
+    try {
+      const cached = await loadConversationsCache();
+      if (cached && cached.length > 0) {
+        setConversations(cached);
+      }
+    } catch (cacheErr) {
+      console.warn('Failed to load conversations cache:', cacheErr);
     }
 
     // Auto-retry logic with proper cleanup
@@ -223,8 +302,23 @@ function ChatBot(): React.ReactElement {
 };
   const loadConversation = async (conversationId: string) => {
     try {
-      const conversation = await chatbotAPI.getConversation(conversationId);
+      let serverConversationId = conversationId;
+
+      // If we have a cached mapping from local id -> server id, prefer server id
+      try {
+        const cached = await loadConversationFromCache(conversationId);
+        if (cached && cached.sync_meta?.server_id) {
+          serverConversationId = cached.sync_meta.server_id;
+        }
+      } catch (mapErr) {
+        // ignore
+      }
+
+      const conversation = await chatbotAPI.getConversation(serverConversationId);
       setCurrentConversation(conversation);
+
+      // Cache conversation for offline lookup
+      try { await saveConversationToCache(conversation); } catch (e) { /* noop */ }
 
       // Update chat head context with active conversation
     
@@ -244,7 +338,110 @@ function ChatBot(): React.ReactElement {
       setShowChatHistory(false);
     } catch (error) {
       console.error("Error loading conversation:", error);
+
+      // Try to load conversation from local cache
+      try {
+        const cached = await loadConversationFromCache(conversationId);
+        if (cached) {
+          setCurrentConversation(cached);
+
+          const formattedMessages: Message[] = (cached.messages || []).map((msg: any) => ({
+            id: msg.id,
+            role: msg.role === 'user' || msg.message_type === 'user' ? 'user' : 'assistant',
+            content: msg.content,
+            created_at: msg.created_at
+          }));
+
+          setMessages(formattedMessages);
+          setShowChatHistory(false);
+          return;
+        }
+      } catch (cacheError) {
+        console.warn('Failed to load conversation from cache:', cacheError);
+      }
+
       Alert.alert("Error", "Failed to load conversation");
+    }
+  };
+
+  // Attempt to sync locally-cached conversations/messages to backend
+  const syncCachedConversations = async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    try {
+      const cached = await loadConversationsCache();
+      if (!cached || cached.length === 0) return;
+
+      // Track whether we actually changed anything on the server so we only
+      // refresh the conversation list when necessary. This avoids an
+      // unconditional reload that can cause duplicate calls on startup.
+      let madeChanges = false;
+
+      for (const convSummary of cached) {
+        try {
+          // Only sync conversations that look local (id prefixed local- or missing server id)
+          if (!convSummary.id || String(convSummary.id).startsWith('local-')) {
+            // Load full conversation from cache
+            const full = await loadConversationFromCache(convSummary.id);
+            if (!full) continue;
+
+            // Ensure sync_meta exists on conversation
+            full.sync_meta = full.sync_meta || { last_synced_index: -1 };
+
+            // Create conversation on server
+            const created = await chatbotAPI.createConversation({ title: full.title || 'Conversation' });
+            madeChanges = true; // we created a new server-side conversation
+            // Record server id for this local conversation for future mapping
+            full.sync_meta = full.sync_meta || {};
+            full.sync_meta.server_id = created.id;
+            await saveConversationToCache(full);
+
+            // Send only messages after last_synced_index (idempotent replay)
+            const startIndex = (full.sync_meta?.last_synced_index ?? -1) + 1;
+            for (let i = startIndex; i < (full.messages || []).length; i++) {
+              const msg = full.messages[i];
+              if (!msg) continue;
+
+              const formatted: Message[] = [{ role: msg.role === 'user' ? 'user' : 'assistant', content: msg.content } as Message];
+              try {
+                await chatbotAPI.sendMessage(msg.content, created.id, formatted);
+                // Update last_synced_index on success
+                full.sync_meta.last_synced_index = i;
+                await saveConversationToCache(full);
+                madeChanges = true; // at least one message was synced
+              } catch (sendErr) {
+                console.warn('Failed to send cached message during sync:', sendErr);
+                // Stop attempting further messages in this conversation on repeated failure
+                break;
+              }
+            }
+
+            // Update cache: replace local id with server id and persist sync_meta
+            const newFull = { ...full, id: created.id, updated_at: new Date().toISOString() };
+            // ensure sync_meta.server_id is set
+            newFull.sync_meta = newFull.sync_meta || {};
+            newFull.sync_meta.server_id = created.id;
+            await saveConversationToCache(newFull);
+
+            // Update conversations cache list (replace local summary)
+            const list = await loadConversationsCache();
+            const updated = list.filter((c: any) => c.id !== convSummary.id);
+            updated.unshift({ id: created.id, title: created.title || full.title, updated_at: newFull.updated_at, message_count: newFull.messages.length, last_message: newFull.messages[newFull.messages.length - 1] || null });
+            await saveConversationsCache(updated);
+          }
+        } catch (innerErr) {
+          console.warn('Failed to sync a cached conversation:', innerErr);
+        }
+      }
+
+      // Refresh from server after sync only if we actually changed something
+      if (madeChanges) {
+        await loadConversations(true);
+      }
+    } catch (err) {
+      console.warn('syncCachedConversations failed:', err);
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -478,10 +675,15 @@ function ChatBot(): React.ReactElement {
 
       // Try online API first
       try {
+        // Attach conversation metadata so the API service can infer doc_ids
+        const metaMessages = formattedMessages.map(m => ({ ...m }));
+        // Add a synthetic conversation marker for doc extraction
+        (metaMessages as any).__conversation = currentConversation;
+
         const response = await chatbotAPI.sendMessage(
-          messageContent, 
-          currentConversation?.id, 
-          formattedMessages
+          messageContent,
+          currentConversation?.id,
+          metaMessages
         );
 
         // Update offline mode status based on response source
@@ -719,6 +921,32 @@ function ChatBot(): React.ReactElement {
       };
 
       setMessages(prev => [...prev, aiMessage]);
+
+      // Persist conversation/messages to local cache when offline or when conversation id exists
+      try {
+        const convId = response.conversation_id || currentConversation?.id || `local-${Date.now()}`;
+        const conv = {
+          id: convId,
+          title: currentConversation?.title || 'Conversation',
+          created_at: currentConversation?.created_at || new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          is_archived: false,
+          is_pinned: false,
+          icon: currentConversation?.icon || '💬',
+          summary: '',
+          messages: [...(currentConversation?.messages || []).map((m: any) => ({ ...m })),
+            { role: 'user', content: finalMessageContent, created_at: new Date().toISOString() },
+            { role: 'assistant', content: response.content, created_at: new Date().toISOString() }
+          ],
+          attached_files: [],
+          message_count: (currentConversation?.messages || []).length + 2,
+          last_message: { content: response.content, created_at: new Date().toISOString(), message_type: 'assistant' }
+        };
+
+        await saveConversationToCache(conv);
+      } catch (cacheErr) {
+        console.warn('Failed to persist conversation to cache:', cacheErr);
+      }
 
       // Show file processing results to user if there were any issues
       if (failedFiles.length > 0) {
@@ -1277,6 +1505,19 @@ const handleOCR = async () => {
               <Text style={styles.chatOptionText}>
                 {downloadingModel ? "Downloading..." : modelDownloaded ? "Offline Model Ready" : "Download Offline Model"}
               </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.chatOption, { justifyContent: 'flex-start' }]}
+              onPress={() => syncCachedConversations()}
+              disabled={isSyncing}
+            >
+              {isSyncing ? (
+                <ActivityIndicator size="small" color="#6B46C1" />
+              ) : (
+                <Ionicons name="sync" size={20} color="#6B46C1" />
+              )}
+              <Text style={styles.chatOptionText}>{isSyncing ? 'Syncing...' : 'Sync Now'}</Text>
             </TouchableOpacity>
 
             {isOfflineMode && (

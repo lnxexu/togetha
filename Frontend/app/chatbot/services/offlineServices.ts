@@ -2,8 +2,33 @@ import { initLlama, LlamaContext } from "llama.rn";
 import { ensureModel } from "../../../src/llama/setup";
 import { Message, ChatResponse } from "./chatbotAPIService";
 import RNFS from "react-native-fs";
+import { chatbotAPI } from "./chatbotAPIService";
 
 const MODEL_NAME = "llama-3-2b-Q4_K_M.gguf";
+
+const SYSTEM_PROMPT = `You are an AI tutoring assistant. Format your responses with proper markdown:
+- Use **bold** for emphasis and important points
+- Use *italics* for definitions or explanations
+- Use ### for headers and subheaders
+- Use bullet points (- ) for lists
+- Use numbered lists (1. ) when showing steps
+- Use | tables | when presenting data
+- Use \`code blocks\` for technical terms
+- Be clear, helpful, and educational in your responses.
+
+CONTEXT HANDLING RULES:
+- ALWAYS refer to the CURRENT CONVERSATION THREAD only
+- When files are attached to a message, they are specific to THAT message
+- When users ask for 'more examples' or 'explain further', refer to YOUR LAST RESPONSE in this conversation and generate additional context as needed
+- When asked to summarize or generate quizzes, refer to YOUR PREVIOUS MESSAGE in this conversation
+- If documents are uploaded, they are available for analysis throughout the conversation
+- Never reference previous conversations or unrelated topics
+- If you don't have enough context, ask for clarification
+
+FILE HANDLING:
+- When documents are uploaded, they become part of the knowledge base for this conversation and should be acknowledged when referenced
+- If files failed to upload, work with the available information and ask the user to retry if necessary
+`;
 
 class OfflineChatService {
   private context: LlamaContext | null = null;
@@ -63,7 +88,8 @@ class OfflineChatService {
   async sendMessage(
     message: string,
     conversationId?: string,
-    messages?: Message[]
+    messages?: Message[],
+    onToken?: (token: string) => void
   ): Promise<ChatResponse> {
     if (!this.isInitialized || !this.context) {
       await this.initialize();
@@ -75,9 +101,15 @@ class OfflineChatService {
         ?.map((msg) => `${msg.role === "user" ? "User" : "Assistant"}: ${msg.content}`)
         .join("\n") || "";
 
-      const prompt = conversationHistory
-        ? `${conversationHistory}\nUser: ${message}\nAssistant:`
-        : `User: ${message}\nAssistant:`;
+      // 🧩 Combine the system priming, conversation history, and new message
+      const prompt = `
+${SYSTEM_PROMPT.trim()}
+
+${conversationHistory}
+
+User: ${message}
+Assistant:
+      `.trim();
 
       let fullResponse = "";
 
@@ -92,6 +124,12 @@ class OfflineChatService {
         (data) => {
           if (data.token) {
             fullResponse += data.token;
+            try {
+              if (onToken) onToken(data.token);
+            } catch (e) {
+              // Ensure token callbacks don't break generation
+              console.warn('onToken callback error:', e);
+            }
           }
         }
       );
@@ -118,7 +156,150 @@ class OfflineChatService {
       console.log("🔄 Offline AI released");
     }
   }
+
+  // Fetch embeddings from backend and persist as JSON locally.
+  async syncEmbeddingsToLocal(opts?: { docId?: string; pageSize?: number; onProgress?: (p: number) => void; }) {
+    const docId = opts?.docId;
+    const pageSize = opts?.pageSize || 1000;
+    const onProgress = opts?.onProgress;
+
+    let page = 1;
+    let allChunks: any[] = [];
+
+    while (true) {
+      const resp = await chatbotAPI.exportEmbeddings(docId, page, pageSize);
+      const chunks = resp.chunks || [];
+      allChunks = allChunks.concat(chunks);
+
+      const total = resp.total || allChunks.length;
+      const fetched = allChunks.length;
+      if (onProgress) onProgress(Math.min(1, fetched / (total || 1)));
+
+      if (fetched >= total || chunks.length === 0) break;
+      page += 1;
+    }
+
+    const output = {
+      exported_at: new Date().toISOString(),
+      total: allChunks.length,
+      chunks: allChunks,
+    };
+
+    const filename = `embeddings_export_${docId || 'all'}_${Date.now()}.json`;
+    const path = `${RNFS.DocumentDirectoryPath}/${filename}`;
+
+    await RNFS.writeFile(path, JSON.stringify(output), 'utf8');
+    // use any to avoid typing mismatch with RNFS types
+    const stat: any = await (RNFS as any).stat(path);
+    return { path, filename, size: stat.size };
+  }
+
+  // --- Local embeddings index helpers ---
+  private getLocalIndexPath(): string {
+    return `${RNFS.DocumentDirectoryPath}/embeddings_index.json`;
+  }
+
+  private async loadLocalIndex(): Promise<{ exported_at?: string; total?: number; chunks: any[] }> {
+    const path = this.getLocalIndexPath();
+    try {
+      const exists = await RNFS.exists(path);
+      if (!exists) return { chunks: [] };
+      const raw = await RNFS.readFile(path, 'utf8');
+      const parsed = JSON.parse(raw);
+      if (!parsed || !Array.isArray(parsed.chunks)) return { chunks: [] };
+      return parsed;
+    } catch (err) {
+      console.warn('Failed to load local embeddings index:', err);
+      return { chunks: [] };
+    }
+  }
+
+  private async saveLocalIndex(index: { exported_at?: string; total?: number; chunks: any[] }) {
+    const path = this.getLocalIndexPath();
+    try {
+      await RNFS.writeFile(path, JSON.stringify(index), 'utf8');
+      return { path };
+    } catch (err) {
+      console.error('Failed to save local embeddings index:', err);
+      throw err;
+    }
+  }
+
+  // Import embeddings JSON file (created by syncEmbeddingsToLocal) into local index.
+  // Performs simple deduplication using (doc_id + created_at + first-100-chars-of-chunk) key.
+  async importEmbeddingsFromLocal(filePath: string, opts?: { onProgress?: (p: number) => void; mergeStrategy?: 'skip' | 'replace' }) {
+    const onProgress = opts?.onProgress;
+    const mergeStrategy = opts?.mergeStrategy || 'skip';
+
+    // Read external file
+    let raw: string;
+    try {
+      raw = await RNFS.readFile(filePath, 'utf8');
+    } catch (err) {
+      console.error('Failed to read embeddings file:', err);
+      throw new Error('Unable to read embeddings file');
+    }
+
+    let payload: any;
+    try {
+      payload = JSON.parse(raw);
+    } catch (err) {
+      console.error('Invalid JSON in embeddings file:', err);
+      throw new Error('Invalid JSON file');
+    }
+
+    const incoming: any[] = Array.isArray(payload.chunks) ? payload.chunks : [];
+    if (incoming.length === 0) return { imported: 0, total: 0 };
+
+    // Load existing local index
+    const local = await this.loadLocalIndex();
+    const existing = local.chunks || [];
+
+    // Build dedupe set
+    const makeKey = (c: any) => `${c.doc_id || 'none'}|${c.created_at || ''}|${(c.chunk_text || '').slice(0, 100)}`;
+    const existingKeys = new Set(existing.map(makeKey));
+
+    let imported = 0;
+    const total = incoming.length;
+
+    for (let i = 0; i < incoming.length; i++) {
+      const c = incoming[i];
+      if (!c) continue;
+      const key = makeKey(c);
+      if (existingKeys.has(key)) {
+        if (mergeStrategy === 'replace') {
+          // find and replace
+          const idx = existing.findIndex(e => makeKey(e) === key);
+          if (idx !== -1) existing[idx] = c;
+          imported += 1;
+        } else {
+          // skip
+          continue;
+        }
+      } else {
+        existing.push(c);
+        existingKeys.add(key);
+        imported += 1;
+      }
+
+      if (onProgress && total > 0) onProgress((i + 1) / total);
+    }
+
+    // Persist merged index
+    const out = {
+      exported_at: new Date().toISOString(),
+      total: existing.length,
+      chunks: existing,
+    };
+
+    await this.saveLocalIndex(out);
+
+    return { imported, total, local_total: existing.length, path: this.getLocalIndexPath() };
+  }
 }
 
 export const offlineChatService = new OfflineChatService();
 export default offlineChatService;
+
+// Persist embeddings JSON to device storage
+// Note: syncEmbeddingsToLocal is implemented as a class method above.

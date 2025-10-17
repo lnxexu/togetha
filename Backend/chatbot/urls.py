@@ -6,7 +6,7 @@ from .views.chat import ChatView
 from .views.ocr import OCRView
 from .views.files import FileUploadView
 from .utils.ocr_utils import extract_text_from_images
-from .views.documents import DocumentUploadView, DocumentListView
+from .views.documents import DocumentUploadView, DocumentListView, EmbeddingsExportView
 from .views.RAG_view import ChatRAGView
 from .views.dictionary_views import ConceptHelpView
 
@@ -34,6 +34,7 @@ urlpatterns = [
     # Para sa document management sa multiple document handling
     path("documents/upload/", DocumentUploadView.as_view(), name="upload_document"),
     path("documents/list/", DocumentListView.as_view(), name="list_documents"),
+    path("documents/export_embeddings/", EmbeddingsExportView.as_view(), name="export_embeddings"),
     path("chat/rag/", ChatRAGView.as_view(), name="chat_rag"),
     #Para ni sa dictionary
     path("dictionary/concept/", ConceptHelpView.as_view(), name="concept_help"),

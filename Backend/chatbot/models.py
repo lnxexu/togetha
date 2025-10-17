@@ -123,6 +123,8 @@ class ConversationFile(models.Model):
     is_processed = models.BooleanField(default=False)
     processing_status = models.CharField(max_length=50, default='pending')  # pending, processing, completed, failed
     extracted_text = models.TextField(blank=True, null=True)
+    # Link to the document identifier used by DocumentChunk (if processed into embeddings)
+    doc_id = models.UUIDField(null=True, blank=True)
     
     created_at = models.DateTimeField(auto_now_add=True)
     
