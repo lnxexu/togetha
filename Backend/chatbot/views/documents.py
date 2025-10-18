@@ -1,17 +1,22 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from django.contrib.auth.decorators import login_required
-from django.utils.decorators import method_decorator
+from rest_framework.permissions import IsAuthenticated
 from django.conf import settings
 from ..models import DocumentChunk
 from ..rag import process_file_for_user, search_similar_for_user
 import os
-from ..models import ConversationFile, Conversation, DocumentChunk
+from ..models import ConversationFile, Conversation
 
 
 class DocumentUploadView(APIView):
-    @method_decorator(login_required)
+    """Accept file uploads and kick off processing/embedding for authenticated users.
+
+    Uses DRF TokenAuthentication/SessionAuthentication via permission classes so
+    API clients that send `Authorization: Token <token>` will be accepted.
+    """
+    permission_classes = [IsAuthenticated]
+
     def post(self, request, *args, **kwargs):
         file = request.FILES["file"]
         user = request.user
@@ -33,6 +38,10 @@ class DocumentUploadView(APIView):
                 conv = Conversation.objects.get(pk=conv_id, user=user)
             except Exception:
                 conv = None
+
+        # If no conversation provided or lookup failed, create one to satisfy NOT NULL fk
+        if conv is None:
+            conv = Conversation.objects.create(user=user, title='Uploaded files')
 
         conversation_file = ConversationFile.objects.create(
             conversation=conv,
@@ -67,6 +76,8 @@ class DocumentUploadView(APIView):
 
 
 class DocumentListView(APIView):
+    permission_classes = [IsAuthenticated]
+
     def get(self, request, *args, **kwargs):
         docs = (
             DocumentChunk.objects.filter(user=request.user)
@@ -86,7 +97,8 @@ class EmbeddingsExportView(APIView):
 
     Returns JSON: { total, page, page_size, chunks: [ { doc_id, document_name, chunk_text, embedding, created_at }, ... ] }
     """
-    @method_decorator(login_required)
+    permission_classes = [IsAuthenticated]
+
     def get(self, request, *args, **kwargs):
         doc_id = request.GET.get("doc_id")
         try:

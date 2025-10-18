@@ -24,12 +24,8 @@ import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Markdown from "react-native-markdown-display";
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {chatbotAPI,
-  Conversation, 
-  Message as APIMessage, 
-  ConversationFile,
-  ChatResponse 
-} from "./services/chatbotAPIService";
+import { chatbotAPI } from "./services/chatbotAPIService";
+import { Conversation, Message as APIMessage, ConversationFile, ChatResponse } from "./services/chatbotTypes";
 import offlineChatService from "./services/offlineServices";
 
 type Role = "user" | "assistant";

@@ -1,8 +1,7 @@
 import { initLlama, LlamaContext } from "llama.rn";
 import { ensureModel } from "../../../src/llama/setup";
-import { Message, ChatResponse } from "./chatbotAPIService";
+import { Message, ChatResponse } from "./chatbotTypes";
 import RNFS from "react-native-fs";
-import { chatbotAPI } from "./chatbotAPIService";
 
 const MODEL_NAME = "llama-3-2b-Q4_K_M.gguf";
 
@@ -165,6 +164,10 @@ Assistant:
 
     let page = 1;
     let allChunks: any[] = [];
+
+    // Dynamically import chatbotAPI here to avoid circular static imports between
+    // offlineServices and chatbotAPIService. This keeps module initialization order safe.
+    const { chatbotAPI } = await import('./chatbotAPIService');
 
     while (true) {
       const resp = await chatbotAPI.exportEmbeddings(docId, page, pageSize);

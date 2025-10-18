@@ -37,6 +37,11 @@ class FileUploadView(APIView):
                 except Exception:
                     conv = None
 
+            # If no conversation was provided (or lookup failed), create a new conversation
+            # so ConversationFile.conversation (non-nullable) always has a valid FK.
+            if conv is None:
+                conv = Conversation.objects.create(user=request.user, title='Uploaded files')
+
             conversation_file = ConversationFile.objects.create(
                 conversation=conv,
                 message=None,
