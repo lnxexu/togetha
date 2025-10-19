@@ -27,6 +27,7 @@ import { API_URL, API_ENDPOINTS } from "../constants/ApiConfig";
 import AuthService from "./onboarding/service/AuthService";
 // taskService for managing tasks
 import taskService from "./task-management/services/taskService";
+import networkService from "./task-management/services/networkService";
 import SkeletonLoader from "./components/SkeletonLoader";
 import { notesCountUtils } from "./utils/NotesCountUtils";
 import { folderCacheUtils } from "./utils/FolderCacheUtils";
@@ -123,6 +124,12 @@ export default function Home() {
   const [foldersError, setFoldersError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Only consider online when connected and internet is explicitly reachable
+  const isOnlineStrict = () => {
+    const status = networkService.getNetworkStatus();
+    return !!(status.isConnected && status.isInternetReachable === true);
+  };
+
   // Greeting based on time of day
   const getGreeting = () => {
     // Get current time in utc VALUES
@@ -178,12 +185,16 @@ export default function Home() {
   useEffect(() => {
     // Create function to verify authentication
     const verifyAuth = async () => {
-      const authService = AuthService.getInstance();
-      const isValid = await authService.testToken();
-
-      if (!isValid) {
-        // If token is invalid, navigate to login
-        navigation.navigate("Login");
+      try {
+        const authService = AuthService.getInstance();
+        const isValid = await authService.testToken();
+        const online = isOnlineStrict();
+        // Only redirect when online and token is truly invalid
+        if (!isValid && online) {
+          navigation.navigate("Login");
+        }
+      } catch (e) {
+        // On errors (likely network), do not log out; allow offline usage
       }
     };
 
@@ -201,42 +212,47 @@ export default function Home() {
       setLoading(true);
 
       try {
-        // Clear all cached data
-        await AsyncStorage.multiRemove([
-          "username",
-          "userProfilePicture",
-          "notesCount",
-          "priorityTasks",
-          "notesFolders",
-          "todayTasksCount",
-        ]);
+        const online = isOnlineStrict();
+        // Clear all cached data only when online
+        if (online) {
+          await AsyncStorage.multiRemove([
+            "username",
+            "userProfilePicture",
+            "notesCount",
+            "priorityTasks",
+            "notesFolders",
+            "todayTasksCount",
+          ]);
+        }
 
         // Ensure we're using the right token key
         const token =
           (await AsyncStorage.getItem("token")) ||
           (await AsyncStorage.getItem("authToken"));
 
-        if (!token) {
+        if (!token && online) {
           navigation.navigate("Login");
           return;
         }
 
-        // Fetch username directly from server
-        const response = await fetch(
-          `${API_URL}${API_ENDPOINTS.USER_PROFILE}`,
-          {
-            headers: {
-              Authorization: `Token ${token}`,
-              "Cache-Control": "no-cache, no-store, must-revalidate",
-            },
-          }
-        );
+        if (online && token) {
+          // Fetch username directly from server
+          const response = await fetch(
+            `${API_URL}${API_ENDPOINTS.USER_PROFILE}`,
+            {
+              headers: {
+                Authorization: `Token ${token}`,
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+              },
+            }
+          );
 
-        if (response.ok) {
-          const data = await response.json();
-          if (data.username) {
-            setUsername(data.username);
-            await AsyncStorage.setItem("username", data.username);
+          if (response.ok) {
+            const data = await response.json();
+            if (data.username) {
+              setUsername(data.username);
+              await AsyncStorage.setItem("username", data.username);
+            }
           }
         }
 
@@ -271,7 +287,7 @@ export default function Home() {
         }
 
         const token = await AsyncStorage.getItem("authToken");
-        if (!token) {
+        if (!token || !isOnlineStrict()) {
           return;
         }
 
@@ -382,8 +398,10 @@ export default function Home() {
           setNotesCount(newCount);
         });
 
-        // Fetch fresh count from server
-        await notesCountUtils.refreshCount();
+        // Fetch fresh count from server only when online
+        if (isOnlineStrict()) {
+          await notesCountUtils.refreshCount();
+        }
 
         // Return cleanup function
         return unsubscribe;
@@ -400,7 +418,9 @@ export default function Home() {
   // Function to refresh notes count - can be called when returning from notes screen
   const refreshNotesCount = async () => {
     try {
-      await notesCountUtils.refreshCount();
+      if (isOnlineStrict()) {
+        await notesCountUtils.refreshCount();
+      }
     } catch (error) {
       console.error("Error refreshing notes count:", error);
     }
@@ -416,6 +436,58 @@ export default function Home() {
       const cachedTasks = await AsyncStorage.getItem("priorityTasks");
       if (cachedTasks) {
         setPriorityTasks(JSON.parse(cachedTasks));
+      }
+
+      const online = isOnlineStrict();
+      if (!online) {
+        // Build from offline tasks
+        const all = await taskService.getAllTasks();
+        const active = all.filter((t: any) => !t.completed);
+        const priorityOrder: Record<string, number> = {
+          "urgent-important": 4,
+          "not-urgent-important": 3,
+          "urgent-not-important": 2,
+          "not-urgent-not-important": 1,
+        };
+        const transformedTasks = active
+          .sort((a: any, b: any) => {
+            const ap = priorityOrder[a.priority] || 1;
+            const bp = priorityOrder[b.priority] || 1;
+            if (ap !== bp) return bp - ap;
+            if (a.due_datetime && b.due_datetime) {
+              return new Date(a.due_datetime).getTime() - new Date(b.due_datetime).getTime();
+            }
+            if (a.due_datetime && !b.due_datetime) return -1;
+            if (!a.due_datetime && b.due_datetime) return 1;
+            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+          })
+          .slice(0, 5)
+          .map((task: any) => ({
+            id: String(task.id),
+            title: task.title,
+            description: task.description,
+            category: task.category || "General",
+            time: task.due_datetime
+              ? new Date(task.due_datetime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+              : "No due time",
+            priority: mapPriority(task.priority),
+            status: task.completed ? "Completed" : "Pending",
+            due_datetime: task.due_datetime,
+            created_at: task.created_at,
+            updated_at: task.updated_at,
+          }));
+        setPriorityTasks(transformedTasks);
+
+        const today = new Date();
+        const todayTasks = all.filter((task: any) => {
+          if (!task.due_datetime) return false;
+          const td = new Date(task.due_datetime);
+          return td.toDateString() === today.toDateString();
+        });
+        const completedTodayTasks = todayTasks.filter((t: any) => t.completed);
+        setTodayTasksCount({ completed: completedTodayTasks.length, total: todayTasks.length });
+        await AsyncStorage.setItem("priorityTasks", JSON.stringify(transformedTasks));
+        return;
       }
 
       const token = await AsyncStorage.getItem("authToken");
@@ -609,7 +681,12 @@ export default function Home() {
           setNotesFolders(JSON.parse(cachedFolders));
         }
 
+        const online = isOnlineStrict();
         const token = await AsyncStorage.getItem("authToken");
+        if (!online) {
+          // Offline: rely on cached folders and exit
+          return;
+        }
         if (!token) {
           navigation.navigate("Login");
           return;
@@ -856,25 +933,30 @@ export default function Home() {
                 // Refresh all data sources
                 setLoading(true);
 
-                // Clear cache to force fresh data
-                await AsyncStorage.multiRemove([
-                  "username",
-                  "userProfilePicture",
-                  "notesCount",
-                  "priorityTasks",
-                  "notesFolders",
-                  "todayTasksCount",
-                ]);
+                const online = isOnlineStrict();
+                // Clear cache to force fresh data only when online
+                if (online) {
+                  await AsyncStorage.multiRemove([
+                    "username",
+                    "userProfilePicture",
+                    "notesCount",
+                    "priorityTasks",
+                    "notesFolders",
+                    "todayTasksCount",
+                  ]);
+                }
 
                 // Re-run all the fetch useEffects and refresh notes count
                 const token = await AsyncStorage.getItem("authToken");
-                if (!token) {
+                if (!token && online) {
                   navigation.navigate("Login");
                   return;
                 }
 
-                // Explicitly refresh notes count
-                await notesCountUtils.refreshCount();
+                // Explicitly refresh notes count only when online
+                if (online) {
+                  await notesCountUtils.refreshCount();
+                }
 
                 // The useEffects will run automatically
                 setLoading(false);

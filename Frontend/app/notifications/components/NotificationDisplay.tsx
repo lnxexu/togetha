@@ -72,7 +72,7 @@ export const StatusNotification: React.FC<NotificationProps> = ({
 
   if (!visible) return null;
 
-  const getStatusColor = () => {
+  const getStatusColor = (): [string, string] => {
     switch (priority) {
       case 'high': return ['#EF4444', '#DC2626'];
       case 'medium': return ['#F59E0B', '#D97706'];

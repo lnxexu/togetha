@@ -194,7 +194,10 @@ const ToDo: React.FC = () => {
         onPress: async () => {
           try {
             await taskService.deleteTask(taskId);
-            await loadTasks();
+            // Optimistically update UI immediately
+            setTasks((prev) => prev.filter((t) => t.id !== taskId));
+            // Refresh from source to reconcile with storage/server
+            loadTasks();
             
             // Show appropriate message based on online status
             if (!taskService.isOnline()) {
@@ -212,7 +215,20 @@ const ToDo: React.FC = () => {
   const handleMarkComplete = async (taskId: string) => {
     try {
       await taskService.markTaskComplete(taskId);
-      await loadTasks();
+      // Optimistically update UI immediately so item drops from pending/overdue
+      setTasks((prev) => prev.map((t) => {
+        if (t.id !== taskId) return t;
+        const completedAt = new Date();
+        return {
+          ...t,
+          completed: true,
+          completed_at: completedAt.toISOString(),
+          overdue: false,
+          updated_at: completedAt.toISOString(),
+        };
+      }));
+      // Refresh from source to reconcile with storage/server
+      loadTasks();
       
       // Show appropriate message based on online status
       if (!taskService.isOnline()) {
@@ -576,7 +592,7 @@ const ToDo: React.FC = () => {
           /* Content Views */
           viewMode === "matrix" ? (
             <EisenhowerMatrix
-              tasks={filteredTasks}
+              tasks={filteredTasks.filter(t => !t.completed)}
               onTaskPress={handleTaskPress}
               onAddTask={handleAddTask}
               onDeleteTask={handleDeleteTask}

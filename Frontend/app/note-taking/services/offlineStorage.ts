@@ -20,6 +20,8 @@ export interface OfflineNote {
   folderId?: string;
   createdAt: string;
   updatedAt: string;
+  // When the note was last accessed/opened by the user (ISO string)
+  last_accessed?: string;
   type: "text" | "image" | "drawing" | "document";
   tags?: (string | { id: number; name: string })[];
   linkedTaskId?: string;
@@ -107,7 +109,17 @@ class OfflineStorage {
   async saveOfflineNote(note: OfflineNote): Promise<void> {
     try {
       const notes = await this.getOfflineNotes();
-      const existingIndex = notes.findIndex(n => n.id === note.id || n.localId === note.localId);
+      
+      // Use consistent key matching: prefer real server ID over local/temp IDs
+      const getNoteKey = (n: OfflineNote) => {
+        const id = (n.id || '').toString();
+        const localId = (n.localId || '').toString();
+        if (id && !id.startsWith('local_') && !id.startsWith('note_')) return id;
+        return localId || id;
+      };
+      
+      const noteKey = getNoteKey(note);
+      const existingIndex = notes.findIndex(n => getNoteKey(n) === noteKey);
       
       if (existingIndex >= 0) {
         notes[existingIndex] = note;
@@ -494,6 +506,8 @@ class OfflineStorage {
       has_drawing: hasNonEmpty(normalizedDrawing) || note.has_drawing || false,
       syncStatus,
       lastModified: new Date().toISOString(),
+      // Preserve last_accessed from server if present
+      last_accessed: (note as any).last_accessed || (note as any).lastAccessedAt || (note as any).last_accessed_at || undefined,
     };
     return normalized;
   }

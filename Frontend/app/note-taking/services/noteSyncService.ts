@@ -182,6 +182,15 @@ class NoteSyncService {
         await this.syncCreateNote(operation);
         break;
       case 'update':
+        // Special-case: queued touch operation to update last_accessed
+        if (operation.data && (operation.data as any).specialAction === 'touch') {
+          // Fire touch endpoint; ignore response body
+          await this.makeApiRequest(
+            `${API_ENDPOINTS.NOTE_TOUCH(operation.id)}`,
+            'POST'
+          );
+          return;
+        }
         await this.syncUpdateNote(operation);
         break;
       case 'delete':
@@ -238,11 +247,13 @@ class NoteSyncService {
     }
 
     // Update note with annotation data
-    await this.makeApiRequest(
-      `${API_ENDPOINTS.NOTES}${operation.id}/`,
-      'PATCH',
-      { document_annotations: localNote.document_annotations }
-    );
+    if (localNote.document_annotations !== undefined && localNote.document_annotations !== null) {
+      await this.makeApiRequest(
+        `${API_ENDPOINTS.NOTES}${operation.id}/`,
+        'PATCH',
+        { document_annotations: localNote.document_annotations }
+      );
+    }
   }
 
   // Create note on server
@@ -259,7 +270,7 @@ class NoteSyncService {
     const tagNames = Array.isArray(localNote.tags)
       ? localNote.tags.map((t: any) => (typeof t === 'string' ? t : t?.name)).filter(Boolean)
       : [];
-    const payload = {
+    const payload: any = {
       title: localNote.title,
       content: localNote.content,
       formatted_content: localNote.formatted_content || '',
@@ -267,10 +278,15 @@ class NoteSyncService {
       type: localNote.type || 'text',
       is_archived: localNote.is_archived || false,
       template: localNote.template || null,
-  drawing_data: this.serializeDrawingData(localNote.drawing_data),
-      document_annotations: localNote.document_annotations || null,
+      // Only send drawing data for drawing-type notes
+      ...(localNote.type === 'drawing' && {
+        drawing_data: this.serializeDrawingData(localNote.drawing_data),
+      }),
       tag_names: tagNames
     };
+    if (localNote.document_annotations !== undefined && localNote.document_annotations !== null) {
+      payload.document_annotations = localNote.document_annotations;
+    }
 
     // Create note on server
     const serverNote = await this.makeApiRequest<any>(API_ENDPOINTS.NOTES, 'POST', payload);
@@ -302,7 +318,7 @@ class NoteSyncService {
         const tagNames = Array.isArray(operation.data.tags)
           ? operation.data.tags.map((t: any) => (typeof t === 'string' ? t : t?.name)).filter(Boolean)
           : [];
-        const payload = {
+        const payload: any = {
           title: operation.data.title,
           content: operation.data.content,
           formatted_content: operation.data.formatted_content || '',
@@ -311,9 +327,11 @@ class NoteSyncService {
           is_archived: operation.data.is_archived || false,
           template: operation.data.template || null,
           drawing_data: this.serializeDrawingData(operation.data.drawing_data),
-          document_annotations: operation.data.document_annotations || null,
           tag_names: tagNames
         };
+        if (operation.data.document_annotations !== undefined && operation.data.document_annotations !== null) {
+          payload.document_annotations = operation.data.document_annotations;
+        }
         await this.makeApiRequest<any>(
           `${API_ENDPOINTS.NOTES}${operation.id}/`,
           'PATCH',
@@ -331,7 +349,7 @@ class NoteSyncService {
     const tagNamesU = Array.isArray(localNote.tags)
       ? localNote.tags.map((t: any) => (typeof t === 'string' ? t : t?.name)).filter(Boolean)
       : [];
-    const payload = {
+    const payload: any = {
       title: localNote.title,
       content: localNote.content,
       formatted_content: localNote.formatted_content || '',
@@ -339,10 +357,15 @@ class NoteSyncService {
       type: localNote.type || 'text',
       is_archived: localNote.is_archived || false,
       template: localNote.template || null,
-  drawing_data: this.serializeDrawingData(localNote.drawing_data),
-      document_annotations: localNote.document_annotations || null,
+      // Only send drawing data for drawing-type notes
+      ...(localNote.type === 'drawing' && {
+        drawing_data: this.serializeDrawingData(localNote.drawing_data),
+      }),
       tag_names: tagNamesU
     };
+    if (localNote.document_annotations !== undefined && localNote.document_annotations !== null) {
+      payload.document_annotations = localNote.document_annotations;
+    }
 
     // Update note on server
     const serverNote = await this.makeApiRequest<any>(

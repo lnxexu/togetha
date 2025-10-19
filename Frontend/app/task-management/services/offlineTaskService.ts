@@ -7,6 +7,43 @@ import networkService from './networkService';
 import syncService from './syncService';
 
 class OfflineTaskService {
+  private unsubscribeNetwork?: () => void;
+  private reconnectSyncTimer?: ReturnType<typeof setTimeout>;
+
+  constructor() {
+    // Initialize current network status and attempt a startup sync if needed
+    networkService.getCurrentNetworkStatus()
+      .then(() => this.tryAutoSync('startup'))
+      .catch(() => { /* noop */ });
+
+    // Auto-sync when network becomes available again
+    this.unsubscribeNetwork = networkService.addNetworkStatusListener((status) => {
+      const isOnline = status.isConnected && status.isInternetReachable !== false;
+      if (isOnline) {
+        this.tryAutoSync('reconnect');
+      }
+    });
+  }
+
+  // Debounced auto-sync trigger to avoid rapid re-syncs on flappy connections
+  private async tryAutoSync(source: 'startup' | 'reconnect') {
+    try {
+      if (!networkService.isOnline()) return;
+      const hasPending = await syncService.hasPendingOperations();
+      if (!hasPending) return;
+
+      if (this.reconnectSyncTimer) {
+        clearTimeout(this.reconnectSyncTimer);
+      }
+      this.reconnectSyncTimer = setTimeout(() => {
+        syncService.syncWithServer().catch((e) => {
+          console.error(`Auto-sync (${source}) failed:`, e);
+        });
+      }, 800);
+    } catch (e) {
+      // Silently ignore auto-sync attempts
+    }
+  }
   private async getAuthToken(): Promise<string | null> {
     try {
       return await AsyncStorage.getItem("authToken");
@@ -60,6 +97,8 @@ class OfflineTaskService {
   }
 
   private async formatTaskDates(task: any): Promise<Task> {
+    // Normalize id as string to avoid duplicates between numeric/string ids
+    const id: string = String(task.id ?? task.localId ?? '');
     // Convert backend priority format (with underscores) to frontend format (with hyphens)
     const priority =
       task.priority?.replace(/_/g, "-") || "not-urgent-not-important";
@@ -73,6 +112,7 @@ class OfflineTaskService {
 
     return {
       ...task,
+      id,
       priority,
       status,
       createdAt,
@@ -90,7 +130,7 @@ class OfflineTaskService {
   // Convert OfflineTask to Task for UI compatibility
   private offlineTaskToTask(offlineTask: OfflineTask): Task {
     return {
-      id: offlineTask.id,
+      id: String(offlineTask.id),
       title: offlineTask.title,
       description: offlineTask.description,
       completed: offlineTask.completed,
@@ -118,23 +158,41 @@ class OfflineTaskService {
             response.map((task: any) => this.formatTaskDates(task))
           );
           
-          // Update local storage with server data
-          const offlineTasks: OfflineTask[] = formattedTasks.map(task => 
+          // Convert server tasks to offline tasks (synced)
+          const serverOfflineTasks: OfflineTask[] = formattedTasks.map(task => 
             offlineStorageService.taskToOfflineTask(task, 'synced')
           );
-          
-          // Merge with local pending tasks
+
+          // Load local tasks and pick pending/failed ones to override server
           const localTasks = await offlineStorageService.getOfflineTasks();
-          const pendingTasks = localTasks.filter(t => t.syncStatus === 'pending' || t.syncStatus === 'failed');
-          
-          // Combine server tasks with pending local tasks
-          const allOfflineTasks = [...offlineTasks, ...pendingTasks];
-          await offlineStorageService.saveOfflineTasks(allOfflineTasks);
-          
-          // Trigger sync for any pending operations
+          const pendingOrFailed = localTasks.filter(t => t.syncStatus === 'pending' || t.syncStatus === 'failed');
+
+          // Merge: prefer local pending/failed over server copies; include local-only tasks (id starts with local_)
+          const byId = new Map<string, OfflineTask>();
+          const keyOf = (t: OfflineTask) => String(t.id || t.localId);
+          // Seed with server tasks
+          for (const t of serverOfflineTasks) {
+            byId.set(keyOf(t), t);
+          }
+          // Override/insert pending local tasks
+          for (const lt of pendingOrFailed) {
+            byId.set(keyOf(lt), lt);
+          }
+          // Ensure purely local tasks (created offline, not yet on server) are included
+          for (const lt of localTasks) {
+            const key = keyOf(lt);
+            if (key.startsWith('local_')) {
+              byId.set(key, lt);
+            }
+          }
+
+          const merged = Array.from(byId.values());
+          await offlineStorageService.saveOfflineTasks(merged);
+
+          // Trigger sync for any pending operations (non-blocking)
           syncService.syncWithServer().catch(() => {});
-          
-          return allOfflineTasks.map(t => this.offlineTaskToTask(t));
+
+          return merged.map(t => this.offlineTaskToTask(t));
         } catch (error) {
           // Fall through to offline mode
         }
@@ -194,7 +252,7 @@ class OfflineTaskService {
             user: username,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-            completed_at: taskData.completed_at ? taskData.completed_at.toISOString() : null,
+            completed_at: (function(v:any){ if (v===undefined||v===null) return null; if (v instanceof Date) return v.toISOString(); if (typeof v==='string'){ const p=new Date(v); return isNaN(p.getTime())? v: p.toISOString(); } return null })(taskData.completed_at),
             // Store in UTC while basing on the user's local selection
             due_datetime: taskData.due_datetime ? toUTCISOString(taskData.due_datetime) : null,
           };
@@ -256,7 +314,7 @@ class OfflineTaskService {
         ...currentTask,
         ...updates,
         created_at: currentTask.created_at,
-        completed_at: updates.completed_at ? updates.completed_at.toISOString() : currentTask.completed_at,
+        completed_at: currentTask.completed_at,
         updated_at: new Date().toISOString(),
         syncStatus: 'pending',
         lastModified: new Date().toISOString(),
@@ -264,11 +322,31 @@ class OfflineTaskService {
       };
 
       // Handle date field updates
+      const isoOrNull = (val: any): string | null => {
+        if (val === undefined || val === null) return null;
+        if (val instanceof Date) return val.toISOString();
+        if (typeof val === 'string') {
+          const parsed = new Date(val);
+          if (!isNaN(parsed.getTime())) return parsed.toISOString();
+          return val;
+        }
+        if (typeof val === 'number') {
+          const d = new Date(val);
+          if (!isNaN(d.getTime())) return d.toISOString();
+        }
+        return null;
+      };
+
       if (updates.due_datetime !== undefined) {
         updatedTask.due_datetime = updates.due_datetime;
       }
       if (updates.completed_at !== undefined) {
-        updatedTask.completed_at = updates.completed_at?.toISOString();
+        updatedTask.completed_at = isoOrNull(updates.completed_at) as any;
+      }
+      // Recompute overdue locally when completion status or due date/time changes
+      if (updates.completed !== undefined || updates.due_datetime !== undefined) {
+        const due = updatedTask.due_datetime ? new Date(updatedTask.due_datetime as any) : undefined;
+        updatedTask.overdue = !!(due && !updates.completed && due < new Date());
       }
 
       // Save to offline storage
@@ -292,7 +370,7 @@ class OfflineTaskService {
             apiUpdates.due_datetime = updates.due_datetime ? toUTCISOString(updates.due_datetime) : null;
           }
           if (updates.completed_at !== undefined) {
-            apiUpdates.completed_at = updates.completed_at ? updates.completed_at.toISOString() : null;
+            apiUpdates.completed_at = (function(v:any){ if (v===undefined||v===null) return null; if (v instanceof Date) return v.toISOString(); if (typeof v==='string'){ const p=new Date(v); return isNaN(p.getTime())? v: p.toISOString(); } return null })(updates.completed_at);
           }
 
           const serverTask = await this.apiRequest<any>(

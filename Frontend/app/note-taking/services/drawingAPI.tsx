@@ -392,20 +392,36 @@ export class DrawingAPI {
   ): Promise<{savedPath: string, backupPath?: string, backendResponse: any}> {
     try {
       console.log('savePDFAnnotationsWithBackend called');
+      // Save to backend as DOCUMENT annotations and ensure note type remains 'document'.
+      // Also clear any drawing data to avoid misclassification as a drawing note on next load.
+      const headers = await this.getAuthHeaders();
+      const backendPatchBody: any = {
+        document_annotations: annotations,
+        type: 'document',
+        // Explicitly clear drawing_strokes to prevent the backend from retaining drawing data
+        // (NoteSerializer maps drawing_strokes -> drawing_data and will mark has_drawing false)
+        drawing_strokes: [],
+      };
+      if (tags && tags.length) {
+        backendPatchBody.tag_names = tags;
+      }
 
-      // Convert PDF annotations to drawing strokes format for backend
-      const strokes: DrawingStroke[] = annotations.map(annotation => ({
-        id: annotation.id,
-        points: annotation.path ? this.convertPathToPoints(annotation.path) : [annotation.x, annotation.y],
-        color: annotation.color,
-        width: annotation.strokeWidth || 3,
-        tool: annotation.type,
-        timestamp: annotation.timestamp,
-        opacity: 1.0
-      }));
+      const backendResponseRaw = await fetch(
+        joinUrl(API_URL, `${API_ENDPOINTS.NOTES}${noteId}/`),
+        {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify(backendPatchBody),
+        }
+      );
 
-      // Save to backend first with tags
-      const backendResponse = await this.saveDrawing(noteId, strokes, tags);
+      if (!backendResponseRaw.ok) {
+        const errorData = await backendResponseRaw.json().catch(() => ({}));
+        console.error('Failed to save document annotations to backend:', errorData);
+        throw new Error(errorData.detail || `HTTP error! status: ${backendResponseRaw.status}`);
+      }
+
+      const backendResponse = await backendResponseRaw.json();
 
       // Then save to PDF
       const pdfResult = await this.savePDFAnnotations(pdfUri, annotations, options);

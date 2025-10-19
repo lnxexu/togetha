@@ -46,6 +46,7 @@ import {
   getTemplateBackgroundColor,
 } from "./utils/templateConfig";
 import { useNetworkStatus, getNetworkStatusText, getNetworkStatusColor } from "./services/networkService";
+import { downloadFileToDevice, saveDrawingAsJPEG, saveDrawingAsPNG } from "./utils/downloadUtils";
 
 // Configuration: control whether visual thickness / font sizes scale with canvas zoom.
 // When false, strokes remain visually stable (positions still follow zoom via coordinate conversion)
@@ -467,7 +468,8 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
   // Request media library permission when export modal opens
   const ensureMediaPermission = useCallback(async () => {
     try {
-      const status = await MediaLibrary.requestPermissionsAsync();
+      // Request write-only permissions (true = writeOnly, which includes read on iOS)
+      const status = await MediaLibrary.requestPermissionsAsync(true);
       setMediaPermission(status);
       return status;
     } catch (e) {
@@ -477,41 +479,29 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
   }, []);
 
   // Helper to save an image file URI to the user's Photos/Camera Roll and optionally share it
+  // Now uses unified download utility for consistent download location
   const saveImageToPhotos = useCallback(async (fileUri: string, shareAfterSave = false) => {
     try {
-      // Notify download/export started
       const exportName = `drawing_${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
-      pushNotificationService.notifyDownloadStarted(exportName).catch(() => {});
-      const perm = await MediaLibrary.requestPermissionsAsync();
-      if (!perm || (!perm.granted && perm.status !== 'granted')) {
-        showWarningToast('Permission to save to Photos is required');
+      
+      // Use unified download utility - automatically saves to Photos
+      const result = await downloadFileToDevice({
+        fileUri,
+        fileName: exportName,
+        fileType: 'png',
+        shareAfterSave,
+        showSuccessAlert: false, // We'll handle toast messages ourselves
+      });
+
+      if (result.success) {
+        return result.assetUri || null;
+      } else {
+        showWarningToast(result.error || 'Failed to save image');
         return null;
       }
-
-      // Create asset in the media library
-      const asset = await MediaLibrary.createAssetAsync(fileUri);
-
-      // Try to create or add to an app-specific album for better organization
-      try {
-        const albumName = 'Togetha';
-        const album = await MediaLibrary.getAlbumAsync(albumName);
-        if (!album) {
-          await MediaLibrary.createAlbumAsync(albumName, asset, false);
-        }
-      } catch (albumErr) {
-        // Non-fatal if album creation fails
-        console.warn('Could not create album for export', albumErr);
-      }
-
-      if (shareAfterSave) {
-        // Use the asset uri for sharing so other apps can access it
-        await Share.share({ url: asset.uri, title: 'Exported drawing' } as any);
-      }
-      // Notify completion
-      pushNotificationService.notifyDownloadComplete(exportName).catch(() => {});
-      return asset.uri;
     } catch (err) {
       console.error('Failed to save image to photos', err);
+      showErrorToast('Failed to save image');
       throw err;
     }
   }, []);
@@ -528,7 +518,7 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
     try {
       const uri = await captureRef(canvasCaptureRef.current || canvasCaptureRef, { format: 'png', quality: 1 });
       await saveImageToPhotos(uri, false);
-      showSuccessToast('Saved to Photos');
+      showSuccessToast('Saved to Photos/Downloads');
     } catch (e) {
       showErrorToast('Failed to export');
     } finally {
@@ -602,25 +592,14 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
     return withIndex.map(x => x.s);
   }, [strokes, getToolPriority]);
 
-  // Fetch folders for folder selection
+  // Fetch folders for folder selection using offline service
   const fetchFolders = useCallback(async () => {
     try {
-      const token = await AsyncStorage.getItem("authToken");
-      if (!token) return;
-
-      const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTE_FOLDERS}`, {
-        method: "GET",
-        headers: {
-          Authorization: `Token ${token}`,
-          "Content-Type": "application/json",
-        },
-      });
-
-      if (!response.ok) return;
-
-      const data = await response.json();
-      const fetchedFolders: Folder[] = data.map((folder: any) => ({
-        id: folder.id.toString(),
+      // Use offline service to fetch folders (works both online and offline)
+      const data = await offlineNotesService.getAllFolders();
+      
+      const fetchedFolders: Folder[] = (Array.isArray(data) ? data : []).map((folder: any) => ({
+        id: folder.id?.toString?.() ?? String(folder.id),
         name: folder.name,
         color: folder.color || "#667EEA",
         icon: folder.icon || "folder",
@@ -758,7 +737,8 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
               folderId: selectedFolderId || undefined,
               tags: tags,
               drawing_data: strokes,
-              type: "drawing",
+              // Do not forcibly change type if this note was a document; only set drawing when unknown
+              ...(undefined as any),
             });
             setSyncStatus(isOnline ? "saved" : "offline");
           } catch (e) {
@@ -1471,9 +1451,16 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
                       setExporting(true);
                       try {
                         const uri = await captureRef(canvasCaptureRef.current || canvasCaptureRef, { format: 'png', quality: 1 });
-                        // Immediately save and share
-                        await saveImageToPhotos(uri, true);
-                        showSuccessToast('PNG exported successfully!');
+                        const exportName = `${drawingTitle || 'drawing'}_${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
+                        
+                        // Use unified download utility - saves to Photos/Downloads
+                        const result = await saveDrawingAsPNG(uri, exportName, true);
+                        
+                        if (result.success) {
+                          showSuccessToast('PNG saved to Photos/Downloads!');
+                        } else {
+                          showErrorToast(result.error || 'Failed to export PNG');
+                        }
                         setShowExportModal(false);
                       } catch (e) {
                         showErrorToast('Failed to export PNG');
@@ -1498,9 +1485,16 @@ export const DrawingEditor: React.FC<DrawingEditorProps> = ({
                       setExporting(true);
                       try {
                         const uri = await captureRef(canvasCaptureRef.current || canvasCaptureRef, { format: 'jpg', quality: 0.9 });
-                        // Immediately save and share
-                        await saveImageToPhotos(uri, true);
-                        showSuccessToast('JPEG exported successfully!');
+                        const exportName = `${drawingTitle || 'drawing'}_${new Date().toISOString().replace(/[:.]/g, '-')}.jpg`;
+                        
+                        // Use unified download utility - saves to Photos/Downloads
+                        const result = await saveDrawingAsJPEG(uri, exportName, true);
+                        
+                        if (result.success) {
+                          showSuccessToast('JPEG saved to Photos/Downloads!');
+                        } else {
+                          showErrorToast(result.error || 'Failed to export JPEG');
+                        }
                         setShowExportModal(false);
                       } catch (e) {
                         showErrorToast('Failed to export JPEG');

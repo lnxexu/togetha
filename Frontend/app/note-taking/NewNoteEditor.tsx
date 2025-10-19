@@ -29,6 +29,7 @@ import { useNetworkStatus, getNetworkStatusText } from "./services/networkServic
 import offlineStorage, { OfflineNote } from "./services/offlineStorage";
 import noteSyncService from "./services/noteSyncService";
 import { dictionaryService } from "./services/dictionaryService";
+import offlineNotesService from "./services/offlineNotesService";
 
 const { RichEditor, RichToolbar } = require("react-native-pell-rich-editor");
 
@@ -249,34 +250,18 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     setCanRedo(false);
   }, []);
 
-  // Modify the fetchFolders function to ensure the folder name is updated
+  // Modify the fetchFolders function to use offline service for offline support
   const fetchFolders = async () => {
     try {
-      const token = await AsyncStorage.getItem("authToken");
-      if (!token) {
-        showErrorToast("Authentication required. Please log in again.");
-        return;
-      }
-
-      const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTE_FOLDERS}`, {
-        method: "GET",
-        headers: {
-          Authorization: `Token ${token}`,
-          "Content-Type": "application/json",
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch folders");
-      }
-
-      const data = await response.json();
+      // Use offline service to fetch folders (works both online and offline)
+      const data = await offlineNotesService.getAllFolders();
+      
       const mapped = (Array.isArray(data) ? data : []).map((folder: any) => ({
         id: folder.id?.toString?.() ?? String(folder.id),
         name: folder.name,
         color: folder.color || "#667EEA",
         icon: folder.icon || "folder",
-        note_count: folder.note_count,
+        note_count: folder.note_count || folder.notes_count || 0,
       }));
       setFolders(mapped);
 
@@ -290,6 +275,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
         }
       }
     } catch (error) {
+      console.error("Error fetching folders:", error);
       showErrorToast("Failed to load folders. Please try again.");
     }
   };
@@ -372,59 +358,54 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     const result = await noteService.saveNote(note, isAutoSave);
     setSaveStatus(result.status);
 
-    // Ensure device storage always has the latest copy for offline use
+    // Save to offline storage ONCE with proper sync status
     try {
       if (result?.note) {
-        const offlineCopy = offlineStorage.noteToOfflineNote(result.note, result.status.status === 'saved' ? 'synced' : 'pending');
-        await offlineStorage.saveOfflineNote(offlineCopy);
-      }
-    } catch (e) {
-      // Non-fatal; local cache update failed
-      console.warn('Failed to persist note to offline storage:', e);
-    }
-
-    // When offline or error, persist to offline storage and queue sync
-    if (result.status.status === 'offline' || result.status.status === 'error') {
-      try {
         const now = new Date().toISOString();
+        const syncStatus = result.status.status === 'saved' ? 'synced' : 
+                          (result.status.status === 'offline' || result.status.status === 'error') ? 'pending' : 'synced';
+        
         const offlineNote: OfflineNote = {
-          id: note.id,
+          id: result.note.id,
           localId: shouldCreate(note) ? note.id : undefined,
-          title: note.title || '',
-          content: note.content || '',
-          formatted_content: note.formatted_content || '',
-          folderId: note.folderId || undefined,
-          folder: note.folderId || undefined,
-          createdAt: note.createdAt || now,
-          updatedAt: now,
+          title: result.note.title || note.title || '',
+          content: result.note.content || note.content || '',
+          formatted_content: result.note.formatted_content || note.formatted_content || '',
+          folderId: result.note.folderId || note.folderId || undefined,
+          folder: result.note.folderId || note.folderId || undefined,
+          createdAt: result.note.createdAt || note.createdAt || now,
+          updatedAt: result.note.updatedAt || now,
           type: 'text',
-          tags: [],
-          is_archived: false,
+          tags: result.note.tags || note.tags || [],
+          is_archived: (result.note as any).is_archived || false,
           template: undefined,
           document_annotations: undefined,
           drawing_data: undefined,
           has_drawing: false,
-          syncStatus: 'pending',
+          syncStatus,
           lastModified: now,
         };
+        
         await offlineStorage.saveOfflineNote(offlineNote);
-        // Queue operation for later sync
-        await noteSyncService.queueOperation(
-          shouldCreate(note) ? 'create' : 'update',
-          'note',
-          note.id,
-          {
-            title: note.title,
-            content: note.content,
-            formatted_content: note.formatted_content,
-            folderId: note.folderId,
-          },
-          shouldCreate(note) ? note.id : undefined
-        );
-      } catch (e) {
-        // Swallow to avoid blocking editor; status already set
-        console.error('Failed to queue offline save:', e);
+        
+        // Queue operation for sync only when offline/error
+        if (result.status.status === 'offline' || result.status.status === 'error') {
+          await noteSyncService.queueOperation(
+            shouldCreate(note) ? 'create' : 'update',
+            'note',
+            result.note.id,
+            {
+              title: offlineNote.title,
+              content: offlineNote.content,
+              formatted_content: offlineNote.formatted_content,
+              folderId: offlineNote.folderId,
+            },
+            shouldCreate(note) ? offlineNote.localId : undefined
+          );
+        }
       }
+    } catch (e) {
+      console.error('Failed to persist note to offline storage:', e);
     }
 
     if (result.note.id !== note.id) {

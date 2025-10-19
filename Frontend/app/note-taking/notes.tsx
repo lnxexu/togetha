@@ -36,6 +36,7 @@ import TemplatePreview from "./components/TemplatePreview";
 import { DocumentPreviewModal } from "./components/DocumentPreviewModal";
 import { DocumentViewer } from "./components/DocumentViewer";
 import PDFAnnotationViewer from "./components/PDFAnnotationViewer";
+import DocumentPreview from "./components/DocumentPreview";
 import { LinearGradient } from "expo-linear-gradient";
 import { TemplateOverlay, TemplateType } from "./components/TemplateOverlay";
 import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
@@ -444,13 +445,30 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
     fetchNotes();
     fetchFolders();
 
+    // Setup network status listener to sync when coming back online
+    const removeNetworkListener = offlineNotesService.addNetworkStatusListener((status) => {
+      if (status.isOnline) {
+        console.log('Device is back online, attempting to sync notes...');
+        offlineNotesService.syncWithServer().catch((error) => {
+          console.error('Auto-sync failed after coming online:', error);
+        });
+      }
+    });
+
     const refreshInterval = setInterval(() => {
       if (AppState.currentState === "active") {
+        // Check if there are pending changes and try to sync
+        offlineNotesService.hasPendingChanges().then((hasPending) => {
+          if (hasPending && offlineNotesService.isOnline()) {
+            offlineNotesService.syncWithServer().catch(console.error);
+          }
+        });
       }
     }, 30000);
 
     return () => {
       clearInterval(refreshInterval);
+      removeNetworkListener();
     };
   }, []);
 
@@ -495,6 +513,24 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
       // Invalidate folder cache when returning to notes screen
       // This ensures home screen gets updated counts when notes are modified
       folderCacheUtils.invalidateCache();
+
+      // Try to sync when coming back to the screen if online and has pending changes
+      if (offlineNotesService.isOnline()) {
+        offlineNotesService.hasPendingChanges().then((hasPending) => {
+          if (hasPending) {
+            console.log('Syncing pending changes on focus...');
+            offlineNotesService.syncWithServer()
+              .then(() => {
+                // Refresh notes after sync
+                fetchNotes(true);
+                fetchFolders();
+              })
+              .catch((error) => {
+                console.error('Sync on focus failed:', error);
+              });
+          }
+        });
+      }
 
       return () => {
         // Clean up if needed when screen goes out of focus
@@ -549,6 +585,11 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
     // Primary check: if type is explicitly set to drawing
     if (note.type === "drawing") {
       return true;
+    }
+
+    // Explicitly guard: documents should never be treated as drawings
+    if (note.type === "document") {
+      return false;
     }
 
     // Secondary check: if drawing_data exists and has content
@@ -663,7 +704,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
           };
         });
 
-        // Sort by latest update primarily: updatedAt desc, then lastAccessedAt desc, then createdAt desc
+        // Sort by latest update: prioritize lastAccessedAt if recent (within 1 min), then updatedAt, then createdAt
         fetchedNotes.sort((a, b) => {
           const getNum = (d?: Date) => {
             if (d instanceof Date) {
@@ -672,12 +713,29 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
             }
             return 0;
           };
-          const aU = getNum(a.updatedAt);
-          const bU = getNum(b.updatedAt);
-          if (aU !== bU) return bU - aU;
+          const now = Date.now();
           const aL = getNum(a.lastAccessedAt);
           const bL = getNum(b.lastAccessedAt);
+          const aU = getNum(a.updatedAt);
+          const bU = getNum(b.updatedAt);
+          
+          // If both have recent lastAccessedAt (within 1 minute), prioritize by lastAccessedAt
+          const isRecentA = aL > 0 && (now - aL) < 60000;
+          const isRecentB = bL > 0 && (now - bL) < 60000;
+          
+          if (isRecentA && isRecentB) {
+            return bL - aL;
+          }
+          if (isRecentA && !isRecentB) return -1;
+          if (!isRecentA && isRecentB) return 1;
+          
+          // Otherwise sort by updatedAt (most recent first)
+          if (aU !== bU) return bU - aU;
+          
+          // Fallback to lastAccessedAt
           if (aL !== bL) return bL - aL;
+          
+          // Final fallback to createdAt
           const aC = getNum(a.createdAt);
           const bC = getNum(b.createdAt);
           return bC - aC;
@@ -933,6 +991,9 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
 
   // Function to move accessed note to top by updating lastAccessedAt
   const updateNoteAccessTime = useCallback(async (noteId: string) => {
+    // Capture note data for offline cache before state update
+    const base = notes.find(n => n.id === noteId);
+    
     // Update local state immediately for UX
     setNotes(prevNotes => {
       const updated = prevNotes.map(note => 
@@ -948,22 +1009,11 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
       });
     });
 
-    // Fire-and-forget server touch to persist last_accessed
-    try {
-      const token = await AsyncStorage.getItem("authToken");
-      if (!token) return;
-      await fetch(`${API_URL}${API_ENDPOINTS.NOTE_TOUCH(noteId)}`, {
-        method: "POST",
-        headers: { 
-          Authorization: `Token ${token}`,
-          "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone || "",
-        },
-      });
-    } catch (e) {
-      // Non-blocking
-      console.warn("Failed to touch last_accessed on server", e);
-    }
-  }, []);
+    // Use offline service to persist/queue last_accessed touch
+    offlineNotesService.touchNote(noteId, base).catch((e) => {
+      console.warn('Failed to queue touchNote', e);
+    });
+  }, [notes]);
 
   const handleNotePress = useCallback(
     async (note: Note) => {
@@ -1484,28 +1534,8 @@ const updateFolderName = async (folderId: string, newName: string) => {
   }
 
   try {
-    const token = await AsyncStorage.getItem("authToken");
-    if (!token) {
-      navigation.navigate("Login");
-      return;
-    }
-
-    const response = await fetch(
-      `${API_URL}${API_ENDPOINTS.NOTE_FOLDERS}${folderId}/`,
-      {
-        method: "PATCH",
-        headers: {
-          Authorization: `Token ${token}`,
-          "Content-Type": "application/json",
-          "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone || "",
-        },
-        body: JSON.stringify({ name: newName }),
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error("Failed to update folder name");
-    }
+    // Use offline service to update folder (works both online and offline)
+    await offlineNotesService.updateFolder(folderId, { name: newName });
 
     // Update folder in state
     setFolders(
@@ -1595,12 +1625,6 @@ const handleCreateFolder = async () => {
   // Add new folder delete function
   const handleDeleteFolder = async (folderId: string) => {
     try {
-      const token = await AsyncStorage.getItem("authToken");
-      if (!token) {
-        navigation.navigate("Login");
-        return;
-      }
-
       // First, check if folder has notes
       const notesInFolder = notes.filter((note) => note.folderId === folderId);
       if (notesInFolder.length > 0) {
@@ -1612,20 +1636,8 @@ const handleCreateFolder = async () => {
         return;
       }
 
-      const response = await fetch(
-        `${API_URL}${API_ENDPOINTS.NOTE_FOLDERS}${folderId}/`,
-        {
-          method: "DELETE",
-          headers: {
-            Authorization: `Token ${token}`,
-            "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone || "",
-          },
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error("Failed to delete folder");
-      }
+      // Use offline service to delete folder (works both online and offline)
+      await offlineNotesService.deleteFolder(folderId);
 
       // Remove folder from state
       setFolders(folders.filter((folder) => folder.id !== folderId));
@@ -1858,7 +1870,15 @@ const handleCreateFolder = async () => {
       );
     }
 
-    return folderFilteredNotes;
+    // Deduplicate notes by ID to prevent React key warnings
+    const uniqueNotes = new Map<string, Note>();
+    folderFilteredNotes.forEach(note => {
+      if (note.id && !uniqueNotes.has(note.id)) {
+        uniqueNotes.set(note.id, note);
+      }
+    });
+
+    return Array.from(uniqueNotes.values());
   }, [filteredNotes, selectedFilterFolder, folderId]);
 
   // No separator component needed for grid view
@@ -2022,46 +2042,46 @@ const handleCreateFolder = async () => {
             </View>
           );
         } else if (isDocument) {
-          // Document preview with enhanced component
+          // Document preview with enhanced PDF first-page + overlays (if PDF)
+          const isPdf = (item.title?.toLowerCase().includes('.pdf') || item.document_file?.toLowerCase().includes('.pdf')) ?? false;
+          const docUrl = item.document_url || item.document_file || '';
           return (
             <View style={styles.previewImageContainer}>
-              <TemplatePreview
-                note={item}
-                width={windowWidth / 2 - 64}
-                height={120}
-              />
+              {isPdf ? (
+                <DocumentPreview
+                  documentUrl={docUrl}
+                  annotations={Array.isArray(item.document_annotations) ? item.document_annotations as any : []}
+                  width={windowWidth / 2 - 64}
+                  height={120}
+                />
+              ) : (
+                <TemplatePreview
+                  note={item}
+                  width={windowWidth / 2 - 64}
+                  height={120}
+                />
+              )}
 
               <TouchableOpacity
                 style={styles.viewDocumentButton}
                 onPress={async () => {
-                  const documentType = item.document_file
-                    ?.toLowerCase()
-                    .includes(".pdf")
-                    ? "PDF"
-                    : item.document_file?.toLowerCase().includes(".doc")
-                    ? "Word"
-                    : "Document";
+                  const documentType = item.title?.toLowerCase().includes('.pdf')
+                    ? 'PDF'
+                    : (item.title?.toLowerCase().includes('.doc') || item.document_file?.toLowerCase().includes('.doc'))
+                      ? 'Word'
+                      : 'Document';
 
-                  const docType =
-                    documentType === "PDF"
-                      ? "pdf"
-                      : documentType === "Word"
-                      ? "word"
-                      : "document";
+                  const docType = documentType === 'PDF' ? 'pdf' : (documentType === 'Word' ? 'word' : 'document');
 
-                  const documentUrl =
-                    item.document_url || item.document_file || "";
+                  const documentUrl = docUrl;
                   let finalDocumentUri = documentUrl;
 
                   // For PDF files, download to local storage if it's a remote URL
-                  if (docType === "pdf" && isRemoteURL(documentUrl)) {
+                  if (docType === 'pdf' && isRemoteURL(documentUrl)) {
                     try {
                       finalDocumentUri = await getLocalPDFPath(documentUrl);
                     } catch (error) {
-                      console.error(
-                        "Failed to download PDF to local storage:",
-                        error
-                      );
+                      console.error('Failed to download PDF to local storage:', error);
                       // Fall back to original URL - PDFAnnotationViewer will handle the error
                       finalDocumentUri = documentUrl;
                     }
@@ -2069,13 +2089,13 @@ const handleCreateFolder = async () => {
 
                   setCurrentDocument({
                     uri: finalDocumentUri,
-                    name: item.title || "Untitled Document",
+                    name: item.title || 'Untitled Document',
                     noteId: item.id,
                     type: docType,
                   });
 
                   // Use PDFAnnotationViewer for PDF files, DocumentViewer for others
-                  if (docType === "pdf") {
+                  if (docType === 'pdf') {
                     setShowPDFViewer(true);
                   } else {
                     setShowDocumentViewer(true);
@@ -2083,9 +2103,7 @@ const handleCreateFolder = async () => {
                 }}
               >
                 <MaterialIcons name="visibility" size={16} color="#FFFFFF" />
-                <Text style={styles.viewDocumentButtonText}>
-                  View Document
-                </Text>
+                <Text style={styles.viewDocumentButtonText}>View Document</Text>
               </TouchableOpacity>
             </View>
           );
@@ -2170,7 +2188,11 @@ const handleCreateFolder = async () => {
                       isDrawing && styles.drawingTypeIndicator,
                     ]}
                   >
-                    {isDrawing ? "Drawing" : "Text Note"}
+                    {isDrawing 
+                      ? "Drawing" 
+                      : isDocument 
+                        ? (item.title?.toLowerCase().includes('.pdf') || item.document_file?.toLowerCase().includes('.pdf') ? "PDF" : "Document")
+                        : "Text Note"}
                   </Text>
                 </View>
               </View>
@@ -3477,6 +3499,7 @@ const handleCreateFolder = async () => {
           <PDFAnnotationViewer
             source={{ uri: currentDocument.uri }}
             fileName={currentDocument.name}
+            noteId={currentDocument.noteId}
             onClose={() => {
               setShowPDFViewer(false);
               setCurrentDocument(null);

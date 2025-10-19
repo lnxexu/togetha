@@ -10,7 +10,11 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "googleServicesFile": "./GoogleService-Info.plist"
+      "googleServicesFile": "./GoogleService-Info.plist",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Togetha needs access to save your drawings and PDFs to your Photos library.",
+        "NSPhotoLibraryAddUsageDescription": "Togetha needs access to save your drawings and PDFs to your Photos library."
+      }
     },
     "android": {
       "adaptiveIcon": {

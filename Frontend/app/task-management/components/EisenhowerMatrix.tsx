@@ -175,30 +175,20 @@ const EisenhowerMatrix: React.FC<EisenhowerMatrixProps> = ({
           <Text style={styles.quadrantTitle}>{quadrant.title}</Text>
           <TouchableOpacity
             style={styles.seeAllButton}
-            onPress={() =>
-              navigation.navigate("EisenhowerList", {
-                tasks: tasks.map((task) => ({
-                  ...task,
-                  created_at:
-                    task.created_at 
-                      ? task.created_at.toString()
-                      : task.created_at,
-                  due_datetime:
-                    task.due_datetime instanceof Date
-                      ? task.due_datetime.toISOString()
-                      : task.due_datetime,
-                  updatedAt:
-                    task.updated_at 
-                      ? task.updated_at.toString()
-                      : task.updated_at,
-                  completedAt:
-                    task.completed_at 
-                      ? task.completed_at.toString()
-                      : task.completed_at,
-                })),
-                quadrant: quadrant.priority,
-              })
-            }
+                  onPress={() =>
+                    navigation.navigate('EisenhowerList', {
+                      tasks: tasks.map((task) => ({
+                        ...task,
+                        created_at: task.created_at ? task.created_at.toString() : task.created_at,
+                        due_datetime: task.due_datetime
+                          ? (task.due_datetime instanceof Date ? task.due_datetime.toISOString() : task.due_datetime)
+                          : task.due_datetime,
+                        updatedAt: task.updated_at ? task.updated_at.toString() : task.updated_at,
+                        completedAt: task.completed_at ? task.completed_at.toString() : task.completed_at,
+                      })),
+                      quadrant: quadrant.priority,
+                    })
+                  }
           >
             <Text style={styles.seeAllText}>See All</Text>
           </TouchableOpacity>

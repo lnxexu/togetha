@@ -162,7 +162,7 @@ class SyncService {
       created_at: localTask.created_at,
       updated_at: localTask.updated_at,
       completed_at: localTask.completed_at || null,
-      due_datetime: localTask.due_datetime ? localTask.due_datetime.toISOString() : null,
+      due_datetime: (function(v:any){ if (v===undefined || v===null) return null; if (v instanceof Date) return v.toISOString(); if (typeof v==='string'){ const p=new Date(v); return isNaN(p.getTime())? v: p.toISOString(); } return null })(localTask.due_datetime),
     };
 
     // Create task on server
@@ -190,6 +190,19 @@ class SyncService {
       throw new Error('Local task not found');
     }
 
+    const toIsoOrNull = (val: any): string | null => {
+      if (val === undefined) return null;
+      if (val === null) return null;
+      if (val instanceof Date) return val.toISOString();
+      if (typeof val === 'string') {
+        // If it's already ISO-like, pass through; otherwise try parsing
+        const parsed = new Date(val);
+        if (!isNaN(parsed.getTime())) return parsed.toISOString();
+        return val; // as-is string (server may accept it if already ISO)
+      }
+      return null;
+    };
+
     // Prepare update payload
     const apiUpdates: any = {
       updated_at: new Date().toISOString(),
@@ -202,11 +215,11 @@ class SyncService {
     if (operation.data.category !== undefined) apiUpdates.category = operation.data.category;
     if (operation.data.completed !== undefined) apiUpdates.completed = operation.data.completed;
     if (operation.data.due_datetime !== undefined) {
-      apiUpdates.due_datetime = operation.data.due_datetime ? operation.data.due_datetime.toISOString() : null;
+      apiUpdates.due_datetime = toIsoOrNull(operation.data.due_datetime);
     }
     if (operation.data.due_time !== undefined) apiUpdates.due_time = operation.data.due_time || null;
     if (operation.data.completed_at !== undefined) {
-      apiUpdates.completed_at = operation.data.completed_at ? operation.data.completed_at.toISOString() : null;
+      apiUpdates.completed_at = toIsoOrNull(operation.data.completed_at);
     }
 
     // Update task on server
@@ -350,7 +363,7 @@ class SyncService {
   }
 
   // Force sync (useful for manual sync triggers)
-  async forcSync(): Promise<SyncResult> {
+  async forceSync(): Promise<SyncResult> {
     return await this.syncWithServer();
   }
 

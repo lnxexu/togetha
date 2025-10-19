@@ -177,3 +177,4 @@ setup-local.sh
 
 # screenshots
 screenshots/
+Backend/fix_migrations.ps1

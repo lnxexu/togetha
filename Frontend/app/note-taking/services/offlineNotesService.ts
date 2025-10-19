@@ -142,9 +142,22 @@ class OfflineNotesService {
           const pendingNotes = localNotes.filter(n => n.syncStatus === 'pending' || n.syncStatus === 'failed');
           // Combine and de-duplicate by id/localId; prefer newer updatedAt/lastModified
           const mergedMap = new Map<string, OfflineNote>();
-          const getKey = (n: OfflineNote) => (n.id || n.localId || '').toString();
+          // Use id as primary key; localId only if id is missing or is itself a local_ prefix
+          const getKey = (n: OfflineNote) => {
+            const id = (n.id || '').toString();
+            const localId = (n.localId || '').toString();
+            // Prefer real server ID over local ID
+            if (id && !id.startsWith('local_') && !id.startsWith('note_')) return id;
+            // Otherwise use localId or fallback to id
+            return localId || id;
+          };
           const getTs = (n: any) => {
             const ts = (n.updatedAt || n.updated_at || n.lastModified || n.createdAt || n.created_at);
+            const d = ts ? new Date(ts).getTime() : 0;
+            return isNaN(d) ? 0 : d;
+          };
+          const getAccessTs = (n: any) => {
+            const ts = (n.last_accessed || n.lastAccessedAt || n.last_accessed_at);
             const d = ts ? new Date(ts).getTime() : 0;
             return isNaN(d) ? 0 : d;
           };
@@ -179,14 +192,21 @@ class OfflineNotesService {
             })());
 
             const other = chosen === a ? b : a;
+            // Preserve the newer last_accessed value so sorting by last access works
+            const chosenAcc = getAccessTs(chosen);
+            const otherAcc = getAccessTs(other);
+            if (otherAcc > chosenAcc) {
+              (chosen as any).last_accessed = (other as any).last_accessed || (other as any).lastAccessedAt || (other as any).last_accessed_at;
+            }
             // If chosen has empty drawing but other has non-empty, keep other's drawing
             if (!hasNonEmptyDrawing((chosen as any).drawing_data) && hasNonEmptyDrawing((other as any).drawing_data)) {
+              const preserveDocument = (chosen as any).type === 'document' || (other as any).type === 'document';
               chosen = {
                 ...chosen,
                 drawing_data: (other as any).drawing_data,
                 has_drawing: true,
-                // Keep type as drawing if other indicates drawing
-                type: (other as any).type === 'drawing' || hasNonEmptyDrawing((other as any).drawing_data) ? 'drawing' : chosen.type,
+                // Preserve document type if either source is a document; otherwise allow drawing
+                type: preserveDocument ? ('document' as OfflineNote['type']) : ('drawing' as OfflineNote['type']),
               } as OfflineNote;
             }
             return chosen;
@@ -242,9 +262,17 @@ class OfflineNotesService {
                 if (Array.isArray(val)) return val.length>0; if (typeof val==='object') return Array.isArray(val.strokes)? val.strokes.length>0 : Object.keys(val).length>0;
               } catch {} return false;
             };
-            const merged: OfflineNote = (!hasNonEmpty(serverNote.drawing_data) && hasNonEmpty(localExisting?.drawing_data))
-              ? { ...serverNote, drawing_data: localExisting?.drawing_data, has_drawing: true, type: 'drawing' as OfflineNote['type'] }
-              : serverNote;
+            // If server has empty drawing but local has non-empty, merge strokes without changing explicit document type
+            let merged: OfflineNote = serverNote;
+            if (!hasNonEmpty(serverNote.drawing_data) && hasNonEmpty(localExisting?.drawing_data)) {
+              merged = { 
+                ...serverNote, 
+                drawing_data: localExisting?.drawing_data, 
+                has_drawing: true,
+                // Preserve document type if server says document; only mark drawing when not explicitly a document
+                type: (serverNote as any).type === 'document' ? ('document' as OfflineNote['type']) : ('drawing' as OfflineNote['type'])
+              };
+            }
             await offlineStorage.saveOfflineNote(merged);
           } catch {
             await offlineStorage.saveOfflineNote(serverNote);
@@ -279,7 +307,7 @@ class OfflineNotesService {
           const tagNames = Array.isArray(noteData.tags)
             ? noteData.tags.map((t: any) => (typeof t === 'string' ? t : t?.name)).filter(Boolean)
             : [];
-          const payload = {
+          const payload: any = {
             title: noteData.title,
             content: noteData.content || "",
             formatted_content: noteData.formatted_content || "",
@@ -288,9 +316,11 @@ class OfflineNotesService {
             is_archived: noteData.is_archived || false,
             // template is not a backend field; keep only offline
             drawing_strokes: this.serializeDrawingData(noteData.drawing_data),
-            document_annotations: noteData.document_annotations || null,
             tag_names: tagNames,
           };
+          if (noteData.document_annotations !== undefined && noteData.document_annotations !== null) {
+            payload.document_annotations = noteData.document_annotations;
+          }
 
           console.log("Creating note on server:", payload);
           const serverNote = await this.makeApiRequest<any>(API_ENDPOINTS.NOTES, "POST", payload);
@@ -388,7 +418,7 @@ class OfflineNotesService {
           const tagNames = Array.isArray(updatedNote.tags)
             ? (updatedNote.tags as any[]).map((t: any) => (typeof t === 'string' ? t : t?.name)).filter(Boolean)
             : [];
-          const payload = {
+          const payload: any = {
             title: updatedNote.title,
             content: updatedNote.content,
             formatted_content: updatedNote.formatted_content || "",
@@ -396,10 +426,15 @@ class OfflineNotesService {
             type: updatedNote.type || "text",
             is_archived: updatedNote.is_archived || false,
             // template is not a backend field; keep only offline
-            drawing_strokes: this.serializeDrawingData(updatedNote.drawing_data),
-            document_annotations: updatedNote.document_annotations || null,
+            // Only send drawing data for drawing-type notes; avoid contaminating documents
+            ...(updatedNote.type === 'drawing' && {
+              drawing_strokes: this.serializeDrawingData(updatedNote.drawing_data),
+            }),
             tag_names: tagNames,
           };
+          if (updatedNote.document_annotations !== undefined && updatedNote.document_annotations !== null) {
+            payload.document_annotations = updatedNote.document_annotations;
+          }
 
           console.log("Updating note on server:", payload);
           const serverNote = await this.makeApiRequest<any>(
@@ -429,6 +464,77 @@ class OfflineNotesService {
     } catch (error) {
       console.error("Error in updateNote:", error);
       throw error;
+    }
+  }
+
+  // Mark a note as accessed now; updates local cache immediately and syncs to server when possible
+  async touchNote(noteId: string, baseNote?: any): Promise<void> {
+    try {
+      const nowIso = new Date().toISOString();
+
+      // Update local cache first so UI can reorder immediately on next fetch
+      let local = await offlineStorage.getOfflineNoteById(noteId);
+      if (!local && baseNote) {
+        // Create a minimal local record so last_accessed is persisted even if we never cached this note yet
+        try {
+          const safeDate = (val: any): string => {
+            if (!val) return nowIso;
+            if (val instanceof Date) return val.toISOString();
+            if (typeof val === 'string') return val;
+            return nowIso;
+          };
+          const createdAt = safeDate(baseNote.createdAt);
+          const updatedAt = safeDate(baseNote.updatedAt) || createdAt;
+          
+          local = {
+            id: noteId,
+            title: baseNote.title || '',
+            content: baseNote.content || baseNote.formatted_content || '',
+            formatted_content: baseNote.formatted_content || '',
+            folder: baseNote.folder,
+            folderId: baseNote.folderId,
+            createdAt,
+            updatedAt,
+            type: baseNote.type || 'text',
+            tags: baseNote.tags || [],
+            is_archived: baseNote.is_archived || false,
+            template: baseNote.template,
+            document_annotations: baseNote.document_annotations,
+            drawing_data: baseNote.drawing_data,
+            has_drawing: Array.isArray(baseNote?.drawing_data?.strokes) ? baseNote.drawing_data.strokes.length > 0 : !!baseNote.drawing_data,
+            syncStatus: 'pending',
+            lastModified: nowIso,
+            last_accessed: nowIso,
+          } as OfflineNote;
+          await offlineStorage.saveOfflineNote(local);
+        } catch (createErr) {
+          console.warn('Failed to create local note for touch, skipping cache creation:', createErr);
+          // Continue to still post touch to server even if local cache fails
+        }
+      } else if (local) {
+        const updated: OfflineNote = { 
+          ...local, 
+          last_accessed: nowIso,
+          // Mark as pending so server merge won't clobber our newer access time
+          syncStatus: 'pending',
+          lastModified: nowIso,
+        } as OfflineNote;
+        await offlineStorage.saveOfflineNote(updated);
+      }
+
+      if (networkService.isOnline()) {
+        try {
+          await this.makeApiRequest(API_ENDPOINTS.NOTE_TOUCH(noteId), 'POST');
+        } catch (e) {
+          // Queue a special touch update for retry
+          await noteSyncService.queueOperation('update', 'note', noteId, { specialAction: 'touch', last_accessed: nowIso });
+        }
+      } else {
+        // Offline, queue for later
+        await noteSyncService.queueOperation('update', 'note', noteId, { specialAction: 'touch', last_accessed: nowIso });
+      }
+    } catch (err) {
+      console.warn('touchNote failed', err);
     }
   }
 
