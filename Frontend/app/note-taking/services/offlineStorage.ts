@@ -122,7 +122,14 @@ class OfflineStorage {
       const existingIndex = notes.findIndex(n => getNoteKey(n) === noteKey);
       
       if (existingIndex >= 0) {
-        notes[existingIndex] = note;
+        const existing = notes[existingIndex];
+        // Preserve last_accessed if incoming note doesn't set it
+        const merged: OfflineNote = {
+          ...existing,
+          ...note,
+          last_accessed: (note as any).last_accessed || (existing as any).last_accessed,
+        } as OfflineNote;
+        notes[existingIndex] = merged;
       } else {
         notes.push(note);
       }

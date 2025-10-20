@@ -291,12 +291,24 @@ class NoteSyncService {
     // Create note on server
     const serverNote = await this.makeApiRequest<any>(API_ENDPOINTS.NOTES, 'POST', payload);
 
-    // Update local note with server ID and mark as synced
+    // Delete the old local note to avoid duplicates
+    const oldLocalId = operation.localId || operation.id;
+    if (oldLocalId !== serverNote.id) {
+      try {
+        await offlineStorage.deleteOfflineNote(oldLocalId);
+      } catch (e) {
+        console.warn('Failed to delete old local note:', e);
+      }
+    }
+
+    // Update local note with server ID and mark as synced, preserving last_accessed
     const updatedNote: OfflineNote = {
       ...localNote,
       id: serverNote.id,
       syncStatus: 'synced',
       lastModified: new Date().toISOString(),
+      // Preserve last_accessed to maintain note position in list
+      last_accessed: (localNote as any).last_accessed || (localNote as any).lastAccessedAt || new Date().toISOString(),
     };
 
     await offlineStorage.saveOfflineNote(updatedNote);

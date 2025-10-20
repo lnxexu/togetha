@@ -365,6 +365,16 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
         const syncStatus = result.status.status === 'saved' ? 'synced' : 
                           (result.status.status === 'offline' || result.status.status === 'error') ? 'pending' : 'synced';
         
+        // Preserve last_accessed if we have one from currentNote or offline cache
+        let preservedLastAccessed: string | undefined;
+        try {
+          const existing = await offlineStorage.getOfflineNoteById(result.note.id);
+          preservedLastAccessed = (existing as any)?.last_accessed
+            || (existing as any)?.lastAccessedAt
+            || (currentNote as any)?.lastAccessedAt
+            || undefined;
+        } catch {}
+        
         const offlineNote: OfflineNote = {
           id: result.note.id,
           localId: shouldCreate(note) ? note.id : undefined,
@@ -384,6 +394,8 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
           has_drawing: false,
           syncStatus,
           lastModified: now,
+          // Critical: keep last_accessed so access order isn't lost by save
+          ...(preservedLastAccessed ? { last_accessed: preservedLastAccessed } : {}),
         };
         
         await offlineStorage.saveOfflineNote(offlineNote);
@@ -443,14 +455,15 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
 
   // Update current note when individual fields change and trigger auto-save
   useEffect(() => {
-    const updatedNote: NoteType = {
+    const updatedNote: NoteType & { lastAccessedAt?: string } = {
       ...currentNote,
       title,
       content,
       formatted_content: formattedContent,
-
       folderId: selectedFolderId,
       updatedAt: new Date().toISOString(),
+      // Set lastAccessedAt to ensure newly created notes appear at top of list
+      lastAccessedAt: new Date().toISOString(),
     };
     
     setCurrentNote(updatedNote);

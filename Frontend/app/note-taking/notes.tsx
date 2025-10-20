@@ -704,7 +704,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
           };
         });
 
-        // Sort by latest update: prioritize lastAccessedAt if recent (within 1 min), then updatedAt, then createdAt
+        // Sort by latest access/update: always prioritize lastAccessedAt, then updatedAt, then createdAt
         fetchedNotes.sort((a, b) => {
           const getNum = (d?: Date) => {
             if (d instanceof Date) {
@@ -713,27 +713,24 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
             }
             return 0;
           };
-          const now = Date.now();
           const aL = getNum(a.lastAccessedAt);
           const bL = getNum(b.lastAccessedAt);
           const aU = getNum(a.updatedAt);
           const bU = getNum(b.updatedAt);
           
-          // If both have recent lastAccessedAt (within 1 minute), prioritize by lastAccessedAt
-          const isRecentA = aL > 0 && (now - aL) < 60000;
-          const isRecentB = bL > 0 && (now - bL) < 60000;
-          
-          if (isRecentA && isRecentB) {
-            return bL - aL;
+          // ALWAYS prioritize by lastAccessedAt if either note has it (not just recent ones)
+          if (aL > 0 || bL > 0) {
+            // If both have lastAccessedAt, sort by most recent
+            if (aL > 0 && bL > 0) {
+              return bL - aL;
+            }
+            // If only one has lastAccessedAt, it goes first
+            if (aL > 0) return -1;
+            if (bL > 0) return 1;
           }
-          if (isRecentA && !isRecentB) return -1;
-          if (!isRecentA && isRecentB) return 1;
           
-          // Otherwise sort by updatedAt (most recent first)
+          // If neither has lastAccessedAt, sort by updatedAt (most recent first)
           if (aU !== bU) return bU - aU;
-          
-          // Fallback to lastAccessedAt
-          if (aL !== bL) return bL - aL;
           
           // Final fallback to createdAt
           const aC = getNum(a.createdAt);
@@ -742,10 +739,18 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
         });
 
         const currentNotesJson = JSON.stringify(
-          notes.map((n) => ({ id: n.id, updatedAt: n.updatedAt }))
+          notes.map((n) => ({ 
+            id: n.id, 
+            updatedAt: n.updatedAt?.getTime?.() || 0,
+            lastAccessedAt: n.lastAccessedAt?.getTime?.() || 0 
+          }))
         );
         const fetchedNotesJson = JSON.stringify(
-          fetchedNotes.map((n) => ({ id: n.id, updatedAt: n.updatedAt }))
+          fetchedNotes.map((n) => ({ 
+            id: n.id, 
+            updatedAt: n.updatedAt?.getTime?.() || 0,
+            lastAccessedAt: n.lastAccessedAt?.getTime?.() || 0 
+          }))
         );
         const hasChanges = currentNotesJson !== fetchedNotesJson;
 
@@ -991,14 +996,17 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
 
   // Function to move accessed note to top by updating lastAccessedAt
   const updateNoteAccessTime = useCallback(async (noteId: string) => {
+    // Create a consistent timestamp to use everywhere
+    const now = new Date();
+    
     // Capture note data for offline cache before state update
     const base = notes.find(n => n.id === noteId);
     
-    // Update local state immediately for UX
+    // Update local state FIRST for immediate UX feedback
     setNotes(prevNotes => {
       const updated = prevNotes.map(note => 
         note.id === noteId 
-          ? { ...note, lastAccessedAt: new Date() }
+          ? { ...note, lastAccessedAt: now }
           : note
       );
       // Keep list locally sorted by last accessed
@@ -1008,11 +1016,14 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
         return bTime - aTime;
       });
     });
-
-    // Use offline service to persist/queue last_accessed touch
-    offlineNotesService.touchNote(noteId, base).catch((e) => {
-      console.warn('Failed to queue touchNote', e);
-    });
+    
+    // AWAIT the persist to offline storage to ensure it completes before navigation
+    try {
+      await offlineNotesService.touchNote(noteId, base);
+      console.log(`✅ Successfully updated last_accessed for note ${noteId}`);
+    } catch (e) {
+      console.error('❌ Failed to update touchNote in offline storage:', e);
+    }
   }, [notes]);
 
   const handleNotePress = useCallback(
@@ -1021,8 +1032,23 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
       setActiveNoteOptions(null);
       setDropdownPosition(null);
       
-      // Update access time to move note to top
-      updateNoteAccessTime(note.id);
+      // Try to get the most up-to-date note from offline storage to ensure we have the correct ID
+      try {
+        const latestNote = await offlineNotesService.getNoteById(note.id);
+        if (latestNote && latestNote.id !== note.id) {
+          // ID has changed (e.g., synced from local to server ID), use the new one
+          note = {
+            ...note,
+            id: latestNote.id
+          };
+        }
+      } catch (error) {
+        console.warn('Failed to check for updated note ID:', error);
+        // Continue with original note ID
+      }
+      
+      // Update access time to move note to top - AWAIT this to ensure storage is updated
+      await updateNoteAccessTime(note.id);
 
       // Check if it's a document type note
       if (note.type === "document") {

@@ -325,8 +325,15 @@ class OfflineNotesService {
           console.log("Creating note on server:", payload);
           const serverNote = await this.makeApiRequest<any>(API_ENDPOINTS.NOTES, "POST", payload);
           
-          // Save to local storage as synced
+          // Save to local storage as synced (preserving last_accessed if set)
           const offlineNote = offlineStorage.noteToOfflineNote(serverNote, 'synced');
+          // Preserve last_accessed from the offline version if it exists
+          if ((noteData as any).lastAccessedAt || (noteData as any).last_accessed) {
+            (offlineNote as any).last_accessed = (noteData as any).lastAccessedAt || (noteData as any).last_accessed;
+          } else {
+            // Set last_accessed to now for newly created notes
+            (offlineNote as any).last_accessed = new Date().toISOString();
+          }
           await offlineStorage.saveOfflineNote(offlineNote);
           // Clear any pending ops for this id if exist
           try { await offlineStorage.removePendingSync(serverNote.id?.toString?.() || serverNote.id); } catch {}
@@ -362,6 +369,7 @@ class OfflineNotesService {
         has_drawing: !!noteData.drawing_data,
         syncStatus: 'pending',
         lastModified: now,
+        last_accessed: now, // Set last_accessed to ensure newly created notes appear first
         user: username
       };
       
