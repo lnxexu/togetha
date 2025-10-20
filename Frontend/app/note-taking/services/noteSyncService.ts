@@ -263,7 +263,83 @@ class NoteSyncService {
       throw new Error('Local note not found');
     }
 
-    // Prepare payload for server
+    // If this is a document with a local file, upload using FormData to DOCUMENT_UPLOAD endpoint
+    const isDocument = (localNote.type || '').toLowerCase() === 'document';
+    const docUri = (localNote as any).document_file || (localNote as any).document_url;
+    const isRemote = typeof docUri === 'string' && (docUri.startsWith('http://') || docUri.startsWith('https://'));
+    if (isDocument && docUri && !isRemote) {
+      // Upload file with FormData (mirrors online import behavior)
+      const token = await AsyncStorage.getItem('authToken');
+      if (!token) {
+        throw new Error('No auth token found for document upload');
+      }
+
+      const formData = new FormData();
+      formData.append('title', localNote.title || 'PDF Document');
+      formData.append('content', localNote.content || `Imported document: ${localNote.title || 'PDF'}`);
+      formData.append('type', 'document');
+      // Pass annotations if any were saved offline
+      if ((localNote as any).document_annotations !== undefined && (localNote as any).document_annotations !== null) {
+        formData.append('document_annotations', JSON.stringify((localNote as any).document_annotations));
+      }
+      // Attach the actual PDF file
+      const fileName = (localNote.title && localNote.title.toLowerCase().endsWith('.pdf'))
+        ? localNote.title
+        : `${(localNote.title || 'document').replace(/\s+/g, '_')}.pdf`;
+      formData.append('document', {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        uri: docUri,
+        type: 'application/pdf',
+        name: fileName,
+      } as any);
+
+      const uploadResp = await fetch(joinUrl(API_URL, API_ENDPOINTS.DOCUMENT_UPLOAD), {
+        method: 'POST',
+        headers: {
+          Authorization: `Token ${token}`,
+          'X-Requested-With': 'XMLHttpRequest',
+          'X-Client-Timezone': Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+          // Intentionally omit Content-Type to let fetch set multipart/form-data with boundary
+        },
+        body: formData,
+      });
+
+      if (!uploadResp.ok) {
+        const errText = await uploadResp.text().catch(() => '');
+        throw new Error(`API Error: ${uploadResp.status} ${uploadResp.statusText}${errText ? ' - ' + errText : ''}`);
+      }
+
+      const serverNote = await uploadResp.json();
+
+      // Delete the old local note with local_ ID to avoid duplicates
+      const oldLocalId = operation.localId || operation.id;
+      if (oldLocalId !== serverNote.id && oldLocalId.startsWith('local_')) {
+        try {
+          console.log(`🗑️ Deleting old local document note: ${oldLocalId}`);
+          await offlineStorage.deleteOfflineNote(oldLocalId);
+        } catch (e) {
+          console.warn('Failed to delete old local document note:', e);
+        }
+      }
+
+      // Create/update note with server id and mark synced, preserve last_accessed
+      const updatedNoteDoc: OfflineNote = {
+        ...localNote,
+        id: serverNote.id,
+        localId: undefined, // Clear local ID since we now have server ID
+        document_url: serverNote.document_url || (localNote as any).document_url,
+        document_file: serverNote.document_file || serverNote.document_url || (localNote as any).document_file,
+        syncStatus: 'synced',
+        lastModified: new Date().toISOString(),
+        last_accessed: (localNote as any).last_accessed || (localNote as any).lastAccessedAt || new Date().toISOString(),
+      } as OfflineNote;
+      
+      await offlineStorage.saveOfflineNote(updatedNoteDoc);
+      console.log(`✅ Document note synced successfully: ${oldLocalId} → ${serverNote.id}`);
+      return; // Done
+    }
+
+    // Prepare payload for server (non-file upload path)
     const rawFolder = localNote.folderId ?? (localNote as any).folder;
     const isUUID = (v: any) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
     const normalizedFolder = isUUID(rawFolder) ? rawFolder : null;
@@ -399,10 +475,16 @@ class NoteSyncService {
 
   // Delete note on server
   private async syncDeleteNote(operation: PendingSync): Promise<void> {
-    // Delete note on server
-    await this.makeApiRequest(`${API_ENDPOINTS.NOTES}${operation.id}/`, 'DELETE');
+    // If the ID is not a UUID (e.g., local_*, note_*), skip server delete
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(operation.id);
+    if (isUuid) {
+      // Delete note on server
+      await this.makeApiRequest(`${API_ENDPOINTS.NOTES}${operation.id}/`, 'DELETE');
+    } else {
+      console.log(`Skipping server delete for non-UUID note id: ${operation.id}`);
+    }
 
-    // Remove from local storage
+    // Remove from local storage regardless
     await offlineStorage.deleteOfflineNote(operation.id);
   }
 

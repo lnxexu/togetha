@@ -1,6 +1,6 @@
 import { API_URL, API_ENDPOINTS, joinUrl } from '@/constants/ApiConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import offlineStorage, { OfflineNote, OfflineFolder } from './offlineStorage';
+import offlineStorage, { OfflineNote, OfflineFolder, PendingSync } from './offlineStorage';
 import noteSyncService from './noteSyncService';
 import networkService from '../../task-management/services/networkService';
 import { DrawingData, DrawingStroke } from './drawingAPI';
@@ -364,6 +364,9 @@ class OfflineNotesService {
         tags: noteData.tags || [],
         is_archived: noteData.is_archived || false,
         template: noteData.template,
+        // Persist document fields for offline-created document notes
+        document_file: (noteData as any).document_file,
+        document_url: (noteData as any).document_url || (noteData as any).document_file,
         document_annotations: noteData.document_annotations,
         drawing_data: noteData.drawing_data,
         has_drawing: !!noteData.drawing_data,
@@ -548,25 +551,51 @@ class OfflineNotesService {
 
   async deleteNote(id: string): Promise<void> {
     try {
+      console.log('🗑️ Deleting note:', id);
+      // Determine if this ID is a real server UUID
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+      // Treat any non-UUID (e.g., local_*, note_*) as local-only
+      const isLocalOnly = !isUuid;
+      
       // Remove from offline storage first
       await offlineStorage.deleteOfflineNote(id);
+      console.log('✅ Removed from offline storage:', id);
       
-      if (networkService.isOnline()) {
-        try {
-          // Try to delete from server
-          await this.makeApiRequest(`${API_ENDPOINTS.NOTES}${id}/`, "DELETE");
-          console.log(`Note ${id} deleted from server`);
-        } catch (error) {
-          console.warn("Failed to delete note from server, queuing for sync:", error);
+      if (isLocalOnly) {
+        // For local-only notes, just remove any pending sync operations
+        console.log('📝 Local-only note, removing pending sync operations');
+        const pendingOps = await offlineStorage.getPendingSyncOperations();
+        const relatedOps = pendingOps.filter((op: PendingSync) => 
+          (op.action === 'create' || op.action === 'update') && 
+          (op.id === id || op.localId === id)
+        );
+        
+        for (const op of relatedOps) {
+          await offlineStorage.removePendingSync(op.id);
+        }
+        console.log(`✅ Removed ${relatedOps.length} pending operations for local note`);
+      } else {
+        // For synced notes (with server IDs), handle server deletion
+        if (networkService.isOnline()) {
+          try {
+            // Try to delete from server
+            await this.makeApiRequest(`${API_ENDPOINTS.NOTES}${id}/`, "DELETE");
+            console.log(`✅ Note ${id} deleted from server`);
+          } catch (error) {
+            console.warn("⚠️ Failed to delete note from server, queuing for sync:", error);
+            // Queue for sync when online
+            await noteSyncService.queueOperation('delete', 'note', id);
+          }
+        } else {
           // Queue for sync when online
+          console.log('📴 Offline, queuing delete operation for sync');
           await noteSyncService.queueOperation('delete', 'note', id);
         }
-      } else {
-        // Queue for sync when online
-        await noteSyncService.queueOperation('delete', 'note', id);
       }
+      
+      console.log('✅ Note deletion complete:', id);
     } catch (error) {
-      console.error("Error in deleteNote:", error);
+      console.error("❌ Error in deleteNote:", error);
       throw error;
     }
   }

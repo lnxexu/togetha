@@ -352,7 +352,10 @@ class OfflineTaskService {
       // Save to offline storage
       await offlineStorageService.saveOfflineTask(updatedTask);
 
-      if (networkService.isOnline()) {
+      // Check if this is a local-only task (created offline, never synced)
+      const isLocalOnly = String(id).startsWith('local_');
+      
+      if (networkService.isOnline() && !isLocalOnly) {
         try {
           // Transform data for API
           const apiUpdates: any = {
@@ -391,8 +394,10 @@ class OfflineTaskService {
           await syncService.queueOperation('update', id, updates);
         }
       } else {
-        // Queue for sync when online
-        await syncService.queueOperation('update', id, updates);
+        // Queue for sync when online (unless it's a local-only task)
+        if (!isLocalOnly) {
+          await syncService.queueOperation('update', id, updates);
+        }
       }
 
       return this.offlineTaskToTask(updatedTask);
@@ -404,12 +409,22 @@ class OfflineTaskService {
 
   async deleteTask(id: string): Promise<void> {
     try {
+      // Check if this is a local-only task (created offline, never synced)
+      const isLocalOnly = String(id).startsWith('local_');
+      
       // Remove from offline storage first
       await offlineStorageService.deleteOfflineTask(id);
       
+      // If it's a local-only task, don't try to delete from server
+      if (isLocalOnly) {
+        // Just remove from local storage, no need to sync with server
+        // since this task was never on the server
+        return;
+      }
+      
       if (networkService.isOnline()) {
         try {
-          // Try to delete from server
+          // Try to delete from server (only if it's a server task)
           await this.apiRequest(API_ENDPOINTS.TASK_DETAIL(id), "DELETE");
         } catch (error) {
           // Failed to delete task from server, queuing for sync

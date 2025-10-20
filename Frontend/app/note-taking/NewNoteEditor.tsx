@@ -345,6 +345,16 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
 
   // Auto-save setup with new Google Docs-style system
   const saveNote = async (note: NoteType, isAutoSave = true): Promise<NoteType | void> => {
+    // Prevent saving empty notes (no title and no content)
+    const hasContent = (note.title && note.title.trim()) || 
+                      (note.content && note.content.trim()) || 
+                      (note.formatted_content && note.formatted_content.replace(/<[^>]*>/g, '').trim());
+    
+    if (!hasContent) {
+      console.log('⚠️ Skipping save - note is empty');
+      return note;
+    }
+
     // Helper to decide create vs update similar to noteService
     const shouldCreate = (n: NoteType) => {
       if (!n?.id) return true;

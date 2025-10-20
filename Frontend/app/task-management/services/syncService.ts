@@ -190,6 +190,16 @@ class SyncService {
       throw new Error('Local task not found');
     }
 
+    // Check if this is a local-only task (created offline, never synced)
+    const isLocalOnly = String(operation.id).startsWith('local_');
+    
+    if (isLocalOnly) {
+      // This is a local-only task, just update local storage
+      // Don't try to contact the server since it was never there
+      // Updates will be synced when the task is created on the server
+      return;
+    }
+
     const toIsoOrNull = (val: any): string | null => {
       if (val === undefined) return null;
       if (val === null) return null;
@@ -242,6 +252,16 @@ class SyncService {
 
   // Sync delete operation
   private async syncDeleteOperation(operation: PendingSync): Promise<void> {
+    // Check if this is a local-only task (created offline, never synced)
+    const isLocalOnly = String(operation.id).startsWith('local_');
+    
+    if (isLocalOnly) {
+      // This is a local-only task, just remove from local storage
+      // No need to contact the server since it was never there
+      await offlineStorageService.deleteOfflineTask(operation.id);
+      return;
+    }
+    
     // Delete task on server
     await this.makeApiRequest(API_ENDPOINTS.TASK_DETAIL(operation.id), 'DELETE');
 
