@@ -233,9 +233,7 @@ const ImportPDFPage = () => {
       const updatedDocs = [...documents, newDocument];
       await saveDocuments(updatedDocs);
       
-      // Navigate directly to PDFAnnotationViewer
-      setSelectedDocument(newDocument);
-      setAnnotations([]);
+      Alert.alert("Success", "PDF imported successfully!");
       
     } catch (error) {
       console.error("Error importing PDF:", error);
@@ -325,13 +323,84 @@ const ImportPDFPage = () => {
   // Annotation handling functions
   const saveAnnotationsToBackend = async (docId: string, annotations: any[]) => {
     if (!isOnline) {
-      // Save locally when offline
+      // Save locally when offline and create/update offline note
       await saveAnnotationsLocally(docId, annotations);
+      
+      // Create or update offline note
+      try {
+        const offlineStorage = (await import('./services/offlineStorage')).default;
+        const document = documents.find(doc => doc.id === docId);
+        if (!document) {
+          throw new Error('Document not found');
+        }
+        
+        const now = new Date().toISOString();
+        const noteId = document.noteId || `note_document_${docId}`;
+        
+        // Check if note already exists in offline storage
+        const existingNote = await offlineStorage.getOfflineNoteById(noteId);
+        
+        const offlineNote = {
+          id: noteId,
+          localId: existingNote?.localId || noteId,
+          title: `PDF: ${document.name}`,
+          content: `PDF document with ${annotations.length} annotations`,
+          formatted_content: `<p>PDF document with ${annotations.length} annotations</p>`,
+          type: 'document' as const,
+          document_file: document.uri,
+          document_url: document.uri,
+          document_annotations: annotations,
+          folderId: existingNote?.folderId,
+          folder: existingNote?.folder,
+          createdAt: existingNote?.createdAt || now,
+          updatedAt: now,
+          lastModified: now,
+          tags: existingNote?.tags || [],
+          is_archived: existingNote?.is_archived || false,
+          syncStatus: 'pending' as const,
+          has_drawing: false,
+        };
+        
+        await offlineStorage.saveOfflineNote(offlineNote);
+        
+        // Queue for sync
+        const noteSyncService = (await import('./services/noteSyncService')).default;
+        await noteSyncService.queueOperation(
+          existingNote ? 'update' : 'create',
+          'note',
+          noteId,
+          {
+            title: offlineNote.title,
+            content: offlineNote.content,
+            formatted_content: offlineNote.formatted_content,
+            type: 'document',
+            document_annotations: annotations,
+            document_file: document.uri,
+          },
+          existingNote ? undefined : noteId
+        );
+        
+        // Update document with note ID if not already set
+        if (!document.noteId) {
+          const updatedDocuments = documents.map(doc => 
+            doc.id === docId 
+              ? { ...doc, noteId, annotations }
+              : doc
+          );
+          setDocuments(updatedDocuments);
+          await saveDocuments(updatedDocuments);
+        }
+      } catch (error) {
+        console.error('Failed to create offline note for annotations:', error);
+      }
+      
       setSaveStatus({ 
         status: 'offline', 
         message: 'Annotations saved locally. Will sync when online.',
         lastSaved: new Date()
       });
+      setHasUnsavedAnnotations(false);
+      showWarningToast('Annotations saved offline. Will sync when online.');
       return;
     }
 

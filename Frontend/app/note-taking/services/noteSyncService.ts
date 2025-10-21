@@ -52,10 +52,16 @@ class NoteSyncService {
       options.body = JSON.stringify(body);
     }
 
-  const response = await fetch(joinUrl(API_URL, endpoint), options);
+    const response = await fetch(joinUrl(API_URL, endpoint), options);
 
     if (!response.ok) {
-      throw new Error(`API Error: ${response.status} ${response.statusText}`);
+      // Try to extract error detail for easier debugging
+      let detail = '';
+      try {
+        const errData = await response.json();
+        detail = errData?.detail || errData?.error || JSON.stringify(errData);
+      } catch {}
+      throw new Error(`API Error: ${response.status} ${response.statusText}${detail ? ` - ${detail}` : ''}`);
     }
 
     if (method === 'DELETE') {
@@ -85,7 +91,8 @@ class NoteSyncService {
       await this.fetchAndUpdateLocalData();
 
       // Then sync pending operations
-      const pendingOps = await offlineStorage.getPendingSyncOperations();
+  // De-dupe queue to avoid repeated updates causing 400 loops
+  const pendingOps = await offlineStorage.getPendingSyncOperations();
       console.log(`Starting note sync with ${pendingOps.length} pending operations`);
 
       for (const operation of pendingOps) {
@@ -101,12 +108,27 @@ class NoteSyncService {
           result.synced++;
           console.log(`Successfully synced note operation: ${operation.action} ${operation.entityType} ${operation.id}`);
         } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
           console.error(`Failed to sync note operation ${operation.id}:`, error);
           result.failed++;
           result.errors.push({
             operation: `${operation.action} ${operation.entityType} ${operation.id}`,
-            error: error instanceof Error ? error.message : 'Unknown error'
+            error: message
           });
+          // For unrecoverable 400 or missing local, don't loop: remove op but mark note as failed to preserve offline version
+          if (message.includes('API Error: 400') || message.includes('Local note not found')) {
+            try {
+              // Mark local note as failed so merge prefers it over server
+              if (operation.entityType === 'note' || operation.entityType === 'drawing') {
+                const localNote = await offlineStorage.getOfflineNoteById(operation.id);
+                if (localNote) {
+                  const failedNote = { ...localNote, syncStatus: 'failed' as const, lastModified: new Date().toISOString() };
+                  await offlineStorage.saveOfflineNote(failedNote);
+                }
+              }
+            } catch {}
+            try { await offlineStorage.removePendingSync(operation.id); } catch {}
+          }
         } finally {
           this.syncInProgress.delete(operation.id);
         }
@@ -160,6 +182,15 @@ class NoteSyncService {
         await this.syncCreateNote(operation);
         break;
       case 'update':
+        // Special-case: queued touch operation to update last_accessed
+        if (operation.data && (operation.data as any).specialAction === 'touch') {
+          // Fire touch endpoint; ignore response body
+          await this.makeApiRequest(
+            `${API_ENDPOINTS.NOTE_TOUCH(operation.id)}`,
+            'POST'
+          );
+          return;
+        }
         await this.syncUpdateNote(operation);
         break;
       case 'delete':
@@ -191,20 +222,20 @@ class NoteSyncService {
     }
 
     // Extract drawing data from note
-    let drawingData = '';
+  let drawingData: any = [];
     if (typeof localNote.drawing_data === 'string') {
-      drawingData = localNote.drawing_data;
+      try { const parsed = JSON.parse(localNote.drawing_data); drawingData = Array.isArray(parsed) ? parsed : parsed?.strokes || []; } catch { drawingData = []; }
     } else if (Array.isArray(localNote.drawing_data)) {
-      drawingData = JSON.stringify(localNote.drawing_data);
+      drawingData = localNote.drawing_data;
     } else if (localNote.drawing_data && typeof localNote.drawing_data === 'object') {
-      drawingData = JSON.stringify(localNote.drawing_data.strokes || []);
+      drawingData = localNote.drawing_data.strokes || [];
     }
 
     // Update note with drawing data
     await this.makeApiRequest(
       `${API_ENDPOINTS.NOTES}${operation.id}/`,
       'PATCH',
-      { drawing_data: drawingData }
+      { drawing_strokes: drawingData }
     );
   }
 
@@ -216,11 +247,13 @@ class NoteSyncService {
     }
 
     // Update note with annotation data
-    await this.makeApiRequest(
-      `${API_ENDPOINTS.NOTES}${operation.id}/`,
-      'PATCH',
-      { document_annotations: localNote.document_annotations }
-    );
+    if (localNote.document_annotations !== undefined && localNote.document_annotations !== null) {
+      await this.makeApiRequest(
+        `${API_ENDPOINTS.NOTES}${operation.id}/`,
+        'PATCH',
+        { document_annotations: localNote.document_annotations }
+      );
+    }
   }
 
   // Create note on server
@@ -230,29 +263,128 @@ class NoteSyncService {
       throw new Error('Local note not found');
     }
 
-    // Prepare payload for server
-    const payload = {
+    // If this is a document with a local file, upload using FormData to DOCUMENT_UPLOAD endpoint
+    const isDocument = (localNote.type || '').toLowerCase() === 'document';
+    const docUri = (localNote as any).document_file || (localNote as any).document_url;
+    const isRemote = typeof docUri === 'string' && (docUri.startsWith('http://') || docUri.startsWith('https://'));
+    if (isDocument && docUri && !isRemote) {
+      // Upload file with FormData (mirrors online import behavior)
+      const token = await AsyncStorage.getItem('authToken');
+      if (!token) {
+        throw new Error('No auth token found for document upload');
+      }
+
+      const formData = new FormData();
+      formData.append('title', localNote.title || 'PDF Document');
+      formData.append('content', localNote.content || `Imported document: ${localNote.title || 'PDF'}`);
+      formData.append('type', 'document');
+      // Pass annotations if any were saved offline
+      if ((localNote as any).document_annotations !== undefined && (localNote as any).document_annotations !== null) {
+        formData.append('document_annotations', JSON.stringify((localNote as any).document_annotations));
+      }
+      // Attach the actual PDF file
+      const fileName = (localNote.title && localNote.title.toLowerCase().endsWith('.pdf'))
+        ? localNote.title
+        : `${(localNote.title || 'document').replace(/\s+/g, '_')}.pdf`;
+      formData.append('document', {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        uri: docUri,
+        type: 'application/pdf',
+        name: fileName,
+      } as any);
+
+      const uploadResp = await fetch(joinUrl(API_URL, API_ENDPOINTS.DOCUMENT_UPLOAD), {
+        method: 'POST',
+        headers: {
+          Authorization: `Token ${token}`,
+          'X-Requested-With': 'XMLHttpRequest',
+          'X-Client-Timezone': Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+          // Intentionally omit Content-Type to let fetch set multipart/form-data with boundary
+        },
+        body: formData,
+      });
+
+      if (!uploadResp.ok) {
+        const errText = await uploadResp.text().catch(() => '');
+        throw new Error(`API Error: ${uploadResp.status} ${uploadResp.statusText}${errText ? ' - ' + errText : ''}`);
+      }
+
+      const serverNote = await uploadResp.json();
+
+      // Delete the old local note with local_ ID to avoid duplicates
+      const oldLocalId = operation.localId || operation.id;
+      if (oldLocalId !== serverNote.id && oldLocalId.startsWith('local_')) {
+        try {
+          console.log(`🗑️ Deleting old local document note: ${oldLocalId}`);
+          await offlineStorage.deleteOfflineNote(oldLocalId);
+        } catch (e) {
+          console.warn('Failed to delete old local document note:', e);
+        }
+      }
+
+      // Create/update note with server id and mark synced, preserve last_accessed
+      const updatedNoteDoc: OfflineNote = {
+        ...localNote,
+        id: serverNote.id,
+        localId: undefined, // Clear local ID since we now have server ID
+        document_url: serverNote.document_url || (localNote as any).document_url,
+        document_file: serverNote.document_file || serverNote.document_url || (localNote as any).document_file,
+        syncStatus: 'synced',
+        lastModified: new Date().toISOString(),
+        last_accessed: (localNote as any).last_accessed || (localNote as any).lastAccessedAt || new Date().toISOString(),
+      } as OfflineNote;
+      
+      await offlineStorage.saveOfflineNote(updatedNoteDoc);
+      console.log(`✅ Document note synced successfully: ${oldLocalId} → ${serverNote.id}`);
+      return; // Done
+    }
+
+    // Prepare payload for server (non-file upload path)
+    const rawFolder = localNote.folderId ?? (localNote as any).folder;
+    const isUUID = (v: any) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+    const normalizedFolder = isUUID(rawFolder) ? rawFolder : null;
+    const tagNames = Array.isArray(localNote.tags)
+      ? localNote.tags.map((t: any) => (typeof t === 'string' ? t : t?.name)).filter(Boolean)
+      : [];
+    const payload: any = {
       title: localNote.title,
       content: localNote.content,
       formatted_content: localNote.formatted_content || '',
-      folder: localNote.folderId || localNote.folder || null,
+      folder: normalizedFolder,
       type: localNote.type || 'text',
       is_archived: localNote.is_archived || false,
       template: localNote.template || null,
-      drawing_data: this.serializeDrawingData(localNote.drawing_data),
-      document_annotations: localNote.document_annotations || null,
-      tags: localNote.tags || []
+      // Only send drawing data for drawing-type notes
+      ...(localNote.type === 'drawing' && {
+        drawing_data: this.serializeDrawingData(localNote.drawing_data),
+      }),
+      tag_names: tagNames
     };
+    if (localNote.document_annotations !== undefined && localNote.document_annotations !== null) {
+      payload.document_annotations = localNote.document_annotations;
+    }
 
     // Create note on server
     const serverNote = await this.makeApiRequest<any>(API_ENDPOINTS.NOTES, 'POST', payload);
 
-    // Update local note with server ID and mark as synced
+    // Delete the old local note to avoid duplicates
+    const oldLocalId = operation.localId || operation.id;
+    if (oldLocalId !== serverNote.id) {
+      try {
+        await offlineStorage.deleteOfflineNote(oldLocalId);
+      } catch (e) {
+        console.warn('Failed to delete old local note:', e);
+      }
+    }
+
+    // Update local note with server ID and mark as synced, preserving last_accessed
     const updatedNote: OfflineNote = {
       ...localNote,
       id: serverNote.id,
       syncStatus: 'synced',
       lastModified: new Date().toISOString(),
+      // Preserve last_accessed to maintain note position in list
+      last_accessed: (localNote as any).last_accessed || (localNote as any).lastAccessedAt || new Date().toISOString(),
     };
 
     await offlineStorage.saveOfflineNote(updatedNote);
@@ -260,24 +392,68 @@ class NoteSyncService {
 
   // Update note on server
   private async syncUpdateNote(operation: PendingSync): Promise<void> {
-    const localNote = await offlineStorage.getOfflineNoteById(operation.id);
+    // If this looks like a local id, updating doesn't make sense before create; drop it
+    if (operation.id && operation.id.startsWith && operation.id.startsWith('local_')) {
+      throw new Error('Local note not found');
+    }
+    let localNote = await offlineStorage.getOfflineNoteById(operation.id);
     if (!localNote) {
+      // Try to patch with queued data if available
+      if (operation.data) {
+        const rawFolder = operation.data.folderId ?? operation.data.folder;
+        const isUUID = (v: any) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+        const normalizedFolder = isUUID(rawFolder) ? rawFolder : null;
+        const tagNames = Array.isArray(operation.data.tags)
+          ? operation.data.tags.map((t: any) => (typeof t === 'string' ? t : t?.name)).filter(Boolean)
+          : [];
+        const payload: any = {
+          title: operation.data.title,
+          content: operation.data.content,
+          formatted_content: operation.data.formatted_content || '',
+          folder: normalizedFolder,
+          type: operation.data.type || 'text',
+          is_archived: operation.data.is_archived || false,
+          template: operation.data.template || null,
+          drawing_data: this.serializeDrawingData(operation.data.drawing_data),
+          tag_names: tagNames
+        };
+        if (operation.data.document_annotations !== undefined && operation.data.document_annotations !== null) {
+          payload.document_annotations = operation.data.document_annotations;
+        }
+        await this.makeApiRequest<any>(
+          `${API_ENDPOINTS.NOTES}${operation.id}/`,
+          'PATCH',
+          payload
+        );
+        return;
+      }
       throw new Error('Local note not found');
     }
 
     // Prepare update payload
-    const payload = {
+    const rawFolderU = localNote.folderId ?? (localNote as any).folder;
+    const isUUIDU = (v: any) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+    const normalizedFolderU = isUUIDU(rawFolderU) ? rawFolderU : null;
+    const tagNamesU = Array.isArray(localNote.tags)
+      ? localNote.tags.map((t: any) => (typeof t === 'string' ? t : t?.name)).filter(Boolean)
+      : [];
+    const payload: any = {
       title: localNote.title,
       content: localNote.content,
       formatted_content: localNote.formatted_content || '',
-      folder: localNote.folderId || localNote.folder || null,
+      folder: normalizedFolderU,
       type: localNote.type || 'text',
       is_archived: localNote.is_archived || false,
       template: localNote.template || null,
-      drawing_data: this.serializeDrawingData(localNote.drawing_data),
-      document_annotations: localNote.document_annotations || null,
-      tags: localNote.tags || []
+      // Only send drawing data for drawing-type notes
+      ...(localNote.type === 'drawing' && {
+        drawing_data: this.serializeDrawingData(localNote.drawing_data),
+      }),
+      tag_names: tagNamesU
     };
+    if (localNote.document_annotations !== undefined && localNote.document_annotations !== null) {
+      payload.document_annotations = localNote.document_annotations;
+    }
 
     // Update note on server
     const serverNote = await this.makeApiRequest<any>(
@@ -299,10 +475,16 @@ class NoteSyncService {
 
   // Delete note on server
   private async syncDeleteNote(operation: PendingSync): Promise<void> {
-    // Delete note on server
-    await this.makeApiRequest(`${API_ENDPOINTS.NOTES}${operation.id}/`, 'DELETE');
+    // If the ID is not a UUID (e.g., local_*, note_*), skip server delete
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(operation.id);
+    if (isUuid) {
+      // Delete note on server
+      await this.makeApiRequest(`${API_ENDPOINTS.NOTES}${operation.id}/`, 'DELETE');
+    } else {
+      console.log(`Skipping server delete for non-UUID note id: ${operation.id}`);
+    }
 
-    // Remove from local storage
+    // Remove from local storage regardless
     await offlineStorage.deleteOfflineNote(operation.id);
   }
 
@@ -419,7 +601,7 @@ class NoteSyncService {
     // Add local notes, but preserve pending/failed sync status
     localNotes.forEach(localNote => {
       if (localNote.syncStatus === 'pending' || localNote.syncStatus === 'failed') {
-        // Keep local version if it has pending changes
+        // Always prefer local pending over server to avoid losing offline edits
         merged.set(localNote.id, localNote);
       } else if (localNote.localId && !localNote.id.startsWith('local_')) {
         // This is a local note that was synced, use server version
@@ -487,7 +669,7 @@ class NoteSyncService {
 
   // Helper to serialize drawing data
   private serializeDrawingData(drawingData: any): string {
-    if (!drawingData) return '';
+    if (!drawingData) return JSON.stringify([]);
     if (typeof drawingData === 'string') return drawingData;
     if (Array.isArray(drawingData)) return JSON.stringify(drawingData);
     if (typeof drawingData === 'object' && drawingData.strokes) {

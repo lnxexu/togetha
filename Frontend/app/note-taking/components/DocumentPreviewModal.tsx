@@ -40,7 +40,9 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
 
   const selectDocument = async () => {
     try {
+      console.log('📁 Starting document picker...');
       setIsLoading(true);
+      
       const result = await DocumentPicker.getDocumentAsync({
         type: [
           'application/pdf',
@@ -52,11 +54,15 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
         copyToCacheDirectory: true,
       });
 
+      console.log('📄 Document picker result:', result);
+
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const document = result.assets[0];
+        console.log('✅ Document selected:', { name: document.name, uri: document.uri, mimeType: document.mimeType });
         
         // Get file info
         const fileInfo = await FileSystem.getInfoAsync(document.uri);
+        console.log('📊 File info:', fileInfo);
         
         const documentInfo: DocumentInfo = {
           name: document.name,
@@ -66,10 +72,13 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
           mimeType: document.mimeType,
         };
 
+        console.log('💾 Document info prepared:', documentInfo);
         setSelectedDocument(documentInfo);
+      } else {
+        console.log('❌ Document picker canceled or no assets');
       }
     } catch (error) {
-      console.error('Error selecting document:', error);
+      console.error('❌ Error selecting document:', error);
       Alert.alert('Error', 'Failed to select document. Please try again.');
     } finally {
       setIsLoading(false);
@@ -120,8 +129,35 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
 
   const handleImport = () => {
     if (selectedDocument) {
-      onConfirmImport(selectedDocument);
+      console.log('🚀 Confirming document import...');
+      
+      // Ensure we pass a consistent shape including mimeType expected by the caller
+      const inferMimeFromName = (name: string | undefined): string | undefined => {
+        if (!name) return undefined;
+        const ext = name.toLowerCase().split('.').pop();
+        switch (ext) {
+          case 'pdf': return 'application/pdf';
+          case 'doc': return 'application/msword';
+          case 'docx': return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+          case 'txt': return 'text/plain';
+          case 'rtf': return 'application/rtf';
+          default: return undefined;
+        }
+      };
+      
+      const payload = {
+        name: selectedDocument.name,
+        uri: selectedDocument.uri,
+        size: selectedDocument.size,
+        type: selectedDocument.type,
+        mimeType: selectedDocument.mimeType || inferMimeFromName(selectedDocument.name),
+      };
+      
+      console.log('📤 Sending document payload to import handler:', payload);
+      onConfirmImport(payload);
       handleClose();
+    } else {
+      console.error('❌ No document selected for import');
     }
   };
 

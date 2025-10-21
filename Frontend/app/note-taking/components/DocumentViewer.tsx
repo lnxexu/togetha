@@ -111,24 +111,28 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   // Auto-save functionality similar to drawing feature
   const autoSave = useCallback(async () => {
     try {
+      if (!annotations || annotations.length === 0) return; // Nothing to save
+
       const token = await AsyncStorage.getItem('authToken');
       if (!token) return;
 
+      // Use PUT to replace all annotations (backend contract)
       const response = await fetch(`${API_URL}${API_ENDPOINTS.DOCUMENT_ANNOTATIONS(noteId)}`, {
-        method: 'POST',
+        method: 'PUT',
         headers: {
           'Authorization': `Token ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          annotations: annotations,
-          last_updated: new Date().toISOString(),
+          annotations,
         }),
       });
 
       if (response.ok) {
         setLastSaveTime(Date.now());
-        console.log('Document annotations auto-saved');
+        console.log('Document annotations auto-saved (PUT)');
+      } else {
+        console.warn('Auto-save (PUT) failed with status:', response.status);
       }
     } catch (error) {
       console.error('Auto-save failed:', error);
@@ -169,7 +173,34 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
 
       if (response.ok) {
         const data = await response.json();
-        setAnnotations(data.annotations || []);
+        let loaded = Array.isArray(data.annotations) ? data.annotations : [];
+
+        // Defensive normalization: if any item is a wrapper object like { annotations: [...] }
+        // from a previous incorrect POST, flatten it.
+        const wrapper = loaded.find((ann: any) => ann && Array.isArray(ann.annotations));
+        if (wrapper && Array.isArray(wrapper.annotations)) {
+          console.warn('Flattening nested annotations payload from prior incorrect POST save');
+          loaded = wrapper.annotations;
+
+          // Optional: attempt to repair backend data by PUT-ing the flattened list
+          try {
+            const token2 = await AsyncStorage.getItem('authToken');
+            if (token2) {
+              await fetch(`${API_URL}${API_ENDPOINTS.DOCUMENT_ANNOTATIONS(noteId)}`, {
+                method: 'PUT',
+                headers: {
+                  'Authorization': `Token ${token2}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ annotations: loaded }),
+              });
+            }
+          } catch (repairErr) {
+            console.warn('Failed to repair annotations payload on server:', repairErr);
+          }
+        }
+
+        setAnnotations(loaded);
       }
     } catch (error) {
       console.error('Error loading annotations:', error);
@@ -478,6 +509,60 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   // Render annotation overlay
   const renderAnnotationOverlay = () => {
     const pageAnnotations = annotations.filter(ann => ann.page === currentPage);
+
+    // Normalize potentially malformed SVG path strings (e.g., "M,10,10 L,20,20")
+    const sanitizeSvgPath = (raw: string): string => {
+      if (!raw) return '';
+      let path = raw
+        .replace(/([ML])\s*[\.,]\s*/g, '$1 ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      let out = '';
+      let i = 0;
+      const len = path.length;
+      const readNumber = (): { num: number | null; next: number } => {
+        let j = i;
+        const m = /^-?\d*\.?\d+/.exec(path.slice(j));
+        if (!m) return { num: null, next: j };
+        const val = parseFloat(m[0]);
+        return { num: Number.isFinite(val) ? val : null, next: j + m[0].length };
+      };
+
+      while (i < len) {
+        const ch = path[i];
+        if (ch === 'M' || ch === 'L') {
+          out += ch + ' ';
+          i++;
+          while (i < len && /[\s,]/.test(path[i])) i++;
+          let { num: x, next } = readNumber();
+          if (x === null) continue;
+          i = next;
+          while (i < len && /[\s,]/.test(path[i])) i++;
+          let { num: y, next: next2 } = readNumber();
+          if (y === null) continue;
+          i = next2;
+          // Consume optional :pressure
+          if (path[i] === ':') {
+            let k = i + 1;
+            const pm = /^-?\d*\.?\d+/.exec(path.slice(k));
+            if (pm) i = k + pm[0].length; else i = k;
+          }
+          out += `${x},${y}`;
+        } else {
+          if (ch === ',' || ch === '\\n' || ch === '\\r') { i++; continue; }
+          if (ch === 'Z' || ch === 'z') out += ch;
+          if (ch === ' ') {
+            if (out.length && out[out.length - 1] !== ' ') out += ' ';
+            i++;
+            continue;
+          }
+          // skip other tokens
+          i++;
+        }
+        if (out.length && out[out.length - 1] !== ' ') out += ' ';
+      }
+      return out.trim();
+    };
     
     return (
       <Svg style={StyleSheet.absoluteFillObject} pointerEvents="none">
@@ -486,7 +571,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
             return (
               <Path
                 key={annotation.id}
-                d={annotation.strokeData}
+                d={sanitizeSvgPath(annotation.strokeData)}
                 stroke={annotation.color}
                 strokeWidth={3}
                 fill="none"
@@ -533,7 +618,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
         {/* Current stroke while drawing */}
         {isDrawing && currentStroke && (
           <Path
-            d={currentStroke}
+            d={sanitizeSvgPath(currentStroke)}
             stroke={selectedColor}
             strokeWidth={3}
             fill="none"

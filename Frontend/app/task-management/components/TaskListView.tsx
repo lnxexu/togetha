@@ -294,7 +294,7 @@ const TaskListView: React.FC<TaskListViewProps> = ({
       <FlatList
         data={filteredTasks}
         renderItem={renderTaskCard}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => String(item.id)}
         contentContainerStyle={styles.tasksList}
         showsVerticalScrollIndicator={false}
         ItemSeparatorComponent={() => <View style={styles.taskSeparator} />}
