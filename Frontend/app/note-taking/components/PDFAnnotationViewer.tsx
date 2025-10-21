@@ -48,6 +48,7 @@ import AnimatedRe, {
 } from "react-native-reanimated";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { checkRAGStatus, queryOllamaRAG } from "../services/ragService";
 import * as FileSystem from "expo-file-system";
 import * as MediaLibrary from "expo-media-library";
 import { getLocalPDFPathEnhanced } from "../utils/pdfUtils";
@@ -111,6 +112,7 @@ interface PDFAnnotationViewerProps {
   fileName: string;
   onClose: () => void;
   noteId?: string; // Optional note ID for backend integration
+  docId?: string; // Optional backend RAG document id
   enableDirectSave?: boolean; // Whether to save annotations directly to PDF
   autoSave?: boolean; // Whether to auto-save annotations
   annotations?: Annotation[]; // External annotations to load
@@ -198,6 +200,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   fileName,
   onClose,
   noteId,
+  docId,
   enableDirectSave = true,
   autoSave = true,
   annotations: externalAnnotations,
@@ -281,6 +284,9 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const [showAskRinaPopup, setShowAskRinaPopup] = useState(false);
   const [showAskRinaModal, setShowAskRinaModal] = useState(false);
   const [rinaQuery, setRinaQuery] = useState("");
+  // RAG processing status for current document
+  const [ragStatus, setRagStatus] = useState<string | null>(null);
+  const [isCheckingRag, setIsCheckingRag] = useState(false);
 
   // Persist per-tool settings (stroke width, color, eraser size, highlight opacity)
   const settingsKey = useMemo(() => {
@@ -309,6 +315,27 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       }
     })();
   }, [settingsKey]);
+
+  // Poll RAG status if a docId is provided
+  useEffect(() => {
+    let intervalId: any = null;
+    let mounted = true;
+    async function checkStatusLoop() {
+      if (!noteId && !source) return;
+      const docId = (noteId as any) || (source?.uri && undefined);
+      // prefer prop docId if passed in
+    }
+
+    // prefer docId prop if available
+    if ((noteId as any) || (typeof (PDFAnnotationViewer as any) !== 'undefined')) {
+      // noop - keep existing behavior
+    }
+
+    return () => {
+      mounted = false;
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, []);
 
   const persistSettings = useCallback(async (partial: Partial<{ strokeWidth: number; selectedColor: string; eraserSize: number; highlightOpacity: number }>) => {
     try {
@@ -2331,6 +2358,12 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
   // Ask Rina handlers
   const handleAskRina = useCallback(() => {
+    // If doc is still processing, show notice
+    if (docId && ragStatus !== 'completed') {
+      Alert.alert('AI processing', 'This document is still being processed for AI features. Try again shortly.');
+      return;
+    }
+
     if (selectedText.trim()) {
       setRinaQuery(`Explain this text: "${selectedText}"`);
       setShowAskRinaModal(true);
@@ -2339,12 +2372,49 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   }, [selectedText]);
 
   const handleCustomRinaQuery = useCallback(() => {
+    if (docId && ragStatus !== 'completed') {
+      Alert.alert('AI processing', 'This document is still being processed for AI features. Try again shortly.');
+      return;
+    }
+
     if (selectedText.trim()) {
       setRinaQuery("");
       setShowAskRinaModal(true);
       setShowAskRinaPopup(false);
     }
   }, [selectedText]);
+
+  // Poll RAG processing status for provided docId prop
+  useEffect(() => {
+    let mounted = true;
+    let timer: any = null;
+    async function pollStatus(id: string) {
+      try {
+        setIsCheckingRag(true);
+        const res = await checkRAGStatus(id);
+        if (!mounted) return;
+        setRagStatus(res.status || null);
+      } catch (e) {
+        // ignore transient errors
+        console.warn('Failed to fetch RAG status', e);
+      } finally {
+        if (mounted) setIsCheckingRag(false);
+      }
+    }
+
+  const id = docId || (noteId as any) || undefined;
+    if (id) {
+      // initial check
+      pollStatus(id);
+      // poll every 4 seconds until completed or failed
+      timer = setInterval(() => pollStatus(id), 4000);
+    }
+
+    return () => {
+      mounted = false;
+      if (timer) clearInterval(timer);
+    };
+  }, [noteId, docId]);
 
   const handleRinaModalClose = useCallback(() => {
     setShowAskRinaModal(false);
@@ -5389,8 +5459,8 @@ Your original file is unchanged. Try exporting to a new file instead.`
                             // View mode: allow native vertical scroll when not actively pinching (overlay handles gestures)
                             // Edit mode: allow vertical scroll only when not capturing multi-touch and no drawing tool is active
                             !isEditMode
-                              ? (!shouldCaptureGestures && !isPinching)
-                              : (!shouldCaptureGestures && !isPinching && (selectedTool === null || selectedTool === 'selection'))
+                              ? ((!shouldCaptureGestures && !isPinching) ? true : false)
+                              : ((!shouldCaptureGestures && !isPinching && (selectedTool === null || selectedTool === 'selection')) ? true : false)
                           }
                           onScroll={(e) => {
                             const y = e.nativeEvent.contentOffset.y;
@@ -6071,7 +6141,7 @@ Your original file is unchanged. Try exporting to a new file instead.`
                 />
                 <TouchableOpacity
                   style={styles.aiSendButton}
-                  onPress={() => {
+                  onPress={async () => {
                     if (aiMessage.trim() === "") return;
 
                     // Add user message to chat
@@ -6084,19 +6154,59 @@ Your original file is unchanged. Try exporting to a new file instead.`
                     // Clear input after sending
                     setAiMessage("");
 
-                    // Simulate AI response after a short delay
-                    setTimeout(() => {
-                      const aiResponse = `I understand your query about "${userMessage.substring(
-                        0,
-                        20
-                      )}${
-                        userMessage.length > 20 ? "..." : ""
-                      }". Let me analyze this document further.`;
-                      setChatMessages((prev) => [
-                        ...prev,
-                        { type: "ai", text: aiResponse },
-                      ]);
-                    }, 1000);
+                    // Add a temporary typing placeholder so UI shows the assistant is working
+                    const placeholderId = `ai-typing-${Date.now()}`;
+                    setChatMessages((prev) => [
+                      ...prev,
+                      { type: "ai", text: "Thinking...", id: placeholderId },
+                    ]);
+
+                    try {
+                      // If this PDF has a linked docId (RAG document), include it for focused retrieval
+                      const docIds = docId ? [String(docId)] : [];
+                      const res = await queryOllamaRAG(userMessage, docIds, 5);
+
+                      const answer = res?.answer || res?.response || "No answer generated.";
+
+                      // Replace the typing placeholder with the returned answer
+                      setChatMessages((prev) =>
+                        prev.map((m: any) =>
+                          m.id === placeholderId ? { type: "ai", text: answer } : m
+                        )
+                      );
+                    } catch (err: any) {
+                      // Build a helpful message from the error object (service may return JSON with detail/body)
+                      let display = 'AI assistant is unavailable. Please try again later.';
+                      try {
+                        if (err?.body?.detail) {
+                          display = String(err.body.detail);
+                        } else if (err?.body) {
+                          display = JSON.stringify(err.body);
+                        } else if (err?.message) {
+                          display = String(err.message);
+                        }
+                      } catch (e) {}
+
+                      // In development, include status code for debugging
+                      if (__DEV__ && err?.status) {
+                        display = `${display} (status: ${err.status})`;
+                      }
+
+                      // Replace the typing placeholder with the error message
+                      setChatMessages((prev) =>
+                        prev.map((m: any) =>
+                          m.id === placeholderId
+                            ? { type: "ai", text: display }
+                            : m
+                        )
+                      );
+                      console.warn("Ollama RAG query failed:", err);
+                    } finally {
+                      // Ensure chat scrolls to bottom (onContentSizeChange also handles this)
+                      try {
+                        chatScrollViewRef.current?.scrollToEnd({ animated: true });
+                      } catch {}
+                    }
                   }}
                 >
                   <Ionicons name="send" size={20} color="#FFFFFF" />
@@ -6281,6 +6391,16 @@ Your original file is unchanged. Try exporting to a new file instead.`
                   numberOfLines={3}
                   textAlignVertical="top"
                 />
+                {isCheckingRag && (
+                  <Text style={{ color: '#F59E0B', marginTop: 8 }}>
+                    AI processing in background — RAG indexing in progress
+                  </Text>
+                )}
+                {ragStatus === 'failed' && (
+                  <Text style={{ color: '#EF4444', marginTop: 8 }}>
+                    AI processing failed for this document. You can still ask, but results may be limited.
+                  </Text>
+                )}
               </View>
 
               <View style={styles.rinaModalActions}>
@@ -6294,7 +6414,7 @@ Your original file is unchanged. Try exporting to a new file instead.`
                 <TouchableOpacity
                   style={[
                     styles.rinaModalSubmitButton,
-                    (!rinaQuery.trim() || !selectedText.trim()) &&
+                    (!rinaQuery.trim() || !selectedText.trim() || (!!docId && ragStatus !== 'completed')) &&
                       styles.rinaModalSubmitButtonDisabled,
                   ]}
                   onPress={() => {
@@ -6316,7 +6436,7 @@ Your original file is unchanged. Try exporting to a new file instead.`
 
                     handleRinaModalClose();
                   }}
-                  disabled={!rinaQuery.trim() || !selectedText.trim()}
+                  disabled={!rinaQuery.trim() || !selectedText.trim() || (!!docId && ragStatus !== 'completed')}
                   activeOpacity={0.8}
                 >
                   <MaterialIcons

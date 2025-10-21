@@ -5,6 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from django.core.files.storage import default_storage
 import os
 import tempfile
+import uuid
 from .. import rag as rag_helper
 
 class DocumentUploadView(APIView):
@@ -21,6 +22,9 @@ class DocumentUploadView(APIView):
             return Response({"detail": "Only PDF files are supported"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
+            # Generate unique document ID
+            doc_id = str(uuid.uuid4())
+            
             # Save file temporarily
             with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_file:
                 for chunk in uploaded_file.chunks():
@@ -28,10 +32,14 @@ class DocumentUploadView(APIView):
                 temp_path = temp_file.name
 
             # Process with RAG pipeline
+            # If the client provided a note_id in form data, forward it so chunks carry this linkage
+            note_id = request.POST.get('note_id') or request.data.get('note_id') if hasattr(request, 'data') else None
             rag_helper.process_file_for_user(
                 file_path=temp_path,
                 user_id=request.user.id,
-                document_name=uploaded_file.name
+                document_name=uploaded_file.name,
+                doc_id=doc_id,
+                note_id=note_id
             )
 
             # Clean up temp file
@@ -39,7 +47,10 @@ class DocumentUploadView(APIView):
 
             return Response({
                 "message": "PDF processed successfully",
-                "document_name": uploaded_file.name
+                "document_name": uploaded_file.name,
+                "document_id": doc_id,
+                "file_size": uploaded_file.size,
+                "processed_at": rag_helper.get_current_timestamp()
             }, status=status.HTTP_201_CREATED)
 
         except Exception as e:

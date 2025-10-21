@@ -99,13 +99,15 @@ class ChatbotSetting(models.Model):
 
 class DocumentChunk(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)   # link per-user
+    doc_id = models.UUIDField(default=uuid.uuid4, editable=False)   # unique doc identifier
+    note_id = models.CharField(max_length=255, null=True, blank=True)  # optional link to a note entity
     document_name = models.CharField(max_length=255)
     chunk_text = models.TextField()
     embedding = models.JSONField()   # store embedding as list of floats
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"{self.document_name} [{self.id}]"
+        return f"{self.document_name} [{self.doc_id}]"
 
 
 class ConversationFile(models.Model):
@@ -135,10 +137,4 @@ class ConversationFile(models.Model):
         ordering = ['-created_at']
 
 # models.py
-class DocumentChunk(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    doc_id = models.UUIDField(default=uuid.uuid4, editable=False)   # unique doc identifier
-    document_name = models.CharField(max_length=255)
-    chunk_text = models.TextField()
-    embedding = models.JSONField()
-    created_at = models.DateTimeField(auto_now_add=True)
+# Note: DocumentChunk defined above with doc_id and note_id fields

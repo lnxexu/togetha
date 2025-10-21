@@ -127,8 +127,11 @@ export const API_ENDPOINTS = {
     CHATBOT_CONVERSATIONS: '/chatbot/conversations/',
     
     // PDF RAG endpoints for PDF annotation viewer
-    PDF_RAG_UPLOAD: '/chatbot/pdf/upload/',
+    // Backend upload handler for RAG processing (DocumentUploadView / upload_view)
+    PDF_RAG_UPLOAD: '/chatbot/upload/',
     PDF_RAG_QUERY: '/chatbot/pdf/query/',
+    // Check processing status for a document (expects query param `doc_id`)
+    PDF_RAG_STATUS: '/chatbot/rag/status/',
     
     // Dictionary endpoints
     CHATBOT_DICTIONARY_DEFINE: '/chatbot/dictionary/define/',

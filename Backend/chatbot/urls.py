@@ -8,6 +8,7 @@ from .views.files import FileUploadView
 from .utils.ocr_utils import extract_text_from_images
 from .views.documents import DocumentUploadView, DocumentListView, EmbeddingsExportView
 from .views.RAG_view import ChatRAGView
+from .views.RAG_view import OllamaRAGView
 from .views.dictionary_views import ConceptHelpView
 from .views.upload_view import DocumentUploadView as RAGUploadView
 
@@ -37,6 +38,7 @@ urlpatterns = [
     path("documents/list/", DocumentListView.as_view(), name="list_documents"),
     path("documents/export_embeddings/", EmbeddingsExportView.as_view(), name="export_embeddings"),
     path("chat/rag/", ChatRAGView.as_view(), name="chat_rag"),
+    path("chat/ollama_rag/", OllamaRAGView.as_view(), name="chat_ollama_rag"),
     path("upload/", RAGUploadView.as_view(), name="rag_upload"),
     
 

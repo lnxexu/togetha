@@ -54,8 +54,9 @@ class DocumentUploadView(APIView):
             processing_status='pending'
         )
 
-        # process and embed
-        process_file_for_user(file_path, user_id=user.id, document_name=file.name)
+        # process and embed (forward optional note_id)
+        note_id = request.POST.get('note_id') or request.GET.get('note_id')
+        process_file_for_user(file_path, user_id=user.id, document_name=file.name, note_id=note_id)
 
         # lookup and persist doc_id onto ConversationFile
         try:

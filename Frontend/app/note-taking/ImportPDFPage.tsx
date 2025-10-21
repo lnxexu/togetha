@@ -24,6 +24,7 @@ import { getLocalPDFPath, isRemoteURL } from "./utils/pdfUtils";
 import { useNetworkStatus, getNetworkStatusText, getNetworkStatusColor } from "./services/networkService";
 import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
 import { showSuccessToast, showErrorToast, showWarningToast, showInfoToast } from "../utils/ToastUtils";
+import { uploadPDF } from "./services/ragService";
 
 const { width, height } = Dimensions.get("window");
 
@@ -36,7 +37,9 @@ interface PDFDocument {
   lastModified: number;
   annotationCount: number;
   noteId?: string; // Link to backend note
+  docId?: string; // RAG document id returned by backend
   annotations?: any[]; // Store annotations
+  ragProcessed?: boolean; // Whether RAG processing completed
 }
 
 interface AnnotationSaveStatus {
@@ -171,6 +174,26 @@ const ImportPDFPage = () => {
       if (!fileInfo.exists) {
         throw new Error('Selected file is not accessible');
       }
+
+      // Upload to backend for RAG processing if online
+      let ragProcessed = false;
+      let documentId = Date.now().toString();
+      
+      if (isOnline) {
+        try {
+          showInfoToast('Uploading and processing PDF...');
+          const uploadResult = await uploadPDF(file.uri, file.name);
+
+          // backend may return `document_id` or `document_id` or `document_id` in different views
+          const returnedId = uploadResult.document_id || uploadResult.documentId || uploadResult.document_id || uploadResult.documentId || uploadResult.document_id;
+          documentId = returnedId || (uploadResult.document_id || uploadResult.documentId) || documentId;
+          ragProcessed = true;
+          showSuccessToast('PDF processed for AI chat');
+        } catch (error) {
+          console.warn('RAG processing failed, continuing with local storage:', error);
+          showWarningToast('PDF saved locally. AI features limited.');
+        }
+      }
       
       // Create document directory if it doesn't exist
       const docDir = `${FileSystem.documentDirectory}pdf_documents/`;
@@ -196,19 +219,23 @@ const ImportPDFPage = () => {
 
       // Create document record
       const newDocument: PDFDocument = {
-        id: Date.now().toString(),
+        id: documentId,
         name: file.name,
         uri: permanentUri,
         size: file.size || copiedFileInfo.size || 0,
         mimeType: file.mimeType || "application/pdf",
         lastModified: Date.now(),
         annotationCount: 0,
+        ragProcessed,
+        docId: documentId,
       };
 
       const updatedDocs = [...documents, newDocument];
       await saveDocuments(updatedDocs);
       
-      Alert.alert("Success", "PDF imported successfully!");
+      // Navigate directly to PDFAnnotationViewer
+      setSelectedDocument(newDocument);
+      setAnnotations([]);
       
     } catch (error) {
       console.error("Error importing PDF:", error);
@@ -526,6 +553,8 @@ const ImportPDFPage = () => {
         onAnnotationChange={handleAnnotationChange}
         networkStatus={networkStatus}
         saveStatus={saveStatus}
+        // pass backend doc id so viewer can query RAG status and ask RINA
+        docId={selectedDocument.docId}
       />
     );
   }
