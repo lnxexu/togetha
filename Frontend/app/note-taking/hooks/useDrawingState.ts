@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_URL, API_ENDPOINTS } from '@/constants/ApiConfig';
 import { drawingAPI, DrawingStroke } from '../services/drawingAPI';
+import offlineStorage from '../services/offlineStorage';
 
 interface UseDrawingStateProps {
   noteId?: string;
@@ -40,6 +41,19 @@ export const useDrawingState = ({
   const [history, setHistory] = useState<DrawingStroke[][]>([[]]);
   const [historyStep, setHistoryStep] = useState<number>(0);
 
+  // Keep internal currentNoteId in sync with prop changes and reset local state
+  useEffect(() => {
+    if (!noteId) return;
+    if (noteId !== currentNoteId) {
+      // Reset local canvas state when switching notes to avoid bleed-over
+      setStrokes([]);
+      setHistory([[]]);
+      setHistoryStep(0);
+      setHasUnsavedChanges(false);
+      setCurrentNoteId(noteId);
+    }
+  }, [noteId]);
+
   // Load drawing when noteId changes, but only if we're not skipping initial load
   useEffect(() => {
     if (currentNoteId && !skipInitialLoad) {
@@ -67,7 +81,13 @@ export const useDrawingState = ({
     setError(null);
     try {
       const drawingData = await drawingAPI.getDrawing(currentNoteId);
-      setStrokes(drawingData.strokes);
+      // Avoid overwriting non-empty canvas with empty server data
+      setStrokes(prev => {
+        if (prev && prev.length > 0 && (!drawingData.strokes || drawingData.strokes.length === 0)) {
+          return prev; // preserve current strokes
+        }
+        return drawingData.strokes;
+      });
       setHasUnsavedChanges(false);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to load drawing';
@@ -94,43 +114,21 @@ export const useDrawingState = ({
       noteId = result.noteId;
       setCurrentNoteId(noteId);
     } else {
-      // Update existing note - combine drawing data and metadata in a single request
-      
-      // Prepare the update data combining drawing data and metadata
-      const updateData: any = {
-        drawing_data: JSON.stringify(strokes)
-      };
-      
-      if (options?.title) updateData.title = options.title;
-      if (options?.folderId !== undefined) updateData.folder = options.folderId;
-      if (options?.template) updateData.template = options.template;
-      if (options?.tags) updateData.tag_names = options.tags;
-      
+      // Update existing note using centralized API; tags are handled here
       try {
-        const token = await AsyncStorage.getItem('authToken');
-        if (token) {
-          const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTES}${noteId}/`, {
-            method: 'PATCH',
-            headers: {
-              'Authorization': `Token ${token}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(updateData),
-          });
-          
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
-          }
-          
-          result = await response.json();
-        }
+        result = await drawingAPI.saveDrawing(noteId, strokes, options?.tags);
       } catch (updateError) {
-        console.error('Failed to update note with combined data:', updateError);
+        console.error('Failed to update drawing note:', updateError);
         throw updateError;
       }
     }
 
+    // Cache locally to avoid blanking
+    try {
+      if (noteId) {
+        await offlineStorage.saveOfflineDrawing(noteId, { strokes, noteId, hasDrawing: strokes.length > 0, lastUpdate: new Date().toISOString() });
+      }
+    } catch {}
     setHasUnsavedChanges(false);
     setLastSaveTime(Date.now());
 
@@ -463,7 +461,8 @@ export const useDrawingState = ({
     if (currentNoteId) {
       try {
         setIsSaving(true);
-        await drawingAPI.clearDrawing(currentNoteId);
+  await drawingAPI.clearDrawing(currentNoteId);
+  try { await offlineStorage.deleteOfflineDrawing(currentNoteId); } catch {}
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to clear drawing on server';
         setError(errorMessage);

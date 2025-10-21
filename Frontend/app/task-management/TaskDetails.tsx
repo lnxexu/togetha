@@ -210,8 +210,8 @@ const TaskDetails: React.FC = () => {
     try {
       const updatedTask = {
         completed: !task.completed,
-        updated_at: !task.completed ? new Date() : undefined,
-        completed_at: new Date(),
+        updated_at: new Date(),
+        completed_at: !task.completed ? new Date() : undefined,
       };
 
       // Call the API to update the task
@@ -232,6 +232,9 @@ const TaskDetails: React.FC = () => {
       showSuccessToast(
         task.completed ? "Task marked as pending" : "Task marked as completed"
       );
+
+      // Optionally force a refresh when navigating back so matrix/list syncs immediately
+      // navigation.goBack();
     } catch (error) {
       showErrorToast("Failed to update task");
     }

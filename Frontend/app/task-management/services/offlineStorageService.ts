@@ -31,6 +31,8 @@ class OfflineStorageService {
       // Convert date strings back to Date objects
       return tasks.map(task => ({
         ...task,
+        id: String(task.id),
+        localId: task.localId ? String(task.localId) : task.localId,
         due_datetime: task.due_datetime ? new Date(task.due_datetime) : null,
         createdAt: task.created_at,
         updatedAt: task.updated_at,
@@ -44,9 +46,40 @@ class OfflineStorageService {
   // Save tasks to offline storage
   async saveOfflineTasks(tasks: OfflineTask[]): Promise<void> {
     try {
-      const tasksToSave = tasks.map(task => ({
+      const isoOrNull = (val: any): string | null => {
+        if (val === undefined || val === null) return null;
+        if (val instanceof Date) return val.toISOString();
+        if (typeof val === 'string') {
+          // if already ISO-ish, keep; otherwise try to parse
+          const parsed = new Date(val);
+          if (!isNaN(parsed.getTime())) return parsed.toISOString();
+          return val;
+        }
+        if (typeof val === 'number') {
+          const d = new Date(val);
+          if (!isNaN(d.getTime())) return d.toISOString();
+        }
+        return null;
+      };
+
+      // Dedupe by id/localId to avoid duplicates
+      const seen = new Set<string>();
+      const unique = [] as OfflineTask[];
+      for (const t of tasks) {
+        const key = String((t as any).id ?? (t as any).localId);
+        if (!seen.has(key)) {
+          seen.add(key);
+          unique.push({
+            ...t,
+            id: String((t as any).id ?? (t as any).localId),
+            localId: t.localId ? String(t.localId) : t.localId,
+          } as OfflineTask);
+        }
+      }
+
+      const tasksToSave = unique.map(task => ({
         ...task,
-        due_datetime: task.due_datetime ? task.due_datetime.toISOString() : null,
+        due_datetime: isoOrNull(task.due_datetime),
       }));
       await AsyncStorage.setItem(this.TASKS_KEY, JSON.stringify(tasksToSave));
     } catch (error) {
@@ -65,7 +98,7 @@ class OfflineStorageService {
   async saveOfflineTask(task: OfflineTask): Promise<void> {
     try {
       const tasks = await this.getOfflineTasks();
-      const existingIndex = tasks.findIndex(t => t.id === task.id || t.localId === task.localId);
+      const existingIndex = tasks.findIndex(t => String(t.id) === String(task.id) || (t.localId && task.localId && String(t.localId) === String(task.localId)));
       
       if (existingIndex >= 0) {
         tasks[existingIndex] = task;
@@ -84,7 +117,7 @@ class OfflineStorageService {
   async deleteOfflineTask(id: string): Promise<void> {
     try {
       const tasks = await this.getOfflineTasks();
-      const filteredTasks = tasks.filter(task => task.id !== id && task.localId !== id);
+      const filteredTasks = tasks.filter(task => String(task.id) !== String(id) && String(task.localId || '') !== String(id));
       await this.saveOfflineTasks(filteredTasks);
     } catch (error) {
       console.error('Error deleting offline task:', error);
@@ -184,19 +217,20 @@ class OfflineStorageService {
   // Convert TaskFormData to OfflineTask for new tasks
   taskFormDataToOfflineTask(taskData: TaskFormData, localId?: string): OfflineTask {
     const now = new Date();
+    const lid = localId || this.generateLocalId();
     return {
-      id: localId || this.generateLocalId(),
-      localId: localId || this.generateLocalId(),
+      id: lid,
+      localId: lid,
       title: taskData.title,
       description: taskData.description || '',
       completed: taskData.completed || false,
       priority: taskData.priority || 'not-urgent-not-important',
       category: taskData.category || '',
-      due_datetime: taskData.due_datetime || null,
+  due_datetime: taskData.due_datetime || null,
       due_time: taskData.due_time || '',
       created_at: now.toISOString(),
       updated_at: now.toISOString(),
-      completed_at: taskData.completed_at?.toISOString(),
+  completed_at: taskData.completed_at ? (taskData.completed_at instanceof Date ? taskData.completed_at.toISOString() : (typeof taskData.completed_at === 'string' ? (isNaN(new Date(taskData.completed_at).getTime()) ? taskData.completed_at : new Date(taskData.completed_at).toISOString()) : null)) : null,
       overdue: false,
       user: taskData.user || '',
       syncStatus: 'pending',

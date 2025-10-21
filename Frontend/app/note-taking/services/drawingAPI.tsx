@@ -2,6 +2,7 @@
 import { API_URL, API_ENDPOINTS, joinUrl } from '@/constants/ApiConfig';
 import { parseServerDate } from '../utils/localDate';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import offlineStorage from './offlineStorage';
 import { 
   embedAnnotationsInPDF, 
   embedAnnotationsInPDFEnhanced, 
@@ -76,7 +77,7 @@ export class DrawingAPI {
         'Content-Type': 'application/json',
         'X-Requested-With': 'XMLHttpRequest',
         'X-Client-Timezone': Intl.DateTimeFormat().resolvedOptions().timeZone || '',
-        ...(token && { 'Authorization': `Bearer ${token}` }),
+        ...(token && { 'Authorization': `Token ${token}` }),
         ...(csrfToken && { 'X-CSRFToken': csrfToken }),
       };
     } catch (error) {
@@ -95,7 +96,7 @@ export class DrawingAPI {
       
       // Try using the regular notes endpoint with PATCH instead of the drawing-specific endpoint
       const requestBody: any = { 
-        drawing_data: drawingDataString
+        drawing_strokes: strokes
       };
       
       // Include tags if provided
@@ -135,7 +136,7 @@ export class DrawingAPI {
     try {
       const headers = await this.getAuthHeaders();
       // Use the regular notes endpoint instead of drawing-specific endpoint
-  const response = await fetch(joinUrl(API_URL, `${API_ENDPOINTS.NOTES}${noteId}/`), {
+      const response = await fetch(joinUrl(API_URL, `${API_ENDPOINTS.NOTES}${noteId}/`), {
         headers,
       });
       
@@ -144,7 +145,7 @@ export class DrawingAPI {
         throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
       }
 
-      const data = await response.json();
+    const data = await response.json();
       console.log('API getDrawing response:', data);
       
       let strokes: DrawingStroke[] = [];
@@ -169,14 +170,34 @@ export class DrawingAPI {
       
       console.log('Parsed strokes:', strokes.length, strokes.length > 0 ? strokes[0] : 'none');
       
-      return {
+      const drawingData: DrawingData = {
         strokes,
         noteId: data.id || noteId,
         hasDrawing: strokes.length > 0,
         lastUpdate: (parseServerDate(data.updated_at) || parseServerDate(data.last_update) || new Date()).toISOString(),
       };
+
+      // If server returned empty strokes, prefer offline cache to avoid blanking
+      if (strokes.length === 0) {
+        try {
+          const cached = await offlineStorage.getOfflineDrawing(String(noteId));
+          if (cached && Array.isArray(cached.strokes) && cached.strokes.length > 0) {
+            return cached;
+          }
+        } catch {}
+      } else {
+        // Cache non-empty server result
+        try { await offlineStorage.saveOfflineDrawing(String(noteId), drawingData); } catch {}
+      }
+
+      return drawingData;
     } catch (error) {
       console.error('Failed to get drawing:', error);
+      // Fallback to offline cache
+      try {
+        const cached = await offlineStorage.getOfflineDrawing(String(noteId));
+        if (cached) return cached;
+      } catch {}
       throw error;
     }
   }
@@ -239,7 +260,7 @@ export class DrawingAPI {
           type: 'drawing', // Set type to drawing when creating
           category: null, // You can add category support later
           folder: folderId,   // Include folder information
-          drawing_data: JSON.stringify(strokes), // Add drawing data directly
+          drawing_strokes: strokes, // Add drawing data directly
           tag_names: tags || [], // Include tags
         }),
       });
@@ -371,20 +392,36 @@ export class DrawingAPI {
   ): Promise<{savedPath: string, backupPath?: string, backendResponse: any}> {
     try {
       console.log('savePDFAnnotationsWithBackend called');
+      // Save to backend as DOCUMENT annotations and ensure note type remains 'document'.
+      // Also clear any drawing data to avoid misclassification as a drawing note on next load.
+      const headers = await this.getAuthHeaders();
+      const backendPatchBody: any = {
+        document_annotations: annotations,
+        type: 'document',
+        // Explicitly clear drawing_strokes to prevent the backend from retaining drawing data
+        // (NoteSerializer maps drawing_strokes -> drawing_data and will mark has_drawing false)
+        drawing_strokes: [],
+      };
+      if (tags && tags.length) {
+        backendPatchBody.tag_names = tags;
+      }
 
-      // Convert PDF annotations to drawing strokes format for backend
-      const strokes: DrawingStroke[] = annotations.map(annotation => ({
-        id: annotation.id,
-        points: annotation.path ? this.convertPathToPoints(annotation.path) : [annotation.x, annotation.y],
-        color: annotation.color,
-        width: annotation.strokeWidth || 3,
-        tool: annotation.type,
-        timestamp: annotation.timestamp,
-        opacity: 1.0
-      }));
+      const backendResponseRaw = await fetch(
+        joinUrl(API_URL, `${API_ENDPOINTS.NOTES}${noteId}/`),
+        {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify(backendPatchBody),
+        }
+      );
 
-      // Save to backend first with tags
-      const backendResponse = await this.saveDrawing(noteId, strokes, tags);
+      if (!backendResponseRaw.ok) {
+        const errorData = await backendResponseRaw.json().catch(() => ({}));
+        console.error('Failed to save document annotations to backend:', errorData);
+        throw new Error(errorData.detail || `HTTP error! status: ${backendResponseRaw.status}`);
+      }
+
+      const backendResponse = await backendResponseRaw.json();
 
       // Then save to PDF
       const pdfResult = await this.savePDFAnnotations(pdfUri, annotations, options);

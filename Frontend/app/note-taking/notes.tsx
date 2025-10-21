@@ -36,6 +36,7 @@ import TemplatePreview from "./components/TemplatePreview";
 import { DocumentPreviewModal } from "./components/DocumentPreviewModal";
 import { DocumentViewer } from "./components/DocumentViewer";
 import PDFAnnotationViewer from "./components/PDFAnnotationViewer";
+import DocumentPreview from "./components/DocumentPreview";
 import { LinearGradient } from "expo-linear-gradient";
 import { TemplateOverlay, TemplateType } from "./components/TemplateOverlay";
 import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
@@ -48,6 +49,8 @@ import SkeletonLoader from "../components/SkeletonLoader";
 import { folderCacheUtils } from "../utils/FolderCacheUtils";
 import { getLocalPDFPath, isRemoteURL } from "./utils/pdfUtils";
 import { parseServerDate, formatShortLocalDate } from "./utils/localDate";
+import offlineNotesService from "./services/offlineNotesService";
+import * as FileSystem from 'expo-file-system';
 
 const { width } = Dimensions.get("window");
 
@@ -443,13 +446,30 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
     fetchNotes();
     fetchFolders();
 
+    // Setup network status listener to sync when coming back online
+    const removeNetworkListener = offlineNotesService.addNetworkStatusListener((status) => {
+      if (status.isOnline) {
+        console.log('Device is back online, attempting to sync notes...');
+        offlineNotesService.syncWithServer().catch((error) => {
+          console.error('Auto-sync failed after coming online:', error);
+        });
+      }
+    });
+
     const refreshInterval = setInterval(() => {
       if (AppState.currentState === "active") {
+        // Check if there are pending changes and try to sync
+        offlineNotesService.hasPendingChanges().then((hasPending) => {
+          if (hasPending && offlineNotesService.isOnline()) {
+            offlineNotesService.syncWithServer().catch(console.error);
+          }
+        });
       }
     }, 30000);
 
     return () => {
       clearInterval(refreshInterval);
+      removeNetworkListener();
     };
   }, []);
 
@@ -495,6 +515,24 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
       // This ensures home screen gets updated counts when notes are modified
       folderCacheUtils.invalidateCache();
 
+      // Try to sync when coming back to the screen if online and has pending changes
+      if (offlineNotesService.isOnline()) {
+        offlineNotesService.hasPendingChanges().then((hasPending) => {
+          if (hasPending) {
+            console.log('Syncing pending changes on focus...');
+            offlineNotesService.syncWithServer()
+              .then(() => {
+                // Refresh notes after sync
+                fetchNotes(true);
+                fetchFolders();
+              })
+              .catch((error) => {
+                console.error('Sync on focus failed:', error);
+              });
+          }
+        });
+      }
+
       return () => {
         // Clean up if needed when screen goes out of focus
       };
@@ -502,12 +540,9 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
   );
 
   const fetchFolders = async () => {
-    // Implement fetch throttling - don't fetch if it's been less than 10 seconds
+    // Throttle to 10s if we already have folders
     const now = Date.now();
-    if (now - lastFolderFetch < 10000 && folders.length > 0) {
-      return; // Skip this fetch if we already have folders and it's too soon
-    }
-
+    if (now - lastFolderFetch < 10000 && folders.length > 0) return;
     setLastFolderFetch(now);
 
     try {
@@ -517,36 +552,20 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
         return;
       }
 
-      const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTE_FOLDERS}`, {
-        method: "GET",
-        headers: {
-          Authorization: `Token ${token}`,
-          "Content-Type": "application/json",
-          "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone || "",
-        },
-        // Improve caching behavior
-        cache: "default",
-      });
+      // Use offlineNotesService to allow online-first with offline fallback and local caching
+      const data = await offlineNotesService.getAllFolders();
 
-      if (!response.ok) {
-        throw new Error("Failed to fetch folders");
-      }
-
-      const data = await response.json();
-
-      // Transform the data to match your Folder interface
-      const fetchedFolders: Folder[] = data.map((folder: any) => ({
-        id: folder.id.toString(),
+      const fetchedFolders: Folder[] = (data || []).map((folder: any) => ({
+        id: folder.id?.toString?.() ?? String(folder.id),
         name: folder.name,
-        color: folder.color || "#667EEA", // Default color if not provided
-        icon: "folder" as keyof typeof MaterialIcons.glyphMap, // Default icon
-        notes_count: folder.notes_count || 0,
+        color: folder.color || "#667EEA",
+        icon: "folder" as keyof typeof MaterialIcons.glyphMap,
+        notes_count: folder.notes_count || folder.note_count || 0,
         description: folder.description,
         created_at: folder.created_at,
         updated_at: folder.updated_at,
       }));
 
-      // Only update state if folders have actually changed
       const currentFoldersJson = JSON.stringify(
         folders.map((f) => ({ id: f.id, name: f.name }))
       );
@@ -567,6 +586,11 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
     // Primary check: if type is explicitly set to drawing
     if (note.type === "drawing") {
       return true;
+    }
+
+    // Explicitly guard: documents should never be treated as drawings
+    if (note.type === "document") {
+      return false;
     }
 
     // Secondary check: if drawing_data exists and has content
@@ -624,82 +648,110 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
   const fetchNotes = React.useCallback(
     async (showLoading = true) => {
       const now = Date.now();
-      if (!showLoading && now - lastNoteFetch < 5000) {
-        return; // Skip this fetch
-      }
+      if (!showLoading && now - lastNoteFetch < 5000) return;
 
-      if (showLoading) {
-        setIsLoading(true);
-      }
+      if (showLoading) setIsLoading(true);
       setError(null);
       setLastNoteFetch(now);
 
       try {
         const token = await AsyncStorage.getItem("authToken");
         if (!token) {
-          // Navigate to login if no token
           navigation.navigate("Login");
           return;
         }
 
-        // Add pagination parameters to reduce data load
-        let endpoint = `${API_URL}${API_ENDPOINTS.NOTES}?limit=50`;
+        // Use offline service so notes appear when offline and are cached when online
+        let data = await offlineNotesService.getAllNotes();
 
-        // Add filter for selected folder if one is chosen
+        // Client-side filter by selected folder if provided
         if (selectedFilterFolder) {
-          endpoint += `&folder=${selectedFilterFolder}`;
+          data = (data || []).filter((n: any) => {
+            const fid = n.folderId || n.folder?.toString?.();
+            return fid ? fid.toString() === selectedFilterFolder : false;
+          });
         }
 
-        const response = await fetch(endpoint, {
-          method: "GET",
-          headers: {
-            Authorization: `Token ${token}`,
-            "Content-Type": "application/json",
-            "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone || "",
-          },
-          // Improve caching with cache control headers
-          cache: "default",
+        // Normalize into local Note type where necessary
+        const toDate = (val: any): Date | undefined => {
+          if (!val) return undefined;
+          if (val instanceof Date) return val;
+          if (typeof val === 'string') return parseServerDate(val) || new Date(val);
+          if (typeof val === 'number') return new Date(val);
+          return undefined;
+        };
+
+        const fetchedNotes: Note[] = (data || []).map((n: any) => {
+          const createdAt = toDate(n.createdAt) || toDate(n.created_at) || new Date(0);
+          const updatedAt = toDate(n.updatedAt) || toDate(n.updated_at) || toDate(n.lastModified) || createdAt;
+          const lastAccessedAt = toDate(n.lastAccessedAt) || toDate(n.last_accessed);
+          return {
+            id: n.id?.toString?.() ?? String(n.id),
+            title: n.title || "",
+            content: n.content || "",
+            formatted_content: n.formatted_content || "",
+            folder: n.folder || n.folder_name || null,
+            folderId: n.folderId || (n.folder ? n.folder.toString() : null),
+            createdAt,
+            updatedAt,
+            lastAccessedAt,
+            type: n.type || "text",
+            is_archived: n.is_archived || false,
+            tags: n.tags || [],
+            template: n.template || null,
+            drawing_data: n.drawing_data || null,
+            document_file: n.document_file || null,
+            document_annotations: n.document_annotations || null,
+          };
         });
 
-        if (!response.ok) {
-          throw new Error("Failed to fetch notes");
-        }
-
-        const data = await response.json();
-
-        // Transform the data to match your Note interface with optimized processing
-        const fetchedNotes: Note[] = data.map((note: any) => ({
-          id: note.id.toString(),
-          title: note.title || "",
-          content: note.content || "",
-          formatted_content: note.formatted_content || "",
-          folder: note.folder_name || null, // Use folder_name from backend
-          folderId: note.folder ? note.folder.toString() : null, // Map the folder ID
-          createdAt: parseServerDate(note.created_at) || new Date(),
-          updatedAt: parseServerDate(note.updated_at) || new Date(),
-          lastAccessedAt: parseServerDate(note.last_accessed),
-          type: note.type || "text",
-          is_archived: note.is_archived || false,
-          tags: note.tags || [],
-          template: note.template || null,
-          drawing_data: note.drawing_data || null,
-          document_file: note.document_file || null, // Add document file URL
-          document_annotations: note.document_annotations || null, // Add document annotations
-        }));
-
-        // Sort by last accessed, then by updatedAt
+        // Sort by latest access/update: always prioritize lastAccessedAt, then updatedAt, then createdAt
         fetchedNotes.sort((a, b) => {
-          const aTime = (a.lastAccessedAt || a.updatedAt || a.createdAt)?.getTime?.() || 0;
-          const bTime = (b.lastAccessedAt || b.updatedAt || b.createdAt)?.getTime?.() || 0;
-          return bTime - aTime;
+          const getNum = (d?: Date) => {
+            if (d instanceof Date) {
+              const t = d.getTime();
+              return isNaN(t) ? 0 : t;
+            }
+            return 0;
+          };
+          const aL = getNum(a.lastAccessedAt);
+          const bL = getNum(b.lastAccessedAt);
+          const aU = getNum(a.updatedAt);
+          const bU = getNum(b.updatedAt);
+          
+          // ALWAYS prioritize by lastAccessedAt if either note has it (not just recent ones)
+          if (aL > 0 || bL > 0) {
+            // If both have lastAccessedAt, sort by most recent
+            if (aL > 0 && bL > 0) {
+              return bL - aL;
+            }
+            // If only one has lastAccessedAt, it goes first
+            if (aL > 0) return -1;
+            if (bL > 0) return 1;
+          }
+          
+          // If neither has lastAccessedAt, sort by updatedAt (most recent first)
+          if (aU !== bU) return bU - aU;
+          
+          // Final fallback to createdAt
+          const aC = getNum(a.createdAt);
+          const bC = getNum(b.createdAt);
+          return bC - aC;
         });
 
-        // Check if notes have changed before updating state - only compare relevant fields
         const currentNotesJson = JSON.stringify(
-          notes.map((n) => ({ id: n.id, updatedAt: n.updatedAt }))
+          notes.map((n) => ({ 
+            id: n.id, 
+            updatedAt: n.updatedAt?.getTime?.() || 0,
+            lastAccessedAt: n.lastAccessedAt?.getTime?.() || 0 
+          }))
         );
         const fetchedNotesJson = JSON.stringify(
-          fetchedNotes.map((n) => ({ id: n.id, updatedAt: n.updatedAt }))
+          fetchedNotes.map((n) => ({ 
+            id: n.id, 
+            updatedAt: n.updatedAt?.getTime?.() || 0,
+            lastAccessedAt: n.lastAccessedAt?.getTime?.() || 0 
+          }))
         );
         const hasChanges = currentNotesJson !== fetchedNotesJson;
 
@@ -710,9 +762,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
         console.error("Error fetching notes:", error);
         setError("Failed to load notes. Please try again.");
       } finally {
-        if (showLoading) {
-          setIsLoading(false);
-        }
+        if (showLoading) setIsLoading(false);
       }
     },
     [lastNoteFetch, navigation, notes, selectedFilterFolder]
@@ -899,36 +949,22 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
             onPress: async () => {
               try {
                 setIsLoading(true); // Show loading indicator
-                const token = await AsyncStorage.getItem("authToken");
-                if (!token) {
-                  navigation.navigate("Login");
-                  return;
-                }
-                const response = await fetch(
-                  `${API_URL}${API_ENDPOINTS.NOTES}${noteId}/`,
-                  {
-                    method: "DELETE",
-                    headers: {
-                      Authorization: `Token ${token}`,
-                      "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone || "",
-                    },
-                  }
-                );
+                console.log('🗑️ Deleting note:', noteId);
 
-                if (!response.ok) {
-                  throw new Error("Failed to delete note");
-                }
+                // Use offlineNotesService for deletion (handles both online and offline)
+                await offlineNotesService.deleteNote(noteId);
 
-                // If successful, update local state
+                // Update local state
                 setNotes((prev) => prev.filter((note) => note.id !== noteId));
 
                 // Invalidate folder cache to update counts in home screen
                 await folderCacheUtils.invalidateCache();
 
+                console.log('✅ Note deleted successfully:', noteId);
                 // Show success toast
                 showSuccessToast("Note deleted successfully");
               } catch (error) {
-                console.error("Error deleting note:", error);
+                console.error("❌ Error deleting note:", error);
                 showErrorToast("Failed to delete note");
                 Alert.alert(
                   "Error",
@@ -947,11 +983,17 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
 
   // Function to move accessed note to top by updating lastAccessedAt
   const updateNoteAccessTime = useCallback(async (noteId: string) => {
-    // Update local state immediately for UX
+    // Create a consistent timestamp to use everywhere
+    const now = new Date();
+    
+    // Capture note data for offline cache before state update
+    const base = notes.find(n => n.id === noteId);
+    
+    // Update local state FIRST for immediate UX feedback
     setNotes(prevNotes => {
       const updated = prevNotes.map(note => 
         note.id === noteId 
-          ? { ...note, lastAccessedAt: new Date() }
+          ? { ...note, lastAccessedAt: now }
           : note
       );
       // Keep list locally sorted by last accessed
@@ -961,23 +1003,15 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
         return bTime - aTime;
       });
     });
-
-    // Fire-and-forget server touch to persist last_accessed
+    
+    // AWAIT the persist to offline storage to ensure it completes before navigation
     try {
-      const token = await AsyncStorage.getItem("authToken");
-      if (!token) return;
-      await fetch(`${API_URL}${API_ENDPOINTS.NOTE_TOUCH(noteId)}`, {
-        method: "POST",
-        headers: { 
-          Authorization: `Token ${token}`,
-          "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone || "",
-        },
-      });
+      await offlineNotesService.touchNote(noteId, base);
+      console.log(`✅ Successfully updated last_accessed for note ${noteId}`);
     } catch (e) {
-      // Non-blocking
-      console.warn("Failed to touch last_accessed on server", e);
+      console.error('❌ Failed to update touchNote in offline storage:', e);
     }
-  }, []);
+  }, [notes]);
 
   const handleNotePress = useCallback(
     async (note: Note) => {
@@ -985,8 +1019,23 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
       setActiveNoteOptions(null);
       setDropdownPosition(null);
       
-      // Update access time to move note to top
-      updateNoteAccessTime(note.id);
+      // Try to get the most up-to-date note from offline storage to ensure we have the correct ID
+      try {
+        const latestNote = await offlineNotesService.getNoteById(note.id);
+        if (latestNote && latestNote.id !== note.id) {
+          // ID has changed (e.g., synced from local to server ID), use the new one
+          note = {
+            ...note,
+            id: latestNote.id
+          };
+        }
+      } catch (error) {
+        console.warn('Failed to check for updated note ID:', error);
+        // Continue with original note ID
+      }
+      
+      // Update access time to move note to top - AWAIT this to ensure storage is updated
+      await updateNoteAccessTime(note.id);
 
       // Check if it's a document type note
       if (note.type === "document") {
@@ -1089,17 +1138,33 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
           strokesArray = [];
         }
 
+        // If we couldn't derive strokes from the note payload, try fetching cached/server drawing
+        if (!strokesArray || strokesArray.length === 0) {
+          try {
+            const dd = await offlineNotesService.getDrawing(note.id);
+            if (dd?.strokes?.length) {
+              strokesArray = dd.strokes;
+            }
+          } catch {}
+        }
+
         // Prepare drawing data for editor - ensure proper format for importDrawing
+        // IMPORTANT: Do not let parsedDrawingData.strokes overwrite our computed strokesArray
+        const { strokes: _ignoredStrokes, ...restParsed } = (parsedDrawingData && typeof parsedDrawingData === 'object')
+          ? (parsedDrawingData as any)
+          : ({} as any);
+
         const drawingData = {
           id: note.id,
           title: note.title || "Untitled Drawing",
+          // Spread other parsed fields first (without strokes)
+          ...restParsed,
+          // Then set the correct strokes explicitly so they win
           strokes: strokesArray,
           template: parsedDrawingData?.template || note.template || "blank",
           drawing_data: parsedDrawingData,
           createdAt: note.createdAt?.toISOString(),
           updatedAt: note.updatedAt?.toISOString(),
-          // Also include the strokes at root level for importDrawing compatibility
-          ...parsedDrawingData,
         };
 
         navigation.navigate("DrawingEditor", {
@@ -1167,6 +1232,9 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
 
   // Show document import preview modal
   const handleImportDocument = () => {
+    console.log('📂 Opening document import modal...');
+    console.log('🌐 Network status - isOnline:', offlineNotesService.isOnline());
+    console.log('🌐 Network details:', offlineNotesService.getNetworkStatus());
     setShowDocumentPreviewModal(true);
   };
 
@@ -1174,91 +1242,211 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
   const handleConfirmDocumentImport = async (documentInfo: any) => {
     try {
       setIsUploadingDocument(true);
-      const token = await AsyncStorage.getItem("authToken");
-      if (!token) {
-        navigation.navigate("Login");
+      
+      // Check for duplicate title before proceeding
+      if (isDuplicateNoteTitle(documentInfo.name)) {
+        showTypedErrorToast("A note with this title already exists.", "duplicate_name");
         setIsUploadingDocument(false);
         return;
       }
 
-      const formData = new FormData();
-      formData.append("title", documentInfo.name);
-      formData.append("content", `Imported document: ${documentInfo.name}`);
-      formData.append("type", "document");
+      const documentType =
+        documentInfo.mimeType?.includes("pdf")
+          ? "pdf"
+          : documentInfo.mimeType?.includes("word") ||
+            documentInfo.mimeType?.includes("document")
+          ? "word"
+          : documentInfo.mimeType?.includes("image") ||
+            documentInfo.name?.match(/\.(jpg|jpeg|png|gif|bmp|webp|svg)$/i)
+          ? "image"
+          : documentInfo.name?.match(/\.txt$/i)
+          ? "txt"
+          : "document";
 
-      formData.append("document", {
-        uri: documentInfo.uri,
-        type: documentInfo.mimeType || "application/octet-stream",
-        name: documentInfo.name,
-      } as any);
+      // Try online upload first, but fallback to offline if network fails
+      let uploadedOnline = false;
+      
+      console.log('🌐 Checking network status before import...');
+      console.log('📊 isOnline():', offlineNotesService.isOnline());
+      console.log('📊 Network details:', offlineNotesService.getNetworkStatus());
+      
+      if (offlineNotesService.isOnline()) {
+        console.log('✅ Network detected as online, attempting server upload...');
+        try {
+          // Online: Upload document to server using FormData
+          const token = await AsyncStorage.getItem("authToken");
+          if (!token) {
+            navigation.navigate("Login");
+            setIsUploadingDocument(false);
+            return;
+          }
 
-      const response = await fetch(
-        `${API_URL}${API_ENDPOINTS.DOCUMENT_UPLOAD}`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Token ${token}`,
-            "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone || "",
-          },
-          body: formData,
+          const formData = new FormData();
+          formData.append("title", documentInfo.name);
+          formData.append("content", `Imported document: ${documentInfo.name}`);
+          formData.append("type", "document");
+
+          formData.append("document", {
+            uri: documentInfo.uri,
+            type: documentInfo.mimeType || "application/octet-stream",
+            name: documentInfo.name,
+          } as any);
+
+          const response = await fetch(
+            `${API_URL}${API_ENDPOINTS.DOCUMENT_UPLOAD}`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Token ${token}`,
+                "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone || "",
+              },
+              body: formData,
+            }
+          );
+
+          if (response.ok) {
+            const result = await response.json();
+
+            // Check for duplicate title returned from server
+            const returnedTitle = result?.title?.trim();
+            if (returnedTitle && isDuplicateNoteTitle(returnedTitle)) {
+              showTypedErrorToast("A note with this title already exists.", "duplicate_name");
+              fetchNotes(true);
+              setIsUploadingDocument(false);
+              return;
+            }
+
+            showSuccessToast("Document imported successfully!");
+            fetchNotes(true);
+            await folderCacheUtils.invalidateCache();
+
+            const documentUrl = result.document_url || result.document_file || documentInfo.uri;
+            let finalDocumentUri = documentUrl;
+
+            if (documentType === "pdf" && isRemoteURL(documentUrl)) {
+              try {
+                finalDocumentUri = await getLocalPDFPath(documentUrl);
+              } catch (error) {
+                console.warn("Failed to download PDF, using remote URL", error);
+                finalDocumentUri = documentUrl;
+              }
+            }
+
+            setCurrentDocument({
+              uri: finalDocumentUri,
+              name: result.title || documentInfo.name,
+              noteId: result.id,
+              type: documentType,
+            });
+
+            if (documentType === "pdf") {
+              setShowPDFViewer(true);
+            } else {
+              setShowDocumentViewer(true);
+            }
+            
+            uploadedOnline = true;
+          } else {
+            const errorData = await response.json();
+            throw new Error(errorData.error || "Failed to import document");
+          }
+        } catch (onlineError) {
+          console.warn('❌ Online upload failed, falling back to offline mode:', onlineError);
+          // Don't return - fall through to offline mode
         }
-      );
-
-      if (response.ok) {
-        const result = await response.json();
-
-        // Check for duplicate title returned from server
-        const returnedTitle = result?.title?.trim();
-        if (returnedTitle && isDuplicateNoteTitle(returnedTitle)) {
-          showTypedErrorToast("A note with this title already exists.", "duplicate_name");
-          fetchNotes(true);
-          return;
+      }
+      
+      // Offline mode (or online upload failed)
+      if (!uploadedOnline) {
+        // Offline: Create a document note with local file reference
+        console.log('📱 OFFLINE PDF IMPORT - Starting offline import process...');
+        console.log('📄 Document info:', { name: documentInfo.name, uri: documentInfo.uri, mimeType: documentInfo.mimeType });
+        
+        // Ensure the file is copied to a permanent app directory
+        let localUri = documentInfo.uri;
+        try {
+          const docDir = `${FileSystem.documentDirectory}pdf_documents/`;
+          console.log('📁 Creating/checking directory:', docDir);
+          
+          const dirInfo = await FileSystem.getInfoAsync(docDir);
+          if (!dirInfo.exists) {
+            await FileSystem.makeDirectoryAsync(docDir, { intermediates: true });
+            console.log('✅ Directory created');
+          } else {
+            console.log('✅ Directory already exists');
+          }
+          
+          const safeName = `${Date.now()}_${documentInfo.name || 'document.pdf'}`;
+          const destUri = `${docDir}${safeName}`;
+          console.log('🔄 Copying file from', localUri, 'to', destUri);
+          
+          // Copy only if source exists and destination not same
+          const srcInfo = await FileSystem.getInfoAsync(localUri);
+          console.log('📊 Source file info:', srcInfo);
+          
+          if (srcInfo.exists && destUri !== localUri) {
+            await FileSystem.copyAsync({ from: localUri, to: destUri });
+            const copiedInfo = await FileSystem.getInfoAsync(destUri);
+            console.log('📊 Copied file info:', copiedInfo);
+            
+            if (copiedInfo.exists) {
+              localUri = destUri;
+              console.log('✅ File copied successfully to permanent location');
+            } else {
+              console.error('❌ Copy completed but file not found at destination');
+            }
+          } else {
+            console.log('ℹ️ Using original URI (source not found or same as dest)');
+          }
+        } catch (copyErr) {
+          console.error('❌ Failed to persist PDF to app storage:', copyErr);
+          console.warn('⚠️ Using original URI:', localUri);
         }
 
-        showSuccessToast("Document imported successfully!");
-        fetchNotes(true);
+        console.log('💾 Creating offline note with document data...');
+        const noteData = {
+          title: documentInfo.name,
+          content: `Imported document: ${documentInfo.name}`,
+          type: "document" as const,
+          document_file: localUri, // Store local file URI
+          document_url: localUri, // Store local file URI
+        };
+        console.log('📝 Note data to create:', noteData);
+
+        // Create note using offline service
+        const result = await offlineNotesService.createNote(noteData);
+        console.log('✅ Offline note created:', result);
+
+        showSuccessToast("Document saved offline. Will upload when you're back online.");
+        
+        // Refresh notes list to show the new document
+        await fetchNotes(true);
         await folderCacheUtils.invalidateCache();
 
-        const documentType =
-          documentInfo.mimeType?.includes("pdf")
-            ? "pdf"
-            : documentInfo.mimeType?.includes("word") ||
-              documentInfo.mimeType?.includes("document")
-            ? "word"
-            : documentInfo.mimeType?.includes("image") ||
-              documentInfo.name?.match(/\.(jpg|jpeg|png|gif|bmp|webp|svg)$/i)
-            ? "image"
-            : documentInfo.name?.match(/\.txt$/i)
-            ? "txt"
-            : "document";
+        console.log('🎬 Opening document viewer with:', {
+          uri: localUri,
+          name: documentInfo.name,
+          noteId: result.id,
+          type: documentType
+        });
 
-        const documentUrl = result.document_url || result.document_file || documentInfo.uri;
-        let finalDocumentUri = documentUrl;
-
-        if (documentType === "pdf" && isRemoteURL(documentUrl)) {
-          try {
-            finalDocumentUri = await getLocalPDFPath(documentUrl);
-          } catch (error) {
-            console.warn("Failed to download PDF, using remote URL", error);
-            finalDocumentUri = documentUrl;
-          }
-        }
-
+        // Set current document to view it
         setCurrentDocument({
-          uri: finalDocumentUri,
-          name: result.title || documentInfo.name,
+          uri: localUri,
+          name: documentInfo.name,
           noteId: result.id,
           type: documentType,
         });
 
         if (documentType === "pdf") {
+          console.log('📄 Opening PDF viewer...');
           setShowPDFViewer(true);
         } else {
+          console.log('📄 Opening document viewer...');
           setShowDocumentViewer(true);
         }
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to import document");
+        
+        console.log('✅ OFFLINE PDF IMPORT - Process completed successfully');
       }
     } catch (error) {
       console.error("Error importing document:", error);
@@ -1396,52 +1584,37 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
           onPress: async () => {
             try {
               setIsLoading(true);
-              const token = await AsyncStorage.getItem("authToken");
-              if (!token) {
-                navigation.navigate("Login");
-                return;
-              }
+              console.log('🗑️ Bulk deleting notes:', selectedNotes);
 
-              // Create an array of promises for each delete operation
+              // Use offlineNotesService for each deletion (handles both online and offline)
               const deletePromises = selectedNotes.map((noteId) =>
-                fetch(`${API_URL}${API_ENDPOINTS.NOTES}${noteId}/`, {
-                  method: "DELETE",
-                  headers: {
-                    Authorization: `Token ${token}`,
-                  },
-                })
+                offlineNotesService.deleteNote(noteId)
               );
 
               // Wait for all delete operations to complete
-              const results = await Promise.all(deletePromises);
+              await Promise.all(deletePromises);
 
-              // Check if all operations were successful
-              const allSuccessful = results.every((response) => response.ok);
+              // Update local state by removing deleted notes
+              setNotes((prevNotes) =>
+                prevNotes.filter((note) => !selectedNotes.includes(note.id))
+              );
 
-              if (allSuccessful) {
-                // Update local state by removing deleted notes
-                setNotes((prevNotes) =>
-                  prevNotes.filter((note) => !selectedNotes.includes(note.id))
-                );
+              // Invalidate folder cache to update counts in home screen
+              await folderCacheUtils.invalidateCache();
 
-                // Invalidate folder cache to update counts in home screen
-                await folderCacheUtils.invalidateCache();
+              // Exit select mode and clear selection
+              setSelectedNotes([]);
+              setIsSelectMode(false);
 
-                // Exit select mode and clear selection
-                setSelectedNotes([]);
-                setIsSelectMode(false);
-
-                // Show success message
-                showSuccessToast(
-                  `${selectedNotes.length} ${
-                    selectedNotes.length === 1 ? "note" : "notes"
-                  } deleted successfully`
-                );
-              } else {
-                throw new Error("Some notes could not be deleted");
-              }
+              console.log('✅ Bulk delete successful');
+              // Show success message
+              showSuccessToast(
+                `${selectedNotes.length} ${
+                  selectedNotes.length === 1 ? "note" : "notes"
+                } deleted successfully`
+              );
             } catch (error) {
-              console.error("Error deleting notes:", error);
+              console.error("❌ Error deleting notes:", error);
               showErrorToast("Failed to delete some notes");
               Alert.alert(
                 "Error",
@@ -1482,28 +1655,8 @@ const updateFolderName = async (folderId: string, newName: string) => {
   }
 
   try {
-    const token = await AsyncStorage.getItem("authToken");
-    if (!token) {
-      navigation.navigate("Login");
-      return;
-    }
-
-    const response = await fetch(
-      `${API_URL}${API_ENDPOINTS.NOTE_FOLDERS}${folderId}/`,
-      {
-        method: "PATCH",
-        headers: {
-          Authorization: `Token ${token}`,
-          "Content-Type": "application/json",
-          "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone || "",
-        },
-        body: JSON.stringify({ name: newName }),
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error("Failed to update folder name");
-    }
+    // Use offline service to update folder (works both online and offline)
+    await offlineNotesService.updateFolder(folderId, { name: newName });
 
     // Update folder in state
     setFolders(
@@ -1537,39 +1690,19 @@ const handleCreateFolder = async () => {
   }
 
   try {
-    const token = await AsyncStorage.getItem("authToken");
-    if (!token) {
-      navigation.navigate("Login");
-      return;
-    }
-
     const folderData = {
       name: newFolderName.trim(),
-      icon: "folder", // Use default folder icon
       color: selectedFolderColor,
     };
 
-    const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTE_FOLDERS}`, {
-      method: "POST",
-      headers: {
-        Authorization: `Token ${token}`,
-        "Content-Type": "application/json",
-        "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone || "",
-      },
-      body: JSON.stringify(folderData),
-    });
-
-    if (!response.ok) {
-      throw new Error("Failed to create folder");
-    }
-
-    const newFolder = await response.json();
+    // Use offline service to create folder (works both online and offline)
+    const newFolder = await offlineNotesService.createFolder(folderData);
 
     // Transform to match your Folder interface
     const createdFolder: Folder = {
       id: newFolder.id.toString(),
       name: newFolder.name,
-      icon: newFolder.icon as keyof typeof MaterialIcons.glyphMap,
+      icon: "folder" as keyof typeof MaterialIcons.glyphMap,
       color: newFolder.color,
     };
 
@@ -1581,8 +1714,15 @@ const handleCreateFolder = async () => {
     // Close the create folder modal and reset state
     closeCreateFolderModal();
 
-    // Show toast notification about successful folder creation
-    showSuccessToast(`Folder "${newFolderName}" created successfully`);
+    // Show appropriate success message based on network status
+    if (offlineNotesService.isOnline()) {
+      showSuccessToast(`Folder "${newFolderName}" created successfully`);
+    } else {
+      showSuccessToast(`Folder "${newFolderName}" created offline. Will sync when you're back online.`);
+    }
+
+    // Invalidate cache
+    await folderCacheUtils.invalidateCache();
   } catch (error) {
     console.error("Error creating folder:", error);
     showErrorToast("Failed to create folder");
@@ -1593,12 +1733,6 @@ const handleCreateFolder = async () => {
   // Add new folder delete function
   const handleDeleteFolder = async (folderId: string) => {
     try {
-      const token = await AsyncStorage.getItem("authToken");
-      if (!token) {
-        navigation.navigate("Login");
-        return;
-      }
-
       // First, check if folder has notes
       const notesInFolder = notes.filter((note) => note.folderId === folderId);
       if (notesInFolder.length > 0) {
@@ -1610,20 +1744,8 @@ const handleCreateFolder = async () => {
         return;
       }
 
-      const response = await fetch(
-        `${API_URL}${API_ENDPOINTS.NOTE_FOLDERS}${folderId}/`,
-        {
-          method: "DELETE",
-          headers: {
-            Authorization: `Token ${token}`,
-            "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone || "",
-          },
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error("Failed to delete folder");
-      }
+      // Use offline service to delete folder (works both online and offline)
+      await offlineNotesService.deleteFolder(folderId);
 
       // Remove folder from state
       setFolders(folders.filter((folder) => folder.id !== folderId));
@@ -1856,7 +1978,15 @@ const handleCreateFolder = async () => {
       );
     }
 
-    return folderFilteredNotes;
+    // Deduplicate notes by ID to prevent React key warnings
+    const uniqueNotes = new Map<string, Note>();
+    folderFilteredNotes.forEach(note => {
+      if (note.id && !uniqueNotes.has(note.id)) {
+        uniqueNotes.set(note.id, note);
+      }
+    });
+
+    return Array.from(uniqueNotes.values());
   }, [filteredNotes, selectedFilterFolder, folderId]);
 
   // No separator component needed for grid view
@@ -2020,46 +2150,46 @@ const handleCreateFolder = async () => {
             </View>
           );
         } else if (isDocument) {
-          // Document preview with enhanced component
+          // Document preview with enhanced PDF first-page + overlays (if PDF)
+          const isPdf = (item.title?.toLowerCase().includes('.pdf') || item.document_file?.toLowerCase().includes('.pdf')) ?? false;
+          const docUrl = item.document_url || item.document_file || '';
           return (
             <View style={styles.previewImageContainer}>
-              <TemplatePreview
-                note={item}
-                width={windowWidth / 2 - 64}
-                height={120}
-              />
+              {isPdf ? (
+                <DocumentPreview
+                  documentUrl={docUrl}
+                  annotations={Array.isArray(item.document_annotations) ? item.document_annotations as any : []}
+                  width={windowWidth / 2 - 64}
+                  height={120}
+                />
+              ) : (
+                <TemplatePreview
+                  note={item}
+                  width={windowWidth / 2 - 64}
+                  height={120}
+                />
+              )}
 
               <TouchableOpacity
                 style={styles.viewDocumentButton}
                 onPress={async () => {
-                  const documentType = item.document_file
-                    ?.toLowerCase()
-                    .includes(".pdf")
-                    ? "PDF"
-                    : item.document_file?.toLowerCase().includes(".doc")
-                    ? "Word"
-                    : "Document";
+                  const documentType = item.title?.toLowerCase().includes('.pdf')
+                    ? 'PDF'
+                    : (item.title?.toLowerCase().includes('.doc') || item.document_file?.toLowerCase().includes('.doc'))
+                      ? 'Word'
+                      : 'Document';
 
-                  const docType =
-                    documentType === "PDF"
-                      ? "pdf"
-                      : documentType === "Word"
-                      ? "word"
-                      : "document";
+                  const docType = documentType === 'PDF' ? 'pdf' : (documentType === 'Word' ? 'word' : 'document');
 
-                  const documentUrl =
-                    item.document_url || item.document_file || "";
+                  const documentUrl = docUrl;
                   let finalDocumentUri = documentUrl;
 
                   // For PDF files, download to local storage if it's a remote URL
-                  if (docType === "pdf" && isRemoteURL(documentUrl)) {
+                  if (docType === 'pdf' && isRemoteURL(documentUrl)) {
                     try {
                       finalDocumentUri = await getLocalPDFPath(documentUrl);
                     } catch (error) {
-                      console.error(
-                        "Failed to download PDF to local storage:",
-                        error
-                      );
+                      console.error('Failed to download PDF to local storage:', error);
                       // Fall back to original URL - PDFAnnotationViewer will handle the error
                       finalDocumentUri = documentUrl;
                     }
@@ -2067,13 +2197,13 @@ const handleCreateFolder = async () => {
 
                   setCurrentDocument({
                     uri: finalDocumentUri,
-                    name: item.title || "Untitled Document",
+                    name: item.title || 'Untitled Document',
                     noteId: item.id,
                     type: docType,
                   });
 
                   // Use PDFAnnotationViewer for PDF files, DocumentViewer for others
-                  if (docType === "pdf") {
+                  if (docType === 'pdf') {
                     setShowPDFViewer(true);
                   } else {
                     setShowDocumentViewer(true);
@@ -2081,9 +2211,7 @@ const handleCreateFolder = async () => {
                 }}
               >
                 <MaterialIcons name="visibility" size={16} color="#FFFFFF" />
-                <Text style={styles.viewDocumentButtonText}>
-                  View Document
-                </Text>
+                <Text style={styles.viewDocumentButtonText}>View Document</Text>
               </TouchableOpacity>
             </View>
           );
@@ -2168,7 +2296,11 @@ const handleCreateFolder = async () => {
                       isDrawing && styles.drawingTypeIndicator,
                     ]}
                   >
-                    {isDrawing ? "Drawing" : "Text Note"}
+                    {isDrawing 
+                      ? "Drawing" 
+                      : isDocument 
+                        ? (item.title?.toLowerCase().includes('.pdf') || item.document_file?.toLowerCase().includes('.pdf') ? "PDF" : "Document")
+                        : "Text Note"}
                   </Text>
                 </View>
               </View>
@@ -3475,6 +3607,7 @@ const handleCreateFolder = async () => {
           <PDFAnnotationViewer
             source={{ uri: currentDocument.uri }}
             fileName={currentDocument.name}
+            noteId={currentDocument.noteId}
             onClose={() => {
               setShowPDFViewer(false);
               setCurrentDocument(null);

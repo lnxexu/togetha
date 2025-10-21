@@ -4,40 +4,30 @@ import {
   StyleSheet,
   Dimensions,
   TouchableOpacity,
-  Text,
   Alert,
+  Text,
   Modal,
   TextInput,
-  PanResponder,
+  ScrollView,
   Platform,
-  Animated,
-  Easing,
-  StatusBar,
   ActivityIndicator,
+  Animated,
+  PanResponder,
+  Easing,
+  Image,
+  BackHandler,
 } from "react-native";
-import ViewShot from "react-native-view-shot";
-import { PDFToolbar } from "./PDFToolbar";
-import type { DrawingTool } from "./DrawingCanvas";
 import { useNavigation } from "@react-navigation/native";
-import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as FileSystem from "expo-file-system";
+import * as Sharing from "expo-sharing";
+import { Ionicons, MaterialIcons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-const Pdf = Platform.OS !== "web" ? require("react-native-pdf").default : null;
-import { ScrollView } from "react-native";
-import {
-  MaterialIcons,
-  Ionicons,
-  MaterialCommunityIcons,
-} from "@expo/vector-icons";
-import Svg, { Rect, Circle, Path, Text as SvgText, G } from "react-native-svg";
-import { Animated as RNAnimated } from "react-native";
-const AnimatedSvg = RNAnimated.createAnimatedComponent(Svg as any);
-const AnimatedRect = RNAnimated.createAnimatedComponent(Rect as any);
-const AnimatedCircle = RNAnimated.createAnimatedComponent(Circle as any);
-const AnimatedPath = RNAnimated.createAnimatedComponent(Path as any);
-const AnimatedSvgText = RNAnimated.createAnimatedComponent(SvgText as any);
-const ReanimatedSvgPath = AnimatedRe.createAnimatedComponent(Path as any);
-// Reanimated + Gesture Handler for buttery-smooth pinch/pan
-import AnimatedRe, {
+import Svg, { Path, Rect, Text as SvgText, G, Circle } from "react-native-svg";
+import Pdf from "react-native-pdf";
+import { GestureDetector, Gesture, GestureHandlerRootView } from "react-native-gesture-handler";
+import Reanimated, {
   useSharedValue,
   useAnimatedStyle,
   useAnimatedProps,
@@ -46,26 +36,26 @@ import AnimatedRe, {
   withDecay,
   runOnJS,
 } from "react-native-reanimated";
-import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as FileSystem from "expo-file-system";
-import * as MediaLibrary from "expo-media-library";
-import { getLocalPDFPathEnhanced } from "../utils/pdfUtils";
-import { PDFDocument as PDFLibDocument, rgb as pdfLibRgb } from "pdf-lib";
-import * as Sharing from "expo-sharing";
+import { PDFDocument } from "pdf-lib";
+import { PDFAnnotation, getLocalPDFPathEnhanced } from "../utils/pdfUtils";
 import { drawingAPI, PDFSaveOptions } from "../services/drawingAPI";
-import { pushNotificationService } from "@/app/notifications/services/PushNotificationService";
-import {
-  embedAnnotationsInPDF,
-  saveAnnotationsDirectlyToPDF,
-  createPDFBackup,
-  PDFAnnotation,
-  validateAnnotationCoordinates,
-  calculatePDFCoordinates,
-  debugCoordinateConversion as debugPDFCoordinates,
-} from "../utils/pdfUtils";
+import offlineNotesService from "../services/offlineNotesService";
 import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
-import type { RootStackParamList } from "../../navigation/AppNavigator";
+import { savePDFToDownloads, saveDrawingAsJPEG } from "../utils/downloadUtils";
+import { showSuccessToast, showErrorToast, showInfoToast, showWarningToast } from "@/app/utils/ToastUtils";
+import type { DrawingTool } from "./DrawingCanvas";
+import { useNetworkStatus, getNetworkStatusText } from "../services/networkService";
+import ViewShot from "react-native-view-shot";
+import { RootStackParamList } from "@/app/navigation/AppNavigator";
+import PDFToolbar from "./PDFToolbar";
+import UnsavedChangesModal from "./UnsavedChangesModal";
+// Define animated SVG Path component for live drawing
+const AnimatedPath = Reanimated.createAnimatedComponent(Path);
+const ReanimatedSvgPath = Reanimated.createAnimatedComponent(Path);
+const AnimatedRe: any = Reanimated;
+const PdfAny: any = Pdf;
+// Alias for compatibility with prior code references
+const PDFLibDocument = PDFDocument as any;
 // WebView functionality has been removed
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
@@ -135,6 +125,10 @@ const ANNOTATION_COLORS = [
 // When false, annotations remain visually stable (positions still follow zoom via coordinate conversion)
 // preventing highlights, pen strokes, note bubbles from becoming thicker when zooming.
 const DEFAULT_SCALE_STROKES_WITH_ZOOM = true;
+// Consider extremely large PDFs as potential memory hazards when stacked vertically.
+// Defaults; can be overridden via settings UI and persisted
+const DEFAULT_LARGE_PDF_PAGE_THRESHOLD = 40; // lower threshold for older/low-memory devices
+const DEFAULT_MAX_CONTENT_HEIGHT_PX = 250000; // hard cap to avoid massive stacked views
 
 // --- Drawing Stroke Helpers ---
 const pointsToPath = (pts: { x: number; y: number }[]) => {
@@ -202,21 +196,27 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   autoSave = true,
   annotations: externalAnnotations,
   onAnnotationChange,
-  networkStatus,
+  networkStatus: externalNetworkStatus,
   saveStatus,
   strokes,
 }) => {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  const [currentNoteId, setCurrentNoteId] = useState<string | undefined>(noteId);
+  
+  // Performance: Path conversion cache to avoid recomputing on every render
+  const pathConversionCache = useRef<Map<string, string>>(new Map());
+  const maxCacheSize = 500; // Limit cache size to prevent memory issues
+  
   // Runtime toggle for stroke scaling behavior
   const [scaleStrokesWithZoom, setScaleStrokesWithZoom] = useState<boolean>(
     DEFAULT_SCALE_STROKES_WITH_ZOOM
   );
   const [currentPage, setCurrentPage] = useState(1); // UI no longer uses this; kept for backward compat
   const [totalPages, setTotalPages] = useState(0); // UI no longer uses this; kept for backward compat
-    const currentPageRef = useRef(1); 
-    const totalPagesRef = useRef(0);
+  const currentPageRef = useRef(1);
+  const totalPagesRef = useRef(0);
   const [selectedTool, setSelectedTool] = useState<
     | "highlight"
     | "note"
@@ -235,11 +235,10 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const [eraserSize, setEraserSize] = useState(0.05);
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentPath, setCurrentPath] = useState("");
-  // Use a ref for immediate path updates without waiting for React's render cycle
   const currentPathRef = useRef("");
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [noteText, setNoteText] = useState("");
-  const [notePosition, setNotePosition] = useState({ x: 0, y: 0 });
+  const [notePosition, setNotePosition] = useState({ x: 0, y: 0, page: 1 });
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const fadeAnim = useState(new Animated.Value(0))[0];
@@ -250,13 +249,9 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   // Edit/View mode: default to View on first encounter
   const [isEditMode, setIsEditMode] = useState(false);
   // Remember last non-null drawing tool to restore when re-entering Edit mode
-  const lastEditToolRef = useRef<
-    | "pen"
-    | "pencil"
-    | "brush"
-    | "highlight"
-    | "eraser"
-  >("pen");
+  const lastEditToolRef = useRef<"pen" | "pencil" | "brush" | "highlight" | "eraser">("pen");
+  // Store original screen coordinates for page detection
+  const currentScreenPointsRef = useRef<{ x: number; y: number; timestamp?: number }[]>([]);
   // Live drawing optimization: incremental smoothing to avoid recalculating full path every frame
   const USE_INCREMENTAL_SMOOTHING = true;
   const livePathRef = useRef<string>("");
@@ -268,75 +263,44 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const [toolbarCollapsed, setToolbarCollapsed] = useState(false);
   // Toolbox modal
   const [showToolbox, setShowToolbox] = useState(false);
-  // Page HUD and number tracking removed
-
-  // Text selection state (using alternative approach since react-native-pdf doesn't support text selection)
-  const [selectedText, setSelectedText] = useState<string>("");
-  const [selectionRect, setSelectionRect] = useState<{
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  } | null>(null);
-  const [showAskRinaPopup, setShowAskRinaPopup] = useState(false);
-  const [showAskRinaModal, setShowAskRinaModal] = useState(false);
-  const [rinaQuery, setRinaQuery] = useState("");
-
-  // Persist per-tool settings (stroke width, color, eraser size, highlight opacity)
-  const settingsKey = useMemo(() => {
-    const keyBase = source?.uri || "default";
-    return `pdf_tool_settings_${keyBase}`;
-  }, [source?.uri]);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const raw = await AsyncStorage.getItem(settingsKey);
-        if (raw) {
-          const stored = JSON.parse(raw) as {
-            strokeWidth?: number;
-            selectedColor?: string;
-            eraserSize?: number;
-            highlightOpacity?: number;
-          };
-          if (typeof stored.strokeWidth === "number") setStrokeWidth(stored.strokeWidth);
-          if (typeof stored.selectedColor === "string") setSelectedColor(stored.selectedColor);
-          if (typeof stored.eraserSize === "number") setEraserSize(Math.max(0.01, Math.min(0.15, stored.eraserSize)));
-          if (typeof stored.highlightOpacity === "number") setHighlightOpacity(Math.max(0.1, Math.min(1, stored.highlightOpacity)));
-        }
-      } catch (e) {
-        console.warn("Failed to load tool settings", e);
-      }
-    })();
-  }, [settingsKey]);
-
-  const persistSettings = useCallback(async (partial: Partial<{ strokeWidth: number; selectedColor: string; eraserSize: number; highlightOpacity: number }>) => {
-    try {
-      const raw = await AsyncStorage.getItem(settingsKey);
-      const prev = raw ? JSON.parse(raw) : {};
-      const next = { ...prev, ...partial };
-      await AsyncStorage.setItem(settingsKey, JSON.stringify(next));
-    } catch (e) {
-      console.warn("Failed to save tool settings", e);
-    }
-  }, [settingsKey]);
-
-  useEffect(() => { persistSettings({ strokeWidth }); }, [strokeWidth, persistSettings]);
-  useEffect(() => { persistSettings({ selectedColor }); }, [selectedColor, persistSettings]);
-  useEffect(() => { persistSettings({ eraserSize }); }, [eraserSize, persistSettings]);
-  useEffect(() => { persistSettings({ highlightOpacity }); }, [highlightOpacity, persistSettings]);
-
-  // PDF text extraction modal
-  const [showTextExtractionModal, setShowTextExtractionModal] = useState(false);
-  const [extractedText, setExtractedText] = useState<string>("");
-  const [isExtractingText, setIsExtractingText] = useState(false);
-  // Throttle flag to limit HUD flashing during continuous pans
-  const flashHudThrottledRef = useRef(false);
-  // Display-only page state (logic uses refs to avoid re-renders during scroll)
-  const [displayCurrentPage, setDisplayCurrentPage] = useState(1);
-  const [displayTotalPages, setDisplayTotalPages] = useState(0);
 
   // WebView functionality has been removed
+
+  // Page count and safe mode controls (added to fix unresolved identifiers)
+  const [displayTotalPages, setDisplayTotalPages] = useState(0);
+  const [useSafeMode, setUseSafeMode] = useState(false);
+  const [safeModeOverride, setSafeModeOverride] = useState<boolean | null>(null);
+  const effectiveSafeMode = useSafeMode;
+  const maxContentHeight = DEFAULT_MAX_CONTENT_HEIGHT_PX;
+  const pageThreshold = DEFAULT_LARGE_PDF_PAGE_THRESHOLD;
+
+  // Autosave timer (debounced saves)
+  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Navigation guard for unsaved changes
+  const [showUnsavedModal, setShowUnsavedModal] = useState(false);
+  const pendingNavigationRef = useRef<null | (() => void)>(null);
+  const [isSavingAnnotations, setIsSavingAnnotations] = useState(false);
+
+  // Selection / Ask Rina states (fix unresolved identifiers)
+  const [selectedText, setSelectedText] = useState("");
+  const [selectionRect, setSelectionRect] = useState<
+    { x: number; y: number; width: number; height: number } | null
+  >(null);
+  const [showAskRinaPopup, setShowAskRinaPopup] = useState(false);
+  const [rinaQuery, setRinaQuery] = useState("");
+  const [showAskRinaModal, setShowAskRinaModal] = useState(false);
+
+  // Page indicator state used by floating pager
+  const [displayCurrentPage, setDisplayCurrentPage] = useState<number>(1);
+
+  // Text extraction modal states
+  const [showTextExtractionModal, setShowTextExtractionModal] = useState(false);
+  const [isExtractingText, setIsExtractingText] = useState(false);
+  const [extractedText, setExtractedText] = useState("");
+
+  // Placeholder helper used in debug logging paths
+  const debugPDFCoordinates = (..._args: any[]) => {};
 
   // Bbox selection state for textSelect mode
   const [isBboxDrawing, setIsBboxDrawing] = useState(false);
@@ -460,21 +424,21 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const handleToolbarQuickExport = async () => {
     try {
       if (viewShotRef.current) {
+        showInfoToast("Capturing snapshot...");
         const uri = await viewShotRef.current.capture?.();
         if (uri) {
-          const { status } = await MediaLibrary.requestPermissionsAsync();
-          if (status !== "granted") {
-            Alert.alert("Permission required", "Please allow Photos access to save the image.");
-            return;
+          const exportName = `${fileName.replace(/\.[^/.]+$/, "")}_snapshot.jpg`;
+          const result = await saveDrawingAsJPEG(uri, exportName, false);
+          
+          if (!result.success) {
+            showErrorToast(result.error || "Could not save snapshot");
           }
-          const asset = await MediaLibrary.createAssetAsync(uri);
-          await MediaLibrary.createAlbumAsync("Togetha", asset, false).catch(() => {});
-          Alert.alert("Saved", "Snapshot saved to Photos.");
+          // Success toast is handled by downloadUtils
         }
       }
     } catch (e) {
       console.warn("Quick export failed", e);
-      Alert.alert("Export failed", "Could not save snapshot.");
+      showErrorToast("Could not save snapshot");
     }
   };
 
@@ -845,6 +809,25 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     currentZoomRef.current = currentZoom;
   }, [currentZoom]);
 
+  // Performance: Clear path cache when zoom or container size changes significantly
+  const lastZoomForCache = useRef(currentZoom);
+  const lastContainerSizeForCache = useRef({ width: 0, height: 0 });
+  useEffect(() => {
+    const zoomChanged = Math.abs(currentZoom - lastZoomForCache.current) > 0.1;
+    const sizeChanged = 
+      Math.abs(containerSize.width - lastContainerSizeForCache.current.width) > 10 ||
+      Math.abs(containerSize.height - lastContainerSizeForCache.current.height) > 10;
+    
+    if (zoomChanged || sizeChanged) {
+      pathConversionCache.current.clear();
+      lastZoomForCache.current = currentZoom;
+      lastContainerSizeForCache.current = containerSize;
+      if (__DEV__) {
+        console.log('🔄 Path cache cleared due to layout change');
+      }
+    }
+  }, [currentZoom, containerSize.width, containerSize.height]);
+
   // For panning when zoomed
   const gestureStartTranslateRef = useRef({ x: 0, y: 0 });
   const gestureStartTouchRef = useRef({ x: 0, y: 0 });
@@ -933,6 +916,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const pinchGesture = useMemo(() => {
     return Gesture.Pinch()
       .shouldCancelWhenOutside(false)
+      .enabled(!isEditMode || selectedTool === null) // Disable pinch when drawing tools are active
       .onStart((e: any) => {
         'worklet';
         svStartScale.value = svScale.value;
@@ -988,7 +972,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         runOnJS(setPdfTransform)({ scale, translateX: clampedTX, translateY: clampedTY });
         runOnJS(setIsPinching)(false);
       });
-  }, [MIN_PDF_SCALE, MAX_PDF_SCALE]);
+  }, [MIN_PDF_SCALE, MAX_PDF_SCALE, isEditMode, selectedTool]);
 
   // One-finger pan:
   // - View mode: allow panning at any zoom (including < 1 and > 1) when no tool is active
@@ -1205,47 +1189,33 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const [lastSavedPath, setLastSavedPath] = useState<string | null>(null);
 
   // Save an exported PDF into a user-accessible location (Downloads / gallery).
+  // Now uses unified download utility for consistent download location
   const saveExportedPdfToDevice = async (savedFileUri: string) => {
-    // Simplified version - just delegates to MediaLibrary
     try {
       if (!savedFileUri) throw new Error("No file path provided");
-      const fileUri = savedFileUri.startsWith("file://")
-        ? savedFileUri
-        : `file://${savedFileUri}`;
-
-      // Check permissions
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== "granted") {
-        return { ok: false, reason: "permission" };
-      }
-
-      // Create asset
-      const asset = await MediaLibrary.createAssetAsync(fileUri);
-      return { ok: true, path: fileUri };
+      
+      const fileName = savedFileUri.split("/").pop() || "exported.pdf";
+      
+      // Use unified download utility - automatically saves to Downloads
+      const result = await savePDFToDownloads(savedFileUri, fileName, false);
+      
+      return result;
     } catch (err) {
       console.error("Error saving PDF:", err);
-      return { ok: false, reason: err };
+      return { success: false, error: err };
     }
   };
 
   const onAfterExportSaved = async (savedPath: string) => {
     try {
-      // Notify download/export started
       const name = savedPath.split("/").pop() || fileName;
-      pushNotificationService.notifyDownloadStarted(name).catch(() => {});
 
-      // Simplified version
-      const result = await saveExportedPdfToDevice(savedPath);
-      if (result.ok) {
-        // Notify completion
-        pushNotificationService.notifyDownloadComplete(name).catch(() => {});
-        Alert.alert("PDF Saved", "Exported PDF saved successfully.");
-      } else {
-        Alert.alert("Save Failed", "Could not save exported PDF to device.");
-      }
+      // Use unified download utility to save to Downloads.
+      // This utility will handle all user-facing toasts and notifications.
+      await savePDFToDownloads(savedPath, name, false);
     } catch (err) {
       console.error("Error in onAfterExportSaved:", err);
-      Alert.alert("Error", "Could not save exported PDF.");
+      // Error toast is already handled by the download utility in most cases.
     }
   };
   const [saveMode, setSaveMode] = useState<"overlay" | "direct">("direct");
@@ -1263,6 +1233,12 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const [syncStatus, setSyncStatus] = useState<"saved" | "syncing" | "offline">(
     "saved"
   );
+  const localNetworkStatus = useNetworkStatus();
+  const isOnline = localNetworkStatus.isConnected && localNetworkStatus.isInternetReachable && localNetworkStatus.isServerReachable;
+
+  useEffect(() => {
+    setCurrentNoteId(noteId);
+  }, [noteId]);
 
   // PDF viewport tracking
   const [pdfDimensions, setPdfDimensions] = useState({
@@ -1332,25 +1308,53 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   // PDF viewer can access it reliably.
   const [currentSource, setCurrentSource] = useState<{ uri: string }>(source);
 
+  // Performance: Batch annotation updates to reduce re-renders
+  const pendingAnnotationUpdates = useRef<Annotation[] | null>(null);
+  const annotationUpdateTimer = useRef<NodeJS.Timeout | null>(null);
+  
+  const flushAnnotationUpdates = useCallback(() => {
+    if (pendingAnnotationUpdates.current) {
+      setAnnotations(pendingAnnotationUpdates.current);
+      if (onAnnotationChange) {
+        onAnnotationChange(pendingAnnotationUpdates.current);
+      }
+      pendingAnnotationUpdates.current = null;
+    }
+  }, [onAnnotationChange]);
+
   // Helper function to update annotations with callback
   const updateAnnotations = useCallback(
-    (newAnnotations: Annotation[] | ((prev: Annotation[]) => Annotation[])) => {
-      if (typeof newAnnotations === "function") {
-        setAnnotations((prev) => {
-          const updated = newAnnotations(prev);
-          if (onAnnotationChange) {
-            onAnnotationChange(updated);
-          }
-          return updated;
-        });
-      } else {
-        setAnnotations(newAnnotations);
-        if (onAnnotationChange) {
-          onAnnotationChange(newAnnotations);
+    (newAnnotations: Annotation[] | ((prev: Annotation[]) => Annotation[]), immediate = false) => {
+      const resolvedAnnotations = typeof newAnnotations === "function"
+        ? newAnnotations(pendingAnnotationUpdates.current || annotations)
+        : newAnnotations;
+      
+      if (immediate) {
+        // Immediate update for critical operations (save, delete, etc.)
+        if (annotationUpdateTimer.current) {
+          clearTimeout(annotationUpdateTimer.current);
+          annotationUpdateTimer.current = null;
         }
+        pendingAnnotationUpdates.current = null;
+        setAnnotations(resolvedAnnotations);
+        if (onAnnotationChange) {
+          onAnnotationChange(resolvedAnnotations);
+        }
+      } else {
+        // Batched update for drawing operations
+        pendingAnnotationUpdates.current = resolvedAnnotations;
+        
+        if (annotationUpdateTimer.current) {
+          clearTimeout(annotationUpdateTimer.current);
+        }
+        
+        annotationUpdateTimer.current = setTimeout(() => {
+          flushAnnotationUpdates();
+          annotationUpdateTimer.current = null;
+        }, 16); // ~60fps batching
       }
     },
-    [onAnnotationChange]
+    [annotations, onAnnotationChange, flushAnnotationUpdates]
   );
 
   const pdfRef = useRef<any>(null);
@@ -1409,7 +1413,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
   // Load annotations when component mounts
   React.useEffect(() => {
-    // Use external annotations if provided, otherwise load from storage
+    // Use external annotations if provided, otherwise load from storage or offline note
     if (externalAnnotations && externalAnnotations.length > 0) {
       updateAnnotations(externalAnnotations);
     } else {
@@ -1592,6 +1596,16 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     };
   }, [isLoading, spinnerRotate]);
 
+  // Cleanup: Flush pending annotation updates on unmount
+  useEffect(() => {
+    return () => {
+      if (annotationUpdateTimer.current) {
+        clearTimeout(annotationUpdateTimer.current);
+        flushAnnotationUpdates();
+      }
+    };
+  }, [flushAnnotationUpdates]);
+
   const validatePDFSource = async () => {
     try {
       const uriToCheck = currentSource?.uri || source?.uri;
@@ -1632,39 +1646,267 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
   const loadAnnotations = async () => {
     try {
-      const stored = await AsyncStorage.getItem(annotationStorageKey);
-      if (stored) {
-        const loadedAnnotations = JSON.parse(stored) as Annotation[];
-
-        // Validate and normalize loaded annotations to ensure they use percentage coordinates
-        const normalizedAnnotations = loadedAnnotations.map((ann) => {
-          // Validate annotation coordinates are in percentage range (0-1)
-          if (ann.x !== undefined && ann.y !== undefined) {
-            // If coordinates are outside 0-1 range, they might be legacy pixel coordinates
-            if (ann.x > 1 || ann.y > 1) {
-              console.warn(
-                "Legacy pixel coordinates detected for annotation:",
-                ann.id,
-                "Converting..."
-              );
-              // For legacy data, attempt basic conversion (this is approximate)
-              ann.x = Math.min(1, Math.max(0, ann.x / (screenWidth || 400)));
-              ann.y = Math.min(1, Math.max(0, ann.y / (screenHeight || 600)));
+      // Utility: parse path into numeric point pairs (best-effort)
+      const parsePathPoints = (path: string): { x: number; y: number }[] => {
+        const pts: { x: number; y: number }[] = [];
+        if (!path || typeof path !== 'string') return pts;
+        try {
+          const tokens = path
+            .replace(/,/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .match(/[MLQCSZ]|-?\d*\.?\d+/g) || [];
+          let i = 0;
+          let lastCmd = '';
+          while (i < tokens.length) {
+            const tk = tokens[i++];
+            if (/^[MLQCSZ]$/.test(tk)) {
+              lastCmd = tk;
+              if (tk === 'M' || tk === 'L') {
+                const x = parseFloat(tokens[i++] || 'NaN');
+                const y = parseFloat(tokens[i++] || 'NaN');
+                if (Number.isFinite(x) && Number.isFinite(y)) pts.push({ x, y });
+              } else if (tk === 'Q') {
+                // Q x1 y1 x y -> end point at the end
+                const x1 = parseFloat(tokens[i++] || 'NaN');
+                const y1 = parseFloat(tokens[i++] || 'NaN');
+                const x = parseFloat(tokens[i++] || 'NaN');
+                const y = parseFloat(tokens[i++] || 'NaN');
+                if (Number.isFinite(x) && Number.isFinite(y)) pts.push({ x, y });
+              } else if (tk === 'C') {
+                // C x1 y1 x2 y2 x y -> end point at the end
+                const x1 = parseFloat(tokens[i++] || 'NaN');
+                const y1 = parseFloat(tokens[i++] || 'NaN');
+                const x2 = parseFloat(tokens[i++] || 'NaN');
+                const y2 = parseFloat(tokens[i++] || 'NaN');
+                const x = parseFloat(tokens[i++] || 'NaN');
+                const y = parseFloat(tokens[i++] || 'NaN');
+                if (Number.isFinite(x) && Number.isFinite(y)) pts.push({ x, y });
+              }
+            } else {
+              // If command letter omitted (repeated), infer from lastCmd for M/L
+              if (lastCmd === 'M' || lastCmd === 'L') {
+                const x = parseFloat(tk);
+                const y = parseFloat(tokens[i++] || 'NaN');
+                if (Number.isFinite(x) && Number.isFinite(y)) pts.push({ x, y });
+              }
             }
           }
+        } catch {}
+        return pts;
+      };
 
-          // Validate width/height are also in percentage range
-          if (ann.width !== undefined && ann.width > 1) {
-            ann.width = Math.min(1, ann.width / (screenWidth || 400));
-          }
-          if (ann.height !== undefined && ann.height > 1) {
-            ann.height = Math.min(1, ann.height / (screenHeight || 600));
+      // Migration: fix legacy pixel paths by inferring page and normalizing
+      const migrateLegacyAnnotation = (ann: Annotation): Annotation | null => {
+        try {
+          if (!ann?.path) return null;
+          const pts = parsePathPoints(ann.path);
+          if (!pts.length) return null;
+          // If any coordinate looks like pixel-space (> 1), treat as legacy
+          const hasPixel = pts.some(p => p.x > 1 || p.y > 1);
+          if (!hasPixel) return null;
+
+          // Use current layout metrics to infer page and normalize
+          const { displayW, displayH, pageSpacing } = getLayoutMetrics();
+          if (!(displayW > 0 && displayH > 0)) return null;
+          // Infer page by average Y position in content space
+          const avgY = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+          const pageWithSpacing = displayH + pageSpacing;
+          let pageIndex = Math.max(0, Math.floor(avgY / pageWithSpacing));
+          const maxPageIndex = Math.max(0, (totalPagesRef.current || displayTotalPages || 1) - 1);
+          if (pageIndex > maxPageIndex) pageIndex = maxPageIndex;
+          const inferredPage = pageIndex + 1;
+
+          // Normalize path relative to inferred page
+          const pageStartY = effectiveSafeMode ? 0 : pageIndex * (displayH + pageSpacing);
+          const offsetX = Math.max(0, ((pdfViewerBounds?.width || pdfContainerLayout?.width || containerSize.width || screenWidth) - displayW) / 2);
+          let normalized = '';
+          for (let i = 0; i < pts.length; i++) {
+            const nx = Math.max(0, Math.min(1, (pts[i].x - offsetX) / displayW));
+            const ny = Math.max(0, Math.min(1, (pts[i].y - pageStartY) / displayH));
+            normalized += (i === 0 ? 'M' : ' L') + nx.toFixed(6) + ',' + ny.toFixed(6);
           }
 
-          return ann;
+          const out: Annotation = {
+            ...ann,
+            page: inferredPage,
+            path: normalized,
+          };
+          return out;
+        } catch (e) {
+          console.warn('Migration failed for annotation:', ann?.id, e);
+          return null;
+        }
+      };
+      // Helper: Normalize any incoming annotation shapes to our internal schema
+      const normalizeAnnotations = (items: any[]): Annotation[] => {
+        const makeId = () => `ann_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+        const clamp01 = (n: any) => {
+          const v = typeof n === 'number' ? n : parseFloat(String(n));
+          if (isNaN(v)) return 0;
+          return Math.min(1, Math.max(0, v));
+        };
+        const toPercent = (value: any, size: number) => {
+          if (typeof value !== 'number') {
+            const parsed = parseFloat(String(value));
+            if (!isNaN(parsed)) value = parsed; else return 0;
+          }
+          // If clearly already percentage
+          if (value >= 0 && value <= 1) return value;
+          // Best-effort convert pixels -> percent using viewer/container or screen fallback
+          return size > 0 ? Math.min(1, Math.max(0, value / size)) : 0;
+        };
+
+  const vw = Math.max(1, pdfContainerLayout?.width || containerSize.width || screenWidth);
+  const vh = Math.max(1, pdfContainerLayout?.height || containerSize.height || screenHeight);
+  // IMPORTANT: don't clamp to 1 when total pages not yet known; otherwise all pages collapse to 1.
+  const rawTotalPages = (totalPagesRef.current || displayTotalPages || 0);
+  const knownTotalPages = rawTotalPages > 0 ? rawTotalPages : undefined;
+
+        const mapType = (t: any, hasPath: boolean): Annotation['type'] => {
+          const s = String(t || '').toLowerCase();
+          if (s === 'drawing') return hasPath ? 'pen' : 'pencil';
+          if (s === 'bookmark') return 'note';
+          if (s === 'underline' || s === 'strikethrough') return 'selection';
+          if (s === 'text' || s === 'note') return 'note';
+          if (s === 'highlight') return 'highlight';
+          if (s === 'pen' || s === 'brush' || s === 'pencil') return s as any;
+          return 'selection';
+        };
+
+        const normalizeOne = (raw: any): Annotation => {
+          // Detect shapes
+          const hasPosition = raw && typeof raw === 'object' && raw.position && typeof raw.position === 'object';
+          const hasPathField = !!raw?.path || !!raw?.strokeData;
+
+          // Extract coords
+          const rawX = hasPosition ? raw.position.x : raw.x;
+          const rawY = hasPosition ? raw.position.y : raw.y;
+          const rawW = hasPosition ? raw.position.width : raw.width;
+          const rawH = hasPosition ? raw.position.height : raw.height;
+
+          const x = toPercent(rawX, vw);
+          const y = toPercent(rawY, vh);
+          const width = rawW !== undefined ? toPercent(rawW, vw) : undefined;
+          const height = rawH !== undefined ? toPercent(rawH, vh) : undefined;
+
+          const page = (() => {
+            const p = raw?.page ?? raw?.pageNumber ?? 1;
+            const n = parseInt(String(p), 10);
+            // If total pages unknown, only enforce lower bound (>=1).
+            if (isNaN(n) || n < 1) return 1;
+            if (knownTotalPages !== undefined) {
+              return Math.min(knownTotalPages, n);
+            }
+            return n; // preserve original page when total not known yet
+          })();
+
+          const type = mapType(raw?.type, hasPathField);
+          const color = typeof raw?.color === 'string' ? raw.color : '#FFEB3B';
+          const text = raw?.text ?? raw?.note ?? undefined;
+          const path = (raw?.path as string) ?? (raw?.strokeData as string) ?? undefined;
+
+          const id = String(raw?.id || makeId());
+          const timestamp = (() => {
+            const t = raw?.timestamp ?? raw?.created_at;
+            const d = t ? new Date(t).getTime() : Date.now();
+            return isNaN(d) ? Date.now() : d;
+          })();
+
+          const norm: Annotation = {
+            id,
+            type,
+            page,
+            x: clamp01(x),
+            y: clamp01(y),
+            color,
+            timestamp,
+          };
+          if (width !== undefined) norm.width = clamp01(width);
+          if (height !== undefined) norm.height = clamp01(height);
+          if (text !== undefined) norm.text = String(text);
+          if (path) norm.path = path;
+          return norm;
+        };
+
+        try {
+          if (!Array.isArray(items)) return [];
+          // Handle nested payloads like [{ annotations: [...] }]
+          if (items.length === 1 && Array.isArray((items[0] as any)?.annotations)) {
+            items = (items[0] as any).annotations;
+          }
+        } catch {}
+
+        const out = items.map(normalizeOne);
+        // Optional: filter invalid pages only when we know total pages
+        if (knownTotalPages !== undefined) {
+          return out.filter(a => a.page >= 1 && a.page <= knownTotalPages);
+        }
+        return out;
+      };
+
+      // If we have a note context, prefer offline note annotations first
+      if (currentNoteId) {
+        try {
+          const note = await offlineNotesService.getNoteById(currentNoteId);
+          const rawAnns = (note?.document_annotations || []) as any[];
+          let anns = normalizeAnnotations(Array.isArray(rawAnns) ? rawAnns : []);
+          // Defensive: log and migrate missing/invalid pages
+          const before = JSON.stringify(anns);
+          const fixed = anns.map(a => {
+            if (!a.page || a.page < 1) {
+              console.warn('Annotation missing/invalid page; attempting migration:', a.id, a.type);
+              const migrated = migrateLegacyAnnotation(a);
+              return migrated || { ...a, page: 1 };
+            }
+            // Also try to migrate legacy pixel paths even if page exists
+            const migrated = migrateLegacyAnnotation(a);
+            return migrated || a;
+          });
+          const after = JSON.stringify(fixed);
+          if (before !== after) {
+            // Persist fixes locally and offline
+            try { await AsyncStorage.setItem(annotationStorageKey, JSON.stringify(fixed)); } catch {}
+            try {
+              if (currentNoteId) {
+                await offlineNotesService.updateNote(currentNoteId, {
+                  document_annotations: fixed,
+                  type: 'document',
+                  folderId: selectedFolderId || undefined,
+                });
+              }
+            } catch {}
+            anns = fixed;
+          }
+          if (anns.length > 0) {
+            updateAnnotations(anns);
+            try { await AsyncStorage.setItem(annotationStorageKey, JSON.stringify(anns)); } catch {}
+            return;
+          }
+        } catch {}
+      }
+
+      const stored = await AsyncStorage.getItem(annotationStorageKey);
+      if (stored) {
+        const loadedAnnotations = JSON.parse(stored) as any[];
+        let normalizedAnnotations = normalizeAnnotations(loadedAnnotations);
+        // Defensive: migrate missing/invalid page and legacy pixel paths
+        const before = JSON.stringify(normalizedAnnotations);
+        const fixed = normalizedAnnotations.map(a => {
+          if (!a.page || a.page < 1) {
+            console.warn('Annotation missing/invalid page in local store; attempting migration:', a.id, a.type);
+            const migrated = migrateLegacyAnnotation(a);
+            return migrated || { ...a, page: 1 };
+          }
+          const migrated = migrateLegacyAnnotation(a);
+          return migrated || a;
         });
-
-        updateAnnotations(normalizedAnnotations);
+        const after = JSON.stringify(fixed);
+        if (before !== after) {
+          try { await AsyncStorage.setItem(annotationStorageKey, JSON.stringify(fixed)); } catch {}
+          normalizedAnnotations = fixed;
+        }
+        updateAnnotations(normalizedAnnotations, true); // Immediate update for loading
         console.log(
           "✅ Loaded annotations from AsyncStorage:",
           normalizedAnnotations.length,
@@ -1682,7 +1924,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         annotationStorageKey,
         JSON.stringify(newAnnotations)
       );
-      updateAnnotations(newAnnotations);
+      updateAnnotations(newAnnotations, true); // Immediate update for save operations
     } catch (error) {
       console.error("Error saving annotations:", error);
     }
@@ -1718,7 +1960,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
           }
         }
 
-        // Clamp numeric percentage fields.
+        // Clamp numeric percentage fields without altering page index.
         if (typeof clone.x === "number")
           clone.x = Math.min(1, Math.max(0, clone.x));
         if (typeof clone.y === "number")
@@ -1727,6 +1969,10 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
           clone.width = Math.min(1, Math.max(0, clone.width));
         if (typeof clone.height === "number")
           clone.height = Math.min(1, Math.max(0, clone.height));
+        // Ensure page is a positive integer and leave it untouched otherwise
+        if (clone.page && (!Number.isInteger(clone.page) || clone.page < 1)) {
+          clone.page = Math.max(1, Math.round(clone.page));
+        }
 
         // Logging for debugging & auditing persisted data.
         if (clone.x !== undefined && clone.y !== undefined) {
@@ -1780,6 +2026,15 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
       setHasUnsavedChanges(true);
 
+      // Trigger auto-save with 1 second debounce (like DrawingEditor)
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+      
+      autoSaveTimerRef.current = setTimeout(() => {
+        autoSaveAnnotations(validatedAnnotations);
+      }, 1000); // 1 second debounce like DrawingEditor
+
       // Auto-save after 2 seconds of no changes (for PDF export if enabled)
       if (autoSaveTimeoutRef.current) {
         clearTimeout(autoSaveTimeoutRef.current);
@@ -1789,13 +2044,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         autoSaveTimeoutRef.current = setTimeout(() => {
           handleSaveAnnotations();
         }, 2000);
-      }
-
-      // Fire-and-forget backend sync (optional) – ensures persistence server-side.
-      if (noteId) {
-        syncAnnotationsToBackend(validatedAnnotations).catch((err) => {
-          console.warn("Backend annotation sync failed (non-blocking):", err);
-        });
       }
     } catch (error) {
       console.error("❌ Error saving annotations to AsyncStorage:", error);
@@ -1808,34 +2056,103 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     }
   };
 
-  // Sends annotations to backend by converting to stroke format used by existing drawing API.
-  // This keeps server implementation unified. Non-blocking; errors logged only.
-  const syncAnnotationsToBackend = async (anns: Annotation[]) => {
-    if (!noteId) return; // No backend context
+  // Auto-save function: save to both AsyncStorage and offline notes service
+  const autoSaveAnnotations = useCallback(async (anns?: Annotation[]) => {
+    const annotationsToSave = anns || annotations;
     try {
-      // Convert PDF annotations to drawing strokes using drawingAPI logic
-      const pdfAnnotations: PDFAnnotation[] = anns.map((a) => ({
-        id: a.id,
-        type: a.type as PDFAnnotation["type"],
-        page: a.page,
-        x: a.x || 0,
-        y: a.y || 0,
-        color: a.color,
-        path: a.path,
-        strokeWidth: a.strokeWidth,
-        timestamp: a.timestamp,
-      }));
-      // Reuse existing savePDFAnnotationsWithBackend for consistency; set lightweight options.
-        await drawingAPI.savePDFAnnotationsWithBackend(
-        noteId,
-        source.uri,
-        pdfAnnotations,
-        { createBackup: false, saveDirectly: false }
-      );
-    } catch (err) {
-      console.warn("⚠️ Non-fatal backend sync error:", err);
+      // Already persisted to AsyncStorage in saveAnnotationsWithChanges
+      // Now also save to offline notes service so it appears in notes list
+      if (currentNoteId) {
+        try {
+          await offlineNotesService.updateNote(currentNoteId, {
+            document_annotations: annotationsToSave,
+            type: "document",
+            folderId: selectedFolderId || undefined,
+          });
+          setHasUnsavedChanges(false); // Mark as saved after successful offline save
+          setSyncStatus(isOnline ? "saved" : "offline");
+        } catch (error) {
+          console.error("Failed to save annotations to offline notes:", error);
+          setHasUnsavedChanges(true);
+          setSyncStatus("offline");
+        }
+      } else {
+        // If no note ID yet, still mark as having unsaved changes
+        setHasUnsavedChanges(true);
+        setSyncStatus("offline");
+      }
+    } catch (error) {
+      console.error("Auto-save (local) failed:", error);
+      setHasUnsavedChanges(true);
+      setSyncStatus("offline");
     }
-  };  const handleSaveAnnotations = async () => {
+  }, [annotations, currentNoteId, isOnline]);
+
+  // Cleanup auto-save timer on unmount
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Handle back button with unsaved changes
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => {
+        if (hasUnsavedChanges) {
+          // Store the navigation action for after save/cancel
+          pendingNavigationRef.current = () => {
+            navigation.goBack();
+          };
+          setShowUnsavedModal(true);
+          return true; // Prevent default back action
+        }
+        return false; // Allow default back action
+      }
+    );
+
+    return () => backHandler.remove();
+  }, [hasUnsavedChanges, navigation]);
+
+  // Backend syncing is handled through offlineNotesService; keep here for future hooks
+  const syncAnnotationsToBackend = async (_anns: Annotation[]) => {
+    return;
+  };
+
+  // Explicit sync on demand (invoked from UnsavedChangesModal Save)
+  const syncAnnotationsNow = useCallback(async (anns?: Annotation[]) => {
+    const annotationsToSync = anns || annotations;
+    try {
+      setSyncStatus("syncing");
+      if (currentNoteId) {
+        await offlineNotesService.updateNote(currentNoteId, {
+          document_annotations: annotationsToSync,
+          type: "document",
+          folderId: selectedFolderId || undefined,
+        });
+      } else {
+        const created = await offlineNotesService.createNote({
+          title: fileName || "PDF Document",
+          content: "",
+          type: "document",
+          document_annotations: annotationsToSync,
+          folderId: selectedFolderId || undefined,
+        });
+        if (created?.id) setCurrentNoteId(String(created.id));
+      }
+      setSyncStatus(isOnline ? "saved" : "offline");
+      setHasUnsavedChanges(false);
+    } catch (e) {
+      console.error("Sync failed:", e);
+      setSyncStatus("offline");
+      throw e;
+    }
+  }, [annotations, currentNoteId, fileName, isOnline]);
+
+  const handleSaveAnnotations = async () => {
     if (!hasUnsavedChanges) return;
 
     try {
@@ -1854,11 +2171,18 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
       setHasUnsavedChanges(false);
     } catch (error) {
-      console.error("Error saving annotations:", error);
-      Alert.alert(
-        "Error",
-        `Failed to save annotations using ${saveMode} mode. Please try again.`
-      );
+      // If this is a network failure and we're offline, don't spam alerts; just set status
+      const msg = String(error || '');
+      if (!isOnline && (msg.includes('Network request failed') || msg.includes('TypeError'))) {
+        console.warn("Offline: suppressing save error alert.", error);
+        setSyncStatus("offline");
+      } else {
+        console.error("Error saving annotations:", error);
+        Alert.alert(
+          "Error",
+          `Failed to save annotations using ${saveMode} mode. Please try again.`
+        );
+      }
     } finally {
       setIsSavingToPDF(false);
     }
@@ -1895,16 +2219,26 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       let result;
       const pdfUriToSave = currentSource?.uri || source.uri;
 
-      if (noteId) {
-        // Save to both backend and PDF
-        result = await drawingAPI.savePDFAnnotationsWithBackend(
-          noteId,
-          pdfUriToSave,
-          pdfAnnotations,
-          saveOptions
-        );
+      if (isOnline && (currentNoteId || noteId)) {
+        // Online: Save to both backend and PDF
+        try {
+          result = await drawingAPI.savePDFAnnotationsWithBackend(
+            String(currentNoteId || noteId),
+            pdfUriToSave,
+            pdfAnnotations,
+            saveOptions
+          );
+        } catch (e) {
+          // If backend fails online, fall back to local-only PDF save so user isn't blocked
+          console.warn("Backend save failed, falling back to local PDF save:", e);
+          result = await drawingAPI.savePDFAnnotations(
+            pdfUriToSave,
+            pdfAnnotations,
+            saveOptions
+          );
+        }
       } else {
-        // Save only to PDF
+        // Offline: Do local-only PDF save; backend sync will occur later via offlineNotesService
         result = await drawingAPI.savePDFAnnotations(
           pdfUriToSave,
           pdfAnnotations,
@@ -1920,8 +2254,15 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
      
     } catch (error) {
+      // If offline, suppress network error alerts and mark offline status
+      const msg = String(error || '');
+      if (!isOnline && (msg.includes('Network request failed') || msg.includes('TypeError'))) {
+        console.warn("Offline: skipping backend save error and keeping local state.", error);
+        setSyncStatus("offline");
+        return; // do not rethrow to avoid upstream alert
+      }
       console.error("Error saving annotations to PDF:", error);
-      throw error;
+      throw error; // rethrow for non-network errors
     }
   };
 
@@ -2006,6 +2347,67 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     }
   };
 
+  // Share the actual annotated PDF. If a recent annotated PDF exists, reuse it; otherwise generate one first.
+  const handleShareAnnotatedPdf = async () => {
+    try {
+      showInfoToast("Preparing PDF for sharing...");
+
+      // If we already have a saved annotated PDF, reuse it
+      if (lastSavedPath) {
+        const info = await FileSystem.getInfoAsync(lastSavedPath);
+        if (info.exists) {
+          await shareExportedPDF(lastSavedPath);
+          return;
+        }
+      }
+
+      // Convert UI annotations to PDF format
+      const pdfAnnotations: PDFAnnotation[] = annotations.map((annotation) => ({
+        ...annotation,
+        type: annotation.type as PDFAnnotation["type"],
+      }));
+
+      if (!source?.uri) {
+        showErrorToast("Original PDF not available");
+        return;
+      }
+
+      // Create an export filename
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, "_");
+      const baseFileName = (fileName || "document").replace(/\.pdf$/i, "");
+      const exportFileName = `${baseFileName}_annotated_${timestamp}.pdf`;
+
+      const saveOptions: PDFSaveOptions = {
+        createBackup: false,
+        saveDirectly: false, // generate a new file, don't overwrite
+        outputFileName: exportFileName,
+        viewerInfo: {
+          totalPages,
+          viewerWidth: containerSize.width || screenWidth,
+          viewerHeight: containerSize.height || Math.max(1, screenHeight - 300),
+          pdfPageDimensions,
+        },
+      };
+
+      const result = await drawingAPI.savePDFAnnotations(
+        source.uri,
+        pdfAnnotations,
+        saveOptions
+      );
+
+      if (!result?.savedPath) {
+        showErrorToast("Failed to create annotated PDF for sharing");
+        return;
+      }
+
+      setLastSavedPath(result.savedPath);
+      await shareExportedPDF(result.savedPath);
+    } catch (err) {
+      console.error("Error preparing PDF for share:", err);
+      showErrorToast("Could not share the annotated PDF");
+    }
+  };
+
   const handleClearAllAnnotations = () => {
     if (annotations.length === 0) {
       Alert.alert("No Annotations", "There are no annotations to clear.");
@@ -2058,6 +2460,17 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   setTotalPages(numberOfPages);
   if (displayTotalPages !== numberOfPages) setDisplayTotalPages(numberOfPages);
   totalPagesRef.current = numberOfPages;
+    // Enable safe mode for very large PDFs to avoid massive view sizes
+    if (numberOfPages >= pageThreshold && !useSafeMode && safeModeOverride !== false) {
+      setUseSafeMode(true);
+      // Optional: inform the user once
+      try {
+        Alert.alert(
+          "Large Document Detected",
+          `This PDF has ${numberOfPages} pages. Switching to Memory-Safe mode to prevent crashes. You can still navigate pages with the controls at the bottom.`
+        );
+      } catch {}
+    }
     setIsLoading(false);
     setHasError(false);
   setCurrentPage(1); // Reset to first page
@@ -2080,6 +2493,19 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
       // Update PDF viewer bounds for accurate coordinate conversion
       setPdfViewerBounds({ width: pageWidth, height: pageHeight });
+
+      // If the total stacked height is too large, force safe mode
+      const spacing = 10;
+      const contentHeight = Math.max(1, numberOfPages * (pageHeight + spacing) - spacing);
+      if (contentHeight > maxContentHeight && !useSafeMode && safeModeOverride !== false) {
+        setUseSafeMode(true);
+        try {
+          Alert.alert(
+            "Memory-Safe Mode Enabled",
+            `This document is tall when stacked (${numberOfPages} pages). To avoid crashes, we're rendering one page at a time.`
+          );
+        } catch {}
+      }
     } else {
       // Fallback dimensions
       const pageWidth = screenWidth;
@@ -2087,6 +2513,19 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
       setContainerSize({ width: pageWidth, height: pageHeight });
       setPdfViewerBounds({ width: pageWidth, height: pageHeight });
+
+      // Apply content-height guard even with fallback sizes
+      const spacing = 10;
+      const contentHeight = Math.max(1, numberOfPages * (pageHeight + spacing) - spacing);
+      if (contentHeight > maxContentHeight && !useSafeMode && safeModeOverride !== false) {
+        setUseSafeMode(true);
+        try {
+          Alert.alert(
+            "Memory-Safe Mode Enabled",
+            `This document is tall when stacked (${numberOfPages} pages). To avoid crashes, we're rendering one page at a time.`
+          );
+        } catch {}
+      }
     }
 
     console.log(
@@ -2388,6 +2827,18 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     };
   }, []);
 
+  // Helper to determine which page a content-space Y coordinate falls on
+  const getPageFromContentY = useCallback((contentY: number) => {
+    if (effectiveSafeMode) {
+      return currentPageRef.current || 1;
+    }
+    const { displayH, pageSpacing } = getLayoutMetrics();
+    const pageWithSpacingHeight = displayH + pageSpacing;
+    const pageIndex = Math.max(0, Math.floor(contentY / pageWithSpacingHeight));
+    const maxPageIndex = Math.max(0, (totalPagesRef.current || totalPages || 1) - 1);
+    return Math.min(pageIndex, maxPageIndex) + 1; // Return 1-based page number
+  }, [effectiveSafeMode, totalPages]);
+
   // Sync status functions
   const getSyncStatusIcon = () => {
     switch (syncStatus) {
@@ -2416,11 +2867,62 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       case "syncing":
         return "Syncing...";
       case "offline":
-        return "Offline";
+  return getNetworkStatusText(localNetworkStatus);
       default:
         return "Auto-saved";
     }
   };
+
+  // If offline and we have a note id but empty annotations, try to load from device cache
+  useEffect(() => {
+    const loadOffline = async () => {
+      if (!isOnline && currentNoteId && (!annotations || annotations.length === 0)) {
+        try {
+          const note = await offlineNotesService.getNoteById(currentNoteId);
+          const anns = (note?.document_annotations || []) as Annotation[];
+          if (Array.isArray(anns) && anns.length > 0) {
+            updateAnnotations(anns);
+          }
+        } catch {}
+      }
+    };
+    void loadOffline();
+  }, [isOnline, currentNoteId]);
+
+  // Sync on reconnect and periodic while online
+  const wasOnlineRef = useRef<boolean>(false);
+  useEffect(() => {
+    if (isOnline && !wasOnlineRef.current) {
+      (async () => {
+        try {
+          const hasPending = await offlineNotesService.hasPendingChanges();
+          if (hasPending) {
+            setSyncStatus("syncing");
+            await offlineNotesService.syncWithServer();
+          }
+          setSyncStatus("saved");
+        } catch {
+          setSyncStatus("offline");
+        }
+      })();
+    }
+    wasOnlineRef.current = isOnline;
+  }, [isOnline]);
+
+  useEffect(() => {
+    let h: any;
+    if (isOnline) {
+      h = setInterval(async () => {
+        try {
+          const hasPending = await offlineNotesService.hasPendingChanges();
+          if (hasPending) {
+            await offlineNotesService.syncWithServer();
+          }
+        } catch {}
+      }, 10000);
+    }
+    return () => h && clearInterval(h);
+  }, [isOnline]);
 
   const handleFolderSelect = (folder: any | null) => {
     if (folder) {
@@ -2433,42 +2935,30 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     setShowFolderModal(false);
   };
 
-  // Fetch folders from API when needed
+  // Fetch folders via offlineNotesService (handles offline gracefully)
   const fetchFolders = useCallback(async () => {
     try {
       setIsLoadingFolders(true);
-      const token = await AsyncStorage.getItem("authToken");
-      if (!token) {
-        Alert.alert("Authentication required", "Please log in again.");
-        return;
-      }
-
-      const res = await fetch(`${API_URL}${API_ENDPOINTS.NOTE_FOLDERS}`, {
-        method: "GET",
-        headers: {
-          Authorization: `Token ${token}`,
-          "Content-Type": "application/json",
-        },
-      });
-      if (!res.ok) throw new Error("Failed to fetch folders");
-
-      const data = await res.json();
+      const data = await offlineNotesService.getAllFolders();
       setFolders(Array.isArray(data) ? data : []);
 
       // Keep displayed name in sync if a folder is already selected
       if (selectedFolderId) {
         const match = (Array.isArray(data) ? data : []).find(
-          (f: any) => f.id?.toString() === selectedFolderId
+          (f: any) => (f.id ?? f.localId)?.toString() === selectedFolderId
         );
         if (match) setFolderName(match.name);
       }
     } catch (e) {
       console.warn("Failed to load folders:", e);
-      Alert.alert("Error", "Failed to load folders. Please try again.");
+      // Keep UI calm when offline; show a soft warning instead of alert spam
+      if (isOnline) {
+        Alert.alert("Error", "Failed to load folders. Please try again.");
+      }
     } finally {
       setIsLoadingFolders(false);
     }
-  }, [API_URL, selectedFolderId]);
+  }, [selectedFolderId, isOnline]);
 
   // Load folders when opening the modal
   useEffect(() => {
@@ -2625,7 +3115,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         } else if (selectedTool === "note" || selectedTool === "text") {
           // Handle note/text placement
           const coords = screenToPDFCoordinates(locationX, locationY);
-          setNotePosition({ x: coords.normalizedX, y: coords.normalizedY });
+          setNotePosition({ x: coords.normalizedX, y: coords.normalizedY, page: coords.actualPage });
           setShowNoteModal(true);
         } else if (selectedTool === "highlight") {
           // For highlight tool, we'll start drawing a freehand highlight
@@ -2634,6 +3124,8 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
           const now = Date.now();
           const p0svg = localToSvg(locationX, locationY);
           currentPointsRef.current = [{ x: p0svg.x, y: p0svg.y, timestamp: now }];
+          // Store original screen coordinates for page detection
+          currentScreenPointsRef.current = [{ x: locationX, y: locationY, timestamp: now }];
           // Reset rendering timers
           lastRenderTimeRef.current = performance.now();
           pendingPathUpdateRef.current = false;
@@ -2658,6 +3150,8 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
           const p0svg2 = localToSvg(locationX, locationY);
           const initialPoint = { x: p0svg2.x, y: p0svg2.y, timestamp: now };
           currentPointsRef.current = [initialPoint];
+          // Store original screen coordinates for page detection
+          currentScreenPointsRef.current = [{ x: locationX, y: locationY, timestamp: now }];
           lastPointRef.current = initialPoint;
           // Initialize incremental smoothing path for pen tools in SVG coords
           const p0 = p0svg2;
@@ -2729,6 +3223,8 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
           // Add the filtered point
           currentPointsRef.current.push(newPoint);
+          // Also store the original screen coordinates for page detection
+          currentScreenPointsRef.current.push({ x: locationX, y: locationY, timestamp: Date.now() });
           lastPointRef.current = newPoint;
 
           // Incremental smoothing using quadratic curves: use midpoint strategy
@@ -2806,6 +3302,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
         // Optimized cleanup for maximum performance
         currentPointsRef.current.length = 0; // Faster than reassigning array
+        currentScreenPointsRef.current.length = 0; // Clear screen points too
         lastPointRef.current = null;
 
         // Reset all performance tracking
@@ -2911,17 +3408,28 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     const { scale, translateX, translateY } = pdfTransform;
 
   // Reverse transform to get coordinates in the untransformed PDF space
-  // Add current scroll offset so Y is in content coordinates, not viewport
+  // In safe mode, ignore vertical scroll offset (single page). Otherwise include it for stacked pages.
   const untransformedX = (screenX - translateX) / scale;
-  const untransformedY = (screenY + (pdfScrollOffset?.y || 0) - translateY) / scale;
+  const untransformedY = effectiveSafeMode
+    ? (screenY - translateY) / scale
+    : (screenY + (pdfScrollOffset?.y || 0) - translateY) / scale;
 
-    // For vertical paging, each page is stacked top-to-bottom
-    // Calculate the page start position based on current page
-  const pageIndex = Math.max(0, (currentPageRef.current || 1) - 1);
+    // For vertical paging, calculate which page the Y coordinate actually falls on
+    // instead of using the current scroll-based page
+    let actualPageIndex = 0;
+    if (!effectiveSafeMode) {
+      // Calculate which page this Y coordinate falls on
+      const pageWithSpacingHeight = displayH + pageSpacing;
+      actualPageIndex = Math.max(0, Math.floor(untransformedY / pageWithSpacingHeight));
+      // Clamp to valid page range
+      const maxPageIndex = Math.max(0, (totalPagesRef.current || totalPages || 1) - 1);
+      actualPageIndex = Math.min(actualPageIndex, maxPageIndex);
+    }
+
     const pageStartX = offsetX;
-    const pageStartY = pageIndex * (displayH + pageSpacing);
+    const pageStartY = effectiveSafeMode ? 0 : actualPageIndex * (displayH + pageSpacing);
 
-    // Calculate coordinates relative to the current page
+    // Calculate coordinates relative to the actual page where the drawing occurs
     const pageX = untransformedX - pageStartX;
     const pageY = untransformedY - pageStartY;
 
@@ -2952,6 +3460,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     return {
       normalizedX,
       normalizedY,
+      actualPage: actualPageIndex + 1, // Convert back to 1-based page numbering
     };
   };
 
@@ -2978,12 +3487,15 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     const pageSpacing = 10; // keep in sync with Pdf prop
     const offsetX = Math.max(0, (containerW - displayW) / 2);
     const totalPagesCount = totalPagesRef.current || totalPages || 0;
-    const contentHeight = Math.max(
-      1,
-      totalPagesCount > 0
-        ? totalPagesCount * (displayH + pageSpacing) - pageSpacing
-        : displayH
-    );
+    // In safe mode, only render one page tall surface to avoid massive views
+    const contentHeight = effectiveSafeMode
+      ? displayH
+      : Math.max(
+          1,
+          totalPagesCount > 0
+            ? totalPagesCount * (displayH + pageSpacing) - pageSpacing
+            : displayH
+        );
 
     return {
       containerW,
@@ -3026,17 +3538,28 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     path: string,
     penType: "pen" | "brush" | "pencil"
   ) => {
-    // Convert path coordinates to PDF page percentages for storage
-    const normalizedPath = convertPathToNormalized(path);
+    // Determine the actual page from the first point in the path
+    // currentPointsRef contains SVG/content-space coordinates from localToSvg
+    let actualPage = currentPageRef.current;
+    if (currentPointsRef.current && currentPointsRef.current.length > 0) {
+      // Use the first content-space point to determine which page this stroke belongs to
+      const firstPoint = currentPointsRef.current[0];
+      actualPage = getPageFromContentY(firstPoint.y);
+      if (__DEV__) {
+        console.log(`🖊️ Drawing on page ${actualPage} - First point Y: ${firstPoint.y.toFixed(2)}`);
+      }
+    }
+    // Convert path coordinates to PDF page percentages for storage using the correct page
+    const normalizedPath = convertPathToNormalized(path, actualPage);
 
     console.log(
-      `➕ Adding ${penType} annotation on page ${currentPage} of ${totalPages}`
+      `➕ Adding ${penType} annotation on page ${actualPage} of ${totalPages}`
     );
 
     const newAnnotation: Annotation = {
       id: Date.now().toString(),
       type: penType,
-  page: currentPageRef.current,
+      page: actualPage,
       x: 0, // Will be calculated from path bounds if needed
       y: 0, // Will be calculated from path bounds if needed
       color: selectedColor,
@@ -3051,17 +3574,28 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   };
 
   const addFreehandHighlight = (path: string) => {
-    // Convert path coordinates to PDF page percentages for storage
-    const normalizedPath = convertPathToNormalized(path);
+    // Determine the actual page from the first point in the path
+    // currentPointsRef contains SVG/content-space coordinates from localToSvg
+    let actualPage = currentPageRef.current;
+    if (currentPointsRef.current && currentPointsRef.current.length > 0) {
+      // Use the first content-space point to determine which page this stroke belongs to
+      const firstPoint = currentPointsRef.current[0];
+      actualPage = getPageFromContentY(firstPoint.y);
+      if (__DEV__) {
+        console.log(`✨ Highlighting on page ${actualPage} - First point Y: ${firstPoint.y.toFixed(2)}`);
+      }
+    }
+    // Convert path coordinates to PDF page percentages for storage using the correct page
+    const normalizedPath = convertPathToNormalized(path, actualPage);
 
     console.log(
-      `➕ Adding highlight annotation on page ${currentPage} of ${totalPages}`
+      `➕ Adding highlight annotation on page ${actualPage} of ${totalPages}`
     );
 
     const newAnnotation: Annotation = {
       id: Date.now().toString(),
       type: "highlight",
-  page: currentPageRef.current,
+      page: actualPage,
       x: 0, // Will be calculated from path bounds if needed
       y: 0, // Will be calculated from path bounds if needed
       color: selectedColor,
@@ -3096,7 +3630,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     return path.replace(/:[\d.]+/g, "");
   };
 
-  const convertPathToNormalized = (path: string): string => {
+  const convertPathToNormalized = (path: string, targetPage?: number): string => {
     const cleanPath = cleanPathFromPressure(path);
 
     // Helper: sample a path containing M, L, C commands into a list of points
@@ -3113,7 +3647,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
           .replace(/,/g, " ")
           .replace(/\s+/g, " ")
           .trim()
-          .match(/[MLC]|-?\d*\.?\d+/g) || [];
+          .match(/[MLQC]|-?\d*\.?\d+/g) || [];
       let idx = 0;
       let cx = 0,
         cy = 0;
@@ -3126,6 +3660,22 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
           const x = readNum();
           const y = readNum();
           pts.push({ x, y });
+          cx = x;
+          cy = y;
+        } else if (tk === "Q") {
+          // Quadratic Bezier: control point (x1,y1) and end point (x,y)
+          const x1 = readNum();
+          const y1 = readNum();
+          const x = readNum();
+          const y = readNum();
+          // sample this quadratic Bezier
+          for (let s = 1; s <= samplesPerSeg; s++) {
+            const t = s / samplesPerSeg;
+            const mt = 1 - t;
+            const bx = mt * mt * cx + 2 * mt * t * x1 + t * t * x;
+            const by = mt * mt * cy + 2 * mt * t * y1 + t * t * y;
+            pts.push({ x: bx, y: by });
+          }
           cx = x;
           cy = y;
         } else if (tk === "C") {
@@ -3171,7 +3721,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     const points = samplePathToPoints(cleanPath, 6);
     if (!points || points.length === 0) return "";
 
-    // Compute vertical layout metrics to map screen -> page coords
+    // Compute vertical layout metrics to map content coords -> page coords
     const containerW =
       pdfViewerBounds?.width ||
       pdfContainerLayout?.width ||
@@ -3190,10 +3740,28 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     const displayH = displayW * pageAspect;
     const offsetX = Math.max(0, (containerW - displayW) / 2);
     const pageSpacing = 10; // keep in sync with Pdf prop
-    const pageIndex = Math.max(0, (currentPageRef.current || 1) - 1);
-    const pageStartY = pageIndex * (displayH + pageSpacing);
+    
+    // Determine the effective page for normalization
+    // The points from localToSvg are already in content space (stacked pages vertically)
+    // So we need to determine which page based on the Y coordinate of the first point
+    let effectivePage: number;
+    if (typeof targetPage === 'number' && Number.isFinite(targetPage)) {
+      effectivePage = targetPage;
+    } else if (points.length > 0) {
+      // Calculate page from the first point's Y coordinate in content space
+      const pageWithSpacingHeight = displayH + pageSpacing;
+      const calculatedPageIndex = Math.max(0, Math.floor(points[0].y / pageWithSpacingHeight));
+      const maxPageIndex = Math.max(0, (totalPagesRef.current || totalPages || 1) - 1);
+      effectivePage = Math.min(calculatedPageIndex, maxPageIndex) + 1;
+    } else {
+      effectivePage = currentPageRef.current || 1;
+    }
+    
+    const pageIndex = Math.max(0, effectivePage - 1);
+    const pageStartY = (effectiveSafeMode ? 0 : pageIndex * (displayH + pageSpacing));
 
-    // Convert sampled points to normalized M/L path (relative to current page)
+    // Convert sampled points to normalized M/L path (relative to the detected page)
+    // Points from localToSvg are in content space, so subtract pageStartY to get page-relative coords
     let normalized = "";
     for (let i = 0; i < points.length; i++) {
       const px = (points[i].x - offsetX) / displayW;
@@ -3207,17 +3775,26 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     return normalized;
   };
 
-  const convertNormalizedPathToScreenForPage = (
+  const convertNormalizedPathToScreenForPage = useCallback((
     path: string,
     page: number
   ): string => {
     if (!path) return "";
-    // Compute vertical layout metrics (fit-to-width) to map normalized page coords -> content screen
+    
+    // Performance: Check cache first
     const { displayW, displayH, offsetX, pageSpacing } = getLayoutMetrics();
     const pageIndex = Math.max(0, (page || 1) - 1);
-    const pageStartY = pageIndex * (displayH + pageSpacing);
+    const pageStartY = effectiveSafeMode ? 0 : pageIndex * (displayH + pageSpacing);
+    
+    // Create cache key including all factors that affect the conversion
+    const cacheKey = `${path}|${page}|${displayW.toFixed(0)}|${displayH.toFixed(0)}|${currentZoom.toFixed(2)}`;
+    
+    // Return cached result if available
+    if (pathConversionCache.current.has(cacheKey)) {
+      return pathConversionCache.current.get(cacheKey)!;
+    }
 
-  // Build path string in SVG-local coordinates for current page
+    // Build path string in SVG-local coordinates for current page
     const parts = path.split(/([ML])/);
     let svgPath = "";
 
@@ -3245,12 +3822,21 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       }
     }
 
+    // Cache the result (with size limit)
+    if (pathConversionCache.current.size >= maxCacheSize) {
+      // Clear oldest entries (simple FIFO strategy)
+      const keysToDelete = Array.from(pathConversionCache.current.keys()).slice(0, 100);
+      keysToDelete.forEach(k => pathConversionCache.current.delete(k));
+    }
+    pathConversionCache.current.set(cacheKey, svgPath);
+
     return svgPath;
-  };
+  }, [effectiveSafeMode, currentZoom]);
 
   // Backward-compatible helper using current page
-  const convertNormalizedPathToScreen = (path: string): string => {
-    return convertNormalizedPathToScreenForPage(path, currentPageRef.current || 1);
+  const convertNormalizedPathToScreen = (path: string, page?: number): string => {
+    const targetPage = page && Number.isFinite(page) ? page : (currentPageRef.current || 1);
+    return convertNormalizedPathToScreenForPage(path, targetPage);
   };
 
   const scalePathForZoom = (path: string, scale: number): string => {
@@ -3260,13 +3846,20 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   };
 
   const partialEraseAnnotations = (eraserPath: string) => {
-    const normalizedEraserPath = convertPathToNormalized(eraserPath);
+    // Determine the actual page where erasing is happening
+    // currentPointsRef contains SVG/content-space coordinates from localToSvg
+    let actualErasePage = currentPageRef.current;
+    if (currentPointsRef.current && currentPointsRef.current.length > 0) {
+      const firstPoint = currentPointsRef.current[0];
+      actualErasePage = getPageFromContentY(firstPoint.y);
+    }
+    const normalizedEraserPath = convertPathToNormalized(eraserPath, actualErasePage);
     const eraserPoints = getPathPoints(normalizedEraserPath);
-          const eraseThreshold = Math.max(0.01, Math.min(0.15, eraserSize));
+    const eraseThreshold = Math.max(0.01, Math.min(0.15, eraserSize));
 
     const modifiedAnnotations = annotations
       .map((ann) => {
-  if (ann.page !== currentPageRef.current) return ann; // Keep annotations from other pages
+        if (ann.page !== actualErasePage) return ann; // Keep annotations from other pages
         if (!ann.path && !ann.x && !ann.y) return ann; // Keep annotations without position data
 
         // For path-based annotations (drawings, highlights, pen strokes)
@@ -3498,24 +4091,25 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const addHighlightAnnotation = (x: number, y: number) => {
     // Convert screen coordinates to PDF page percentages (0-1)
     const coords = screenToPDFCoordinates(x, y);
+    const actualPage = coords.actualPage;
 
     console.log(
-      `➕ Adding highlight annotation on page ${currentPage} of ${totalPages}`
+      `➕ Adding highlight annotation on page ${actualPage} of ${totalPages}`
     );
     console.log("🔍 Highlight coordinate conversion:", {
       input: { x, y },
       output: coords,
-  targetPage: currentPageRef.current,
+      targetPage: actualPage,
     });
 
     // Validate coordinates and page
-  if ((currentPageRef.current || 1) < 1 || (currentPageRef.current || 1) > (totalPagesRef.current || 1)) {
+    if (actualPage < 1 || actualPage > (totalPagesRef.current || 1)) {
       console.error(
-  `❌ Invalid page ${currentPageRef.current} for highlight (valid range: 1-${totalPagesRef.current})`
+        `❌ Invalid page ${actualPage} for highlight (valid range: 1-${totalPagesRef.current})`
       );
       Alert.alert(
         "Error",
-  `Cannot add annotation: invalid page ${currentPageRef.current}`
+        `Cannot add annotation: invalid page ${actualPage}`
       );
       return;
     }
@@ -3523,7 +4117,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     const newAnnotation: Annotation = {
       id: Date.now().toString(),
       type: "highlight",
-  page: currentPageRef.current,
+      page: actualPage,
       x: coords.normalizedX, // Percentage of PDF page width (0-1)
       y: coords.normalizedY, // Percentage of PDF page height (0-1)
       width: 0.15, // 15% of PDF page width
@@ -3541,43 +4135,38 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const addNoteAnnotation = () => {
     if (!noteText.trim()) return;
 
+    const actualPage = notePosition.page || currentPageRef.current;
+
     console.log(
       `➕ Adding ${
         selectedTool === "text" ? "text" : "note"
-  } annotation on page ${currentPageRef.current} of ${totalPagesRef.current}`
+      } annotation on page ${actualPage} of ${totalPagesRef.current}`
     );
 
     // Validate page and coordinates
-  if ((currentPageRef.current || 1) < 1 || (currentPageRef.current || 1) > (totalPagesRef.current || 1)) {
+    if (actualPage < 1 || actualPage > (totalPagesRef.current || 1)) {
       console.error(
-  `❌ Invalid page ${currentPageRef.current} for note (valid range: 1-${totalPagesRef.current})`
+        `❌ Invalid page ${actualPage} for note (valid range: 1-${totalPagesRef.current})`
       );
       Alert.alert(
         "Error",
-  `Cannot add annotation: invalid page ${currentPageRef.current}`
+        `Cannot add annotation: invalid page ${actualPage}`
       );
       return;
     }
 
-    // Convert screen coordinates to proper PDF coordinates
-    const coords = screenToPDFCoordinates(
-      notePosition.x * (containerSize.width || screenWidth),
-      notePosition.y * (containerSize.height || screenHeight - 300)
-    );
-
     console.log("🔍 Note coordinate conversion:", {
       input: notePosition,
       containerSize,
-      output: coords,
-  targetPage: currentPageRef.current,
+      targetPage: actualPage,
     });
 
     const newAnnotation: Annotation = {
       id: Date.now().toString(),
       type: selectedTool === "text" ? "text" : "note",
-  page: currentPageRef.current,
-      x: coords.normalizedX, // Properly calculated percentage
-      y: coords.normalizedY, // Properly calculated percentage
+      page: actualPage,
+      x: notePosition.x, // Use the normalized coordinates directly
+      y: notePosition.y, // Use the normalized coordinates directly
       color: selectedColor,
       text: noteText,
       timestamp: Date.now(),
@@ -3644,47 +4233,16 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const exportAnnotatedPDF = async () => {
     try {
       if (annotations.length === 0) {
-        Alert.alert(
-          "No Annotations",
-          "Add some annotations to the PDF first, then you can export it with your annotations embedded.",
-          [{ text: "OK" }]
-        );
+        showWarningToast("Add annotations to export PDF");
         return;
       }
 
-      // Show annotation count for user feedback
-      const annotationCount = annotations.length;
-      const pageCount = new Set(annotations.map((a) => a.page)).size;
-
-      Alert.alert(
-        "Export Annotated PDF",
-        `Ready to export PDF with ${annotationCount} annotation${
-          annotationCount > 1 ? "s" : ""
-        } across ${pageCount} page${pageCount > 1 ? "s" : ""}
-
-Choose export method:`,
-        [
-          {
-            text: "Cancel",
-            style: "cancel",
-          },
-          {
-            text: "📄 New File",
-            onPress: () => exportToPDFNewFile(),
-          },
-          {
-            text: "📝 Update Original",
-            onPress: () => exportToPDFDirect(),
-            style: "default",
-          },
-        ]
-      );
+      // Automatically export to new file and download to phone storage
+      showInfoToast("Exporting PDF...");
+      await exportToPDFNewFile();
     } catch (error) {
       console.error("Error in export options:", error);
-      Alert.alert(
-        "Export Error",
-        "Failed to prepare export options. Please try again."
-      );
+      showErrorToast("Failed to export PDF");
     }
   };
 
@@ -3700,12 +4258,6 @@ Choose export method:`,
         containerSize,
         pdfPageDimensions,
       });
-
-      // Show progress feedback
-      Alert.alert(
-        "📄 Creating Export",
-        "Processing annotations and creating new PDF file..."
-      );
 
       // Convert UI annotations to PDF annotations format
       const pdfAnnotations: PDFAnnotation[] = annotations.map((annotation) => ({
@@ -3801,8 +4353,7 @@ Choose export method:`,
           "❌ CRITICAL: Found annotations with invalid page numbers before export:",
           invalidPageAnnotations
         );
-        Alert.alert(
-          "Export Warning",
+        console.warn(
           `${invalidPageAnnotations.length} annotations have invalid page numbers. This may cause display issues.`
         );
       }
@@ -3903,128 +4454,51 @@ Choose export method:`,
 
       setLastSavedPath(result.savedPath);
 
-      // Show success alert with options: OK, Save to device, Share
-      Alert.alert(
-        "✅ Export Successful",
-        `New annotated PDF created!\n\n📁 ${result.savedPath
-          .split("/")
-          .pop()}\n📊 ${pdfAnnotations.length} annotations embedded`,
-        [
-          { text: "OK" },
-          {
-            text: "💾 Save",
-            onPress: () => {
-              console.log("💾 User requested to save exported PDF to device");
-              onAfterExportSaved(result.savedPath).catch((err) =>
-                console.error("Save after export failed:", err)
-              );
-            },
-          },
-          {
-            text: "📤 Share",
-            onPress: () => {
-              console.log("🎯 User requested to share exported PDF");
-              shareExportedPDF(result.savedPath).catch((shareError) => {
-                console.error("🚨 Share request failed:", shareError);
-              });
-            },
-          },
-        ]
-      );
+      // Automatically save to Downloads
+      console.log("💾 Automatically saving exported PDF to Downloads");
+      await onAfterExportSaved(result.savedPath);
+      // Success/error toasts are shown by onAfterExportSaved
     } catch (error) {
       console.error("Error exporting PDF to new file:", error);
-      Alert.alert(
-        "❌ Export Failed",
-        `Could not create annotated PDF.
-
-Error: ${error instanceof Error ? error.message : "Unknown error"}
-
-Please try again or contact support if the problem persists.`
+      showErrorToast(
+        `Export failed: ${error instanceof Error ? error.message : "Unknown error"}`
       );
     }
   };
 
   const exportToPDFDirect = async () => {
     try {
-      Alert.alert(
-        "⚠️ Update Original PDF?",
-        "This will permanently modify your original PDF file by embedding annotations.\n\n• A backup will be created automatically\n• Original file will be replaced\n• This action cannot be undone",
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "✅ Update PDF",
-            onPress: async () => {
-              try {
-                Alert.alert(
-                  "📝 Updating PDF",
-                  "Creating backup and embedding annotations..."
-                );
+      showInfoToast("Updating original PDF...");
 
-                // Convert UI annotations to PDF annotations format
-                const pdfAnnotations: PDFAnnotation[] = annotations.map(
-                  (annotation) => ({
-                    ...annotation,
-                    type: annotation.type as PDFAnnotation["type"],
-                  })
-                );
+      // Convert UI annotations to PDF annotations format
+      const pdfAnnotations: PDFAnnotation[] = annotations.map((annotation) => ({
+        ...annotation,
+        type: annotation.type as PDFAnnotation["type"],
+      }));
 
-                // Debug: Log page distribution of annotations
-                const pageDistribution = pdfAnnotations.reduce((acc, ann) => {
-                  acc[ann.page] = (acc[ann.page] || 0) + 1;
-                  return acc;
-                }, {} as Record<number, number>);
-                console.log(
-                  "📊 Annotation distribution by page:",
-                  pageDistribution
-                );
-                console.log("📄 Total pages in PDF:", totalPages);
-                console.log(
-                  "📝 Total annotations to export:",
-                  pdfAnnotations.length
-                );
+      // Save directly to original with automatic backup
+      const saveOptions: PDFSaveOptions = {
+        createBackup: true,
+        saveDirectly: true,
+      };
 
-                const saveOptions: PDFSaveOptions = {
-                  createBackup: true, // Create backup when modifying original
-                  saveDirectly: true,
-                };
-
-                console.log(
-                  `Updating original PDF with ${pdfAnnotations.length} annotations...`
-                );
-                const result = await drawingAPI.savePDFAnnotations(
-                  source.uri,
-                  pdfAnnotations,
-                  saveOptions
-                );
-
-                Alert.alert(
-                  "✅ Update Complete",
-                  `Original PDF updated successfully!
-
-📊 ${pdfAnnotations.length} annotations embedded
-${result.backupPath ? `🔒 Backup: ${result.backupPath.split("/").pop()}` : ""}`,
-                  [{ text: "OK" }]
-                );
-              } catch (updateError) {
-                console.error("Error updating original PDF:", updateError);
-                Alert.alert(
-                  "❌ Update Failed",
-                  `Could not update original PDF.
-
-Error: ${updateError instanceof Error ? updateError.message : "Unknown error"}
-
-Your original file is unchanged. Try exporting to a new file instead.`
-                );
-              }
-            },
-          },
-        ]
+      const result = await drawingAPI.savePDFAnnotations(
+        source.uri,
+        pdfAnnotations,
+        saveOptions
       );
+
+      const backupLabel = result?.backupPath
+        ? ` (backup ${result.backupPath.split("/").pop()})`
+        : "";
+      showSuccessToast(`Original PDF updated${backupLabel}`);
     } catch (error) {
-      console.error("Error in update PDF process:", error);
+      console.error("Error updating original PDF:", error);
       Alert.alert(
-        "Update Error",
-        "Failed to prepare PDF update. Please try again."
+        "Update Failed",
+        `Could not update original PDF.\n\nError: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }\n\nYour original file is unchanged. Try exporting to a new file instead.`
       );
     }
   };
@@ -4157,6 +4631,7 @@ Your original file is unchanged. Try exporting to a new file instead.`
   };
 
   // Helper function to attempt saving to Downloads or Documents folder
+  // Now uses unified download utility for consistent download location
   const trySaveToUserAccessibleLocation = async (
     sourcePath: string,
     fileName: string
@@ -4164,59 +4639,38 @@ Your original file is unchanged. Try exporting to a new file instead.`
     try {
       console.log("🔄 Attempting to save to user-accessible location...");
 
-      // Try to use MediaLibrary to save to Downloads
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status === "granted") {
-        try {
-          const asset = await MediaLibrary.createAssetAsync(sourcePath);
-          console.log("✅ Successfully saved to device library:", asset);
+      // Use unified download utility - automatically saves to Downloads
+      const result = await savePDFToDownloads(sourcePath, fileName, false);
 
-          Alert.alert(
-            "✅ Saved to Device!",
-            `PDF successfully saved to your device's gallery/downloads.\n\nFile: ${fileName}\n\nYou can now find it in:\n• Gallery app (Documents folder)\n• Downloads folder\n• File manager apps`,
-            [
-              {
-                text: "Open Gallery",
-                onPress: () => {
-                  // This will prompt user to choose an app to view the file
-                  shareExportedPDF(sourcePath);
-                },
-              },
-              {
-                text: "Great!",
-              },
-            ]
-          );
-
-          return { success: true, location: "device_gallery" };
-        } catch (mediaError) {
-          console.warn("MediaLibrary save failed:", mediaError);
-          throw mediaError;
-        }
+      if (result.success) {
+        showSuccessToast("PDF saved to Downloads");
+        return { success: true, location: "downloads" };
       } else {
-        throw new Error("Media library permission not granted");
+        throw new Error(result.error || "Unknown error");
       }
     } catch (error) {
       console.warn("❌ Could not save to user-accessible location:", error);
 
-      // Fallback: Show sharing options
-      Alert.alert(
-        "📱 Save to Accessible Location",
-        `Could not save directly to Downloads/Gallery.\n\nTo save where you can easily find it:\n\n1. Tap "Share to Drive/Email" below\n2. Choose Google Drive, Dropbox, or Email\n3. This saves it to a permanent, accessible location\n\nFile: ${fileName}`,
-        [
-          {
-            text: "Share to Drive/Email",
-            onPress: () => shareExportedPDF(sourcePath),
-          },
-          {
-            text: "Access Guide",
-            onPress: () => showFileAccessGuide(),
-          },
-          {
-            text: "Cancel",
-          },
-        ]
-      );
+      // Show error toast and offer share as fallback
+      showErrorToast("Could not save to Downloads");
+      
+      // Offer share option only on critical failure
+      setTimeout(() => {
+        Alert.alert(
+          "Share PDF Instead?",
+          "Would you like to share the PDF to save it elsewhere?",
+          [
+            {
+              text: "Share",
+              onPress: () => shareExportedPDF(sourcePath),
+            },
+            {
+              text: "Cancel",
+              style: "cancel",
+            },
+          ]
+        );
+      }, 500);
 
       return {
         success: false,
@@ -4462,159 +4916,97 @@ Your original file is unchanged. Try exporting to a new file instead.`
   };
 
   const shareExportedPDF = async (pdfPath: string) => {
-    // Function removed - not PDF or JPEG export function
-    // Basic share functionality kept for compatibility
     try {
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(pdfPath, {
-          mimeType: "application/pdf",
-          dialogTitle: "Share Annotated PDF",
-        });
-      } else {
-        Alert.alert(
-          "Share Not Available",
-          "Sharing is not available on this device."
-        );
+      // Verify file exists
+      const info = await FileSystem.getInfoAsync(pdfPath);
+      if (!info.exists) {
+        Alert.alert("File Not Found", "The annotated PDF could not be found.");
+        return;
       }
+
+      // Prepare a shareable copy in cache with a proper .pdf extension
+      const originalName = pdfPath.split("/").pop() || fileName || "annotated.pdf";
+      const ensuredName = /\.pdf$/i.test(originalName) ? originalName : `${originalName}.pdf`;
+      const targetPath = `${FileSystem.cacheDirectory}${ensuredName}`;
+
+      // Overwrite any existing cache file
+      const existing = await FileSystem.getInfoAsync(targetPath);
+      if (existing.exists) {
+        try { await FileSystem.deleteAsync(targetPath, { idempotent: true }); } catch {}
+      }
+
+      // Copy to cache to ensure world-readable share via FileProvider
+      await FileSystem.copyAsync({ from: pdfPath, to: targetPath });
+
+      // Share using appropriate MIME/UTI
+      const canShare = await Sharing.isAvailableAsync();
+      if (!canShare) {
+        Alert.alert("Share Not Available", "Sharing is not available on this device.");
+        return;
+      }
+
+      const shareOptions: any = {
+        mimeType: "application/pdf",
+        dialogTitle: "Share Annotated PDF",
+      };
+
+      // iOS benefits from explicit UTI
+      if (Platform.OS === "ios") {
+        shareOptions.UTI = "com.adobe.pdf";
+      }
+
+      await Sharing.shareAsync(targetPath, shareOptions);
     } catch (error) {
       console.error("Error sharing PDF:", error);
-      Alert.alert("Share Error", "Failed to share the PDF.");
+      Alert.alert("Share Error", `Failed to share the PDF. ${error instanceof Error ? error.message : ""}`);
     }
   };
 
   // Export the entire PDF document as a JPEG image
+  // Now uses unified download utility for consistent download location
   const exportToJPEG = async () => {
     try {
       if (!pdfRef.current) {
-        Alert.alert("Export Error", "Cannot access PDF document.");
+        showErrorToast("Cannot access PDF document");
         return;
       }
 
-      // Show export in progress alert
-      Alert.alert("Exporting JPEG", "Capturing entire PDF as JPEG image...");
+      // Show non-intrusive info toast
+      showInfoToast("Exporting current page...");
 
-      // Get file path from source
-      let filePath = "";
-      if (typeof source === "string") {
-        filePath = source;
-      } else if (source.uri) {
-        filePath = source.uri;
-      }
-
-      if (!filePath) {
-        Alert.alert("Export Failed", "Could not determine PDF source path.");
-        return;
-      }
-
-      // Get temporary directory path
-      const tempDir = FileSystem.cacheDirectory + "pdf_exports/";
-      const outputPath = `${tempDir}${fileName.replace(
-        /\.[^/.]+$/,
-        ""
-      )}_full.jpg`;
-
-      try {
-        // Ensure directory exists
-        await FileSystem.makeDirectoryAsync(tempDir, { intermediates: true });
-      } catch (dirErr) {
-        console.log("Directory may already exist", dirErr);
-      }
-
-      // Use viewShotRef to capture current page first as backup
-      let backupUri = null;
+      // Use viewShotRef to capture current page
+      let captureUri = null;
       if (viewShotRef.current) {
         try {
-          backupUri = await viewShotRef.current.capture();
-          console.log("Captured current view as backup:", backupUri);
-        } catch (backupErr) {
-          console.log("Failed to capture current view as backup:", backupErr);
-        }
-      }
-
-      // For full PDF capture, we use react-native-pdf's built-in functionality
-      // or implement a workaround by using react-native-blob-util's base64 conversion
-      // and convert it to an image
-
-      // On Android, we can use the FileSystem's copyAsync to copy the PDF
-      // then convert it to an image (the actual conversion would be done using native modules)
-      try {
-        // For now, use the backup capture of current page
-        if (!backupUri) {
-          Alert.alert(
-            "Export Failed",
-            "Could not capture PDF content as image."
-          );
+          captureUri = await viewShotRef.current.capture();
+          console.log("Captured current view:", captureUri);
+        } catch (captureErr) {
+          console.log("Failed to capture current view:", captureErr);
+          showErrorToast("Could not capture page");
           return;
         }
-
-        // Copy the backup capture to our designated output path
-        await FileSystem.copyAsync({
-          from: backupUri,
-          to: outputPath,
-        });
-
-        console.log(`✅ Saved full PDF as JPEG to: ${outputPath}`);
-
-        // Save to media library
-        const { status } = await MediaLibrary.requestPermissionsAsync();
-        if (status !== "granted") {
-          console.warn("Media library permission not granted.");
-          // Fallback to sharing
-          shareJPEGImage(outputPath);
-          return;
-        }
-
-        const asset = await MediaLibrary.createAssetAsync(outputPath);
-        const albumName = "Togetha Exports";
-
-        try {
-          // Try to add to album
-          await MediaLibrary.createAlbumAsync(albumName, asset, false);
-          console.log(`📁 Added JPEG to album: ${albumName}`);
-        } catch (albumErr) {
-          console.log("Note: Could not create/add to album", albumErr);
-        }
-
-        // Show success message with options
-        Alert.alert(
-          "JPEG Exported",
-          `Entire PDF saved as JPEG image in your Photos.`,
-          [
-            { text: "OK" },
-            {
-              text: "Share",
-              onPress: () => shareJPEGImage(outputPath),
-            },
-          ]
-        );
-      } catch (exportErr) {
-        console.error("Export conversion error:", exportErr);
-
-        // Fallback to using the backup screenshot
-        if (backupUri) {
-          Alert.alert(
-            "Full Export Not Available",
-            "Exporting only the current page instead.",
-            [
-              { text: "OK" },
-              {
-                text: "Share",
-                onPress: () => shareJPEGImage(backupUri),
-              },
-            ]
-          );
-        } else {
-          Alert.alert("Export Failed", "Could not export PDF as JPEG.");
-        }
+      } else {
+        showErrorToast("Could not capture page");
+        return;
       }
+
+      if (!captureUri) {
+        showErrorToast("Could not capture page");
+        return;
+      }
+
+      const exportName = `${fileName.replace(/\.[^/.]+$/, "")}_page_${currentPageRef.current || 1}.jpg`;
+
+      // Use unified download utility - saves to Photos/Downloads
+      const result = await saveDrawingAsJPEG(captureUri, exportName, true);
+
+      if (!result.success) {
+        showErrorToast(result.error || "Could not export as JPEG");
+      }
+      // Success toast is handled by downloadUtils
     } catch (err) {
       console.error("Error exporting to JPEG:", err);
-      Alert.alert(
-        "Export Error",
-        `Could not export to JPEG: ${
-          err instanceof Error ? err.message : "Unknown error"
-        }`
-      );
+      showErrorToast("Could not export to JPEG");
     }
   };
 
@@ -4650,7 +5042,8 @@ Your original file is unchanged. Try exporting to a new file instead.`
       : { r: 0, g: 0, b: 0 };
   };
 
-  const renderAnnotations = () => {
+  // Performance: Memoize annotation rendering to prevent unnecessary recalculations
+  const memoizedAnnotations = useMemo(() => {
     // Group annotations by page for vertical stacked rendering
     const groupedByPage = new Map<number, Annotation[]>();
     for (const ann of annotations) {
@@ -4658,10 +5051,24 @@ Your original file is unchanged. Try exporting to a new file instead.`
       if (!groupedByPage.has(p)) groupedByPage.set(p, []);
       groupedByPage.get(p)!.push(ann);
     }
+    return groupedByPage;
+  }, [annotations]);
+
+  const renderAnnotations = useCallback(() => {
+    const groupedByPage = memoizedAnnotations;
 
     // Layout metrics
     const { displayW, displayH, offsetX, pageSpacing, contentHeight } =
       getLayoutMetrics();
+
+    // Only render annotations for currently visible window of pages
+    const windowRadius = effectiveSafeMode ? 0 : 2; // render current page +/- 2
+    const current = currentPageRef.current || displayCurrentPage || 1;
+    const startPage = Math.max(1, current - windowRadius);
+    const endPage = Math.min(
+      totalPagesRef.current || displayTotalPages || 1,
+      current + windowRadius
+    );
 
     return (
       <Svg
@@ -4672,175 +5079,179 @@ Your original file is unchanged. Try exporting to a new file instead.`
         viewBox={`0 0 ${displayW} ${contentHeight}`}
         preserveAspectRatio="xMidYMid meet"
       >
-        {Array.from(groupedByPage.entries()).map(([page, anns]) => {
-          const pageIndex = Math.max(0, page - 1);
-          const pageTop = pageIndex * (displayH + pageSpacing);
-          return (
-            <G key={`ann-page-${page}`}>
-              {anns.map((annotation) => {
-          // Removed per-annotation animations
-          // Using static positioning for all annotations
-          const animStyle = {} as any; // Empty style object
+        {Array.from(groupedByPage.entries())
+          .filter(([page]) => page >= startPage && page <= endPage)
+          .map(([page, anns]) => {
+            const pageIndex = Math.max(0, page - 1);
+            const stackedTop = pageIndex * (displayH + pageSpacing);
+            const pageTop = effectiveSafeMode ? 0 : stackedTop;
+            return (
+              <G key={`ann-page-${page}`}>
+                {anns.map((annotation) => {
+                  // Performance: skip rendering if annotation has no visual data
+                  if (!annotation.path && annotation.x === undefined && annotation.y === undefined) {
+                    return null;
+                  }
 
-          const getPenStyle = (penType: string, baseWidth: number) => {
-            switch (penType) {
-              case "pen":
-                return {
-                  strokeWidth: baseWidth,
-                  opacity: 1,
-                  strokeLinecap: "round" as const,
-                  strokeLinejoin: "round" as const,
-                  strokeDasharray: "0",
-                  strokeMiterlimit: 10, // Improves corner appearance
-                };
-              case "brush":
-                return {
-                  strokeWidth: baseWidth * 1.8,
-                  opacity: 0.9,
-                  strokeLinecap: "round" as const,
-                  strokeLinejoin: "round" as const,
-                  strokeDasharray: "0",
-                  strokeMiterlimit: 10, // Improves corner appearance
-                };
-              case "pencil":
-                return {
-                  strokeWidth: baseWidth * 0.8,
-                  opacity: 0.8,
-                  strokeLinecap: "round" as const,
-                  strokeLinejoin: "round" as const,
-                  strokeDasharray: "0",
-                  strokeMiterlimit: 10, // Improves corner appearance
-                };
-              default:
-                return {
-                  strokeWidth: baseWidth,
-                  opacity: 1,
-                  strokeLinecap: "round" as const,
-                  strokeLinejoin: "round" as const,
-                  strokeDasharray: "0",
-                  strokeMiterlimit: 10, // Improves corner appearance
-                };
-            }
-          };
+                  const getPenStyle = (penType: string, baseWidth: number) => {
+                    switch (penType) {
+                      case "pen":
+                        return {
+                          strokeWidth: baseWidth,
+                          opacity: 1,
+                          strokeLinecap: "round" as const,
+                          strokeLinejoin: "round" as const,
+                          strokeDasharray: "0",
+                          strokeMiterlimit: 10,
+                        };
+                      case "brush":
+                        return {
+                          strokeWidth: baseWidth * 1.8,
+                          opacity: 0.9,
+                          strokeLinecap: "round" as const,
+                          strokeLinejoin: "round" as const,
+                          strokeDasharray: "0",
+                          strokeMiterlimit: 10,
+                        };
+                      case "pencil":
+                        return {
+                          strokeWidth: baseWidth * 0.8,
+                          opacity: 0.8,
+                          strokeLinecap: "round" as const,
+                          strokeLinejoin: "round" as const,
+                          strokeDasharray: "0",
+                          strokeMiterlimit: 10,
+                        };
+                      default:
+                        return {
+                          strokeWidth: baseWidth,
+                          opacity: 1,
+                          strokeLinecap: "round" as const,
+                          strokeLinejoin: "round" as const,
+                          strokeDasharray: "0",
+                          strokeMiterlimit: 10,
+                        };
+                    }
+                  };
 
-          switch (annotation.type) {
-            case "highlight":
-              if (annotation.path) {
-                const svgPath = convertNormalizedPathToScreenForPage(
-                  annotation.path,
-                  page
-                );
-                const highlightBase = annotation.strokeWidth || 12;
-                const highlightStrokeWidth = scaleStrokesWithZoom
-                  ? highlightBase * (currentZoom || 1)
-                  : highlightBase;
-                return (
-                  <Path
-                    key={annotation.id}
-                    d={svgPath}
-                    stroke={annotation.color}
-                    strokeWidth={highlightStrokeWidth}
-                    fill="none"
-                    opacity={typeof annotation.opacity === "number" ? annotation.opacity : Math.max(0.1, Math.min(1, highlightOpacity))}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeMiterlimit={10}
-                    onPress={() => deleteAnnotation(annotation.id)}
-                  />
-                );
-              } else {
-                const x = (annotation.x || 0) * displayW + offsetX;
-                const y = (annotation.y || 0) * displayH + pageTop;
-                const w = (annotation.width || 0.15) * displayW;
-                const h = (annotation.height || 0.025) * displayH;
-                return (
-                  <Rect
-                    key={annotation.id}
-                    x={x}
-                    y={y}
-                    width={w}
-                    height={h}
-                    rx={4}
-                    fill={annotation.color}
-                    opacity={typeof annotation.opacity === "number" ? annotation.opacity : Math.max(0.1, Math.min(1, highlightOpacity))}
-                  />
-                );
-              }
+                  switch (annotation.type) {
+                    case "highlight":
+                      if (annotation.path) {
+                        const svgPath = convertNormalizedPathToScreenForPage(
+                          annotation.path,
+                          page
+                        );
+                        const highlightBase = annotation.strokeWidth || 12;
+                        const highlightStrokeWidth = scaleStrokesWithZoom
+                          ? highlightBase * (currentZoom || 1)
+                          : highlightBase;
+                        return (
+                          <Path
+                            key={annotation.id}
+                            d={svgPath}
+                            stroke={annotation.color}
+                            strokeWidth={highlightStrokeWidth}
+                            fill="none"
+                            opacity={typeof annotation.opacity === "number" ? annotation.opacity : Math.max(0.1, Math.min(1, highlightOpacity))}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeMiterlimit={10}
+                            onPress={() => deleteAnnotation(annotation.id)}
+                          />
+                        );
+                      } else {
+                        const x = (annotation.x || 0) * displayW + offsetX;
+                        const y = (annotation.y || 0) * displayH + pageTop;
+                        const w = (annotation.width || 0.15) * displayW;
+                        const h = (annotation.height || 0.025) * displayH;
+                        return (
+                          <Rect
+                            key={annotation.id}
+                            x={x}
+                            y={y}
+                            width={w}
+                            height={h}
+                            rx={4}
+                            fill={annotation.color}
+                            opacity={typeof annotation.opacity === "number" ? annotation.opacity : Math.max(0.1, Math.min(1, highlightOpacity))}
+                          />
+                        );
+                      }
 
-            case "pen":
-            case "brush":
-            case "pencil":
-              const baseStroke = annotation.strokeWidth || 3;
-              const penStyle = getPenStyle(annotation.type, baseStroke);
-              const strokeW = scaleStrokesWithZoom
-                ? (penStyle.strokeWidth as number) * (currentZoom || 1)
-                : (penStyle.strokeWidth as number);
-              const penPath = convertNormalizedPathToScreenForPage(
-                annotation.path || "",
-                page
-              );
-              return (
-                <Path
-                  key={annotation.id}
-                  d={penPath}
-                  stroke={annotation.color}
-                  strokeWidth={strokeW}
-                  strokeLinecap={penStyle.strokeLinecap}
-                  strokeLinejoin={penStyle.strokeLinejoin}
-                  strokeDasharray={penStyle.strokeDasharray}
-                  strokeMiterlimit={penStyle.strokeMiterlimit}
-                  fill="none"
-                  opacity={penStyle.opacity}
-                  onPress={() => deleteAnnotation(annotation.id)}
-                />
-              );
+                    case "pen":
+                    case "brush":
+                    case "pencil":
+                      const baseStroke = annotation.strokeWidth || 3;
+                      const penStyle = getPenStyle(annotation.type, baseStroke);
+                      const strokeW = scaleStrokesWithZoom
+                        ? (penStyle.strokeWidth as number) * (currentZoom || 1)
+                        : (penStyle.strokeWidth as number);
+                      const penPath = convertNormalizedPathToScreenForPage(
+                        annotation.path || "",
+                        page
+                      );
+                      return (
+                        <Path
+                          key={annotation.id}
+                          d={penPath}
+                          stroke={annotation.color}
+                          strokeWidth={strokeW}
+                          strokeLinecap={penStyle.strokeLinecap}
+                          strokeLinejoin={penStyle.strokeLinejoin}
+                          strokeDasharray={penStyle.strokeDasharray}
+                          strokeMiterlimit={penStyle.strokeMiterlimit}
+                          fill="none"
+                          opacity={penStyle.opacity}
+                          onPress={() => deleteAnnotation(annotation.id)}
+                        />
+                      );
 
-            case "note":
-              const cx = (annotation.x || 0) * displayW + offsetX;
-              const cy = (annotation.y || 0) * displayH + pageTop;
-              const noteRadius = 12;
-              return (
-                <Circle
-                  key={annotation.id}
-                  cx={cx}
-                  cy={cy}
-                  r={noteRadius}
-                  fill={annotation.color}
-                />
-              );
+                    case "note":
+                      const cx = (annotation.x || 0) * displayW + offsetX;
+                      const cy = (annotation.y || 0) * displayH + pageTop;
+                      const noteRadius = 12;
+                      return (
+                        <Circle
+                          key={annotation.id}
+                          cx={cx}
+                          cy={cy}
+                          r={noteRadius}
+                          fill={annotation.color}
+                        />
+                      );
 
-            case "text":
-              const tx = (annotation.x || 0) * displayW + offsetX;
-              const ty = (annotation.y || 0) * displayH + pageTop;
-              return (
-                <SvgText
-                  key={annotation.id}
-                  x={tx}
-                  y={ty}
-                  fill={annotation.color}
-                  fontSize={14}
-                  fontWeight="bold"
-                  onPress={() => {
-                    Alert.alert("Text", annotation.text, [
-                      {
-                        text: "Delete",
-                        onPress: () => deleteAnnotation(annotation.id),
-                      },
-                      { text: "Close" },
-                    ]);
-                  }}
-                >
-                  {annotation.text}
-                </SvgText>
-              );
+                    case "text":
+                      const tx = (annotation.x || 0) * displayW + offsetX;
+                      const ty = (annotation.y || 0) * displayH + pageTop;
+                      return (
+                        <SvgText
+                          key={annotation.id}
+                          x={tx}
+                          y={ty}
+                          fill={annotation.color}
+                          fontSize={14}
+                          fontWeight="bold"
+                          onPress={() => {
+                            Alert.alert("Text", annotation.text, [
+                              {
+                                text: "Delete",
+                                onPress: () => deleteAnnotation(annotation.id),
+                              },
+                              { text: "Close" },
+                            ]);
+                          }}
+                        >
+                          {annotation.text}
+                        </SvgText>
+                      );
 
-            default:
-              return null;
-          }
-              })}
-            </G>
-          );
-        })}
+                    default:
+                      return null;
+                  }
+                })}
+              </G>
+            );
+          })}
 
         {/* Drawing Strokes Layer (from drawing editor) */}
         {strokes &&
@@ -4854,8 +5265,10 @@ Your original file is unchanged. Try exporting to a new file instead.`
               // Map and simplify points to reduce SVG complexity
               const displayPoints = (() => {
                 const pg = Math.max(1, stroke.page || currentPageRef.current || 1);
+                if (pg < startPage || pg > endPage) return [] as {x:number;y:number}[];
                 const pageIndex = Math.max(0, pg - 1);
-                const pageTop = pageIndex * (displayH + pageSpacing);
+                const stackedTop = pageIndex * (displayH + pageSpacing);
+                const pageTop = effectiveSafeMode ? 0 : stackedTop;
                 return (stroke.points || []).map((pt) => ({
                   x: (pt.x || 0) * displayW + offsetX,
                   y: (pt.y || 0) * displayH + pageTop,
@@ -5044,7 +5457,18 @@ Your original file is unchanged. Try exporting to a new file instead.`
         )}
       </Svg>
     );
-  };
+  }, [
+    memoizedAnnotations,
+    effectiveSafeMode,
+    displayCurrentPage,
+    displayTotalPages,
+    scaleStrokesWithZoom,
+    currentZoom,
+    highlightOpacity,
+    convertNormalizedPathToScreenForPage,
+    deleteAnnotation,
+    strokes,
+  ]);
 
   return (
     <GestureHandlerRootView style={styles.container}>
@@ -5111,12 +5535,12 @@ Your original file is unchanged. Try exporting to a new file instead.`
                 <Text style={styles.headerSubtitle}>PDF Annotation Viewer</Text>
 
                 {/* Status Indicator */}
-                {(networkStatus || saveStatus) && (
+                {(externalNetworkStatus || saveStatus) && (
                   <View style={styles.statusIndicator}>
                     <MaterialIcons
                       name={
-                        !networkStatus?.isConnected ||
-                        !networkStatus?.isInternetReachable
+                        !externalNetworkStatus?.isConnected ||
+                        !externalNetworkStatus?.isInternetReachable
                           ? "cloud-off"
                           : saveStatus?.status === "saving"
                           ? "sync"
@@ -5126,8 +5550,8 @@ Your original file is unchanged. Try exporting to a new file instead.`
                       }
                       size={12}
                       color={
-                        !networkStatus?.isConnected ||
-                        !networkStatus?.isInternetReachable
+                        !externalNetworkStatus?.isConnected ||
+                        !externalNetworkStatus?.isInternetReachable
                           ? "#FF9500"
                           : saveStatus?.status === "saving"
                           ? "#007AFF"
@@ -5141,8 +5565,8 @@ Your original file is unchanged. Try exporting to a new file instead.`
                         styles.statusText,
                         {
                           color:
-                            !networkStatus?.isConnected ||
-                            !networkStatus?.isInternetReachable
+                            !externalNetworkStatus?.isConnected ||
+                            !externalNetworkStatus?.isInternetReachable
                               ? "#FF9500"
                               : saveStatus?.status === "saving"
                               ? "#007AFF"
@@ -5152,8 +5576,8 @@ Your original file is unchanged. Try exporting to a new file instead.`
                         },
                       ]}
                     >
-                      {!networkStatus?.isConnected ||
-                      !networkStatus?.isInternetReachable
+                      {!externalNetworkStatus?.isConnected ||
+                      !externalNetworkStatus?.isInternetReachable
                         ? "Offline"
                         : saveStatus?.status === "saving"
                         ? "Saving..."
@@ -5304,7 +5728,7 @@ Your original file is unchanged. Try exporting to a new file instead.`
                 style={[styles.pdfTransformContainer, { flex: 1 }]}
                 // Let single-finger touches pass to PDF for vertical scrolling,
                 // but if two fingers start, enable our overlay to handle pinch zoom
-                onTouchStart={(e) => {
+                onTouchStart={(e: any) => {
                   const touches = (e.nativeEvent as any)?.touches || [];
                   if (pinchHysteresisTimerRef.current) {
                     clearTimeout(pinchHysteresisTimerRef.current);
@@ -5312,13 +5736,13 @@ Your original file is unchanged. Try exporting to a new file instead.`
                   }
                   if (touches.length >= 2) setShouldCaptureGestures(true);
                 }}
-                onTouchMove={(e) => {
+                onTouchMove={(e: any) => {
                   const touches = (e.nativeEvent as any)?.touches || [];
                   if (touches.length >= 2 && !shouldCaptureGestures) {
                     setShouldCaptureGestures(true);
                   }
                 }}
-                onTouchEnd={(e) => {
+                onTouchEnd={(e: any) => {
                   const touches = (e.nativeEvent as any)?.touches || [];
                   if (touches.length < 2 && !selectedTool) {
                     // Add a small hysteresis before giving control back to ScrollView
@@ -5332,7 +5756,7 @@ Your original file is unchanged. Try exporting to a new file instead.`
                     }, 80); // Reduced hysteresis for more responsive pinch
                   }
                 }}
-                onLayout={(event) => {
+                onLayout={(event: any) => {
                   const { width, height } = event.nativeEvent.layout;
                   if (__DEV__) {
                     console.log("PDF container size:", { width, height });
@@ -5353,7 +5777,7 @@ Your original file is unchanged. Try exporting to a new file instead.`
                   <Animated.View style={{ flex: 1, opacity: pageOpacity }}>
                     <AnimatedRe.View
                       ref={transformContainerRef}
-                      onLayout={(event) => {
+                      onLayout={(event: any) => {
                       const { x, y, width, height } = event.nativeEvent.layout;
                       if (width && height) {
                         setContainerSize({ width, height });
@@ -5377,6 +5801,72 @@ Your original file is unchanged. Try exporting to a new file instead.`
                     >
                     {(() => {
                       const { contentHeight, displayH, pageSpacing } = getLayoutMetrics();
+                      // In safe mode, mount a single-page PDF surface to avoid OOM
+                      if (effectiveSafeMode) {
+                        const pageToShow = currentPageRef.current || displayCurrentPage || 1;
+                        return (
+                          <View style={{ flex: 1, height: displayH }}>
+                            {Platform.OS !== "web" && Pdf ? (
+                              <>
+                              {/* @ts-ignore - library typing mismatch */}
+                              <PdfAny
+                                ref={pdfRef}
+                                source={currentSource}
+                                style={{ width: "100%", height: displayH }}
+                                page={pageToShow}
+                                onLoadComplete={onPdfLoadComplete}
+                                onLoadProgress={onPdfLoadProgress}
+                                onError={onPdfError}
+                                enablePaging={false}
+                                horizontal={false}
+                                fitPolicy={2}
+                                spacing={10}
+                                enableDoubleTapZoom={false}
+                                enableRTL={false}
+                                enableAnnotationRendering={true}
+                                enableAntialiasing={true}
+                                singlePage={true}
+                                enableSwipe={false}
+                               />
+                              </>
+                            ) : (
+                              <View style={styles.webPdfPlaceholder}>
+                                <MaterialIcons name="description" size={64} color="#9CA3AF" />
+                                <Text style={styles.webPdfText}>PDF viewing not supported on web</Text>
+                                <Text style={styles.webPdfSubtext}>Please use the mobile app to view and annotate PDFs</Text>
+                              </View>
+                            )}
+                            {/* Annotation Layer - current page only */}
+                            <View
+                              style={{ position: "absolute", left: 0, top: 0, right: 0, height: displayH, zIndex: 10 }}
+                              pointerEvents="box-none"
+                            >
+                              {renderAnnotations()}
+                            </View>
+                            {/* Gesture capture overlay - only active when NOT drawing */}
+                            {(!isEditMode || selectedTool === null) && (
+                              <GestureDetector gesture={combinedGesture}>
+                                <View
+                                  pointerEvents="auto"
+                                  style={{ position: "absolute", left: 0, top: 0, right: 0, height: displayH, zIndex: 9998, backgroundColor: "transparent" }}
+                                  collapsable={false}
+                                />
+                              </GestureDetector>
+                            )}
+                            {/* Drawing overlay - only active when drawing tool selected */}
+                            {isEditMode && selectedTool !== null && (
+                              <View
+                                pointerEvents="auto"
+                                style={{ position: "absolute", left: 0, top: 0, right: 0, height: displayH, zIndex: 9999, backgroundColor: "transparent" }}
+                                collapsable={false}
+                                {...panResponder.panHandlers}
+                              />
+                            )}
+                          </View>
+                        );
+                      }
+
+                      // Normal mode: vertical ScrollView with stacked pages
                       return (
                         <ScrollView
                           ref={pdfScrollRef as any}
@@ -5386,8 +5876,6 @@ Your original file is unchanged. Try exporting to a new file instead.`
                           showsVerticalScrollIndicator={false}
                           horizontal={false}
                           scrollEnabled={
-                            // View mode: allow native vertical scroll when not actively pinching (overlay handles gestures)
-                            // Edit mode: allow vertical scroll only when not capturing multi-touch and no drawing tool is active
                             !isEditMode
                               ? (!shouldCaptureGestures && !isPinching)
                               : (!shouldCaptureGestures && !isPinching && (selectedTool === null || selectedTool === 'selection'))
@@ -5395,7 +5883,6 @@ Your original file is unchanged. Try exporting to a new file instead.`
                           onScroll={(e) => {
                             const y = e.nativeEvent.contentOffset.y;
                             if (pdfScrollOffset.y !== y) setPdfScrollOffset({ x: 0, y });
-                            // derive page index based on scroll offset
                             const denom = displayH + pageSpacing;
                             const approx = Math.max(1, Math.min((totalPagesRef.current || totalPages || 1), Math.floor((y + displayH * 0.5) / denom) + 1));
                             if (approx !== currentPageRef.current) {
@@ -5405,9 +5892,10 @@ Your original file is unchanged. Try exporting to a new file instead.`
                           }}
                         >
                           <View style={{ height: contentHeight }}>
-                            {/* PDF Viewer */}
                             {Platform.OS !== "web" && Pdf ? (
-                              <Pdf
+                              <>
+                              {/* @ts-ignore - library typing mismatch */}
+                              <PdfAny
                                 ref={pdfRef}
                                 source={currentSource}
                                 style={{ width: "100%", height: contentHeight }}
@@ -5426,7 +5914,6 @@ Your original file is unchanged. Try exporting to a new file instead.`
                                 singlePage={false}
                                 enableSwipe={false}
                                 onPageChanged={(page: number, pageCount: number) => {
-                                  // keep refs in sync for safety
                                   currentPageRef.current = page;
                                   if (pageCount !== totalPagesRef.current) {
                                     totalPagesRef.current = pageCount;
@@ -5434,6 +5921,7 @@ Your original file is unchanged. Try exporting to a new file instead.`
                                   }
                                 }}
                               />
+                              </>
                             ) : (
                               <View style={styles.webPdfPlaceholder}>
                                 <MaterialIcons name="description" size={64} color="#9CA3AF" />
@@ -5441,32 +5929,31 @@ Your original file is unchanged. Try exporting to a new file instead.`
                                 <Text style={styles.webPdfSubtext}>Please use the mobile app to view and annotate PDFs</Text>
                               </View>
                             )}
-
-                            {/* Annotation Layer - scrolls together with PDF */}
                             <View
                               style={{ position: "absolute", left: 0, top: 0, right: 0, height: contentHeight, zIndex: 10 }}
                               pointerEvents="box-none"
                             >
                               {renderAnnotations()}
                             </View>
-
-                            {/* Gesture capture overlay: Reanimated pinch/pan + PanResponder drawing */}
-                            <GestureDetector gesture={combinedGesture}>
+                            {/* Gesture capture overlay - only active when NOT drawing */}
+                            {(!isEditMode || selectedTool === null) && (
+                              <GestureDetector gesture={combinedGesture}>
+                                <View
+                                  pointerEvents="auto"
+                                  style={{ position: "absolute", left: 0, top: 0, right: 0, height: contentHeight, zIndex: 9998, backgroundColor: "transparent" }}
+                                  collapsable={false}
+                                />
+                              </GestureDetector>
+                            )}
+                            {/* Drawing overlay - only active when drawing tool selected */}
+                            {isEditMode && selectedTool !== null && (
                               <View
-                                pointerEvents={
-                                  // View mode: always allow overlay to capture gestures at any zoom
-                                  // Edit mode: allow when a tool is active or we're capturing multi-touch
-                                  !isEditMode
-                                    ? "auto"
-                                    : selectedTool !== null || shouldCaptureGestures
-                                    ? "auto"
-                                    : "none"
-                                }
+                                pointerEvents="auto"
                                 style={{ position: "absolute", left: 0, top: 0, right: 0, height: contentHeight, zIndex: 9999, backgroundColor: "transparent" }}
                                 collapsable={false}
-                                {...(isEditMode ? panResponder.panHandlers : ({} as any))}
+                                {...panResponder.panHandlers}
                               />
-                            </GestureDetector>
+                            )}
                           </View>
                         </ScrollView>
                       );
@@ -5519,9 +6006,11 @@ Your original file is unchanged. Try exporting to a new file instead.`
                   const target = Math.max(1, (currentPageRef.current || 1) - 1);
                   currentPageRef.current = target;
                   setDisplayCurrentPage(target);
-                  const { displayH, pageSpacing } = getLayoutMetrics();
-                  const y = Math.max(0, (target - 1) * (displayH + pageSpacing));
-                  (pdfScrollRef.current as any)?.scrollTo?.({ y, animated: true });
+                  if (!effectiveSafeMode) {
+                    const { displayH, pageSpacing } = getLayoutMetrics();
+                    const y = Math.max(0, (target - 1) * (displayH + pageSpacing));
+                    (pdfScrollRef.current as any)?.scrollTo?.({ y, animated: true });
+                  }
                 }}
                 disabled={(currentPageRef.current || 1) <= 1}
               >
@@ -5554,9 +6043,11 @@ Your original file is unchanged. Try exporting to a new file instead.`
                   if (num !== currentPageRef.current) {
                     currentPageRef.current = num;
                     setDisplayCurrentPage(num);
-                    const { displayH, pageSpacing } = getLayoutMetrics();
-                    const y = Math.max(0, (num - 1) * (displayH + pageSpacing));
-                    (pdfScrollRef.current as any)?.scrollTo?.({ y, animated: true });
+                    if (!effectiveSafeMode) {
+                      const { displayH, pageSpacing } = getLayoutMetrics();
+                      const y = Math.max(0, (num - 1) * (displayH + pageSpacing));
+                      (pdfScrollRef.current as any)?.scrollTo?.({ y, animated: true });
+                    }
                   }
                 }}
                 returnKeyType="done"
@@ -5572,9 +6063,11 @@ Your original file is unchanged. Try exporting to a new file instead.`
                   const target = Math.min(max, current + 1);
                   currentPageRef.current = target;
                   setDisplayCurrentPage(target);
-                  const { displayH, pageSpacing } = getLayoutMetrics();
-                  const y = Math.max(0, (target - 1) * (displayH + pageSpacing));
-                  (pdfScrollRef.current as any)?.scrollTo?.({ y, animated: true });
+                  if (!effectiveSafeMode) {
+                    const { displayH, pageSpacing } = getLayoutMetrics();
+                    const y = Math.max(0, (target - 1) * (displayH + pageSpacing));
+                    (pdfScrollRef.current as any)?.scrollTo?.({ y, animated: true });
+                  }
                 }}
                 disabled={(displayTotalPages || 1) <= (currentPageRef.current || 1)}
               >
@@ -5884,70 +6377,12 @@ Your original file is unchanged. Try exporting to a new file instead.`
               style={styles.moreMenuItem}
               onPress={() => {
                 setShowMoreMenu(false);
-                handleShareAnnotations();
+                handleShareAnnotatedPdf();
               }}
               activeOpacity={0.8}
             >
               <MaterialIcons name="share" size={20} color="#334155" />
-              <Text style={styles.moreMenuText}>Share Annotations</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.moreMenuItem}
-              onPress={() => {
-                setShowMoreMenu(false);
-                showExportedPDFs();
-              }}
-              activeOpacity={0.8}
-            >
-              <MaterialIcons name="folder" size={20} color="#667eea" />
-              <Text style={[styles.moreMenuText, { color: "#667eea" }]}>
-                My Exports
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.moreMenuItem}
-              onPress={() => {
-                setShowMoreMenu(false);
-                showFileAccessGuide();
-              }}
-              activeOpacity={0.8}
-            >
-              <MaterialIcons name="help-outline" size={20} color="#10B981" />
-              <Text style={[styles.moreMenuText, { color: "#10B981" }]}>
-                File Access Help
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.moreMenuItem}
-              onPress={() => {
-                setShowMoreMenu(false);
-                handleClearAllAnnotations();
-              }}
-              activeOpacity={0.8}
-            >
-              <MaterialIcons name="clear-all" size={20} color="#EF4444" />
-              <Text style={[styles.moreMenuText, { color: "#EF4444" }]}>
-                Clear All
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.moreMenuItem}
-              onPress={() => {
-                setShowMoreMenu(false);
-                debugCoordinateConversion();
-                Alert.alert(
-                  "Coordinate Debug",
-                  "Coordinate debug info logged to console. Check for annotation page issues."
-                );
-              }}
-              activeOpacity={0.8}
-            >
-              <MaterialIcons name="bug-report" size={20} color="#334155" />
-              <Text style={styles.moreMenuText}>Debug Coordinates</Text>
+              <Text style={styles.moreMenuText}>Share</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -6522,6 +6957,30 @@ Your original file is unchanged. Try exporting to a new file instead.`
           </View>
         </View>
       </Modal>
+
+      {/* Unsaved Changes Modal */}
+      <UnsavedChangesModal
+        visible={showUnsavedModal}
+        onSave={async () => {
+          setIsSavingAnnotations(true);
+          try {
+            await syncAnnotationsNow();
+            setShowUnsavedModal(false);
+          } finally {
+            setIsSavingAnnotations(false);
+          }
+        }}
+        onCancel={() => {
+          setShowUnsavedModal(false);
+          // Execute pending navigation without saving
+          if (pendingNavigationRef.current) {
+            const navigate = pendingNavigationRef.current;
+            pendingNavigationRef.current = null;
+            navigate();
+          }
+        }}
+        isSaving={isSavingAnnotations}
+      />
     </GestureHandlerRootView>
   );
 };
