@@ -126,6 +126,10 @@ export const API_ENDPOINTS = {
     OCR_EXTRACT_TEXT: '/chatbot/ocr/',
     CHATBOT_CONVERSATIONS: '/chatbot/conversations/',
     
+    // PDF RAG endpoints for PDF annotation viewer
+    PDF_RAG_UPLOAD: '/chatbot/pdf/upload/',
+    PDF_RAG_QUERY: '/chatbot/pdf/query/',
+    
     // Dictionary endpoints
     CHATBOT_DICTIONARY_DEFINE: '/chatbot/dictionary/define/',
     CHATBOT_DICTIONARY_CONCEPT: '/chatbot/dictionary/concept/',

@@ -2,6 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 import numpy as np
+import requests
 from .. import rag as rag_helper
 from ..models import DocumentChunk
 
@@ -68,9 +69,31 @@ class ChatRAGView(APIView):
         # sort globally by score and trim
         results = sorted(results, key=lambda r: r["score"], reverse=True)[:top_k]
 
-        # send to LLM with context (pseudo-code)
+        # Generate answer using Ollama llama3.2
         context = "\n".join([r["snippet"] for r in results])
-        llm_answer = f"[LLM answer simulated based on context: {context[:200]}...]"
+        
+        if context.strip():
+            prompt = f"Based on the following context, answer the question: {query}\n\nContext:\n{context}\n\nAnswer:"
+        else:
+            prompt = f"Please answer the following question: {query}"
+        
+        try:
+            ollama_response = requests.post(
+                "http://localhost:11434/api/generate",
+                json={
+                    "model": "llama3.2",
+                    "prompt": prompt,
+                    "stream": False
+                },
+                timeout=30
+            )
+            
+            if ollama_response.status_code == 200:
+                llm_answer = ollama_response.json().get("response", "No response generated")
+            else:
+                llm_answer = "AI assistant is currently unavailable. Please try again later."
+        except Exception as e:
+            llm_answer = "AI assistant is currently unavailable. Please try again later."
 
         return Response({
             "answer": llm_answer,

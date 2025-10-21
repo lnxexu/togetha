@@ -443,20 +443,82 @@ function ChatBot(): React.ReactElement {
 
   const createNewConversation = async () => {
     try {
-      const newConversation = await chatbotAPI.createConversation({
-        title: "New Conversation"
-      });
-      setCurrentConversation(newConversation);
+      // Auto-save current conversation if it has messages
+      if (currentConversation && messages.length > 0) {
+        try {
+          const conv = {
+            id: currentConversation.id,
+            title: currentConversation.title || 'Conversation',
+            created_at: currentConversation.created_at || new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            is_archived: false,
+            is_pinned: false,
+            icon: currentConversation.icon || '💬',
+            summary: '',
+            messages: messages.map(m => ({
+              role: m.role,
+              content: m.content,
+              created_at: m.created_at || new Date().toISOString()
+            })),
+            attached_files: [],
+            message_count: messages.length,
+            last_message: messages.length > 0 ? {
+              content: messages[messages.length - 1].content,
+              created_at: messages[messages.length - 1].created_at || new Date().toISOString(),
+              message_type: messages[messages.length - 1].role
+            } : null
+          };
+          await saveConversationToCache(conv);
+        } catch (saveErr) {
+          console.warn('Failed to auto-save current conversation:', saveErr);
+        }
+      }
+
+      // Try online first, fallback to offline
+      if (isOnline) {
+        try {
+          const newConversation = await chatbotAPI.createConversation({
+            title: "New Conversation"
+          });
+          setCurrentConversation(newConversation);
+          setMessages([]);
+          setShowChatOptions(false);
+          await saveActiveConversation(newConversation.id);
+          await loadConversations();
+          return;
+        } catch (apiError) {
+          console.warn('Online conversation creation failed, creating offline:', apiError);
+        }
+      }
+
+      // Create offline conversation
+      const offlineConversation = {
+        id: `local-${Date.now()}`,
+        title: "New Conversation",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        is_archived: false,
+        is_pinned: false,
+        icon: '💬',
+        summary: '',
+        messages: [],
+        attached_files: [],
+        message_count: 0,
+        last_message: null
+      };
+
+      setCurrentConversation(offlineConversation);
       setMessages([]);
       setShowChatOptions(false);
+      await saveActiveConversation(offlineConversation.id);
+      await saveConversationToCache(offlineConversation);
+      
+      // Update conversations list
+      const cached = await loadConversationsCache();
+      const updated = [offlineConversation, ...cached.filter(c => c.id !== offlineConversation.id)];
+      await saveConversationsCache(updated);
+      setConversations(updated);
 
-      // Update chat head context with new active conversation
-    
-
-      // Save the new conversation as active
-      await saveActiveConversation(newConversation.id);
-
-      await loadConversations();
     } catch (error) {
       console.error("Error creating conversation:", error);
       Alert.alert("Error", "Failed to create new conversation");
@@ -706,7 +768,7 @@ function ChatBot(): React.ReactElement {
           );
 
           return {
-            content: `🔌 [Offline Mode]\n\n${offlineResponse.content}`,
+            content: offlineResponse.content,
             source: 'offline',
             conversation_id: offlineResponse.conversation_id,
             message_id: offlineResponse.message_id
@@ -1167,7 +1229,7 @@ function ChatBot(): React.ReactElement {
     
     Alert.alert(
       "Download Offline Model",
-      "This will download a 1.5GB AI model for offline use. Continue?",
+      "This will download a 2.01GB AI model for offline use. Continue?",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -1645,27 +1707,36 @@ const handleOCR = async () => {
                       {msg.content}
                     </Text>
                   ) : (
-                    <Markdown
-                      style={{
-                        body: styles.aiMessageText,
-                        heading1: styles.markdownH1,
-                        heading2: styles.markdownH2,
-                        heading3: styles.markdownH3,
-                        strong: styles.markdownStrong,
-                        em: styles.markdownEm,
-                        bullet_list: styles.markdownList,
-                        ordered_list: styles.markdownList,
-                        list_item: styles.markdownListItem,
-                        table: styles.markdownTable,
-                        tr: styles.markdownTableRow,
-                        td: styles.markdownTableCell,
-                        th: styles.markdownTableHeader,
-                        code_inline: styles.markdownCodeInline,
-                        code_block: styles.markdownCodeBlock,
-                      }}
-                    >
-                      {msg.content}
-                    </Markdown>
+                    <View>
+                      {/* Offline Mode Indicator */}
+                      {isOfflineMode && (
+                        <View style={styles.offlineModeIndicator}>
+                          <Ionicons name="cloud-offline" size={14} color="#F59E0B" />
+                          <Text style={styles.offlineModeText}>Offline Mode</Text>
+                        </View>
+                      )}
+                      <Markdown
+                        style={{
+                          body: styles.aiMessageText,
+                          heading1: styles.markdownH1,
+                          heading2: styles.markdownH2,
+                          heading3: styles.markdownH3,
+                          strong: styles.markdownStrong,
+                          em: styles.markdownEm,
+                          bullet_list: styles.markdownList,
+                          ordered_list: styles.markdownList,
+                          list_item: styles.markdownListItem,
+                          table: styles.markdownTable,
+                          tr: styles.markdownTableRow,
+                          td: styles.markdownTableCell,
+                          th: styles.markdownTableHeader,
+                          code_inline: styles.markdownCodeInline,
+                          code_block: styles.markdownCodeBlock,
+                        }}
+                      >
+                        {msg.content}
+                      </Markdown>
+                    </View>
                   )}
                   {msg.role === "user" && (
                     <View style={styles.messageActions}>
@@ -2302,6 +2373,22 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#F1F5F9",
     borderBottomLeftRadius: 6,
+  },
+  offlineModeIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginBottom: 8,
+    alignSelf: "flex-start",
+  },
+  offlineModeText: {
+    fontSize: 11,
+    color: "#92400E",
+    fontWeight: "600",
+    marginLeft: 4,
   },
   userMessageText: {
     color: "#FFFFFF",

@@ -21,15 +21,26 @@ class ConceptHelpView(APIView):
             return Response({"error": "Missing 'text' in request body"}, status=status.HTTP_400_BAD_REQUEST)
 
         prompt = f"""
-You are a dictionary assistant. 
-For the word "{text}", return a JSON object with the following keys only:
-- Meaning (string)
-- PartOfSpeech (string)
-- Synonyms (array of strings)
-- Antonyms (array of strings, at least 1 item, use ["None"] if not applicable)
-- Examples (array of exactly 2 sentences, always required)
+You are a dictionary assistant.
+For the word "{text}", output ONLY a valid JSON object with exactly these keys and string values:
+- "Meaning": string
+- "Part of Speech": string
+- "Synonyms": string
+- "Antonyms": string
+- "Example": string
 
-Return ONLY valid JSON. Do not include explanations.
+Constraints:
+- Return JSON only (no explanations or extra text).
+- Use empty strings if a value is unknown.
+- If there are no antonyms, set "Antonyms" to "None".
+Example output:
+{{
+  "Meaning": "A domesticated carnivorous mammal.",
+  "Part of Speech": "Noun",
+  "Synonyms": "Canine, Pooch",
+  "Antonyms": "None",
+  "Example": "The dog barked loudly."
+}}
 """
 
         try:

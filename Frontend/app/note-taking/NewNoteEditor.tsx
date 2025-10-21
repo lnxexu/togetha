@@ -22,7 +22,7 @@ import {
 } from "react-native";
 import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
 import { LinearGradient } from "expo-linear-gradient";
-import { showSuccessToast, showErrorToast, showWarningToast } from "../utils/ToastUtils";
+import { showSuccessToast, showErrorToast, showWarningToast, showInfoToast } from "../utils/ToastUtils";
 import { useAutoSave } from "./hooks/useAutoSave";
 import { noteService, Note as NoteType, SaveStatus } from "./services/noteService";
 import { useNetworkStatus, getNetworkStatusText } from "./services/networkService";
@@ -752,26 +752,33 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   };
 
   const askRinaForHelp = async (text: string) => {
-  try {
-    setIsLoadingMeaning(true);
-    setSelectedWord(text);
-    setShowWordMeaningModal(true);
+    try {
+      setIsLoadingMeaning(true);
+      setSelectedWord(text);
+      setShowWordMeaningModal(true);
 
-    // Call your dictionary service (already set up in dictionaryService.ts)
-    const response = await dictionaryService.getConcept(text);
+      const response = await dictionaryService.getConcept(text);
 
-    if (response) {
-      setWordData(response);
-    } else {
+      if (response) {
+        // Clean and format response to ensure proper UI display
+        const cleanResponse = {
+          Meaning: Array.isArray(response.Meaning) ? response.Meaning : [response.Meaning || "No meaning available"],
+          PartOfSpeech: Array.isArray(response.PartOfSpeech) ? response.PartOfSpeech : [response.PartOfSpeech || "Unknown"],
+          Synonyms: Array.isArray(response.Synonyms) ? response.Synonyms : [],
+          Antonyms: Array.isArray(response.Antonyms) ? response.Antonyms : [],
+          Examples: Array.isArray(response.Examples) ? response.Examples.slice(0, 2) : []
+        };
+        setWordData(cleanResponse);
+      } else {
+        setWordData(null);
+      }
+    } catch (error) {
+      console.error("Error asking RINA for help:", error);
       setWordData(null);
+    } finally {
+      setIsLoadingMeaning(false);
     }
-  } catch (error) {
-    console.error("Error asking RINA for help:", error);
-    setWordData(null);
-  } finally {
-    setIsLoadingMeaning(false);
-  }
-};
+  };
 
 
   const getSyncStatusIcon = () => {
@@ -1652,26 +1659,54 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
           </View>
         ) : wordData ? (
           <ScrollView style={styles.wordMeaningScrollView}>
-            <Text style={styles.sectionTitle}>Meaning:</Text>
-            <Text style={styles.wordMeaningText}>{wordData.Meaning}</Text>
+            <View style={styles.wordMeaningSection}>
+              <Text style={styles.sectionTitle}>Meaning</Text>
+              {Array.isArray(wordData.Meaning) ? (
+                wordData.Meaning.map((meaning: string, i: number) => (
+                  <Text key={i} style={styles.wordMeaningText}>• {meaning}</Text>
+                ))
+              ) : (
+                <Text style={styles.wordMeaningText}>{wordData.Meaning}</Text>
+              )}
+            </View>
 
-            <Text style={styles.sectionTitle}>Part of Speech:</Text>
-            <Text style={styles.wordMeaningText}>{wordData.PartOfSpeech}</Text>
+            <View style={styles.wordMeaningSection}>
+              <Text style={styles.sectionTitle}>Part of Speech</Text>
+              {Array.isArray(wordData.PartOfSpeech) ? (
+                wordData.PartOfSpeech.map((pos: string, i: number) => (
+                  <Text key={i} style={styles.wordMeaningText}>• {pos}</Text>
+                ))
+              ) : (
+                <Text style={styles.wordMeaningText}>{wordData.PartOfSpeech}</Text>
+              )}
+            </View>
 
-            <Text style={styles.sectionTitle}>Synonyms:</Text>
-            <Text style={styles.wordMeaningText}>
-              {wordData.Synonyms?.length ? wordData.Synonyms.join(", ") : "None"}
-            </Text>
+            <View style={styles.wordMeaningSection}>
+              <Text style={styles.sectionTitle}>Synonyms</Text>
+              <Text style={styles.wordMeaningText}>
+                {Array.isArray(wordData.Synonyms) && wordData.Synonyms.length ? 
+                  wordData.Synonyms.join(", ") : "None"}
+              </Text>
+            </View>
 
-            <Text style={styles.sectionTitle}>Antonyms:</Text>
-            <Text style={styles.wordMeaningText}>
-              {wordData.Antonyms?.length ? wordData.Antonyms.join(", ") : "None"}
-            </Text>
+            <View style={styles.wordMeaningSection}>
+              <Text style={styles.sectionTitle}>Antonyms</Text>
+              <Text style={styles.wordMeaningText}>
+                {Array.isArray(wordData.Antonyms) && wordData.Antonyms.length ? 
+                  wordData.Antonyms.join(", ") : "None"}
+              </Text>
+            </View>
 
-            <Text style={styles.sectionTitle}>Examples:</Text>
-            {wordData.Examples?.map((ex: string, i: number) => (
-              <Text key={i} style={styles.wordMeaningText}>• {ex}</Text>
-            ))}
+            <View style={styles.wordMeaningSection}>
+              <Text style={styles.sectionTitle}>Examples</Text>
+              {Array.isArray(wordData.Examples) && wordData.Examples.length ? (
+                wordData.Examples.slice(0, 2).map((ex: string, i: number) => (
+                  <Text key={i} style={styles.wordMeaningExample}>• {ex}</Text>
+                ))
+              ) : (
+                <Text style={styles.wordMeaningText}>No examples available</Text>
+              )}
+            </View>
           </ScrollView>
         ) : (
           <Text style={styles.wordMeaningText}>
@@ -2218,8 +2253,8 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: "600",
-    marginBottom: 12,
-    color: "#333",
+    marginBottom: 8,
+    color: "#8B5CF6",
   },
   customRichTextInput: {
     flex: 1,
@@ -2721,15 +2756,15 @@ const styles = StyleSheet.create({
     marginVertical: 8,
   },
   wordMeaningSection: {
-  marginBottom: 12,
-},
-
-wordMeaningExample: {
-  fontSize: 14,
-  color: "#374151",
-  marginLeft: 10,
-  marginBottom: 4,
-},
+    marginBottom: 16,
+  },
+  wordMeaningExample: {
+    fontSize: 14,
+    color: "#374151",
+    marginLeft: 10,
+    marginBottom: 4,
+    fontStyle: "italic",
+  },
 });
 
 export default NewNoteEditor;
