@@ -21,6 +21,7 @@ import {
   TouchableWithoutFeedback,
   RefreshControl,
   ActivityIndicator,
+  Share,
 } from "react-native";
 import {
   MaterialIcons,
@@ -51,6 +52,9 @@ import { getLocalPDFPath, isRemoteURL } from "./utils/pdfUtils";
 import { parseServerDate, formatShortLocalDate } from "./utils/localDate";
 import offlineNotesService from "./services/offlineNotesService";
 import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import ViewShot from "react-native-view-shot";
+import { drawingAPI } from "./services/drawingAPI";
 
 const { width } = Dimensions.get("window");
 
@@ -261,6 +265,11 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
     noteId: string;
     type: "pdf" | "word" | "document" | "image" | "txt";
   } | null>(null);
+
+  // Sharing helpers (for drawing capture)
+  const shareCaptureRef = React.useRef<any>(null);
+  const [shareTargetNote, setShareTargetNote] = useState<Note | null>(null);
+  const [isSharing, setIsSharing] = useState(false);
 
   // Memoize HTML tag styles for grid view (now the only view)
   const htmlTagStyles = useMemo(
@@ -929,6 +938,150 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
     },
     [notes, navigation, setIsLoading, setActiveNoteOptions, fetchNotes]
   );
+
+  // Share handler
+  const stripHtml = (html?: string) => {
+    if (!html) return '';
+    try {
+      return html
+        .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, '')
+        .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/(p|div|h1|h2|h3|h4|h5|h6)>/gi, '\n')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&');
+    } catch {}
+    return html;
+  };
+
+  const shareTextNote = async (note: Note) => {
+    const title = note.title || 'Note';
+    const raw = note.formatted_content && note.formatted_content.trim()
+      ? note.formatted_content
+      : (note.content || '');
+    const message = `${title}\n\n${stripHtml(raw)}`.trim();
+    try {
+      await Share.share({ message, title });
+    } catch (e) {
+      showErrorToast('Failed to share note');
+      console.error('Share text note failed:', e);
+    }
+  };
+
+  const ensureLocalFile = async (uri: string, fileNameFallback = 'document') => {
+    // If already local file
+    if (uri.startsWith('file://')) return uri;
+    try {
+      const lower = uri.toLowerCase();
+      // For PDFs, prefer existing helper
+      if (lower.endsWith('.pdf') && isRemoteURL(uri)) {
+        try {
+          const local = await getLocalPDFPath(uri);
+          return local;
+        } catch (e) {
+          console.warn('getLocalPDFPath failed, falling back to downloadAsync:', e);
+        }
+      }
+      // Generic download
+      const fileName = uri.split('/').pop() || fileNameFallback;
+      const dest = `${FileSystem.cacheDirectory}${Date.now()}_${fileName}`;
+      const res = await FileSystem.downloadAsync(uri, dest);
+      return res.uri;
+    } catch (e) {
+      console.error('ensureLocalFile failed:', e);
+      return uri; // fallback
+    }
+  };
+
+  const shareDocumentNote = async (note: Note) => {
+    try {
+      const src = note.document_url || note.document_file;
+      if (!src) {
+        await Share.share({
+          message: `${note.title || 'Document'}\n${note.content || ''}`.trim(),
+          title: note.title || 'Document',
+        });
+        return;
+      }
+      let localUri = await ensureLocalFile(src, note.title || 'document');
+
+      // If this is a PDF and we have annotations, embed them before sharing
+      const isPdf = localUri.toLowerCase().endsWith('.pdf');
+      const annotations = Array.isArray((note as any).document_annotations)
+        ? (note as any).document_annotations
+        : [];
+
+      if (isPdf && annotations.length > 0) {
+        try {
+          const outputName = `shared_${(note.title || 'annotated').replace(/[^a-z0-9_\-\.]+/gi, '_')}.pdf`;
+          const result = await drawingAPI.savePDFAnnotations(localUri, annotations, {
+            saveDirectly: false,
+            createBackup: false,
+            outputFileName: outputName,
+          });
+          if (result?.savedPath) {
+            localUri = result.savedPath;
+          }
+        } catch (embedErr) {
+          console.warn('Failed to embed annotations for sharing, falling back to original PDF:', embedErr);
+          // Fall back to sharing original PDF
+        }
+      }
+
+      if (await Sharing.isAvailableAsync()) {
+        const mime = (localUri.toLowerCase().endsWith('.pdf') ? 'application/pdf' : undefined);
+        await Sharing.shareAsync(localUri, {
+          mimeType: mime,
+          dialogTitle: `Share ${note.title || 'Document'}`,
+        });
+      } else {
+        // Fallback to RN Share with URL (may not attach file)
+        await Share.share({ url: localUri, title: note.title || 'Document' });
+      }
+    } catch (e) {
+      showErrorToast('Failed to share document');
+      console.error('Share document failed:', e);
+    }
+  };
+
+  const shareDrawingNote = async (note: Note) => {
+    try {
+      setIsSharing(true);
+      setShareTargetNote(note);
+      // Wait one frame so ViewShot mounts
+      await new Promise((r) => setTimeout(r, 60));
+      if (shareCaptureRef.current?.capture) {
+        const uri: string = await shareCaptureRef.current.capture();
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(uri, {
+            mimeType: 'image/png',
+            dialogTitle: `Share ${note.title || 'Drawing'}`,
+          });
+        } else {
+          await Share.share({ url: uri, title: note.title || 'Drawing' });
+        }
+      } else {
+        // Fallback to sharing JSON strokes
+        const data = typeof note.drawing_data === 'string' ? note.drawing_data : JSON.stringify(note.drawing_data || []);
+        await Share.share({ message: data, title: note.title || 'Drawing' });
+      }
+    } catch (e) {
+      showErrorToast('Failed to share drawing');
+      console.error('Share drawing failed:', e);
+    } finally {
+      setIsSharing(false);
+      setShareTargetNote(null);
+    }
+  };
+
+  const handleShareNote = async (note: Note) => {
+    const isDrawing = isDrawingNote(note);
+    const isDocument = note.type === 'document' || !!note.document_file || !!note.document_url;
+    if (isDocument) return shareDocumentNote(note);
+    if (isDrawing) return shareDrawingNote(note);
+    return shareTextNote(note);
+  };
 
   const handleDeleteNote = useCallback(
     (noteId: string) => {
@@ -2478,10 +2631,7 @@ const handleCreateFolder = async () => {
                     onPress={() => {
                       setActiveNoteOptions(null);
                       setDropdownPosition(null);
-                      Alert.alert(
-                        "Share Note",
-                        "Sharing functionality will be available in a future update."
-                      );
+                      handleShareNote(item);
                     }}
                   >
                     <View style={styles.noteOptionItem}>
@@ -3453,36 +3603,11 @@ const handleCreateFolder = async () => {
                 style={styles.moreVertMenuItem}
                 onPress={() => {
                   setShowMoreVertMenu(false);
-                  // Clear all filters
-                  setSelectedFilterFolder(null);
-                  setSearchQuery("");
-                  setSelectedFilter("all");
-                }}
-              >
-                <MaterialIcons name="clear-all" size={20} color="#EF4444" />
-                <Text style={styles.moreVertMenuText}>Clear All Filters</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.moreVertMenuItem}
-                onPress={() => {
-                  setShowMoreVertMenu(false);
                   onRefresh();
                 }}
               >
                 <MaterialIcons name="refresh" size={20} color="#3B82F6" />
                 <Text style={styles.moreVertMenuText}>Refresh Notes</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.moreVertMenuItem, styles.moreVertMenuItemLast]}
-                onPress={() => {
-                  setShowMoreVertMenu(false);
-                  setShowStatsModal(true);
-                }}
-              >
-                <MaterialIcons name="analytics" size={20} color="#64748B" />
-                <Text style={styles.moreVertMenuText}>View Statistics</Text>
               </TouchableOpacity>
             </View>
           </TouchableOpacity>
@@ -3591,6 +3716,9 @@ const handleCreateFolder = async () => {
             onClose={() => {
               setShowDocumentViewer(false);
               setCurrentDocument(null);
+              // Refresh notes/folders after possible changes
+              fetchNotes(true);
+              fetchFolders();
             }}
           />
         </Modal>
@@ -3611,9 +3739,24 @@ const handleCreateFolder = async () => {
             onClose={() => {
               setShowPDFViewer(false);
               setCurrentDocument(null);
+              // Refresh notes/folders after possible changes
+              fetchNotes(true);
+              fetchFolders();
             }}
           />
         </Modal>
+      )}
+
+      {/* Hidden renderer for drawing share capture */}
+      {!!shareTargetNote && isDrawingNote(shareTargetNote) && (
+        <View style={{ position: 'absolute', left: -9999, top: -9999 }} pointerEvents="none">
+          <ViewShot ref={shareCaptureRef} options={{ format: 'png', quality: 1 }}>
+            <View style={{ backgroundColor: '#FFFFFF', padding: 12 }}>
+              <TemplatePreview note={shareTargetNote} width={1024} height={768} />
+              <Text style={{ position: 'absolute', left: -9999 }}>export</Text>
+            </View>
+          </ViewShot>
+        </View>
       )}
 
       {/* Statistics Modal */}
