@@ -1,7 +1,10 @@
 from django.utils import timezone
+from django.db import transaction
+from django.db.utils import OperationalError
 from django.db.models import Sum, Count, Avg, Max
-from datetime import datetime, timedelta, date
+from datetime import timedelta
 from .models import UserSession, UserActivity, DailyUsageSummary, WeeklyUsageSummary
+import time
 
 
 class UsageTrackingService:
@@ -153,26 +156,49 @@ class UsageTrackingService:
             daily_summaries, days_active
         )
         
-        # Create or update weekly summary
-        summary, created = WeeklyUsageSummary.objects.update_or_create(
-            user=user,
-            week_start=week_start,
-            defaults={
-                'week_end': week_end,
-                'total_active_time_seconds': total_active_time,
-                'daily_average_seconds': daily_average,
-                'days_active': days_active,
-                'total_sessions': total_sessions,
-                'total_tasks_completed': total_tasks,
-                'total_notes_created': total_notes,
-                'total_chat_messages': total_chat,
-                'total_interactions': total_interactions,
-                'productivity_score': productivity_score,
-                'consistency_score': consistency_score,
-            }
-        )
-        
-        return summary
+        # Create or update weekly summary with retry to handle transient
+        # sqlite 'database is locked' errors in dev environments.
+        max_attempts = 5
+        base_sleep = 0.05
+        last_exception = None
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                with transaction.atomic():
+                    summary, created = WeeklyUsageSummary.objects.update_or_create(
+                        user=user,
+                        week_start=week_start,
+                        defaults={
+                            'week_end': week_end,
+                            'total_active_time_seconds': total_active_time,
+                            'daily_average_seconds': daily_average,
+                            'days_active': days_active,
+                            'total_sessions': total_sessions,
+                            'total_tasks_completed': total_tasks,
+                            'total_notes_created': total_notes,
+                            'total_chat_messages': total_chat,
+                            'total_interactions': total_interactions,
+                            'productivity_score': productivity_score,
+                            'consistency_score': consistency_score,
+                        }
+                    )
+
+                return summary
+
+            except OperationalError as exc:
+                # Likely a transient sqlite lock — retry with backoff
+                last_exception = exc
+                if attempt < max_attempts:
+                    sleep_time = base_sleep * (2 ** (attempt - 1))
+                    time.sleep(sleep_time)
+                    continue
+                # If we're out of attempts, re-raise
+                raise
+
+        # If we fall through (shouldn't happen), raise last exception
+        if last_exception:
+            raise last_exception
+        return None
     
     @staticmethod
     def calculate_productivity_score(active_time, tasks, notes, chat_messages, days_active):
@@ -256,8 +282,8 @@ class UsageTrackingService:
         insights['total_time_period'] = sum(daily_times)
         
         # Feature usage
-        insights['most_used_feature'] = 'chat'  # Placeholder - could be calculated from activities
-        insights['productivity_trend'] = 'stable'  # Could be calculated from engagement scores
+        insights['most_used_feature'] = 'chat'  
+        insights['productivity_trend'] = 'stable'  
         
         # Engagement
         engagement_scores = [s.engagement_score for s in daily_summaries]

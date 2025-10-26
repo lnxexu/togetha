@@ -10,10 +10,6 @@ urlpatterns = [
     path('notes/', views.note_list, name='note_list'),
     path('notes/<str:pk>/', views.note_detail, name='note_detail'),
     
-    # Tag URLs
-    path('tags/', views.tag_list, name='tag_list'),
-    path('tags/<str:pk>/', views.tag_detail, name='tag_detail'),
-    
     # Combined note folder management
     path('manage-note-folders/', views.manage_note_folders, name='manage_note_folders'),
 

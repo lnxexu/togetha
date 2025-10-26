@@ -2,12 +2,9 @@ import React, { useState, useCallback, useEffect, useRef, useMemo } from "react"
 import {
   View,
   StyleSheet,
-  SafeAreaView,
-  StatusBar,
   Alert,
   Text,
   TouchableOpacity,
-  Pressable,
   TextInput,
   Modal,
   ScrollView,
@@ -17,9 +14,6 @@ import {
   Vibration,
   Animated,
   PanResponder,
-  Image,
-  ActivityIndicator,
-  Share,
   GestureResponderEvent,
   PanResponderGestureState,
 } from "react-native";
@@ -28,29 +22,22 @@ import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LinearGradient } from "expo-linear-gradient";
 import { captureRef } from "react-native-view-shot";
-import * as FileSystem from "expo-file-system";
 import * as MediaLibrary from 'expo-media-library';
-import * as ImagePicker from 'expo-image-picker';
-import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
 import { showSuccessToast, showErrorToast, showWarningToast, showInfoToast } from "../utils/ToastUtils";
-import DrawingCanvas, { Stroke, DrawingTool, CanvasOrientation } from "./components/DrawingCanvas";
+import DrawingCanvas, { Stroke, DrawingTool } from "./components/DrawingCanvas";
 import DrawingToolbar from "./components/DrawingToolbar";
 import { useDrawingState } from "./hooks/useDrawingState";
-import { DrawingStroke, drawingAPI } from "./services/drawingAPI";
+import { DrawingStroke } from "./services/drawingAPI";
 import offlineNotesService from "./services/offlineNotesService";
 import { TemplateType } from "./components/TemplateOverlay";
 import UnsavedChangesModal from "./components/UnsavedChangesModal";
-import { pushNotificationService } from '@/app/notifications/services/PushNotificationService';
 import {
   getTemplateOptions,
   getTemplateBackgroundColor,
 } from "./utils/templateConfig";
-import { useNetworkStatus, getNetworkStatusText, getNetworkStatusColor } from "./services/networkService";
+import { useNetworkStatus, getNetworkStatusText } from "./services/networkService";
 import { downloadFileToDevice, saveDrawingAsJPEG, saveDrawingAsPNG } from "./utils/downloadUtils";
 
-// Configuration: control whether visual thickness / font sizes scale with canvas zoom.
-// When false, strokes remain visually stable (positions still follow zoom via coordinate conversion)
-// preventing pen strokes, brushes, etc. from becoming thicker when zooming the canvas.
 const SCALE_STROKES_WITH_ZOOM = false;
 
 interface Folder {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -15,18 +15,18 @@ import {
   Platform,
   StatusBar,
   Linking,
-} from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_URL, API_ENDPOINTS } from '@/constants/ApiConfig';
-import Svg, { Rect, Circle, Path, Text as SvgText } from 'react-native-svg';
-import { WebView } from 'react-native-webview';
+} from "react-native";
+import { MaterialIcons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
+import Svg, { Rect, Circle, Path, Text as SvgText } from "react-native-svg";
+import { WebView } from "react-native-webview";
 
-const { width, height } = Dimensions.get('window');
+const { width, height } = Dimensions.get("window");
 
 interface Annotation {
   id: string;
-  type: 'highlight' | 'note' | 'underline' | 'strikethrough' | 'drawing';
+  type: "highlight" | "note" | "underline" | "strikethrough" | "drawing";
   x: number;
   y: number;
   width?: number;
@@ -43,19 +43,19 @@ interface DocumentViewerProps {
   documentUri: string;
   documentName: string;
   noteId: string;
-  documentType: 'pdf' | 'word' | 'document' | 'image' | 'doc' | 'docx' | 'txt';
+  documentType: "pdf" | "word" | "document" | "image" | "doc" | "docx" | "txt";
   onClose: () => void;
 }
 
 const ANNOTATION_COLORS = [
-  '#FFEB3B', // Yellow
-  '#4CAF50', // Green
-  '#2196F3', // Blue
-  '#FF9800', // Orange
-  '#E91E63', // Pink
-  '#9C27B0', // Purple
-  '#F44336', // Red
-  '#795548', // Brown
+  "#FFEB3B", // Yellow
+  "#4CAF50", // Green
+  "#2196F3", // Blue
+  "#FF9800", // Orange
+  "#E91E63", // Pink
+  "#9C27B0", // Purple
+  "#F44336", // Red
+  "#795548", // Brown
 ];
 
 export const DocumentViewer: React.FC<DocumentViewerProps> = ({
@@ -66,12 +66,15 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   onClose,
 }) => {
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
-  const [selectedTool, setSelectedTool] = useState<'highlight' | 'note' | 'underline' | 'strikethrough' | 'drawing'>('highlight');
+  const [selectedTool, setSelectedTool] = useState<
+    "highlight" | "note" | "underline" | "strikethrough" | "drawing"
+  >("highlight");
   const [selectedColor, setSelectedColor] = useState(ANNOTATION_COLORS[0]);
   const [isAnnotating, setIsAnnotating] = useState(false);
   const [showNoteModal, setShowNoteModal] = useState(false);
-  const [noteText, setNoteText] = useState('');
-  const [currentAnnotation, setCurrentAnnotation] = useState<Partial<Annotation> | null>(null);
+  const [noteText, setNoteText] = useState("");
+  const [currentAnnotation, setCurrentAnnotation] =
+    useState<Partial<Annotation> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [useAlternativeViewer, setUseAlternativeViewer] = useState(false);
@@ -79,30 +82,42 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   const [totalPages, setTotalPages] = useState(1);
   const [zoomScale, setZoomScale] = useState(1);
   const [isDrawing, setIsDrawing] = useState(false);
-  const [currentStroke, setCurrentStroke] = useState<string>('');
+  const [currentStroke, setCurrentStroke] = useState<string>("");
   const [lastSaveTime, setLastSaveTime] = useState<number>(Date.now());
+  const [authToken, setAuthToken] = useState<string>("");
 
   const webViewRef = useRef<WebView>(null);
-  const drawingPathRef = useRef<string>('');
+  const drawingPathRef = useRef<string>("");
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Load auth token
+  useEffect(() => {
+    const loadAuthToken = async () => {
+      const token = await AsyncStorage.getItem("authToken");
+      if (token) {
+        setAuthToken(token);
+      }
+    };
+    loadAuthToken();
+  }, []);
 
   // Helper function to detect document type from URI
   const getActualDocumentType = (): typeof documentType => {
-    if (documentType && documentType !== 'document') {
+    if (documentType && documentType !== "document") {
       return documentType;
     }
-    
+
     const uri = documentUri.toLowerCase();
     if (uri.match(/\.(jpg|jpeg|png|gif|bmp|webp|svg)$/)) {
-      return 'image';
+      return "image";
     } else if (uri.match(/\.pdf$/)) {
-      return 'pdf';
+      return "pdf";
     } else if (uri.match(/\.(doc|docx)$/)) {
-      return 'word';
+      return "word";
     } else if (uri.match(/\.txt$/)) {
-      return 'txt';
+      return "txt";
     }
-    
+
     return documentType;
   };
 
@@ -113,29 +128,32 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
     try {
       if (!annotations || annotations.length === 0) return; // Nothing to save
 
-      const token = await AsyncStorage.getItem('authToken');
+      const token = await AsyncStorage.getItem("authToken");
       if (!token) return;
 
       // Use PUT to replace all annotations (backend contract)
-      const response = await fetch(`${API_URL}${API_ENDPOINTS.DOCUMENT_ANNOTATIONS(noteId)}`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Token ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          annotations,
-        }),
-      });
+      const response = await fetch(
+        `${API_URL}${API_ENDPOINTS.DOCUMENT_ANNOTATIONS(noteId)}`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Token ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            annotations,
+          }),
+        }
+      );
 
       if (response.ok) {
         setLastSaveTime(Date.now());
-        console.log('Document annotations auto-saved (PUT)');
+        console.log("Document annotations auto-saved (PUT)");
       } else {
-        console.warn('Auto-save (PUT) failed with status:', response.status);
+        console.warn("Auto-save (PUT) failed with status:", response.status);
       }
     } catch (error) {
-      console.error('Auto-save failed:', error);
+      console.error("Auto-save failed:", error);
     }
   }, [annotations, noteId]);
 
@@ -146,7 +164,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
     }
 
     autoSaveTimeoutRef.current = setTimeout(() => {
-      if (Date.now() - lastSaveTime > 5000) { // 5 seconds since last change
+      if (Date.now() - lastSaveTime > 5000) {
+        // 5 seconds since last change
         autoSave();
       }
     }, 10000);
@@ -161,15 +180,18 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   // Load existing annotations
   const loadAnnotations = useCallback(async () => {
     try {
-      const token = await AsyncStorage.getItem('authToken');
+      const token = await AsyncStorage.getItem("authToken");
       if (!token) return;
 
-      const response = await fetch(`${API_URL}${API_ENDPOINTS.DOCUMENT_ANNOTATIONS(noteId)}`, {
-        headers: {
-          'Authorization': `Token ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
+      const response = await fetch(
+        `${API_URL}${API_ENDPOINTS.DOCUMENT_ANNOTATIONS(noteId)}`,
+        {
+          headers: {
+            Authorization: `Token ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
 
       if (response.ok) {
         const data = await response.json();
@@ -177,50 +199,65 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
 
         // Defensive normalization: if any item is a wrapper object like { annotations: [...] }
         // from a previous incorrect POST, flatten it.
-        const wrapper = loaded.find((ann: any) => ann && Array.isArray(ann.annotations));
+        const wrapper = loaded.find(
+          (ann: any) => ann && Array.isArray(ann.annotations)
+        );
         if (wrapper && Array.isArray(wrapper.annotations)) {
-          console.warn('Flattening nested annotations payload from prior incorrect POST save');
+          console.warn(
+            "Flattening nested annotations payload from prior incorrect POST save"
+          );
           loaded = wrapper.annotations;
 
           // Optional: attempt to repair backend data by PUT-ing the flattened list
           try {
-            const token2 = await AsyncStorage.getItem('authToken');
+            const token2 = await AsyncStorage.getItem("authToken");
             if (token2) {
-              await fetch(`${API_URL}${API_ENDPOINTS.DOCUMENT_ANNOTATIONS(noteId)}`, {
-                method: 'PUT',
-                headers: {
-                  'Authorization': `Token ${token2}`,
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ annotations: loaded }),
-              });
+              await fetch(
+                `${API_URL}${API_ENDPOINTS.DOCUMENT_ANNOTATIONS(noteId)}`,
+                {
+                  method: "PUT",
+                  headers: {
+                    Authorization: `Token ${token2}`,
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({ annotations: loaded }),
+                }
+              );
             }
           } catch (repairErr) {
-            console.warn('Failed to repair annotations payload on server:', repairErr);
+            console.warn(
+              "Failed to repair annotations payload on server:",
+              repairErr
+            );
           }
         }
 
         setAnnotations(loaded);
       }
     } catch (error) {
-      console.error('Error loading annotations:', error);
+      console.error("Error loading annotations:", error);
     }
   }, [noteId]);
 
   // Save annotation to backend
-  const saveAnnotation = async (annotation: Omit<Annotation, 'id' | 'created_at'>) => {
+  const saveAnnotation = async (
+    annotation: Omit<Annotation, "id" | "created_at">
+  ) => {
     try {
-      const token = await AsyncStorage.getItem('authToken');
+      const token = await AsyncStorage.getItem("authToken");
       if (!token) return false;
 
-      const response = await fetch(`${API_URL}${API_ENDPOINTS.DOCUMENT_ANNOTATIONS(noteId)}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Token ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(annotation),
-      });
+      const response = await fetch(
+        `${API_URL}${API_ENDPOINTS.DOCUMENT_ANNOTATIONS(noteId)}`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Token ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(annotation),
+        }
+      );
 
       if (response.ok) {
         const data = await response.json();
@@ -230,35 +267,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
       }
       return false;
     } catch (error) {
-      console.error('Error saving annotation:', error);
-      return false;
-    }
-  };
-
-  // Delete annotation
-  const deleteAnnotation = async (annotationId: string) => {
-    try {
-      const token = await AsyncStorage.getItem('authToken');
-      if (!token) return false;
-
-      const response = await fetch(
-        `${API_URL}${API_ENDPOINTS.DELETE_ANNOTATION(noteId, annotationId)}`,
-        {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Token ${token}`,
-          },
-        }
-      );
-
-      if (response.ok) {
-        const newAnnotations = annotations.filter(ann => ann.id !== annotationId);
-        setAnnotations(newAnnotations);
-        return true;
-      }
-      return false;
-    } catch (error) {
-      console.error('Error deleting annotation:', error);
+      console.error("Error saving annotation:", error);
       return false;
     }
   };
@@ -266,14 +275,15 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   // Handle touch events for annotation
   const panResponder = PanResponder.create({
     onStartShouldSetPanResponder: () => isAnnotating,
-    onMoveShouldSetPanResponder: () => isAnnotating && selectedTool === 'drawing',
-    
+    onMoveShouldSetPanResponder: () =>
+      isAnnotating && selectedTool === "drawing",
+
     onPanResponderGrant: (evt) => {
       if (!isAnnotating) return;
 
       const { locationX, locationY } = evt.nativeEvent;
-      
-      if (selectedTool === 'drawing') {
+
+      if (selectedTool === "drawing") {
         setIsDrawing(true);
         drawingPathRef.current = `M${locationX},${locationY}`;
         setCurrentStroke(drawingPathRef.current);
@@ -294,7 +304,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
 
       const { locationX, locationY } = evt.nativeEvent;
 
-      if (selectedTool === 'drawing' && isDrawing) {
+      if (selectedTool === "drawing" && isDrawing) {
         drawingPathRef.current += ` L${locationX},${locationY}`;
         setCurrentStroke(drawingPathRef.current);
       } else if (currentAnnotation) {
@@ -310,27 +320,27 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
     onPanResponderRelease: (evt) => {
       if (!isAnnotating) return;
 
-      if (selectedTool === 'drawing' && isDrawing) {
+      if (selectedTool === "drawing" && isDrawing) {
         // Save drawing annotation
-        const annotation: Omit<Annotation, 'id' | 'created_at'> = {
-          type: 'drawing',
+        const annotation: Omit<Annotation, "id" | "created_at"> = {
+          type: "drawing",
           x: 0,
           y: 0,
           color: selectedColor,
           page: currentPage,
           strokeData: drawingPathRef.current,
         };
-        
+
         saveAnnotation(annotation);
         setIsDrawing(false);
-        setCurrentStroke('');
-        drawingPathRef.current = '';
-      } else if (currentAnnotation && selectedTool === 'note') {
+        setCurrentStroke("");
+        drawingPathRef.current = "";
+      } else if (currentAnnotation && selectedTool === "note") {
         // Show note modal for text input
         setShowNoteModal(true);
       } else if (currentAnnotation) {
         // Save other annotation types immediately
-        const annotation: Omit<Annotation, 'id' | 'created_at'> = {
+        const annotation: Omit<Annotation, "id" | "created_at"> = {
           type: selectedTool,
           x: currentAnnotation.x!,
           y: currentAnnotation.y!,
@@ -339,7 +349,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
           color: selectedColor,
           page: currentPage,
         };
-        
+
         saveAnnotation(annotation);
         setCurrentAnnotation(null);
       }
@@ -350,8 +360,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   const handleSaveNote = async () => {
     if (!currentAnnotation || !noteText.trim()) return;
 
-    const annotation: Omit<Annotation, 'id' | 'created_at'> = {
-      type: 'note',
+    const annotation: Omit<Annotation, "id" | "created_at"> = {
+      type: "note",
       x: currentAnnotation.x!,
       y: currentAnnotation.y!,
       width: currentAnnotation.width || 100,
@@ -364,7 +374,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
     const success = await saveAnnotation(annotation);
     if (success) {
       setShowNoteModal(false);
-      setNoteText('');
+      setNoteText("");
       setCurrentAnnotation(null);
     }
   };
@@ -372,117 +382,105 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   // Helper functions for document type styling
   const getDocumentTypeColor = () => {
     switch (actualDocumentType) {
-      case 'pdf': return '#EF4444';
-      case 'word':
-      case 'doc':
-      case 'docx': return '#2563EB';
-      case 'image': return '#059669';
-      case 'txt': return '#7C2D12';
-      default: return '#6B7280';
+      case "pdf":
+        return "#EF4444";
+      case "word":
+      case "doc":
+      case "docx":
+        return "#2563EB";
+      case "image":
+        return "#059669";
+      case "txt":
+        return "#7C2D12";
+      default:
+        return "#6B7280";
     }
   };
 
   const getDocumentTypeIcon = () => {
     switch (actualDocumentType) {
-      case 'pdf': return 'picture-as-pdf';
-      case 'word':
-      case 'doc':
-      case 'docx': return 'description';
-      case 'image': return 'image';
-      case 'txt': return 'text-snippet';
-      default: return 'insert-drive-file';
-    }
-  };
-
-  // Handle annotation tap for PDF viewer
-  const handleAnnotationTap = (x: number, y: number, page: number) => {
-    if (!isAnnotating) return;
-
-    if (selectedTool === 'note') {
-      // For note annotations, create a temporary annotation and show modal
-      setCurrentAnnotation({
-        type: 'note',
-        x: x,
-        y: y,
-        width: 100,
-        height: 50,
-        color: selectedColor,
-        page: page,
-      });
-      setShowNoteModal(true);
-    } else if (selectedTool === 'highlight') {
-      // Create a highlight annotation
-      const annotation: Omit<Annotation, 'id' | 'created_at'> = {
-        type: 'highlight',
-        x: x - 25, // Center the highlight around tap point
-        y: y - 10,
-        width: 50,
-        height: 20,
-        color: selectedColor,
-        page: page,
-      };
-      saveAnnotation(annotation);
-    } else if (selectedTool === 'underline' || selectedTool === 'strikethrough') {
-      // Create line annotations
-      const annotation: Omit<Annotation, 'id' | 'created_at'> = {
-        type: selectedTool,
-        x: x - 25,
-        y: y,
-        width: 50,
-        height: 2,
-        color: selectedColor,
-        page: page,
-      };
-      saveAnnotation(annotation);
+      case "pdf":
+        return "picture-as-pdf";
+      case "word":
+      case "doc":
+      case "docx":
+        return "description";
+      case "image":
+        return "image";
+      case "txt":
+        return "text-snippet";
+      default:
+        return "insert-drive-file";
     }
   };
 
   // Generate document URL for enhanced viewing with PDF.js support
   const getDocumentUrl = () => {
-    console.log('Getting document URL for:', { actualDocumentType, useAlternativeViewer, Platform: Platform.OS });
+    console.log("Getting document URL for:", {
+      actualDocumentType,
+      useAlternativeViewer,
+      Platform: Platform.OS,
+      documentUri,
+    });
+
+    // If the documentUri is from our backend (starts with /note_taking/documents/), 
+    // we need to add auth token
+    const isBackendDocument = documentUri.includes('/note_taking/documents/') || 
+                              documentUri.includes('/api/users/');
     
-    if (actualDocumentType === 'pdf') {
+    if (isBackendDocument) {
+      // For backend documents, we need to proxy through our authenticated endpoint
+      console.log("Using backend document from database:", documentUri);
+      const fullUrl = documentUri.startsWith('http') ? documentUri : `${API_URL}${documentUri}`;
+      return fullUrl;
+    }
+
+    if (actualDocumentType === "pdf") {
       // For PDFs, use enhanced PDF.js viewer
       if (useAlternativeViewer) {
         // Alternative: Try Google Docs viewer as fallback
         const encodedUri = encodeURIComponent(documentUri);
         const googleDocsUrl = `https://docs.google.com/viewer?url=${encodedUri}&embedded=true`;
-        console.log('Using Google Docs PDF viewer:', googleDocsUrl);
+        console.log("Using Google Docs PDF viewer:", googleDocsUrl);
         return googleDocsUrl;
       } else {
         // Primary: Use PDF.js viewer with enhanced controls
         const encodedUri = encodeURIComponent(documentUri);
         const pdfJsUrl = `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodedUri}`;
-        console.log('Using PDF.js viewer:', pdfJsUrl);
+        console.log("Using PDF.js viewer:", pdfJsUrl);
         return pdfJsUrl;
       }
-    } else if (actualDocumentType === 'image') {
+    } else if (actualDocumentType === "image") {
       // For images, display directly
-      console.log('Using direct image URL:', documentUri);
+      console.log("Using direct image URL:", documentUri);
       return documentUri;
-    } else if (actualDocumentType === 'word' || actualDocumentType === 'doc' || actualDocumentType === 'docx') {
+    } else if (
+      actualDocumentType === "word" ||
+      actualDocumentType === "doc" ||
+      actualDocumentType === "docx"
+    ) {
       // For Word documents, use Office Online viewer
       const encodedUri = encodeURIComponent(documentUri);
       if (useAlternativeViewer) {
         // Alternative: Google Docs viewer
         const googleDocsUrl = `https://docs.google.com/viewer?url=${encodedUri}&embedded=true`;
-        console.log('Using Google Docs for Word document:', googleDocsUrl);
+        console.log("Using Google Docs for Word document:", googleDocsUrl);
         return googleDocsUrl;
       } else {
         // Primary: Office Online viewer
         const officeUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodedUri}`;
-        console.log('Using Office Online viewer:', officeUrl);
+        console.log("Using Office Online viewer:", officeUrl);
         return officeUrl;
       }
     } else {
       // For other document types, try generic viewers
       const encodedUri = encodeURIComponent(documentUri);
       if (useAlternativeViewer) {
-        console.log('Using direct access for other document:', documentUri);
+        console.log("Using direct access for other document:", documentUri);
         return documentUri;
       } else {
         const googleDocsUrl = `https://docs.google.com/viewer?url=${encodedUri}&embedded=true`;
-        console.log('Using Google Docs for other document:', googleDocsUrl);
+        console.log("Using Google Docs for other document:", googleDocsUrl);
         return googleDocsUrl;
       }
     }
@@ -492,32 +490,37 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   const openInExternalBrowser = async () => {
     try {
       const url = documentUri;
-      console.log('Opening in external browser:', url);
-      
+      console.log("Opening in external browser:", url);
+
       const canOpen = await Linking.canOpenURL(url);
       if (canOpen) {
         await Linking.openURL(url);
       } else {
-        Alert.alert('Error', 'Cannot open this document in external browser. The URL might not be accessible from outside the app.');
+        Alert.alert(
+          "Error",
+          "Cannot open this document in external browser. The URL might not be accessible from outside the app."
+        );
       }
     } catch (error) {
-      console.error('Error opening document in external browser:', error);
-      Alert.alert('Error', 'Failed to open document in external browser');
+      console.error("Error opening document in external browser:", error);
+      Alert.alert("Error", "Failed to open document in external browser");
     }
   };
 
   // Render annotation overlay
   const renderAnnotationOverlay = () => {
-    const pageAnnotations = annotations.filter(ann => ann.page === currentPage);
+    const pageAnnotations = annotations.filter(
+      (ann) => ann.page === currentPage
+    );
 
     // Normalize potentially malformed SVG path strings (e.g., "M,10,10 L,20,20")
     const sanitizeSvgPath = (raw: string): string => {
-      if (!raw) return '';
+      if (!raw) return "";
       let path = raw
-        .replace(/([ML])\s*[\.,]\s*/g, '$1 ')
-        .replace(/\s+/g, ' ')
+        .replace(/([ML])\s*[\.,]\s*/g, "$1 ")
+        .replace(/\s+/g, " ")
         .trim();
-      let out = '';
+      let out = "";
       let i = 0;
       const len = path.length;
       const readNumber = (): { num: number | null; next: number } => {
@@ -525,13 +528,16 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
         const m = /^-?\d*\.?\d+/.exec(path.slice(j));
         if (!m) return { num: null, next: j };
         const val = parseFloat(m[0]);
-        return { num: Number.isFinite(val) ? val : null, next: j + m[0].length };
+        return {
+          num: Number.isFinite(val) ? val : null,
+          next: j + m[0].length,
+        };
       };
 
       while (i < len) {
         const ch = path[i];
-        if (ch === 'M' || ch === 'L') {
-          out += ch + ' ';
+        if (ch === "M" || ch === "L") {
+          out += ch + " ";
           i++;
           while (i < len && /[\s,]/.test(path[i])) i++;
           let { num: x, next } = readNumber();
@@ -542,32 +548,36 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
           if (y === null) continue;
           i = next2;
           // Consume optional :pressure
-          if (path[i] === ':') {
+          if (path[i] === ":") {
             let k = i + 1;
             const pm = /^-?\d*\.?\d+/.exec(path.slice(k));
-            if (pm) i = k + pm[0].length; else i = k;
+            if (pm) i = k + pm[0].length;
+            else i = k;
           }
           out += `${x},${y}`;
         } else {
-          if (ch === ',' || ch === '\\n' || ch === '\\r') { i++; continue; }
-          if (ch === 'Z' || ch === 'z') out += ch;
-          if (ch === ' ') {
-            if (out.length && out[out.length - 1] !== ' ') out += ' ';
+          if (ch === "," || ch === "\\n" || ch === "\\r") {
+            i++;
+            continue;
+          }
+          if (ch === "Z" || ch === "z") out += ch;
+          if (ch === " ") {
+            if (out.length && out[out.length - 1] !== " ") out += " ";
             i++;
             continue;
           }
           // skip other tokens
           i++;
         }
-        if (out.length && out[out.length - 1] !== ' ') out += ' ';
+        if (out.length && out[out.length - 1] !== " ") out += " ";
       }
       return out.trim();
     };
-    
+
     return (
       <Svg style={StyleSheet.absoluteFillObject} pointerEvents="none">
         {pageAnnotations.map((annotation) => {
-          if (annotation.type === 'drawing' && annotation.strokeData) {
+          if (annotation.type === "drawing" && annotation.strokeData) {
             return (
               <Path
                 key={annotation.id}
@@ -579,7 +589,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
                 strokeLinejoin="round"
               />
             );
-          } else if (annotation.type === 'highlight') {
+          } else if (annotation.type === "highlight") {
             return (
               <Rect
                 key={annotation.id}
@@ -591,7 +601,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
                 opacity={0.3}
               />
             );
-          } else if (annotation.type === 'note') {
+          } else if (annotation.type === "note") {
             return (
               <React.Fragment key={annotation.id}>
                 <Circle
@@ -614,7 +624,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
           }
           return null;
         })}
-        
+
         {/* Current stroke while drawing */}
         {isDrawing && currentStroke && (
           <Path
@@ -626,9 +636,9 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
             strokeLinejoin="round"
           />
         )}
-        
+
         {/* Current selection */}
-        {currentAnnotation && selectedTool !== 'drawing' && (
+        {currentAnnotation && selectedTool !== "drawing" && (
           <Rect
             x={currentAnnotation.x!}
             y={currentAnnotation.y!}
@@ -646,12 +656,12 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   };
 
   useEffect(() => {
-    console.log('DocumentViewer mounted with:', {
+    console.log("DocumentViewer mounted with:", {
       documentUri,
       documentName,
       documentType,
       actualDocumentType,
-      noteId
+      noteId,
     });
     loadAnnotations();
   }, [loadAnnotations]);
@@ -659,35 +669,43 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      
+
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={onClose} style={styles.closeButton}>
           <MaterialIcons name="arrow-back" size={24} color="#1F2937" />
         </TouchableOpacity>
-        
+
         <Text style={styles.headerTitle} numberOfLines={1}>
           {documentName}
         </Text>
-        
+
         <View style={styles.headerActions}>
           {/* Document Type Badge */}
-          <View style={[styles.documentTypeBadge, { backgroundColor: getDocumentTypeColor() }]}>
-            <MaterialIcons 
-              name={getDocumentTypeIcon()} 
-              size={14} 
-              color="#FFFFFF" 
+          <View
+            style={[
+              styles.documentTypeBadge,
+              { backgroundColor: getDocumentTypeColor() },
+            ]}
+          >
+            <MaterialIcons
+              name={getDocumentTypeIcon()}
+              size={14}
+              color="#FFFFFF"
             />
             <Text style={styles.documentTypeText}>
               {actualDocumentType.toUpperCase()}
             </Text>
           </View>
-          
+
           <Text style={styles.pageInfo}>
             Page {currentPage}/{totalPages}
           </Text>
-          
-          {(actualDocumentType === 'pdf' || actualDocumentType === 'word' || actualDocumentType === 'doc' || actualDocumentType === 'docx') && (
+
+          {(actualDocumentType === "pdf" ||
+            actualDocumentType === "word" ||
+            actualDocumentType === "doc" ||
+            actualDocumentType === "docx") && (
             <TouchableOpacity
               style={styles.switchViewerButton}
               onPress={() => {
@@ -702,29 +720,35 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
             >
               <MaterialIcons name="swap-horiz" size={16} color="#6366F1" />
               <Text style={styles.switchViewerText}>
-                {actualDocumentType === 'pdf' 
-                  ? (useAlternativeViewer ? 'PDF.js' : 'Google Docs')
-                  : (useAlternativeViewer ? 'Office Online' : 'Google Docs')
-                }
+                {actualDocumentType === "pdf"
+                  ? useAlternativeViewer
+                    ? "PDF.js"
+                    : "Google Docs"
+                  : useAlternativeViewer
+                  ? "Office Online"
+                  : "Google Docs"}
               </Text>
             </TouchableOpacity>
           )}
-          
+
           <TouchableOpacity
             style={styles.externalButton}
             onPress={openInExternalBrowser}
           >
             <MaterialIcons name="open-in-new" size={20} color="#6366F1" />
           </TouchableOpacity>
-          
+
           <TouchableOpacity
-            style={[styles.annotateButton, isAnnotating && styles.annotateButtonActive]}
+            style={[
+              styles.annotateButton,
+              isAnnotating && styles.annotateButtonActive,
+            ]}
             onPress={() => setIsAnnotating(!isAnnotating)}
           >
-            <MaterialIcons 
-              name={isAnnotating ? "edit-off" : "edit"} 
-              size={20} 
-              color={isAnnotating ? "#FFFFFF" : "#6366F1"} 
+            <MaterialIcons
+              name={isAnnotating ? "edit-off" : "edit"}
+              size={20}
+              color={isAnnotating ? "#FFFFFF" : "#6366F1"}
             />
           </TouchableOpacity>
         </View>
@@ -736,7 +760,15 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {/* Tool Selection */}
             <View style={styles.toolGroup}>
-              {(['highlight', 'note', 'underline', 'strikethrough', 'drawing'] as const).map((tool) => (
+              {(
+                [
+                  "highlight",
+                  "note",
+                  "underline",
+                  "strikethrough",
+                  "drawing",
+                ] as const
+              ).map((tool) => (
                 <TouchableOpacity
                   key={tool}
                   style={[
@@ -747,11 +779,15 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
                 >
                   <MaterialIcons
                     name={
-                      tool === 'highlight' ? 'highlight' :
-                      tool === 'note' ? 'note-add' :
-                      tool === 'underline' ? 'format-underlined' :
-                      tool === 'strikethrough' ? 'strikethrough-s' :
-                      'brush'
+                      tool === "highlight"
+                        ? "highlight"
+                        : tool === "note"
+                        ? "note-add"
+                        : tool === "underline"
+                        ? "format-underlined"
+                        : tool === "strikethrough"
+                        ? "strikethrough-s"
+                        : "brush"
                     }
                     size={18}
                     color={selectedTool === tool ? "#FFFFFF" : "#374151"}
@@ -782,36 +818,45 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
       <View style={styles.documentContainer} {...panResponder.panHandlers}>
         <WebView
           ref={webViewRef}
-          source={{ 
+          source={{
             uri: getDocumentUrl(),
-            headers: actualDocumentType === 'image' ? {
-              'Cache-Control': 'no-cache, no-store, must-revalidate',
-              'Pragma': 'no-cache',
-              'Expires': '0'
-            } : undefined
+            headers: (documentUri.includes('/note_taking/documents/') || documentUri.includes('/api/users/')) && authToken
+              ? {
+                  "Authorization": `Token ${authToken}`,
+                  "Cache-Control": "no-cache, no-store, must-revalidate",
+                  "Pragma": "no-cache",
+                  "Expires": "0",
+                }
+              : actualDocumentType === "image"
+              ? {
+                  "Cache-Control": "no-cache, no-store, must-revalidate",
+                  Pragma: "no-cache",
+                  Expires: "0",
+                }
+              : undefined,
           }}
           style={styles.webView}
           onLoadStart={() => {
             setIsLoading(true);
             const currentUrl = getDocumentUrl();
-            console.log('Loading document:', documentUri);
-            console.log('Document type:', actualDocumentType);
-            console.log('WebView URL:', currentUrl);
-            console.log('useAlternativeViewer:', useAlternativeViewer);
-            console.log('Platform:', Platform.OS);
+            console.log("Loading document:", documentUri);
+            console.log("Document type:", actualDocumentType);
+            console.log("WebView URL:", currentUrl);
+            console.log("useAlternativeViewer:", useAlternativeViewer);
+            console.log("Platform:", Platform.OS);
           }}
           onLoadEnd={() => {
             setIsLoading(false);
-            console.log('Document loaded successfully');
-            console.log('Final loaded URL:', getDocumentUrl());
-            
+            console.log("Document loaded successfully");
+            console.log("Final loaded URL:", getDocumentUrl());
+
             // For images, set total pages to 1 immediately
-            if (actualDocumentType === 'image') {
+            if (actualDocumentType === "image") {
               setTotalPages(1);
               setCurrentPage(1);
               return;
             }
-            
+
             // Inject JavaScript to get document info and enable enhanced PDF features
             webViewRef.current?.injectJavaScript(`
               (function() {
@@ -925,32 +970,36 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
           onMessage={(event) => {
             try {
               const data = JSON.parse(event.nativeEvent.data);
-              console.log('Message from WebView:', data);
-              
-              if (data.type === 'documentInfo') {
+              console.log("Message from WebView:", data);
+
+              if (data.type === "documentInfo") {
                 setTotalPages(data.totalPages || 1);
                 setCurrentPage(data.currentPage || 1);
-                console.log('Document info updated:', data);
-              } else if (data.type === 'pageChanged') {
+                console.log("Document info updated:", data);
+              } else if (data.type === "pageChanged") {
                 setCurrentPage(data.currentPage || 1);
-                console.log('Page changed to:', data.currentPage);
-              } else if (data.type === 'error') {
-                console.warn('WebView reported error:', data.message);
+                console.log("Page changed to:", data.currentPage);
+              } else if (data.type === "error") {
+                console.warn("WebView reported error:", data.message);
                 // Set error state if the error seems critical
-                if (data.message.toLowerCase().includes('preview not available') || 
-                    data.message.toLowerCase().includes('not found')) {
+                if (
+                  data.message
+                    .toLowerCase()
+                    .includes("preview not available") ||
+                  data.message.toLowerCase().includes("not found")
+                ) {
                   setHasError(true);
                 }
               }
             } catch (e) {
-              console.log('Failed to parse message:', e);
+              console.log("Failed to parse message:", e);
             }
           }}
           allowsInlineMediaPlayback
           mediaPlaybackRequiresUserAction={false}
           javaScriptEnabled
           domStorageEnabled
-          scalesPageToFit={actualDocumentType === 'image'}
+          scalesPageToFit={actualDocumentType === "image"}
           startInLoadingState
           mixedContentMode="compatibility"
           allowFileAccess={true}
@@ -959,24 +1008,26 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
           renderLoading={() => (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color="#6366F1" />
-              <Text style={styles.loadingText}>Loading {actualDocumentType}...</Text>
+              <Text style={styles.loadingText}>
+                Loading {actualDocumentType}...
+              </Text>
             </View>
           )}
           onError={(syntheticEvent) => {
             const { nativeEvent } = syntheticEvent;
-            console.warn('WebView error: ', nativeEvent);
+            console.warn("WebView error: ", nativeEvent);
             setIsLoading(false);
             setHasError(true);
-            
+
             // Try alternative viewer if not already tried
-            if (!useAlternativeViewer && actualDocumentType === 'pdf') {
+            if (!useAlternativeViewer && actualDocumentType === "pdf") {
               Alert.alert(
-                'PDF Viewer Error',
-                'The PDF failed to load with PDF.js. Would you like to try Google Docs viewer instead?',
+                "PDF Viewer Error",
+                "The PDF failed to load with PDF.js. Would you like to try Google Docs viewer instead?",
                 [
-                  { text: 'Cancel', style: 'cancel' },
-                  { 
-                    text: 'Try Google Docs', 
+                  { text: "Cancel", style: "cancel" },
+                  {
+                    text: "Try Google Docs",
                     onPress: () => {
                       setUseAlternativeViewer(true);
                       setHasError(false);
@@ -985,35 +1036,35 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
                       setTimeout(() => {
                         webViewRef.current?.reload();
                       }, 100);
-                    }
+                    },
                   },
-                  { text: 'Open in Browser', onPress: openInExternalBrowser }
+                  { text: "Open in Browser", onPress: openInExternalBrowser },
                 ]
               );
             } else {
               Alert.alert(
-                'Document Loading Error',
-                'Failed to load the document in any available viewer. This might happen if the document format is not supported or there are network connectivity issues.',
+                "Document Loading Error",
+                "Failed to load the document in any available viewer. This might happen if the document format is not supported or there are network connectivity issues.",
                 [
-                  { text: 'OK', style: 'cancel' },
-                  { text: 'Open in Browser', onPress: openInExternalBrowser }
+                  { text: "OK", style: "cancel" },
+                  { text: "Open in Browser", onPress: openInExternalBrowser },
                 ]
               );
             }
           }}
           onHttpError={(syntheticEvent) => {
             const { nativeEvent } = syntheticEvent;
-            console.warn('WebView HTTP error: ', nativeEvent);
+            console.warn("WebView HTTP error: ", nativeEvent);
             setIsLoading(false);
             if (nativeEvent.statusCode >= 400) {
               setHasError(true);
             }
           }}
         />
-        
+
         {/* Annotation Overlay */}
         {renderAnnotationOverlay()}
-        
+
         {/* Loading Indicator */}
         {isLoading && (
           <View style={styles.loadingContainer}>
@@ -1021,14 +1072,15 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
             <Text style={styles.loadingText}>Loading document...</Text>
           </View>
         )}
-        
+
         {/* Error State */}
         {hasError && !isLoading && (
           <View style={styles.errorContainer}>
             <MaterialIcons name="error-outline" size={64} color="#EF4444" />
             <Text style={styles.errorTitle}>Failed to Load Document</Text>
             <Text style={styles.errorMessage}>
-              The document viewer couldn't load this file. This might happen with certain file formats or corrupted files.
+              The document viewer couldn't load this file. This might happen
+              with certain file formats or corrupted files.
             </Text>
             <TouchableOpacity
               style={styles.retryButton}
@@ -1054,14 +1106,17 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
       {/* Page Navigation */}
       <View style={styles.pageNavigation}>
         <TouchableOpacity
-          style={[styles.navButton, currentPage === 1 && styles.navButtonDisabled]}
+          style={[
+            styles.navButton,
+            currentPage === 1 && styles.navButtonDisabled,
+          ]}
           onPress={() => {
             if (currentPage > 1) {
               const newPage = currentPage - 1;
               setCurrentPage(newPage);
-              
+
               // Send command to PDF.js viewer to change page
-              if (actualDocumentType === 'pdf' && webViewRef.current) {
+              if (actualDocumentType === "pdf" && webViewRef.current) {
                 webViewRef.current.injectJavaScript(`
                   if (window.PDFViewerApplication && window.PDFViewerApplication.pdfViewer) {
                     window.PDFViewerApplication.pdfViewer.currentPageNumber = ${newPage};
@@ -1072,10 +1127,10 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
           }}
           disabled={currentPage === 1}
         >
-          <MaterialIcons 
-            name="chevron-left" 
-            size={24} 
-            color={currentPage === 1 ? "#D1D5DB" : "#6366F1"} 
+          <MaterialIcons
+            name="chevron-left"
+            size={24}
+            color={currentPage === 1 ? "#D1D5DB" : "#6366F1"}
           />
         </TouchableOpacity>
 
@@ -1083,23 +1138,26 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
           <Text style={styles.pageText}>
             {currentPage} / {totalPages}
           </Text>
-          {actualDocumentType === 'pdf' && !useAlternativeViewer && (
+          {actualDocumentType === "pdf" && !useAlternativeViewer && (
             <Text style={styles.viewerTypeText}>PDF.js</Text>
           )}
-          {actualDocumentType === 'pdf' && useAlternativeViewer && (
+          {actualDocumentType === "pdf" && useAlternativeViewer && (
             <Text style={styles.viewerTypeText}>Google Docs</Text>
           )}
         </View>
 
         <TouchableOpacity
-          style={[styles.navButton, currentPage === totalPages && styles.navButtonDisabled]}
+          style={[
+            styles.navButton,
+            currentPage === totalPages && styles.navButtonDisabled,
+          ]}
           onPress={() => {
             if (currentPage < totalPages) {
               const newPage = currentPage + 1;
               setCurrentPage(newPage);
-              
+
               // Send command to PDF.js viewer to change page
-              if (actualDocumentType === 'pdf' && webViewRef.current) {
+              if (actualDocumentType === "pdf" && webViewRef.current) {
                 webViewRef.current.injectJavaScript(`
                   if (window.PDFViewerApplication && window.PDFViewerApplication.pdfViewer) {
                     window.PDFViewerApplication.pdfViewer.currentPageNumber = ${newPage};
@@ -1110,10 +1168,10 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
           }}
           disabled={currentPage === totalPages}
         >
-          <MaterialIcons 
-            name="chevron-right" 
-            size={24} 
-            color={currentPage === totalPages ? "#D1D5DB" : "#6366F1"} 
+          <MaterialIcons
+            name="chevron-right"
+            size={24}
+            color={currentPage === totalPages ? "#D1D5DB" : "#6366F1"}
           />
         </TouchableOpacity>
       </View>
@@ -1135,7 +1193,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
               <MaterialIcons name="close" size={24} color="#6B7280" />
             </TouchableOpacity>
           </View>
-          
+
           <View style={styles.modalContent}>
             <TextInput
               style={styles.noteInput}
@@ -1147,7 +1205,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
               autoFocus
             />
           </View>
-          
+
           <View style={styles.modalFooter}>
             <TouchableOpacity
               style={styles.cancelButton}
@@ -1155,9 +1213,12 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
             >
               <Text style={styles.cancelButtonText}>Cancel</Text>
             </TouchableOpacity>
-            
+
             <TouchableOpacity
-              style={[styles.saveButton, !noteText.trim() && styles.saveButtonDisabled]}
+              style={[
+                styles.saveButton,
+                !noteText.trim() && styles.saveButtonDisabled,
+              ]}
               onPress={handleSaveNote}
               disabled={!noteText.trim()}
             >
@@ -1173,17 +1234,17 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: "#F8FAFC",
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-    paddingTop: Platform.OS === 'ios' ? 50 : 20,
+    borderBottomColor: "#E5E7EB",
+    paddingTop: Platform.OS === "ios" ? 50 : 20,
   },
   closeButton: {
     padding: 8,
@@ -1192,17 +1253,17 @@ const styles = StyleSheet.create({
   headerTitle: {
     flex: 1,
     fontSize: 18,
-    fontFamily: 'Inter-Bold',
-    color: '#1F2937',
+    fontFamily: "Inter-Bold",
+    color: "#1F2937",
   },
   headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 12,
   },
   documentTypeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
@@ -1210,66 +1271,66 @@ const styles = StyleSheet.create({
   },
   documentTypeText: {
     fontSize: 10,
-    fontFamily: 'Inter-Bold',
-    color: '#FFFFFF',
+    fontFamily: "Inter-Bold",
+    color: "#FFFFFF",
   },
   pageInfo: {
     fontSize: 12,
-    fontFamily: 'Inter-Medium',
-    color: '#6B7280',
+    fontFamily: "Inter-Medium",
+    color: "#6B7280",
   },
   annotateButton: {
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 6,
-    backgroundColor: '#EEF2FF',
+    backgroundColor: "#EEF2FF",
     borderWidth: 1,
-    borderColor: '#6366F1',
+    borderColor: "#6366F1",
   },
   externalButton: {
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 6,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: "#F3F4F6",
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: "#D1D5DB",
   },
   switchViewerButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 8,
     paddingVertical: 6,
     borderRadius: 4,
-    backgroundColor: '#EEF2FF',
+    backgroundColor: "#EEF2FF",
     borderWidth: 1,
-    borderColor: '#C7D2FE',
+    borderColor: "#C7D2FE",
   },
   switchViewerText: {
     fontSize: 10,
-    fontFamily: 'Inter-Medium',
-    color: '#6366F1',
+    fontFamily: "Inter-Medium",
+    color: "#6366F1",
     marginLeft: 4,
   },
   debugButton: {
     paddingHorizontal: 8,
     paddingVertical: 6,
     borderRadius: 4,
-    backgroundColor: '#FEF3C7',
+    backgroundColor: "#FEF3C7",
     borderWidth: 1,
-    borderColor: '#F59E0B',
+    borderColor: "#F59E0B",
   },
   annotateButtonActive: {
-    backgroundColor: '#6366F1',
+    backgroundColor: "#6366F1",
   },
   toolbar: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: "#E5E7EB",
   },
   toolGroup: {
-    flexDirection: 'row',
+    flexDirection: "row",
     marginRight: 20,
     gap: 8,
   },
@@ -1277,15 +1338,15 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 8,
-    backgroundColor: '#F3F4F6',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "#F3F4F6",
+    justifyContent: "center",
+    alignItems: "center",
   },
   toolButtonActive: {
-    backgroundColor: '#6366F1',
+    backgroundColor: "#6366F1",
   },
   colorGroup: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 8,
   },
   colorButton: {
@@ -1293,85 +1354,85 @@ const styles = StyleSheet.create({
     height: 32,
     borderRadius: 16,
     borderWidth: 2,
-    borderColor: 'transparent',
+    borderColor: "transparent",
   },
   colorButtonActive: {
-    borderColor: '#374151',
+    borderColor: "#374151",
     borderWidth: 3,
   },
   documentContainer: {
     flex: 1,
-    position: 'relative',
+    position: "relative",
   },
   webView: {
     flex: 1,
   },
   loadingContainer: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
+    justifyContent: "center",
+    alignItems: "center",
   },
   loadingText: {
     marginTop: 12,
     fontSize: 16,
-    fontFamily: 'Inter-Medium',
-    color: '#6B7280',
+    fontFamily: "Inter-Medium",
+    color: "#6B7280",
   },
   pageNavigation: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     paddingVertical: 16,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    borderTopColor: "#E5E7EB",
     gap: 20,
   },
   pageInfoContainer: {
-    alignItems: 'center',
+    alignItems: "center",
   },
   pageText: {
     fontSize: 16,
-    fontFamily: 'Inter-Medium',
-    color: '#1F2937',
+    fontFamily: "Inter-Medium",
+    color: "#1F2937",
   },
   viewerTypeText: {
     fontSize: 10,
-    fontFamily: 'Inter-Regular',
-    color: '#6B7280',
+    fontFamily: "Inter-Regular",
+    color: "#6B7280",
     marginTop: 2,
   },
   navButton: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#EEF2FF',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "#EEF2FF",
+    justifyContent: "center",
+    alignItems: "center",
   },
   navButtonDisabled: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: "#F3F4F6",
   },
   modalContainer: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
   },
   modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 20,
     paddingVertical: 16,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-    paddingTop: Platform.OS === 'ios' ? 50 : 20,
+    borderBottomColor: "#E5E7EB",
+    paddingTop: Platform.OS === "ios" ? 50 : 20,
   },
   modalTitle: {
     fontSize: 18,
-    fontFamily: 'Inter-Bold',
-    color: '#1F2937',
+    fontFamily: "Inter-Bold",
+    color: "#1F2937",
   },
   modalCloseButton: {
     padding: 4,
@@ -1382,76 +1443,76 @@ const styles = StyleSheet.create({
   },
   noteInput: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: "#F9FAFB",
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: "#D1D5DB",
     borderRadius: 8,
     padding: 16,
     fontSize: 16,
-    fontFamily: 'Inter-Regular',
-    textAlignVertical: 'top',
-    color: '#374151',
+    fontFamily: "Inter-Regular",
+    textAlignVertical: "top",
+    color: "#374151",
   },
   modalFooter: {
-    flexDirection: 'row',
+    flexDirection: "row",
     paddingHorizontal: 20,
     paddingVertical: 16,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    borderTopColor: "#E5E7EB",
     gap: 12,
   },
   cancelButton: {
     flex: 1,
     paddingVertical: 14,
-    alignItems: 'center',
+    alignItems: "center",
     borderRadius: 8,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: "#F3F4F6",
   },
   cancelButtonText: {
     fontSize: 16,
-    fontFamily: 'Inter-Medium',
-    color: '#374151',
+    fontFamily: "Inter-Medium",
+    color: "#374151",
   },
   saveButton: {
     flex: 2,
     paddingVertical: 14,
-    alignItems: 'center',
+    alignItems: "center",
     borderRadius: 8,
-    backgroundColor: '#6366F1',
+    backgroundColor: "#6366F1",
   },
   saveButtonDisabled: {
-    backgroundColor: '#D1D5DB',
+    backgroundColor: "#D1D5DB",
   },
   saveButtonText: {
     fontSize: 16,
-    fontFamily: 'Inter-Medium',
-    color: '#FFFFFF',
+    fontFamily: "Inter-Medium",
+    color: "#FFFFFF",
   },
   errorContainer: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#FFFFFF',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "#FFFFFF",
+    justifyContent: "center",
+    alignItems: "center",
     padding: 32,
   },
   errorTitle: {
     fontSize: 20,
-    fontFamily: 'Inter-Bold',
-    color: '#1F2937',
+    fontFamily: "Inter-Bold",
+    color: "#1F2937",
     marginTop: 16,
     marginBottom: 8,
   },
   errorMessage: {
     fontSize: 16,
-    fontFamily: 'Inter-Regular',
-    color: '#6B7280',
-    textAlign: 'center',
+    fontFamily: "Inter-Regular",
+    color: "#6B7280",
+    textAlign: "center",
     lineHeight: 24,
     marginBottom: 24,
   },
   retryButton: {
-    backgroundColor: '#6366F1',
+    backgroundColor: "#6366F1",
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 8,
@@ -1459,21 +1520,21 @@ const styles = StyleSheet.create({
   },
   retryButtonText: {
     fontSize: 16,
-    fontFamily: 'Inter-Medium',
-    color: '#FFFFFF',
+    fontFamily: "Inter-Medium",
+    color: "#FFFFFF",
   },
   openExternalButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 8,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: "#F3F4F6",
   },
   openExternalText: {
     fontSize: 16,
-    fontFamily: 'Inter-Medium',
-    color: '#6366F1',
+    fontFamily: "Inter-Medium",
+    color: "#6366F1",
     marginLeft: 8,
   },
 });

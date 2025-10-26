@@ -1,8 +1,12 @@
 from __future__ import absolute_import, unicode_literals
 from celery import shared_task
 from django.utils import timezone
-from datetime import datetime, timedelta
+from datetime import timedelta
 from django.db import transaction
+from django.conf import settings
+from logs.models import UserLog, Log
+from task_manager.models import Task
+from notifications.models import Notification
 import logging
 import pytz
 
@@ -10,14 +14,10 @@ logger = logging.getLogger(__name__)
 
 def get_local_timezone():
     """Get the local timezone from Django settings"""
-    from django.conf import settings
     return pytz.timezone(settings.TIME_ZONE)
 
 def has_recent_user_activity(hours=24):
     """Check if there has been any user activity in the last N hours"""
-    from django.contrib.auth.models import User
-    from logs.models import UserLog, Log
-    
     try:
         local_tz = get_local_timezone()
         now_local = timezone.now().astimezone(local_tz)
@@ -57,11 +57,6 @@ def check_due_tasks(self):
                 'reason': 'no_recent_user_activity',
                 'local_time': timezone.now().astimezone(get_local_timezone()).isoformat()
             }
-        
-        # Import here to avoid circular imports
-        from task_manager.models import Task
-        from notifications.models import Notification
-        
         print("Running check_due_tasks...")
         logger.info("Running check_due_tasks...")
         
@@ -173,10 +168,6 @@ def check_upcoming_task_reminders(self):
                 'local_time': timezone.now().astimezone(get_local_timezone()).isoformat()
             }
         
-        # Import here to avoid circular imports
-        from task_manager.models import Task
-        from notifications.models import Notification
-        
         print("Running check_upcoming_task_reminders...")
         logger.info("Running check_upcoming_task_reminders...")
         
@@ -232,10 +223,6 @@ def check_upcoming_task_reminders(self):
 def send_individual_task_reminder(self, task_id):
     """Send reminder for a specific task"""
     try:
-        # Import here to avoid circular imports
-        from task_manager.models import Task
-        from notifications.models import Notification
-        
         print(f"Sending reminder for task ID: {task_id}")
         logger.info(f"Sending reminder for task ID: {task_id}")
         

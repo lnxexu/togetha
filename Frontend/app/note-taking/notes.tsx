@@ -685,22 +685,30 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
           const createdAt = toDate(n.createdAt) || toDate(n.created_at) || new Date(0);
           const updatedAt = toDate(n.updatedAt) || toDate(n.updated_at) || toDate(n.lastModified) || createdAt;
           const lastAccessedAt = toDate(n.lastAccessedAt) || toDate(n.last_accessed);
+          // Preserve document URL from server responses if present
+          const serverDocumentUrl = (n.document_url || n.documentURL || n.document || null);
+          const serverDocumentFile = (n.document_file || n.documentFile || null);
+          // Compute type: if there's a document URL/file, treat as a document even if n.type is missing
+          const computedType = (n.type && typeof n.type === 'string')
+            ? n.type
+            : ((serverDocumentUrl || serverDocumentFile) ? 'document' : 'text');
           return {
             id: n.id?.toString?.() ?? String(n.id),
             title: n.title || "",
-            content: n.content || "",
+            content: computedType === 'document' ? "" : (n.content || ""),  // Clear content for document notes
             formatted_content: n.formatted_content || "",
             folder: n.folder || n.folder_name || null,
             folderId: n.folderId || (n.folder ? n.folder.toString() : null),
             createdAt,
             updatedAt,
             lastAccessedAt,
-            type: n.type || "text",
+            type: computedType,
             is_archived: n.is_archived || false,
             tags: n.tags || [],
             template: n.template || null,
             drawing_data: n.drawing_data || null,
-            document_file: n.document_file || null,
+            document_file: serverDocumentFile,
+            document_url: serverDocumentUrl,
             document_annotations: n.document_annotations || null,
           };
         });
@@ -1037,53 +1045,50 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
       // Update access time to move note to top - AWAIT this to ensure storage is updated
       await updateNoteAccessTime(note.id);
 
-      // Check if it's a document type note
+      // Check if it's a document type note - prioritize this over content-based detection
       if (note.type === "document") {
-        // Open document in appropriate viewer for annotation
-        const documentType = note.title?.toLowerCase().includes(".pdf")
-          ? "pdf"
-          : note.title?.toLowerCase().includes(".doc")
-          ? "word"
-          : "document";
-
         // Get document URL from note data - prioritize document_url over document_file
-        const documentUrl = note.document_url || note.document_file;
-
-        if (documentUrl) {
-          let finalDocumentUri = documentUrl;
-
-          // For PDF files, download to local storage if it's a remote URL
-          if (documentType === "pdf" && isRemoteURL(documentUrl)) {
-            try {
-              finalDocumentUri = await getLocalPDFPath(documentUrl);
-            } catch (error) {
-              console.error("Failed to download PDF to local storage:", error);
-              // Fall back to original URL - PDFAnnotationViewer will handle the error
-              finalDocumentUri = documentUrl;
-            }
-          }
-
-          setCurrentDocument({
-            uri: finalDocumentUri,
-            name: note.title || "Untitled Document",
-            noteId: note.id,
-            type: documentType,
-          });
-
-          // Use PDFAnnotationViewer for PDF files, DocumentViewer for others
-          if (documentType === "pdf") {
-            setShowPDFViewer(true);
-          } else {
-            setShowDocumentViewer(true);
-          }
-          return;
-        } else {
-          console.warn(
-            "Document note found but no document URL available:",
-            note
-          );
-          // Fall through to regular note editor as fallback
+        let documentUrl = (note as any).document_url || (note as any).document_file || "";
+        
+        // If no document URL, construct it from the API for server-hosted documents
+        if (!documentUrl) {
+          documentUrl = `${API_URL}/note_taking/documents/${note.id}/serve/`;
         }
+        
+        const lowerTitle = note.title?.toLowerCase?.() || "";
+        const lowerUrl = documentUrl?.toLowerCase?.() || "";
+        const documentType = (lowerUrl.includes('.pdf') || lowerTitle.includes('.pdf'))
+          ? 'pdf'
+          : (lowerUrl.includes('.doc') || lowerTitle.includes('.doc'))
+          ? 'word'
+          : 'document';
+
+        // For PDF files, download to local storage if it's a remote URL
+        let finalDocumentUri = documentUrl;
+        if (documentType === "pdf" && isRemoteURL(documentUrl)) {
+          try {
+            finalDocumentUri = await getLocalPDFPath(documentUrl);
+          } catch (error) {
+            console.error("Failed to download PDF to local storage:", error);
+            // Fall back to original URL - PDFAnnotationViewer will handle the error
+            finalDocumentUri = documentUrl;
+          }
+        }
+
+        setCurrentDocument({
+          uri: finalDocumentUri,
+          name: note.title || "Untitled Document",
+          noteId: note.id,
+          type: documentType,
+        });
+
+        // Use PDFAnnotationViewer for PDF files, DocumentViewer for others
+        if (documentType === "pdf") {
+          setShowPDFViewer(true);
+        } else {
+          setShowDocumentViewer(true);
+        }
+        return;
       }
 
       // Use the enhanced drawing detection
@@ -1283,7 +1288,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
 
           const formData = new FormData();
           formData.append("title", documentInfo.name);
-          formData.append("content", `Imported document: ${documentInfo.name}`);
+          formData.append("content", "");  // Don't set content for document notes
           formData.append("type", "document");
 
           formData.append("document", {
@@ -1406,7 +1411,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
         console.log('💾 Creating offline note with document data...');
         const noteData = {
           title: documentInfo.name,
-          content: `Imported document: ${documentInfo.name}`,
+          content: "",  // Don't set content for document notes
           type: "document" as const,
           document_file: localUri, // Store local file URI
           document_url: localUri, // Store local file URI
@@ -2064,10 +2069,10 @@ const handleCreateFolder = async () => {
       // Use the enhanced drawing detection
       const isDrawing = isDrawingNote(item);
 
-      // Document detection
-      const isDocument =
-        item.type === "document" ||
-        (item.document_file && item.document_file.trim() !== "");
+      // Document detection - prioritize type over URL/file presence
+      const isDocument = item.type === "document" ||
+        (!!item.document_file && item.document_file.trim() !== "") ||
+        (!!(item as any).document_url && String((item as any).document_url).trim() !== "");
 
       // Enhanced stroke count calculation
       const getStrokeCount = () => {
@@ -2151,8 +2156,8 @@ const handleCreateFolder = async () => {
           );
         } else if (isDocument) {
           // Document preview with enhanced PDF first-page + overlays (if PDF)
-          const isPdf = (item.title?.toLowerCase().includes('.pdf') || item.document_file?.toLowerCase().includes('.pdf')) ?? false;
-          const docUrl = item.document_url || item.document_file || '';
+          const docUrl = (item as any).document_url || item.document_file || '';
+          const isPdf = (item.title?.toLowerCase().includes('.pdf') || docUrl?.toLowerCase?.().includes('.pdf')) ?? false;
           return (
             <View style={styles.previewImageContainer}>
               {isPdf ? (

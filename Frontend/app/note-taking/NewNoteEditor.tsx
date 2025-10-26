@@ -193,6 +193,15 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   const [currentColorAction, setCurrentColorAction] = useState<
     "text" | "background" | null
   >(null);
+  // Refs and state for small anchored color dropdown (like PDFToolbar)
+  const textColorButtonRef = useRef<any>(null);
+  const bgColorButtonRef = useRef<any>(null);
+  const [colorMenuPos, setColorMenuPos] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
   // Removed Text Styles dropdown per request
   const [folders, setFolders] = useState<any[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(
@@ -583,7 +592,20 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
 
   const openColorPicker = (type: "text" | "background") => {
     setCurrentColorAction(type);
-    setShowColorPicker(true);
+    // open anchored small dropdown like PDFToolbar
+    requestAnimationFrame(() => {
+      try {
+        const ref = type === "text" ? textColorButtonRef.current : bgColorButtonRef.current;
+        if (ref && typeof ref.measureInWindow === "function") {
+          ref.measureInWindow((x: number, y: number, width: number, height: number) => {
+            setColorMenuPos({ x, y, width, height });
+            setShowColorPicker(true);
+          });
+          return;
+        }
+      } catch (e) {}
+      setShowColorPicker(true);
+    });
   };
 
   const applyColor = (colorName: string, colorHex: string) => {
@@ -1229,18 +1251,20 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
                 <View style={styles.toolbarSection}>
                   {/* Colors */}
                   <TouchableOpacity
+                    ref={textColorButtonRef}
                     style={[styles.toolButton, styles.colorButton]}
                     onPress={() => openColorPicker("text")}
                   >
-                    <MaterialIcons name="format-color-text" size={20} color="#374151" />
+                    <MaterialIcons name="format-color-text" size={18} color="#374151" />
                     <View style={[styles.colorIndicator, { backgroundColor: textColor === 'Default' ? '#000' : textColor }]} />
                   </TouchableOpacity>
                   
                   <TouchableOpacity
+                    ref={bgColorButtonRef}
                     style={[styles.toolButton, styles.colorButton]}
                     onPress={() => openColorPicker("background")}
                   >
-                    <MaterialIcons name="format-color-fill" size={20} color="#374151" />
+                    <MaterialIcons name="format-color-fill" size={18} color="#374151" />
                     <View style={[styles.colorIndicator, { backgroundColor: bgColor === 'Default' ? '#FFFF00' : bgColor }]} />
                   </TouchableOpacity>
                 </View>
@@ -1693,49 +1717,61 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
           </View>
         </Modal>
 
+        {/* Small anchored color dropdown (falls back to modal-like overlay) */}
         <Modal
           visible={showColorPicker}
-          transparent={true}
+          transparent
           animationType="fade"
           onRequestClose={() => setShowColorPicker(false)}
         >
-          <View style={styles.colorPickerModal}>
-            <View style={styles.colorPickerContainer}>
-              <Text style={styles.colorPickerTitle}>
-                Select {currentColorAction === "text" ? "Text" : "Background"}{" "}
-                Color
-              </Text>
+          {/* Overlay to close when tapping outside */}
+          <TouchableOpacity style={styles.dropdownOverlay} activeOpacity={1} onPress={() => setShowColorPicker(false)}>
+            <View style={StyleSheet.absoluteFill} />
+          </TouchableOpacity>
 
-              <View style={styles.colorGrid}>
+          {colorMenuPos ? (
+            <View
+              style={[
+                styles.colorDropdownMenu,
+                { top: colorMenuPos.y + colorMenuPos.height + 8, left: Math.max(8, colorMenuPos.x - 8) },
+              ]}
+            >
+              <Text style={styles.colorPickerTitleSmall}>
+                {currentColorAction === "text" ? "Text" : "Background"} Color
+              </Text>
+              <View style={styles.colorDropdownGrid}>
                 {basicColors.map((color) => (
                   <TouchableOpacity
                     key={color.name}
-                    style={[styles.colorSwatch, { backgroundColor: color.hex }]}
+                    style={[styles.colorDotSmall, { backgroundColor: color.hex }]}
                     onPress={() => applyColor(color.name, color.hex)}
-                  >
-                    <Text
-                      style={[
-                        styles.colorName,
-                        { color: color.name === "black" ? "white" : "black" },
-                      ]}
-                    >
-                      {color.name}
-                    </Text>
-                  </TouchableOpacity>
+                  />
                 ))}
               </View>
-
-              <TouchableOpacity
-                style={[
-                  styles.colorPickerButton,
-                  styles.colorPickerCancelButton,
-                ]}
-                onPress={() => setShowColorPicker(false)}
-              >
-                <Text style={styles.colorPickerCancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
             </View>
-          </View>
+          ) : (
+            // Fallback full container for devices where measurement failed
+            <View style={styles.colorPickerModal} pointerEvents="box-none">
+              <View style={styles.colorPickerContainer}>
+                <Text style={styles.colorPickerTitle}>
+                  Select {currentColorAction === "text" ? "Text" : "Background"} Color
+                </Text>
+                <View style={styles.colorGrid}>
+                  {basicColors.map((color) => (
+                    <TouchableOpacity
+                      key={color.name}
+                      style={[styles.colorSwatch, { backgroundColor: color.hex }]}
+                      onPress={() => applyColor(color.name, color.hex)}
+                    >
+                      <Text style={[styles.colorName, { color: color.name === "black" ? "white" : "black" }]}>
+                        {color.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            </View>
+          )}
         </Modal>
 
 
@@ -1908,9 +1944,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     backgroundColor: "rgba(255,255,255,0.2)",
     justifyContent: "center",
     alignItems: "center",
@@ -2085,9 +2121,9 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   saveButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     backgroundColor: "rgba(255, 255, 255, 0.2)",
     justifyContent: "center",
     alignItems: "center",
@@ -2096,9 +2132,9 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
   },
   keyboardDismissButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     backgroundColor: "rgba(255, 255, 255, 0.2)",
     justifyContent: "center",
     alignItems: "center",
@@ -2127,9 +2163,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   moreButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     backgroundColor: "rgba(255, 255, 255, 0.2)",
     justifyContent: "center",
     alignItems: "center",
@@ -2580,6 +2616,43 @@ const styles = StyleSheet.create({
   rinaButtonText: { 
     color: "#fff", 
     fontWeight: "bold" 
+  },
+  dropdownOverlay: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+  colorDropdownMenu: {
+    position: 'absolute',
+    width: 200,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  colorPickerTitleSmall: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginBottom: 8,
+  },
+  colorDropdownGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    justifyContent: 'flex-start',
+  },
+  colorDotSmall: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    margin: 4,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
   colorPickerModal: {
     flex: 1,

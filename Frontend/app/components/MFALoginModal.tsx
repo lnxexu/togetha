@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -8,11 +8,11 @@ import {
   Alert,
   Modal,
   ActivityIndicator,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_URL } from '../../constants/ApiConfig';
-import { showSuccessToast, showErrorToast } from '../utils/ToastUtils';
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { API_URL } from "../../constants/ApiConfig";
+import { showSuccessToast, showErrorToast } from "../utils/ToastUtils";
 
 interface MFALoginModalProps {
   visible: boolean;
@@ -29,25 +29,25 @@ const MFALoginModal: React.FC<MFALoginModalProps> = ({
   onSuccess,
   onCancel,
 }) => {
-  const [totpCode, setTotpCode] = useState<string>('');
-  const [backupCode, setBackupCode] = useState<string>('');
+  const [totpCode, setTotpCode] = useState<string>("");
+  const [backupCode, setBackupCode] = useState<string>("");
   const [useBackupCode, setUseBackupCode] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
 
   const handleMFALogin = async () => {
     if (!useBackupCode && (!totpCode || totpCode.length !== 6)) {
-      showErrorToast('Please enter a valid 6-digit code');
+      showErrorToast("Please enter a valid 6-digit code");
       return;
     }
 
     if (useBackupCode && (!backupCode || backupCode.length < 6)) {
-      showErrorToast('Please enter a valid backup code');
+      showErrorToast("Please enter a valid backup code");
       return;
     }
 
     try {
       setLoading(true);
-      
+
       const requestBody: any = {
         email,
         password,
@@ -60,9 +60,9 @@ const MFALoginModal: React.FC<MFALoginModalProps> = ({
       }
 
       const response = await fetch(`${API_URL}/users/login-mfa/`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify(requestBody),
       });
@@ -71,24 +71,24 @@ const MFALoginModal: React.FC<MFALoginModalProps> = ({
 
       if (response.ok && data.success) {
         // Store token and user data
-        await AsyncStorage.setItem('token', data.token);
-        await AsyncStorage.setItem('user', JSON.stringify(data.user));
-        
-        showSuccessToast('Login successful!');
+        await AsyncStorage.setItem("token", data.token);
+        await AsyncStorage.setItem("user", JSON.stringify(data.user));
+
+        showSuccessToast("Login successful!");
         onSuccess(data);
       } else {
-        showErrorToast(data.error || 'Authentication failed');
+        showErrorToast(data.error || "Authentication failed");
       }
     } catch (error) {
-      showErrorToast('Network error occurred');
+      showErrorToast("Network error occurred");
     } finally {
       setLoading(false);
     }
   };
 
   const resetModal = () => {
-    setTotpCode('');
-    setBackupCode('');
+    setTotpCode("");
+    setBackupCode("");
     setUseBackupCode(false);
   };
 
@@ -109,7 +109,8 @@ const MFALoginModal: React.FC<MFALoginModalProps> = ({
           </View>
 
           <Text style={styles.description}>
-            Enter your {useBackupCode ? 'backup code' : 'authenticator code'} to complete login
+            Enter your {useBackupCode ? "backup code" : "authenticator code"} to
+            complete login
           </Text>
 
           {!useBackupCode ? (
@@ -137,12 +138,14 @@ const MFALoginModal: React.FC<MFALoginModalProps> = ({
             style={styles.switchButton}
             onPress={() => {
               setUseBackupCode(!useBackupCode);
-              setTotpCode('');
-              setBackupCode('');
+              setTotpCode("");
+              setBackupCode("");
             }}
           >
             <Text style={styles.switchButtonText}>
-              {useBackupCode ? 'Use authenticator code instead' : 'Use backup code instead'}
+              {useBackupCode
+                ? "Use authenticator code instead"
+                : "Use backup code instead"}
             </Text>
           </TouchableOpacity>
 
@@ -170,44 +173,44 @@ const MFALoginModal: React.FC<MFALoginModalProps> = ({
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
   },
   modalContainer: {
-    backgroundColor: 'white',
+    backgroundColor: "white",
     borderRadius: 12,
     padding: 20,
-    width: '90%',
+    width: "90%",
     maxWidth: 400,
   },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 20,
   },
   title: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
+    fontWeight: "bold",
+    color: "#333",
   },
   closeButton: {
     padding: 4,
   },
   description: {
     fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
+    color: "#666",
+    textAlign: "center",
     marginBottom: 20,
   },
   codeInput: {
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: "#ddd",
     borderRadius: 8,
     padding: 15,
     fontSize: 18,
-    textAlign: 'center',
+    textAlign: "center",
     marginBottom: 15,
     letterSpacing: 2,
   },
@@ -215,30 +218,30 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   switchButtonText: {
-    color: '#007AFF',
+    color: "#007AFF",
     fontSize: 14,
-    textAlign: 'center',
-    textDecorationLine: 'underline',
+    textAlign: "center",
+    textDecorationLine: "underline",
   },
   loginButton: {
-    backgroundColor: '#007AFF',
+    backgroundColor: "#007AFF",
     paddingVertical: 12,
     borderRadius: 8,
     marginBottom: 10,
   },
   loginButtonText: {
-    color: 'white',
+    color: "white",
     fontSize: 16,
-    fontWeight: '600',
-    textAlign: 'center',
+    fontWeight: "600",
+    textAlign: "center",
   },
   cancelButton: {
     paddingVertical: 12,
   },
   cancelButtonText: {
-    color: '#666',
+    color: "#666",
     fontSize: 16,
-    textAlign: 'center',
+    textAlign: "center",
   },
   disabledButton: {
     opacity: 0.6,

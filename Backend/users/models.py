@@ -1,14 +1,10 @@
-from django.db import models
 from django.contrib.auth.models import User
+from django.db import models
 from django.conf import settings
 from django.utils import timezone
 from datetime import timedelta
 import secrets
 import pyotp
-import qrcode
-from io import BytesIO
-import base64
-
 
 class UserProfile(models.Model):
     GENDER_CHOICES = (
@@ -18,7 +14,12 @@ class UserProfile(models.Model):
     )
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     username = models.CharField(max_length=150, blank=True)
-    profile_picture = models.ImageField(upload_to='profile_pics/', blank=True, null=True)
+    # Legacy binary storage (kept for backwards compatibility)
+    profile_picture_content = models.BinaryField(null=True, blank=True)  # Store image content in database
+    profile_picture_filename = models.CharField(max_length=255, null=True, blank=True)
+    profile_picture_content_type = models.CharField(max_length=100, null=True, blank=True)
+    # Preferred file-backed storage for profile pictures
+    profile_picture_file = models.ImageField(upload_to='profiles/', null=True, blank=True)
     full_name = models.CharField(max_length=100, blank=True)
     phone_number = models.CharField(max_length=20, blank=True)
     address = models.CharField(max_length=255, blank=True)

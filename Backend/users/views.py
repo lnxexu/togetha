@@ -1,27 +1,26 @@
-import uuid
-import random
-import string
-from datetime import datetime, timedelta
-from django.utils import timezone
+from rest_framework.decorators import api_view, permission_classes, parser_classes
+from django.contrib.auth.hashers import make_password
+from server.decorators import api_auth_required
+from django.middleware.csrf import get_token
 from django.core.mail import send_mail
-from django.conf import settings
-from rest_framework.response import Response
-from rest_framework import status
 from rest_framework.parsers import MultiPartParser, FormParser
-from .serializers import UserSerializer, UserProgressSerializer
+from rest_framework.response import Response
 from .models import UserSession, UserProgress
+from rest_framework.authtoken.models import Token
+from rest_framework.permissions import AllowAny
+from django.contrib.auth.models import User
+from .serializers import UserSerializer
+from datetime import timedelta
+from django.utils import timezone
+from django.conf import settings
+from rest_framework import status
 from task_manager.models import Task
 from notes.models import Note
 from chatbot.models import Message
-from server.decorators import api_auth_required
-from rest_framework.authtoken.models import Token
 from django.http import JsonResponse
-from django.middleware.csrf import get_token
-from rest_framework.decorators import api_view, permission_classes, parser_classes
-from rest_framework.permissions import AllowAny
-from django.contrib.auth.models import User
-from django.contrib.auth.hashers import make_password
-from django.db import models
+import uuid
+import random
+import string
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
@@ -39,7 +38,7 @@ def user_profile(request):
     user = request.user
 
     if request.method == 'GET':
-        serializer = UserSerializer(user)
+        serializer = UserSerializer(user, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     elif request.method in ['PUT', 'PATCH']:
@@ -52,22 +51,28 @@ def user_profile(request):
             if 'profile_picture' in request.FILES:
                 profile_picture = request.FILES['profile_picture']
 
-            serializer = UserSerializer(user, data=request.data, partial=True)
+            serializer = UserSerializer(user, data=request.data, partial=True, context={'request': request})
             if serializer.is_valid():
                 user_instance = serializer.save()
 
-                # Handle profile picture if provided
+                # Handle profile picture if provided (prefer file-backed storage)
                 if profile_picture:
                     try:
-                        user_instance.profile.profile_picture.save(profile_picture.name, profile_picture)
-                        user_instance.profile.save()
+                        profile = user_instance.profile
+                        # Save to ImageField using Django storage
+                        profile.profile_picture_file.save(profile_picture.name, profile_picture, save=True)
+                        # Clear legacy binary fields to prefer file-backed URL
+                        profile.profile_picture_content = None
+                        profile.profile_picture_filename = profile_picture.name
+                        profile.profile_picture_content_type = profile_picture.content_type
+                        profile.save()
                     except Exception as e:
                         print(f"Profile picture upload error: {e}")
                         return Response({"detail": f"Profile picture upload failed: {str(e)}"},
                                         status=status.HTTP_400_BAD_REQUEST)
 
 
-                return Response(UserSerializer(user_instance).data, status=status.HTTP_200_OK)
+                return Response(UserSerializer(user_instance, context={'request': request}).data, status=status.HTTP_200_OK)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             import traceback
@@ -495,3 +500,96 @@ def verify_reset_code(request):
             {'error': 'An error occurred. Please try again later.'}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+
+@api_auth_required(['GET'])
+def serve_profile_picture(request, user_id):
+    """Serve profile picture from database with proper headers"""
+    from django.http import HttpResponse, JsonResponse
+    
+    try:
+        # Get the user profile
+        from .models import UserProfile
+        profile = UserProfile.objects.get(user_id=user_id)
+        
+        # If a file-backed profile picture exists, serve it directly via FileResponse.
+        # This avoids relying on static/media URL routing which may not be available
+        # in all environments (or may be misconfigured).
+        if getattr(profile, 'profile_picture_file', None) and profile.profile_picture_file:
+            try:
+                from django.http import FileResponse
+                import os
+
+                file_path = profile.profile_picture_file.path
+                if os.path.exists(file_path):
+                    resp = FileResponse(open(file_path, 'rb'), content_type=profile.profile_picture_content_type or 'image/jpeg')
+                    resp['Access-Control-Allow-Origin'] = '*'
+                    resp['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+                    resp['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+                    resp['Cache-Control'] = 'public, max-age=3600'
+                    filename = profile.profile_picture_filename or os.path.basename(file_path)
+                    resp['Content-Disposition'] = f'inline; filename="{filename}"'
+                    return resp
+                # If file doesn't exist on disk, fall back to redirect to URL (may return 404)
+            except Exception as e:
+                print(f"Error serving profile picture file directly: {e}")
+                # Fall through to legacy handling
+
+        if not profile.profile_picture_content:
+            # Return a default SVG placeholder instead of 404
+            default_svg = '''<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">
+                <rect width="200" height="200" fill="#E5E7EB"/>
+                <circle cx="100" cy="80" r="35" fill="#9CA3AF"/>
+                <path d="M60 160 Q60 120 100 120 Q140 120 140 160" fill="#9CA3AF"/>
+            </svg>'''
+            
+            response = HttpResponse(default_svg, content_type='image/svg+xml')
+            response['Access-Control-Allow-Origin'] = '*'
+            response['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+            response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+            response['Cache-Control'] = 'public, max-age=300'  # Cache for 5 minutes
+            return response
+
+        # Create response with profile picture content from database
+        response = HttpResponse(
+            profile.profile_picture_content, 
+            content_type=profile.profile_picture_content_type or 'image/jpeg'
+        )
+        
+        # Add CORS headers
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        
+        # Add cache headers for better performance
+        response['Cache-Control'] = 'public, max-age=3600'  # Cache for 1 hour
+        
+        # Add content disposition for proper handling
+        filename = profile.profile_picture_filename or 'profile_picture.jpg'
+        response['Content-Disposition'] = f'inline; filename="{filename}"'
+        
+        return response
+        
+    except UserProfile.DoesNotExist:
+        # Return default placeholder for non-existent profiles too
+        default_svg = '''<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">
+            <rect width="200" height="200" fill="#E5E7EB"/>
+            <circle cx="100" cy="80" r="35" fill="#9CA3AF"/>
+            <path d="M60 160 Q60 120 100 120 Q140 120 140 160" fill="#9CA3AF"/>
+        </svg>'''
+        
+        response = HttpResponse(default_svg, content_type='image/svg+xml')
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response['Cache-Control'] = 'public, max-age=300'
+        return response
+        
+    except Exception as e:
+        print(f"Error serving profile picture: {e}")
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({
+            'error': 'Failed to serve profile picture',
+            'detail': str(e)
+        }, status=400)

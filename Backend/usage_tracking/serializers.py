@@ -1,7 +1,6 @@
 from rest_framework import serializers
 from .models import UserSession, UserActivity, DailyUsageSummary, WeeklyUsageSummary
 
-
 class UserSessionSerializer(serializers.ModelSerializer):
     active_time_minutes = serializers.SerializerMethodField()
     

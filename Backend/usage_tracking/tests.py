@@ -1,10 +1,8 @@
 from django.test import TestCase
 from django.contrib.auth.models import User
 from django.utils import timezone
-from datetime import timedelta
-from .models import UserSession, UserActivity, DailyUsageSummary
+from .models import UserSession, UserActivity
 from .services import UsageTrackingService
-
 
 class UsageTrackingTestCase(TestCase):
     def setUp(self):
@@ -47,7 +45,7 @@ class UsageTrackingTestCase(TestCase):
         session = UserSession.objects.create(
             user=self.user,
             session_id='test-session-123',
-            total_time_seconds=3600  # 1 hour
+            total_time_seconds=3600
         )
         
         # Create some activities

@@ -1,8 +1,9 @@
 from django.shortcuts import get_object_or_404
 from rest_framework.response import Response
 from rest_framework import status
-from .models import Note, Folder, Tag
-from .serializers import NoteSerializer, FolderSerializer, TagSerializer
+from django.http import HttpResponse
+from .models import Note, Folder
+from .serializers import NoteSerializer, FolderSerializer
 from server.decorators import api_auth_required
 from django.db.models import Q
 from logs.views import create_log
@@ -64,7 +65,7 @@ def folder_detail(request, pk):
         old_name = folder.name
         serializer = FolderSerializer(folder, data=request.data, partial=request.method=='PATCH')
         if serializer.is_valid():
-            serializer.save()  # No need to pass user again, it's already set
+            serializer.save()
             
             # Log folder update
             create_log(
@@ -265,125 +266,14 @@ def note_detail(request, pk):
         
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-@api_auth_required(['GET', 'POST'])
-def tag_list(request):
-    """Get list of tags or create a new tag"""
-    user = request.user
-    
-    if request.method == 'GET':
-        tags = Tag.objects.filter(user=user)
-        serializer = TagSerializer(tags, many=True)
-        
-        # Log tag list access
-        create_log(
-            user=user,
-            action='list',
-            entity_type='tag',
-            entity_id=None,
-            message='User accessed tag list.',
-            request=request
-        )
-        
-        return Response(serializer.data)
-    
-    elif request.method == 'POST':
-        serializer = TagSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save(user=user)
-            
-            # Log tag creation
-            create_log(
-                user=user,
-                action='create',
-                entity_type='tag',
-                entity_id=serializer.data['id'],
-                message=f'Tag "{serializer.data["name"]}" created successfully.',
-                request=request
-            )
-            
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-@api_auth_required(['GET', 'PUT', 'PATCH', 'DELETE'])
-def tag_detail(request, pk):
-    """Get, update or delete a tag"""
-    user = request.user
-    
-    try:
-        tag = Tag.objects.get(pk=pk, user=user)
-    except Tag.DoesNotExist:
-        # Log failed tag access
-        create_log(
-            user=user,
-            action='access',
-            entity_type='tag',
-            entity_id=pk,
-            level='WARNING',
-            message=f'Failed attempt to access non-existent tag (ID: {pk}).',
-            request=request
-        )
-        return Response({"error": "Tag not found"}, status=status.HTTP_404_NOT_FOUND)
-    
-    if request.method == 'GET':
-        serializer = TagSerializer(tag)
-        
-        # Log tag access
-        create_log(
-            user=user,
-            action='view',
-            entity_type='tag',
-            entity_id=tag.id,
-            message=f'Tag "{tag.name}" was accessed.',
-            request=request
-        )
-        
-        return Response(serializer.data)
-    
-    elif request.method in ['PUT', 'PATCH']:
-        old_name = tag.name
-        serializer = TagSerializer(tag, data=request.data, partial=request.method=='PATCH')
-        if serializer.is_valid():
-            serializer.save()
-            
-            # Log tag update
-            create_log(
-                user=user,
-                action='update',
-                entity_type='tag',
-                entity_id=tag.id,
-                message=f'Tag "{old_name}" updated to "{serializer.data["name"]}".',
-                request=request
-            )
-            
-            return Response(serializer.data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-    elif request.method == 'DELETE':
-        tag_name = tag.name
-        tag.delete()
-        
-        # Log tag deletion
-        create_log(
-            user=user,
-            action='delete',
-            entity_type='tag',
-            entity_id=pk,
-            message=f'Tag "{tag_name}" was deleted.',
-            request=request
-        )
-        
-        return Response(status=status.HTTP_204_NO_CONTENT)
-
 # Combine note-folder operations into a single view
 @api_auth_required(['POST'])
 def manage_note_folders(request):
     user = request.user
-
-    # Get parameters
     folder_id = request.data.get('folder_id')
     note_ids = request.data.get('note_ids', [])
     note_id = request.data.get('note_id')
-    action = request.data.get('action', '').lower()  # New: action parameter
+    action = request.data.get('action', '').lower() 
 
     # If specific note_id is provided, convert to list format
     if note_id and not note_ids:
@@ -495,82 +385,6 @@ def manage_note_folders(request):
         return Response({"error": "Folder not found"}, status=status.HTTP_404_NOT_FOUND)
 
 @api_auth_required(['POST'])
-def manage_note_tags(request):
-    """Add or remove tags from notes"""
-    user = request.user
-    
-    # Get parameters
-    note_id = request.data.get('note_id')
-    tag_ids = request.data.get('tag_ids', [])
-    action = request.data.get('action', '').lower()  # 'add' or 'remove'
-    
-    if not note_id:
-        return Response({"error": "No note specified"}, status=status.HTTP_400_BAD_REQUEST)
-    
-    if not tag_ids:
-        return Response({"error": "No tags specified"}, status=status.HTTP_400_BAD_REQUEST)
-    
-    if action not in ['add', 'remove']:
-        return Response({"error": "Invalid action"}, status=status.HTTP_400_BAD_REQUEST)
-    
-    try:
-        note = Note.objects.get(pk=note_id, user=user)
-    except Note.DoesNotExist:
-        # Log failed note tag operation
-        create_log(
-            user=user,
-            action=f'tag_{action}',
-            entity_type='note',
-            entity_id=note_id,
-            level='WARNING',
-            message=f'Failed to {action} tags: note (ID: {note_id}) not found.',
-            request=request
-        )
-        
-        return Response({"error": "Note not found"}, status=status.HTTP_404_NOT_FOUND)
-    
-    # Get valid tags that belong to the user
-    valid_tags = Tag.objects.filter(id__in=tag_ids, user=user)
-    
-    if action == 'add':
-        # Add tags to note
-        for tag in valid_tags:
-            note.tags.add(tag)
-            
-        # Log adding tags to note
-        tag_names = ", ".join([tag.name for tag in valid_tags])
-        create_log(
-            user=user,
-            action='tag_add',
-            entity_type='note',
-            entity_id=note_id,
-            message=f'Added tags "{tag_names}" to note "{note.title}".',
-            request=request
-        )
-        
-        serializer = NoteSerializer(note, context={'request': request})
-        return Response(serializer.data, status=status.HTTP_200_OK)
-    
-    elif action == 'remove':
-        # Remove tags from note
-        for tag in valid_tags:
-            note.tags.remove(tag)
-            
-        # Log removing tags from note
-        tag_names = ", ".join([tag.name for tag in valid_tags])
-        create_log(
-            user=user,
-            action='tag_remove',
-            entity_type='note',
-            entity_id=note_id,
-            message=f'Removed tags "{tag_names}" from note "{note.title}".',
-            request=request
-        )
-        
-        serializer = NoteSerializer(note, context={'request': request})
-        return Response(serializer.data, status=status.HTTP_200_OK)
-
-@api_auth_required(['POST'])
 def note_share(request):
     """Share a note with another user"""
     user = request.user
@@ -598,9 +412,6 @@ def note_share(request):
         )
         
         return Response({"error": "Note not found"}, status=status.HTTP_404_NOT_FOUND)
-    
-    # Here you would implement your actual sharing logic
-    # For now we'll just log it
     
     # Log note sharing
     create_log(
@@ -858,26 +669,38 @@ def upload_document(request):
                     if '/Creator' in pdf_info:
                         document_metadata['pdf_creator'] = pdf_info['/Creator']
                 
-                # Reset file pointer for saving
-                document.seek(0)
+                # Use the pdf_bytes as file content
+                file_content = pdf_bytes
                 
             except Exception as e:
                 # If PDF processing fails, continue with default metadata
                 print(f"Error processing PDF metadata: {e}")
                 document_metadata['page_count'] = 1
                 document_metadata['metadata_error'] = str(e)
+                # Read file content normally
+                document.seek(0)
+                file_content = document.read()
+        else:
+            # Read file content for non-PDF files
+            document.seek(0)
+            file_content = document.read()
         
         # Create note data
         title = request.data.get('title', document.name)
-        content = request.data.get('content', f'Imported document: {document.name}')
+        content = request.data.get('content', '')  # Default to empty content for documents
         folder_id = request.data.get('folder')
+        
+        # Read file content
+        file_content = document.read()
         
         # Create the note
         note_data = {
             'title': title,
             'content': content,
             'type': 'document',
-            'document_file': document,
+            'document_content': file_content,
+            'document_filename': document.name,
+            'document_content_type': document.content_type,
             'document_metadata': document_metadata,
             'last_accessed': timezone.now(),
         }
@@ -1031,58 +854,95 @@ def delete_annotation(request, note_id, annotation_id):
     }, status=status.HTTP_200_OK)
 
 
-@api_auth_required(['GET'])
 def serve_document(request, note_id):
-    """Serve document file with proper CORS headers for PDF.js compatibility"""
-    user = request.user
+    """Serve document file with proper CORS headers for PDF.js compatibility.
+
+    This view performs lightweight, manual auth/method checks instead of using
+    the DRF `api_view` wrapper to avoid DRF content-negotiation returning
+    406 Not Acceptable for binary PDF responses and to allow HEAD/OPTIONS
+    requests coming from PDF.js clients.
+    """
+    from django.http import JsonResponse, HttpResponseNotAllowed
+
+    # Allow preflight
+    if request.method == 'OPTIONS':
+        response = HttpResponse()
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'GET, HEAD, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response['Access-Control-Max-Age'] = '86400'  # Cache preflight for 24 hours
+        return response
+
+    # Ensure the request is an allowed method
+    if request.method not in ('GET', 'HEAD'):
+        return HttpResponseNotAllowed(['GET', 'HEAD', 'OPTIONS'])
+
+    # Authentication: prefer session/user if already set (useful for test
+    # harnesses or session auth). Otherwise, extract Token from Authorization
+    # header or `?token=` and validate.
+    user = getattr(request, 'user', None)
+    if not (user and getattr(user, 'is_authenticated', False)):
+        auth_header = request.META.get('HTTP_AUTHORIZATION') or (
+            request.headers.get('Authorization') if hasattr(request, 'headers') else None
+        )
+        token_key = None
+        if auth_header and isinstance(auth_header, str) and auth_header.startswith('Token '):
+            token_key = auth_header.split(' ', 1)[1].strip()
+        elif request.GET.get('token'):
+            token_key = request.GET.get('token')
+
+        if token_key:
+            try:
+                from rest_framework.authtoken.models import Token
+                token = Token.objects.get(key=token_key)
+                user = token.user
+            except Exception:
+                return JsonResponse({'error': 'Unauthorized - invalid token'}, status=401)
+        else:
+            return JsonResponse({'error': 'Unauthorized - token missing'}, status=401)
     
     try:
         # Get the note and verify ownership
         note = get_object_or_404(Note, id=note_id, user=user)
         
-        if not note.document_file:
-            return Response({
-                'error': 'No document file found for this note'
-            }, status=status.HTTP_404_NOT_FOUND)
-        
-        # Import required modules
-        from django.http import HttpResponse, Http404
-        from django.conf import settings
-        import os
-        import mimetypes
-        
-        # Get the file path
-        file_path = note.document_file.path
-        
-        if not os.path.exists(file_path):
-            return Response({
-                'error': 'Document file not found on server'
-            }, status=status.HTTP_404_NOT_FOUND)
+        # If a file is stored on disk, redirect to its media URL (served by Django in DEBUG)
+        if getattr(note, 'document_file') and note.document_file:
+            # Update last_accessed and return redirect to media URL
+            note.last_accessed = timezone.now()
+            note.save(update_fields=['last_accessed'])
+            try:
+                file_url = note.document_file.url
+                # Return a 302 redirect to the media URL
+                from django.shortcuts import redirect
+                return redirect(file_url)
+            except Exception:
+                # Fall back to serving binary content below
+                pass
+
+        if not note.document_content:
+            return JsonResponse({
+                'error': 'No document content found for this note'
+            }, status=404)
         
         # Update last accessed for documents
         note.last_accessed = timezone.now()
         note.save(update_fields=['last_accessed'])
 
-        # Determine content type
-        content_type, _ = mimetypes.guess_type(file_path)
-        if not content_type:
-            content_type = 'application/octet-stream'
-        
-        # Create response with file content
-        with open(file_path, 'rb') as f:
-            response = HttpResponse(f.read(), content_type=content_type)
-        
-        # Add CORS headers for PDF.js compatibility
+        # Create response with document content from database (legacy)
+        response = HttpResponse(note.document_content, content_type=note.document_content_type or 'application/octet-stream')
+
+        # Add CORS headers for PDF.js compatibility - include HEAD and OPTIONS
         response['Access-Control-Allow-Origin'] = '*'
-        response['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response['Access-Control-Allow-Methods'] = 'GET, HEAD, OPTIONS'
         response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
-        response['Cross-Origin-Embedder-Policy'] = 'require-corp'
-        response['Cross-Origin-Opener-Policy'] = 'same-origin'
-        
+        # Removed restrictive COEP and COOP headers that can cause 406 errors with PDF.js
+        # response['Cross-Origin-Embedder-Policy'] = 'require-corp'
+        # response['Cross-Origin-Opener-Policy'] = 'same-origin'
+
         # Add content disposition for proper handling
-        filename = os.path.basename(file_path)
+        filename = note.document_filename or 'document'
         response['Content-Disposition'] = f'inline; filename="{filename}"'
-        
+
         # Log document access
         create_log(
             user=user,
@@ -1092,14 +952,17 @@ def serve_document(request, note_id):
             message=f'Document "{note.title}" served successfully.',
             request=request
         )
-        
+
         return response
         
     except Exception as e:
-        return Response({
+        print(f"Error serving document: {e}")
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({
             'error': 'Failed to serve document',
             'detail': str(e)
-        }, status=status.HTTP_400_BAD_REQUEST)
+        }, status=400)
 
 
 @api_auth_required(['POST'])
@@ -1112,3 +975,95 @@ def touch_note_access(request, note_id):
         return Response({'status': 'ok', 'last_accessed': note.last_accessed}, status=status.HTTP_200_OK)
     except Exception as e:
         return Response({'error': 'Failed to touch note', 'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_auth_required(['POST'])
+def upload_document(request):
+    """Upload a document file and create a note"""
+    user = request.user
+    
+    try:
+        # Get the uploaded file from request.FILES
+        uploaded_file = request.FILES.get('document')
+        if not uploaded_file:
+            return Response({
+                'error': 'No document file provided'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validate file type
+        allowed_types = [
+            'application/pdf',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'text/plain',
+            'text/rtf'
+        ]
+        if uploaded_file.content_type not in allowed_types:
+            return Response({'error': f'Unsupported file type: {uploaded_file.content_type}'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Get other form data
+        title = request.POST.get('title', uploaded_file.name or 'Untitled Document')
+        content = request.POST.get('content', '')
+        note_type = request.POST.get('type', 'document')
+
+        # Read bytes for metadata extraction and saving
+        uploaded_file.seek(0)
+        file_bytes = uploaded_file.read()
+        if not file_bytes:
+            return Response({'error': 'Empty file provided'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Extract metadata (PDF page count if applicable)
+        document_metadata = {
+            'file_name': uploaded_file.name,
+            'file_size': uploaded_file.size,
+            'content_type': uploaded_file.content_type,
+            'page_count': 1
+        }
+        if uploaded_file.content_type == 'application/pdf':
+            try:
+                import PyPDF2, io
+                pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
+                document_metadata['page_count'] = len(pdf_reader.pages)
+            except Exception as e:
+                document_metadata['metadata_error'] = str(e)
+
+        # Create the note (store file via FileField)
+        note = Note.objects.create(
+            user=user,
+            title=title,
+            content=content,
+            type=note_type,
+            document_filename=uploaded_file.name,
+            document_content_type=uploaded_file.content_type,
+            document_metadata=document_metadata,
+            last_accessed=timezone.now(),
+        )
+
+        # Save file to storage (MEDIA_ROOT/documents/)
+        from django.core.files.base import ContentFile
+        note.document_file.save(uploaded_file.name, ContentFile(file_bytes))
+        note.save()
+
+        # Serialize and return the created note
+        serializer = NoteSerializer(note, context={'request': request})
+
+        # Log document upload
+        create_log(
+            user=user,
+            action='create',
+            entity_type='document',
+            entity_id=note.id,
+            message=f'Document "{note.title}" uploaded successfully.',
+            request=request
+        )
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        
+    except Exception as e:
+        print(f"Error uploading document: {e}")
+        import traceback
+        traceback.print_exc()
+        return Response({
+            'error': 'Failed to upload document',
+            'detail': str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)

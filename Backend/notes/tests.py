@@ -2,13 +2,10 @@ from django.test import TestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
 from django.contrib.auth.models import User
-from rest_framework import status, permissions
-from django.db import models
+from rest_framework import status
 
-# Create notes app test case
 class CreateNotesTest(TestCase):
     def setUp(self):
-        # Create a test user
         self.user = User.objects.create_user(
             username='Kobe',
             password='Oliviahyejoo123@@'

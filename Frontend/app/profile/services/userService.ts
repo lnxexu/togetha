@@ -13,7 +13,8 @@ export interface UserProfile {
     phone_number?: string;
     gender?: string;
     birthdate?: string;
-    profile_picture?: string
+    profile_picture?: string;
+    profile_picture_url?: string;  // URL to fetch image from database
   }
 }
 
@@ -110,7 +111,15 @@ class UserService {
       ]);
 
       // Combine the results
-      return { ...userProfile, ...userInfo };
+      const combinedData = { ...userProfile, ...userInfo };
+      
+      // Debug log to see what we're getting
+      console.log('User profile data:', JSON.stringify(combinedData, null, 2));
+      if (combinedData.profile?.profile_picture_url) {
+        console.log('Profile picture URL:', combinedData.profile.profile_picture_url);
+      }
+      
+      return combinedData;
     } catch (error) {
       console.error("Error fetching user info:", error);
       throw error;

@@ -59,6 +59,20 @@ const Profile: React.FC = () => {
   const [username, setUsername] = useState<string>("");
   const [selectedLanguage, setSelectedLanguage] = useState<string>("English");
   const [selectedTheme, setSelectedTheme] = useState<string>("Light");
+  const [authToken, setAuthToken] = useState<string>("");
+
+  // Load auth token
+  useFocusEffect(
+    useCallback(() => {
+      const loadAuthToken = async () => {
+        const token = await AsyncStorage.getItem("authToken");
+        if (token) {
+          setAuthToken(token);
+        }
+      };
+      loadAuthToken();
+    }, [])
+  );
 
   // Load user data when screen is focused
   useFocusEffect(
@@ -393,24 +407,26 @@ const Profile: React.FC = () => {
         // Upload the image
         const updatedProfile = await userService.updateProfilePicture(formData);
 
-        // Update local state
+        // Update local state with the new profile picture URL
         setUserData((prev) =>
           prev
             ? {
                 ...prev,
                 profile: {
                   ...prev.profile,
-                  profile_picture: updatedProfile.profile?.profile_picture,
+                  profile_picture_url: updatedProfile.profile?.profile_picture_url,
                 },
               }
             : prev
         );
 
         // Store in AsyncStorage for persistence
-        await AsyncStorage.setItem(
-          "userProfilePicture",
-          updatedProfile.profile?.profile_picture ?? ""
-        );
+        if (updatedProfile.profile?.profile_picture_url) {
+          await AsyncStorage.setItem(
+            "userProfilePicture",
+            updatedProfile.profile.profile_picture_url
+          );
+        }
 
         Alert.alert("Success", "Profile picture updated successfully!");
       }
@@ -457,9 +473,16 @@ const Profile: React.FC = () => {
   ]}
 >
   <View style={styles.profilePicContainer}>
-    {userData?.profile?.profile_picture ? (
+    {userData?.profile?.profile_picture_url ? (
       <Image
-        source={{ uri: `${API_URL}${userData.profile.profile_picture}` }}
+        source={{ 
+          uri: userData.profile.profile_picture_url.startsWith('http') 
+            ? userData.profile.profile_picture_url 
+            : `${API_URL}${userData.profile.profile_picture_url}`,
+          headers: authToken ? {
+            'Authorization': `Token ${authToken}`
+          } : undefined
+        }}
         style={styles.profilePic}
         resizeMode="cover"
       />

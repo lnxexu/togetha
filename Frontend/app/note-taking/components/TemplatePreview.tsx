@@ -138,12 +138,36 @@ function normalizeLegacyTags(html: string): string {
         );
       const color = hasClassYellow ? "#FFF59D" : "#FEF3C7";
       const styleAttr = /style\s*=/.test(attrs)
-        ? attrs.replace(
-            /style\s*=\s*(['"])/i,
-            (mm, q) => `style=${q}background-color:${color};`
-          )
+        ? attrs.replace(/style\s*=\s*(['"])/i, (mm, q) => `style=${q}background-color:${color};`)
         : `${attrs} style="background-color:${color};"`;
       return `<mark${styleAttr}>`;
+    });
+    // Convert inline-styled semantic tags (i, em, b, strong, u) to spans with the
+    // equivalent inline style so react-native-render-html applies color/background
+    // consistently on text nodes in the preview cards.
+    html = html.replace(/<\s*(i|em)\b([^>]*)style\s*=\s*(['"])(.*?)\3([^>]*)>/gi, (_m, tagName, before, q, styleBody, after) => {
+      const style = styleBody || "";
+      const hasFontStyle = /font-style\s*:/i.test(style);
+      const combined = hasFontStyle ? style : `${style};font-style:italic`;
+      const other = (before + ' ' + after).replace(/\s*style\s*=\s*(['"]).*?\1/i, '').trim();
+      const attrs = other ? ` ${other} style="${combined}"` : ` style="${combined}"`;
+      return `<${tagName}${attrs}>`;
+    });
+    html = html.replace(/<\s*(b|strong)\b([^>]*)style\s*=\s*(['"])(.*?)\3([^>]*)>/gi, (_m, tagName, before, q, styleBody, after) => {
+      const style = styleBody || "";
+      const hasWeight = /font-weight\s*:/i.test(style);
+      const combined = hasWeight ? style : `${style};font-weight:700`;
+      const other = (before + ' ' + after).replace(/\s*style\s*=\s*(['"]).*?\1/i, '').trim();
+      const attrs = other ? ` ${other} style="${combined}"` : ` style="${combined}"`;
+      return `<${tagName}${attrs}>`;
+    });
+    html = html.replace(/<\s*(u)\b([^>]*)style\s*=\s*(['"])(.*?)\3([^>]*)>/gi, (_m, tagName, before, q, styleBody, after) => {
+      const style = styleBody || "";
+      const hasDecor = /text-decoration\s*:/i.test(style);
+      const combined = hasDecor ? style : `${style};text-decoration:underline`;
+      const other = (before + ' ' + after).replace(/\s*style\s*=\s*(['"]).*?\1/i, '').trim();
+      const attrs = other ? ` ${other} style="${combined}"` : ` style="${combined}"`;
+      return `<${tagName}${attrs}>`;
     });
     // Common span highlight classes -> inline background
     html = html.replace(/<\s*span\b([^>]*)>/gi, (m, attrs: string) => {
@@ -290,20 +314,39 @@ const TextPreview: React.FC<TemplatePreviewProps> = ({
     : "";
   const html = useMemo(() => normalizeLegacyTags(htmlRaw), [htmlRaw]);
   const allowedInlineStyles = useMemo(
-    () => [
-      // RN-style camelCased properties only
-      "color",
-      "backgroundColor",
-      "textDecorationLine",
-      "textDecorationColor",
-      "textDecorationStyle",
-      "fontWeight",
-      "fontStyle",
-      "fontSize",
-      "letterSpacing",
-      "wordSpacing",
-      "lineHeight",
-    ],
+    () => {
+      // Include both kebab-case and camelCase variants: some consumers of the
+      // allowed styles prefer camelCase keys while inline HTML uses kebab-case.
+      const kebab = [
+        "color",
+        "background-color",
+        "background",
+        "text-decoration",
+        "text-decoration-color",
+        "text-decoration-style",
+        "font-weight",
+        "font-style",
+        "font-size",
+        "letter-spacing",
+        "word-spacing",
+        "line-height",
+        "margin-left",
+        "margin-right",
+        "margin",
+        "padding-left",
+        "padding-right",
+        "padding",
+        "text-indent",
+        "text-align",
+        "vertical-align",
+        "width",
+        "height",
+        "max-width",
+        "max-height",
+      ];
+      const camel = kebab.map((p) => p.replace(/-([a-z])/g, (_, c) => c.toUpperCase()));
+      return Array.from(new Set([...kebab, ...camel]));
+    },
     []
   );
   const innerWidth = Math.max(1, (width || 80) - 16);
@@ -312,6 +355,17 @@ const TextPreview: React.FC<TemplatePreviewProps> = ({
     <View style={[styles.card, { width, height }]}> 
       {html ? (
         <View style={[styles.contentClip, { width: innerWidth, height: innerHeight }]}> 
+          {/** Debug: print sanitized HTML in development to help diagnose missing inline styles */}
+          {typeof __DEV__ !== "undefined" && __DEV__ ? (
+            (() => {
+              try {
+                // limit length to avoid spamming Metro
+                console.log && console.log("[TemplatePreview] sanitized html:", html?.slice(0, 1000));
+              } catch (e) {}
+              return null;
+            })()
+          ) : null}
+
           <RenderHtml
             contentWidth={innerWidth}
             source={{ html }}
@@ -323,8 +377,51 @@ const TextPreview: React.FC<TemplatePreviewProps> = ({
             enableExperimentalBRCollapsing={true}
             domVisitors={{
               onElement: (el) => {
-                if (el?.attribs?.style) {
-                  // inline styles preserved
+                try {
+                  if (!el || !el.attribs) return;
+                  const rawStyle = el.attribs.style || "";
+                  if (!rawStyle || typeof rawStyle !== "string") return;
+
+                  // Parse style string into declarations and keep only allowed properties
+                  const decls = rawStyle.split(";").map((d) => d.trim()).filter(Boolean);
+                  const kept: string[] = [];
+                  for (const d of decls) {
+                    const parts = d.split(":");
+                    if (parts.length < 2) continue;
+                    const prop = parts[0].trim().toLowerCase();
+                    const val = parts.slice(1).join(":").trim();
+                    // Normalize property to kebab-case (already lowercased)
+                    const propKebab = prop.replace(/([A-Z])/g, "-$1").toLowerCase();
+                    // Also accept camelCase versions in allowed list
+                    const allowedKebab = (allowedInlineStyles as string[]).map(s => s.toLowerCase());
+                    if (allowedKebab.includes(propKebab) || allowedKebab.includes(prop)) {
+                      // Basic validation for color values to avoid dangerous content
+                      if (propKebab === "color" || propKebab === "background-color" || propKebab.endsWith("color")) {
+                        // Allow hex, rgb(a) and named colors
+                        if (/^#([0-9a-f]{3}|[0-9a-f]{6})([0-9a-f]{2})?$/i.test(val) || /^rgba?\(/i.test(val) || /^[a-z\-]+$/i.test(val)) {
+                          kept.push(`${propKebab}:${val}`);
+                        }
+                      } else if (propKebab === "text-indent" || propKebab === "margin-left" || propKebab === "padding-left" || /margin|padding|indent|width|height|font-size|line-height|letter-spacing/.test(propKebab)) {
+                        // Allow numeric values and px/%/em units
+                        if (/^[0-9\.]+(px|em|rem|%)?$/.test(val) || /^[0-9\.]+$/.test(val)) {
+                          kept.push(`${propKebab}:${val}`);
+                        }
+                      } else {
+                        // Default: keep the declaration
+                        kept.push(`${propKebab}:${val}`);
+                      }
+                    }
+                  }
+
+                  if (kept.length > 0) {
+                    // Overwrite the element's style attribute with sanitized declarations
+                    el.attribs.style = kept.join(";");
+                  } else {
+                    // Remove style to avoid being stripped/ignored
+                    delete el.attribs.style;
+                  }
+                } catch (e) {
+                  // If anything goes wrong, don't block rendering
                 }
               },
             }}
@@ -449,32 +546,46 @@ const DrawingPreview: React.FC<TemplatePreviewProps> = ({
           : 1;
       paths.push({ d, color: s.color || "#111827", opacity });
     }
+    // If we couldn't derive valid stroke bounds, fall back to minimal box
     if (
       !isFinite(minX) ||
       !isFinite(minY) ||
       !isFinite(maxX) ||
       !isFinite(maxY)
     ) {
-      // No valid geometry
+      // Keep paths but fallback to a small canvas box
       return { paths, viewBox: { x: 0, y: 0, w: 1, h: 1 } };
     }
+
     // Small padding to avoid clipping
     const pad = 4;
+    const bounds = {
+      x: minX - pad,
+      y: minY - pad,
+      w: Math.max(1, maxX - minX + pad * 2),
+      h: Math.max(1, maxY - minY + pad * 2),
+    };
+
     return {
       paths,
-      viewBox: {
-        x: minX - pad,
-        y: minY - pad,
-        w: Math.max(1, maxX - minX + pad * 2),
-        h: Math.max(1, maxY - minY + pad * 2),
-      },
+      viewBox: bounds,
     };
   }, [strokes]);
 
-  const vb = computePreviewGeometry.viewBox;
+  // Prefer any explicit canvas size stored in the note's drawing_data
+  // Common fields may include width/height or canvasWidth/canvasHeight
+  const explicitWidth = (note as any)?.drawing_data?.width || (note as any)?.drawing_data?.canvasWidth || (note as any)?.drawing_data?.canvas?.width;
+  const explicitHeight = (note as any)?.drawing_data?.height || (note as any)?.drawing_data?.canvasHeight || (note as any)?.drawing_data?.canvas?.height;
 
+  // Fallback sensible defaults (match editor defaults reasonably)
+  const canvasW = Number.isFinite(explicitWidth) ? explicitWidth : 1200;
+  const canvasH = Number.isFinite(explicitHeight) ? explicitHeight : 900;
+
+  // Use the full canvas viewBox (0..canvasW, 0..canvasH) so the preview shows the whole canvas
+  const viewBoxString = `0 0 ${canvasW} ${canvasH}`;
   const innerWidth = Math.max(1, (width || 80) - 16);
   const innerHeight = Math.max(1, (height || 100) - 16);
+
   return (
     <View style={[styles.card, { width, height }]}> 
       {strokes.length === 0 || computePreviewGeometry.paths.length === 0 ? (
@@ -482,8 +593,15 @@ const DrawingPreview: React.FC<TemplatePreviewProps> = ({
           <Text style={styles.emptyText}>Empty drawing</Text>
         </View>
       ) : (
-        <Svg width={innerWidth} height={innerHeight} viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`}>
-          <Rect x={vb.x} y={vb.y} width={vb.w} height={vb.h} fill="#FFFFFF" />
+        <Svg
+          width={innerWidth}
+          height={innerHeight}
+          viewBox={viewBoxString}
+          preserveAspectRatio="xMidYMid meet"
+        >
+          {/* white background for canvas */}
+          <Rect x={0} y={0} width={canvasW} height={canvasH} fill="#FFFFFF" />
+          {/* Render each path; paths are already expressed in canvas coordinates */}
           {computePreviewGeometry.paths.map((p, idx) => (
             <Path key={`outline-${idx}`} d={p.d} fill={p.color} opacity={p.opacity} />
           ))}

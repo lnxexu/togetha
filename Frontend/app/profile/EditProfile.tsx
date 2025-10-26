@@ -31,6 +31,18 @@ const EditProfile: React.FC = () => {
   const [originalData, setOriginalData] = useState<UserProfile | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [authToken, setAuthToken] = useState<string>("");
+
+  // Load auth token
+  React.useEffect(() => {
+    const loadAuthToken = async () => {
+      const token = await AsyncStorage.getItem("authToken");
+      if (token) {
+        setAuthToken(token);
+      }
+    };
+    loadAuthToken();
+  }, []);
 
   // Load user data when screen is focused
   useFocusEffect(
@@ -84,10 +96,10 @@ const EditProfile: React.FC = () => {
         await AsyncStorage.setItem("username", updatedProfile.username);
       }
 
-      if (updatedProfile.profile?.profile_picture) {
+      if (updatedProfile.profile?.profile_picture_url) {
         await AsyncStorage.setItem(
           "userProfilePicture",
-          updatedProfile.profile.profile_picture
+          updatedProfile.profile.profile_picture_url
         );
       }
 
@@ -185,26 +197,28 @@ const EditProfile: React.FC = () => {
             formData
           );
 
-          // Update the local state
+          // Update the local state with new profile picture URL
           setUserData({
             ...userData,
             profile: {
               ...userData?.profile,
-              profile_picture: updatedProfile.profile?.profile_picture,
+              profile_picture_url: updatedProfile.profile?.profile_picture_url,
             },
           });
           setOriginalData({
             ...originalData,
             profile: {
               ...originalData?.profile,
-              profile_picture: updatedProfile.profile?.profile_picture,
+              profile_picture_url: updatedProfile.profile?.profile_picture_url,
             },
           });
 
-          await AsyncStorage.setItem(
-            "userProfilePicture",
-            updatedProfile.profile?.profile_picture ?? ""
-          );
+          if (updatedProfile.profile?.profile_picture_url) {
+            await AsyncStorage.setItem(
+              "userProfilePicture",
+              updatedProfile.profile.profile_picture_url
+            );
+          }
 
           Alert.alert("Success", "Profile picture updated successfully!");
         } catch (error) {
@@ -278,14 +292,21 @@ const EditProfile: React.FC = () => {
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.profilePictureSection}>
           <View style={styles.profilePicContainer}>
-            {userData.profile?.profile_picture ? (
+            {userData.profile?.profile_picture_url ? (
               <Image
                 source={{
-                  uri: userData.profile.profile_picture.startsWith("http")
-                    ? userData.profile.profile_picture
-                    : `${API_URL}${userData.profile.profile_picture}`,
+                  uri: userData.profile.profile_picture_url.startsWith("http")
+                    ? userData.profile.profile_picture_url
+                    : `${API_URL}${userData.profile.profile_picture_url}`,
+                  headers: authToken ? {
+                    'Authorization': `Token ${authToken}`
+                  } : undefined
                 }}
                 style={styles.profilePic}
+                onError={(error) => {
+                  console.error('Profile picture load error:', error.nativeEvent);
+                  console.log('Attempted URL:', userData?.profile?.profile_picture_url);
+                }}
               />
             ) : (
               <View style={styles.defaultProfilePic}>

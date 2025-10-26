@@ -1,22 +1,22 @@
-import React, { useEffect, useState } from 'react';
-import { 
-  View, 
-  Text, 
-  FlatList, 
-  StyleSheet, 
-  ActivityIndicator, 
-  TouchableOpacity, 
+import React, { useEffect, useState } from "react";
+import {
+  View,
+  Text,
+  FlatList,
+  StyleSheet,
+  ActivityIndicator,
+  TouchableOpacity,
   RefreshControl,
   StatusBar,
   Platform,
   Modal,
-  TextInput 
-} from 'react-native';
-import DatePicker from 'react-native-date-picker';
-import { API_URL, API_ENDPOINTS } from '@/constants/ApiConfig';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+  TextInput,
+} from "react-native";
+import DatePicker from "react-native-date-picker";
+import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Ionicons, MaterialIcons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
@@ -43,20 +43,21 @@ interface PaginationData {
 const LOGS_PER_PAGE = 20;
 
 const Logs: React.FC = () => {
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [logs, setLogs] = useState<Log[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [pagination, setPagination] = useState<PaginationData>({
     totalPages: 1,
     totalLogs: 0,
-    currentPage: 1
+    currentPage: 1,
   });
-  
+
   // Filter states
   const [showFilters, setShowFilters] = useState(false);
-  const [levelFilter, setLevelFilter] = useState<string>('all');
-  const [actionFilter, setActionFilter] = useState<string>('');
+  const [levelFilter, setLevelFilter] = useState<string>("all");
+  const [actionFilter, setActionFilter] = useState<string>("");
   const [startDate, setStartDate] = useState<Date | null>(null);
   const [endDate, setEndDate] = useState<Date | null>(null);
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
@@ -71,32 +72,36 @@ const Logs: React.FC = () => {
 
   const loadLogs = async () => {
     setLoading(true);
-    
+
     try {
-      const token = await AsyncStorage.getItem('authToken');
+      const token = await AsyncStorage.getItem("authToken");
       if (!token) {
-        console.error('No auth token found');
+        console.error("No auth token found");
         setLoading(false);
         setRefreshing(false);
         return;
       }
-      
-      const response = await fetch(`${API_URL}${API_ENDPOINTS.LOGS}?page=${pagination.currentPage}&limit=${LOGS_PER_PAGE}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Token ${token}`,
-          'X-Client-Timezone': Intl.DateTimeFormat().resolvedOptions().timeZone || '',
-        },
-      });
-      
+
+      const response = await fetch(
+        `${API_URL}${API_ENDPOINTS.LOGS}?page=${pagination.currentPage}&limit=${LOGS_PER_PAGE}`,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Token ${token}`,
+            "X-Client-Timezone":
+              Intl.DateTimeFormat().resolvedOptions().timeZone || "",
+          },
+        }
+      );
+
       if (!response.ok) {
         throw new Error(`Failed to fetch logs: ${response.status}`);
       }
-      
+
       const data = await response.json();
-      
-      if (data && typeof data === 'object') {
+
+      if (data && typeof data === "object") {
         // Handle paginated response structure
         if (Array.isArray(data.results)) {
           setAllLogs(data.results);
@@ -104,7 +109,7 @@ const Logs: React.FC = () => {
           setPagination({
             totalLogs: data.count || 0,
             totalPages: Math.ceil((data.count || 0) / LOGS_PER_PAGE),
-            currentPage: pagination.currentPage
+            currentPage: pagination.currentPage,
           });
         } else if (Array.isArray(data)) {
           // Fallback for non-paginated API response
@@ -113,18 +118,18 @@ const Logs: React.FC = () => {
           setPagination({
             totalLogs: data.length,
             totalPages: Math.ceil(data.length / LOGS_PER_PAGE),
-            currentPage: pagination.currentPage
+            currentPage: pagination.currentPage,
           });
         } else {
-          console.error('API response is not a valid format:', data);
+          console.error("API response is not a valid format:", data);
           setLogs([]);
         }
       } else {
-        console.error('API response is not valid:', data);
+        console.error("API response is not valid:", data);
         setLogs([]);
       }
     } catch (error) {
-      console.error('Error fetching logs:', error);
+      console.error("Error fetching logs:", error);
       setLogs([]);
     } finally {
       setLoading(false);
@@ -134,69 +139,71 @@ const Logs: React.FC = () => {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    setPagination(prev => ({...prev, currentPage: 1}));
+    setPagination((prev) => ({ ...prev, currentPage: 1 }));
     await loadLogs();
   };
 
   const markAsRead = async (logId: number) => {
     try {
-      const token = await AsyncStorage.getItem('authToken');
+      const token = await AsyncStorage.getItem("authToken");
       if (!token) {
-        console.error('No auth token found');
+        console.error("No auth token found");
         return;
       }
-      
+
       await fetch(`${API_URL}/logs/${logId}/mark_read/`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Token ${token}`,
-          'X-Client-Timezone': Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+          "Content-Type": "application/json",
+          Authorization: `Token ${token}`,
+          "X-Client-Timezone":
+            Intl.DateTimeFormat().resolvedOptions().timeZone || "",
         },
       });
-      
+
       // Update the local state
-      setLogs(prevLogs => prevLogs.map(log => 
-        log.id === logId ? { ...log, read: true } : log
-      ));
+      setLogs((prevLogs) =>
+        prevLogs.map((log) => (log.id === logId ? { ...log, read: true } : log))
+      );
     } catch (error) {
-      console.error('Error marking log as read:', error);
+      console.error("Error marking log as read:", error);
     }
   };
 
   const markAllAsRead = async () => {
     try {
-      const token = await AsyncStorage.getItem('authToken');
+      const token = await AsyncStorage.getItem("authToken");
       if (!token) {
-        console.error('No auth token found');
+        console.error("No auth token found");
         return;
       }
-      
+
       await fetch(`${API_URL}/logs/mark_all_read/`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Token ${token}`,
-          'X-Client-Timezone': Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+          "Content-Type": "application/json",
+          Authorization: `Token ${token}`,
+          "X-Client-Timezone":
+            Intl.DateTimeFormat().resolvedOptions().timeZone || "",
         },
       });
-      
+
       // Update the local state
-      setLogs(prevLogs => prevLogs.map(log => ({ ...log, read: true })));
+      setLogs((prevLogs) => prevLogs.map((log) => ({ ...log, read: true })));
     } catch (error) {
-      console.error('Error marking all logs as read:', error);
+      console.error("Error marking all logs as read:", error);
     }
   };
 
   const goToNextPage = () => {
     if (pagination.currentPage < pagination.totalPages) {
-      setPagination(prev => ({...prev, currentPage: prev.currentPage + 1}));
+      setPagination((prev) => ({ ...prev, currentPage: prev.currentPage + 1 }));
     }
   };
 
   const goToPrevPage = () => {
     if (pagination.currentPage > 1) {
-      setPagination(prev => ({...prev, currentPage: prev.currentPage - 1}));
+      setPagination((prev) => ({ ...prev, currentPage: prev.currentPage - 1 }));
     }
   };
 
@@ -205,7 +212,7 @@ const Logs: React.FC = () => {
     const date = new Date(dateString);
     const now = new Date();
     const diffInMs = now.getTime() - date.getTime();
-    
+
     const diffInMinutes = Math.floor(diffInMs / (1000 * 60));
     const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
     const diffInDays = Math.floor(diffInHours / 24);
@@ -223,18 +230,18 @@ const Logs: React.FC = () => {
 
   // Get icon based on log level
   const getLogIcon = (level: string) => {
-    switch (level?.toUpperCase() || '') {
-      case 'INFO':
+    switch (level?.toUpperCase() || "") {
+      case "INFO":
         return <Ionicons name="information-circle" size={24} color="#3B82F6" />;
-      case 'WARNING':
+      case "WARNING":
         return <Ionicons name="warning" size={24} color="#F59E0B" />;
-      case 'ERROR':
+      case "ERROR":
         return <Ionicons name="close-circle" size={24} color="#EF4444" />;
-      case 'SUCCESS':
+      case "SUCCESS":
         return <Ionicons name="checkmark-circle" size={24} color="#10B981" />;
-      case 'SECURITY':
+      case "SECURITY":
         return <Ionicons name="shield-checkmark" size={24} color="#8B5CF6" />;
-      case 'AUDIT':
+      case "AUDIT":
         return <Ionicons name="document-text" size={24} color="#6366F1" />;
       default:
         return <Ionicons name="ellipse" size={24} color="#8B5CF6" />;
@@ -243,67 +250,85 @@ const Logs: React.FC = () => {
 
   // Get background color based on log level
   const getLogIconBackground = (level: string) => {
-    switch (level?.toUpperCase() || '') {
-      case 'INFO':
-        return { backgroundColor: '#EFF6FF' }; // Light blue
-      case 'WARNING':
-        return { backgroundColor: '#FFFBEB' }; // Light yellow
-      case 'ERROR':
-        return { backgroundColor: '#FEF2F2' }; // Light red
-      case 'SUCCESS':
-        return { backgroundColor: '#ECFDF5' }; // Light green
-      case 'SECURITY':
-        return { backgroundColor: '#F5F3FF' }; // Light purple
-      case 'AUDIT':
-        return { backgroundColor: '#EEF2FF' }; // Light indigo
+    switch (level?.toUpperCase() || "") {
+      case "INFO":
+        return { backgroundColor: "#EFF6FF" }; // Light blue
+      case "WARNING":
+        return { backgroundColor: "#FFFBEB" }; // Light yellow
+      case "ERROR":
+        return { backgroundColor: "#FEF2F2" }; // Light red
+      case "SUCCESS":
+        return { backgroundColor: "#ECFDF5" }; // Light green
+      case "SECURITY":
+        return { backgroundColor: "#F5F3FF" }; // Light purple
+      case "AUDIT":
+        return { backgroundColor: "#EEF2FF" }; // Light indigo
       default:
-        return { backgroundColor: '#F5F3FF' }; // Light purple
+        return { backgroundColor: "#F5F3FF" }; // Light purple
     }
   };
 
   const getLogColor = (level: string) => {
-    switch (level?.toUpperCase() || '') {
-      case 'INFO':
-        return '#3B82F6'; // Blue
-      case 'WARNING':
-        return '#F59E0B'; // Yellow/Orange
-      case 'ERROR':
-        return '#EF4444'; // Red
-      case 'SUCCESS':
-        return '#10B981'; // Green
-      case 'SECURITY':
-        return '#8B5CF6'; // Purple
-      case 'AUDIT':
-        return '#6366F1'; // Indigo
+    switch (level?.toUpperCase() || "") {
+      case "INFO":
+        return "#3B82F6"; // Blue
+      case "WARNING":
+        return "#F59E0B"; // Yellow/Orange
+      case "ERROR":
+        return "#EF4444"; // Red
+      case "SUCCESS":
+        return "#10B981"; // Green
+      case "SECURITY":
+        return "#8B5CF6"; // Purple
+      case "AUDIT":
+        return "#6366F1"; // Indigo
       default:
-        return '#8B5CF6'; // Purple
+        return "#8B5CF6"; // Purple
     }
   };
 
   // Filter functions
   const applyFilters = () => {
     let filtered = [...allLogs];
-    
+
     // Level filter
-    if (levelFilter !== 'all') {
-      filtered = filtered.filter(log => log.level?.toLowerCase() === levelFilter.toLowerCase());
-    }
-    
-    // Action filter
-    if (actionFilter.trim()) {
-      filtered = filtered.filter(log => 
-        log.action?.toLowerCase().includes(actionFilter.toLowerCase()) ||
-        log.message?.toLowerCase().includes(actionFilter.toLowerCase())
+    if (levelFilter !== "all") {
+      filtered = filtered.filter(
+        (log) => log.level?.toLowerCase() === levelFilter.toLowerCase()
       );
     }
-    
+
+    // Action filter
+    if (actionFilter.trim()) {
+      filtered = filtered.filter(
+        (log) =>
+          log.action?.toLowerCase().includes(actionFilter.toLowerCase()) ||
+          log.message?.toLowerCase().includes(actionFilter.toLowerCase())
+      );
+    }
+
     // Date range filter
     if (startDate || endDate) {
-      filtered = filtered.filter(log => {
+      filtered = filtered.filter((log) => {
         const logDate = new Date(log.timestamp);
-        const start = startDate ? new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()) : null;
-        const end = endDate ? new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 23, 59, 59) : null;
-        
+        const start = startDate
+          ? new Date(
+              startDate.getFullYear(),
+              startDate.getMonth(),
+              startDate.getDate()
+            )
+          : null;
+        const end = endDate
+          ? new Date(
+              endDate.getFullYear(),
+              endDate.getMonth(),
+              endDate.getDate(),
+              23,
+              59,
+              59
+            )
+          : null;
+
         if (start && end) {
           return logDate >= start && logDate <= end;
         } else if (start) {
@@ -314,28 +339,30 @@ const Logs: React.FC = () => {
         return true;
       });
     }
-    
+
     setLogs(filtered);
   };
-  
+
   const clearFilters = () => {
-    setLevelFilter('all');
-    setActionFilter('');
+    setLevelFilter("all");
+    setActionFilter("");
     setStartDate(null);
     setEndDate(null);
     setLogs(allLogs);
   };
-  
+
   const formatDate = (date: Date | null) => {
-    if (!date) return 'Select date';
+    if (!date) return "Select date";
     return date.toLocaleDateString();
   };
-  
+
   const getLevelOptions = () => {
-    const levels = [...new Set(allLogs.map(log => log.level).filter(Boolean))];
-    return ['all', ...levels];
+    const levels = [
+      ...new Set(allLogs.map((log) => log.level).filter(Boolean)),
+    ];
+    return ["all", ...levels];
   };
-  
+
   // Apply filters when filter values change
   useEffect(() => {
     if (allLogs.length > 0) {
@@ -343,7 +370,7 @@ const Logs: React.FC = () => {
     }
   }, [levelFilter, actionFilter, startDate, endDate, allLogs]);
 
-  const unreadCount = logs?.filter(log => !log.read)?.length || 0;
+  const unreadCount = logs?.filter((log) => !log.read)?.length || 0;
 
   if (loading && !refreshing) {
     return (
@@ -357,10 +384,10 @@ const Logs: React.FC = () => {
   return (
     <SafeAreaWrapper backgroundColor="#F8FAFC" includeNavBar={false}>
       <StatusBar barStyle="light-content" backgroundColor="#7C3AED" />
-      
+
       {/* Enhanced Header with Visual Improvements */}
       <LinearGradient
-        colors={['#A855F7', '#8B5CF6', '#7C3AED']}
+        colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
         style={styles.header}
@@ -373,13 +400,17 @@ const Logs: React.FC = () => {
           >
             <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
           </TouchableOpacity>
-          
+
           <View style={styles.headerTitleContainer}>
             <View>
               <Text style={styles.headerTitle}>Security Audit Log</Text>
               <Text style={styles.headerSubtitle}>
-                {logs.length} {logs.length === 1 ? 'entry' : 'entries'}
-                {(levelFilter !== 'all' || actionFilter || startDate || endDate) && ' (filtered)'}
+                {logs.length} {logs.length === 1 ? "entry" : "entries"}
+                {(levelFilter !== "all" ||
+                  actionFilter ||
+                  startDate ||
+                  endDate) &&
+                  " (filtered)"}
               </Text>
             </View>
             {unreadCount > 0 && (
@@ -393,21 +424,30 @@ const Logs: React.FC = () => {
             <TouchableOpacity
               style={[
                 styles.filterButton,
-                (levelFilter !== 'all' || actionFilter || startDate || endDate) && styles.filterButtonActive
+                (levelFilter !== "all" ||
+                  actionFilter ||
+                  startDate ||
+                  endDate) &&
+                  styles.filterButtonActive,
               ]}
               onPress={() => setShowFilters(true)}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Ionicons 
-                name={levelFilter !== 'all' || actionFilter || startDate || endDate ? "filter" : "filter-outline"} 
-                size={22} 
-                color="#FFFFFF" 
+              <Ionicons
+                name={
+                  levelFilter !== "all" || actionFilter || startDate || endDate
+                    ? "filter"
+                    : "filter-outline"
+                }
+                size={22}
+                color="#FFFFFF"
               />
-              {(levelFilter !== 'all' || actionFilter || startDate || endDate) && (
-                <View style={styles.filterIndicator} />
-              )}
+              {(levelFilter !== "all" ||
+                actionFilter ||
+                startDate ||
+                endDate) && <View style={styles.filterIndicator} />}
             </TouchableOpacity>
-            
+
             {unreadCount > 0 && (
               <TouchableOpacity
                 style={styles.markAllButton}
@@ -424,7 +464,12 @@ const Logs: React.FC = () => {
       {/* Pagination Info */}
       <View style={styles.paginationInfo}>
         <Text style={styles.paginationText}>
-          Showing {((pagination.currentPage - 1) * LOGS_PER_PAGE) + 1} - {Math.min(pagination.currentPage * LOGS_PER_PAGE, pagination.totalLogs)} of {pagination.totalLogs} logs
+          Showing {(pagination.currentPage - 1) * LOGS_PER_PAGE + 1} -{" "}
+          {Math.min(
+            pagination.currentPage * LOGS_PER_PAGE,
+            pagination.totalLogs
+          )}{" "}
+          of {pagination.totalLogs} logs
         </Text>
       </View>
 
@@ -440,7 +485,7 @@ const Logs: React.FC = () => {
         <>
           <FlatList
             data={logs}
-            keyExtractor={item => item.id?.toString()}
+            keyExtractor={(item) => item.id?.toString()}
             contentContainerStyle={styles.listContainer}
             refreshControl={
               <RefreshControl
@@ -451,11 +496,11 @@ const Logs: React.FC = () => {
               />
             }
             renderItem={({ item, index }) => (
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[
                   styles.logCard,
                   !item.read && styles.unreadLogCard,
-                  { marginBottom: index === logs.length - 1 ? 20 : 12 }
+                  { marginBottom: index === logs.length - 1 ? 20 : 12 },
                 ]}
                 onPress={() => {
                   if (!item.read) markAsRead(item.id);
@@ -466,20 +511,22 @@ const Logs: React.FC = () => {
                 hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
               >
                 <View style={styles.logContent}>
-                  <View style={[
-                    styles.logIconContainer,
-                    getLogIconBackground(item.level),
-                    !item.read && styles.unreadIconContainer
-                  ]}>
+                  <View
+                    style={[
+                      styles.logIconContainer,
+                      getLogIconBackground(item.level),
+                      !item.read && styles.unreadIconContainer,
+                    ]}
+                  >
                     {getLogIcon(item.level)}
                   </View>
-                  
+
                   <View style={styles.logTextContent}>
                     <View style={styles.logHeader}>
-                      <Text 
+                      <Text
                         style={[
                           styles.logTitle,
-                          !item.read && styles.unreadLogTitle
+                          !item.read && styles.unreadLogTitle,
                         ]}
                         numberOfLines={1}
                       >
@@ -487,12 +534,12 @@ const Logs: React.FC = () => {
                       </Text>
                       {!item.read && <View style={styles.unreadDot} />}
                     </View>
-                    
-                    <Text 
+
+                    <Text
                       style={[
                         styles.logMessage,
-                        !item.read && styles.unreadLogMessage
-                      ]} 
+                        !item.read && styles.unreadLogMessage,
+                      ]}
                       numberOfLines={2}
                     >
                       {item.message}
@@ -500,20 +547,28 @@ const Logs: React.FC = () => {
 
                     <View style={styles.logFooter}>
                       <View style={styles.logMetadata}>
-                        <Ionicons name="time-outline" size={14} color="#9CA3AF" />
+                        <Ionicons
+                          name="time-outline"
+                          size={14}
+                          color="#9CA3AF"
+                        />
                         <Text style={styles.logTime}>
                           {formatTimeAgo(item.timestamp)}
                         </Text>
                       </View>
-                      
-                      <View style={[
-                        styles.levelBadge,
-                        { backgroundColor: getLogColor(item.level) + '15' }
-                      ]}>
-                        <Text style={[
-                          styles.levelBadgeText,
-                          { color: getLogColor(item.level) }
-                        ]}>
+
+                      <View
+                        style={[
+                          styles.levelBadge,
+                          { backgroundColor: getLogColor(item.level) + "15" },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.levelBadgeText,
+                            { color: getLogColor(item.level) },
+                          ]}
+                        >
                           {item.level?.toUpperCase()}
                         </Text>
                       </View>
@@ -526,50 +581,74 @@ const Logs: React.FC = () => {
               <View style={styles.emptyContainer}>
                 <MaterialIcons name="security" size={64} color="#CBD5E0" />
                 <Text style={styles.emptyText}>No security logs available</Text>
-                <Text style={styles.emptySubtext}>Security events will appear here as you use the app</Text>
+                <Text style={styles.emptySubtext}>
+                  Security events will appear here as you use the app
+                </Text>
               </View>
             }
           />
-          
+
           {/* Pagination Controls */}
           <View style={styles.paginationContainer}>
-            <TouchableOpacity 
-              style={[styles.paginationButton, pagination.currentPage <= 1 && styles.disabledButton]}
+            <TouchableOpacity
+              style={[
+                styles.paginationButton,
+                pagination.currentPage <= 1 && styles.disabledButton,
+              ]}
               onPress={goToPrevPage}
               disabled={pagination.currentPage <= 1}
             >
-              <Ionicons 
-                name="chevron-back" 
-                size={24} 
-                color={pagination.currentPage <= 1 ? "#CBD5E0" : "#6A009C"} 
+              <Ionicons
+                name="chevron-back"
+                size={24}
+                color={pagination.currentPage <= 1 ? "#CBD5E0" : "#6A009C"}
               />
-              <Text style={[styles.paginationButtonText, pagination.currentPage <= 1 && styles.disabledButtonText]}>
+              <Text
+                style={[
+                  styles.paginationButtonText,
+                  pagination.currentPage <= 1 && styles.disabledButtonText,
+                ]}
+              >
                 Previous
               </Text>
             </TouchableOpacity>
-            
+
             <Text style={styles.pageIndicator}>
               {pagination.currentPage} of {pagination.totalPages}
             </Text>
-            
-            <TouchableOpacity 
-              style={[styles.paginationButton, pagination.currentPage >= pagination.totalPages && styles.disabledButton]}
+
+            <TouchableOpacity
+              style={[
+                styles.paginationButton,
+                pagination.currentPage >= pagination.totalPages &&
+                  styles.disabledButton,
+              ]}
               onPress={goToNextPage}
               disabled={pagination.currentPage >= pagination.totalPages}
             >
-              <Text style={[styles.paginationButtonText, pagination.currentPage >= pagination.totalPages && styles.disabledButtonText]}>
+              <Text
+                style={[
+                  styles.paginationButtonText,
+                  pagination.currentPage >= pagination.totalPages &&
+                    styles.disabledButtonText,
+                ]}
+              >
                 Next
               </Text>
-              <Ionicons 
-                name="chevron-forward" 
-                size={24} 
-                color={pagination.currentPage >= pagination.totalPages ? "#CBD5E0" : "#6A009C"} 
+              <Ionicons
+                name="chevron-forward"
+                size={24}
+                color={
+                  pagination.currentPage >= pagination.totalPages
+                    ? "#CBD5E0"
+                    : "#6A009C"
+                }
               />
             </TouchableOpacity>
           </View>
         </>
       )}
-      
+
       {/* Filter Modal */}
       <Modal
         visible={showFilters}
@@ -587,7 +666,7 @@ const Logs: React.FC = () => {
               <Ionicons name="close" size={24} color="#6B7280" />
             </TouchableOpacity>
           </View>
-          
+
           <View style={styles.filterContent}>
             {/* Level Filter */}
             <View style={styles.filterSection}>
@@ -598,21 +677,23 @@ const Logs: React.FC = () => {
                     key={level}
                     style={[
                       styles.levelFilterButton,
-                      levelFilter === level && styles.activeLevelFilter
+                      levelFilter === level && styles.activeLevelFilter,
                     ]}
                     onPress={() => setLevelFilter(level)}
                   >
-                    <Text style={[
-                      styles.levelFilterText,
-                      levelFilter === level && styles.activeLevelFilterText
-                    ]}>
+                    <Text
+                      style={[
+                        styles.levelFilterText,
+                        levelFilter === level && styles.activeLevelFilterText,
+                      ]}
+                    >
                       {level.toUpperCase()}
                     </Text>
                   </TouchableOpacity>
                 ))}
               </View>
             </View>
-            
+
             {/* Action/Message Filter */}
             <View style={styles.filterSection}>
               <Text style={styles.filterLabel}>Search Action/Message</Text>
@@ -624,11 +705,11 @@ const Logs: React.FC = () => {
                 placeholderTextColor="#9CA3AF"
               />
             </View>
-            
+
             {/* Date Range Filter */}
             <View style={styles.filterSection}>
               <Text style={styles.filterLabel}>Date Range</Text>
-              
+
               <View style={styles.dateFilterRow}>
                 <TouchableOpacity
                   style={styles.dateButton}
@@ -639,7 +720,7 @@ const Logs: React.FC = () => {
                     From: {formatDate(startDate)}
                   </Text>
                 </TouchableOpacity>
-                
+
                 <TouchableOpacity
                   style={styles.dateButton}
                   onPress={() => setShowEndDatePicker(true)}
@@ -651,7 +732,7 @@ const Logs: React.FC = () => {
                 </TouchableOpacity>
               </View>
             </View>
-            
+
             {/* Filter Actions */}
             <View style={styles.filterActions}>
               <TouchableOpacity
@@ -660,7 +741,7 @@ const Logs: React.FC = () => {
               >
                 <Text style={styles.clearFiltersText}>Clear All</Text>
               </TouchableOpacity>
-              
+
               <TouchableOpacity
                 style={styles.applyFiltersButton}
                 onPress={() => setShowFilters(false)}
@@ -671,7 +752,7 @@ const Logs: React.FC = () => {
           </View>
         </View>
       </Modal>
-      
+
       {/* Log Detail Preview Modal */}
       <Modal
         visible={showLogDetailModal}
@@ -694,24 +775,32 @@ const Logs: React.FC = () => {
             <View style={styles.logDetailContent}>
               {/* Log Level Badge */}
               <View style={styles.logDetailSection}>
-                <View style={[
-                  styles.logDetailLevelBadge,
-                  { backgroundColor: getLogColor(selectedLog.level) + '15' }
-                ]}>
-                  <View style={[
-                    styles.logDetailIconContainer,
-                    getLogIconBackground(selectedLog.level)
-                  ]}>
+                <View
+                  style={[
+                    styles.logDetailLevelBadge,
+                    { backgroundColor: getLogColor(selectedLog.level) + "15" },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.logDetailIconContainer,
+                      getLogIconBackground(selectedLog.level),
+                    ]}
+                  >
                     {getLogIcon(selectedLog.level)}
                   </View>
                   <View style={styles.logDetailLevelInfo}>
-                    <Text style={[
-                      styles.logDetailLevelText,
-                      { color: getLogColor(selectedLog.level) }
-                    ]}>
+                    <Text
+                      style={[
+                        styles.logDetailLevelText,
+                        { color: getLogColor(selectedLog.level) },
+                      ]}
+                    >
                       {selectedLog.level?.toUpperCase()}
                     </Text>
-                    <Text style={styles.logDetailLevelSubtext}>Security Level</Text>
+                    <Text style={styles.logDetailLevelSubtext}>
+                      Security Level
+                    </Text>
                   </View>
                 </View>
               </View>
@@ -721,7 +810,9 @@ const Logs: React.FC = () => {
                 <Text style={styles.logDetailLabel}>Action</Text>
                 <View style={styles.logDetailValueContainer}>
                   <Ionicons name="flash-outline" size={18} color="#6B7280" />
-                  <Text style={styles.logDetailValue}>{selectedLog.action || 'N/A'}</Text>
+                  <Text style={styles.logDetailValue}>
+                    {selectedLog.action || "N/A"}
+                  </Text>
                 </View>
               </View>
 
@@ -729,7 +820,9 @@ const Logs: React.FC = () => {
               <View style={styles.logDetailSection}>
                 <Text style={styles.logDetailLabel}>Message</Text>
                 <View style={styles.logDetailMessageContainer}>
-                  <Text style={styles.logDetailMessage}>{selectedLog.message}</Text>
+                  <Text style={styles.logDetailMessage}>
+                    {selectedLog.message}
+                  </Text>
                 </View>
               </View>
 
@@ -738,29 +831,43 @@ const Logs: React.FC = () => {
                 <Text style={styles.logDetailLabel}>Timestamp</Text>
                 <View style={styles.logDetailTimestampContainer}>
                   <View style={styles.logDetailTimestampRow}>
-                    <Ionicons name="calendar-outline" size={18} color="#6B7280" />
+                    <Ionicons
+                      name="calendar-outline"
+                      size={18}
+                      color="#6B7280"
+                    />
                     <Text style={styles.logDetailTimestampText}>
-                      {new Date(selectedLog.timestamp).toLocaleDateString('en-US', {
-                        weekday: 'long',
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric'
-                      })}
+                      {new Date(selectedLog.timestamp).toLocaleDateString(
+                        "en-US",
+                        {
+                          weekday: "long",
+                          year: "numeric",
+                          month: "long",
+                          day: "numeric",
+                        }
+                      )}
                     </Text>
                   </View>
                   <View style={styles.logDetailTimestampRow}>
                     <Ionicons name="time-outline" size={18} color="#6B7280" />
                     <Text style={styles.logDetailTimestampText}>
-                      {new Date(selectedLog.timestamp).toLocaleTimeString('en-US', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        second: '2-digit',
-                        hour12: true
-                      })}
+                      {new Date(selectedLog.timestamp).toLocaleTimeString(
+                        "en-US",
+                        {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          second: "2-digit",
+                          hour12: true,
+                        }
+                      )}
                     </Text>
                   </View>
                   <View style={styles.logDetailTimestampRow}>
-                    <Ionicons name="hourglass-outline" size={18} color="#6B7280" />
+                    <Ionicons
+                      name="hourglass-outline"
+                      size={18}
+                      color="#6B7280"
+                    />
                     <Text style={styles.logDetailTimestampText}>
                       {formatTimeAgo(selectedLog.timestamp)}
                     </Text>
@@ -775,7 +882,11 @@ const Logs: React.FC = () => {
                   <View style={styles.logDetailEntityContainer}>
                     {selectedLog.entity_type && (
                       <View style={styles.logDetailEntityRow}>
-                        <Ionicons name="pricetag-outline" size={18} color="#8B5CF6" />
+                        <Ionicons
+                          name="pricetag-outline"
+                          size={18}
+                          color="#8B5CF6"
+                        />
                         <View style={styles.logDetailEntityInfo}>
                           <Text style={styles.logDetailEntityLabel}>Type</Text>
                           <Text style={styles.logDetailEntityValue}>
@@ -786,7 +897,11 @@ const Logs: React.FC = () => {
                     )}
                     {selectedLog.entity_id && (
                       <View style={styles.logDetailEntityRow}>
-                        <Ionicons name="key-outline" size={18} color="#8B5CF6" />
+                        <Ionicons
+                          name="key-outline"
+                          size={18}
+                          color="#8B5CF6"
+                        />
                         <View style={styles.logDetailEntityInfo}>
                           <Text style={styles.logDetailEntityLabel}>ID</Text>
                           <Text style={styles.logDetailEntityValue}>
@@ -804,17 +919,29 @@ const Logs: React.FC = () => {
                 <Text style={styles.logDetailLabel}>Status</Text>
                 <View style={styles.logDetailStatusContainer}>
                   <View style={styles.logDetailStatusRow}>
-                    <View style={[
-                      styles.logDetailStatusDot,
-                      { backgroundColor: selectedLog.read ? '#10B981' : '#F59E0B' }
-                    ]} />
+                    <View
+                      style={[
+                        styles.logDetailStatusDot,
+                        {
+                          backgroundColor: selectedLog.read
+                            ? "#10B981"
+                            : "#F59E0B",
+                        },
+                      ]}
+                    />
                     <Text style={styles.logDetailStatusText}>
-                      {selectedLog.read ? 'Read' : 'Unread'}
+                      {selectedLog.read ? "Read" : "Unread"}
                     </Text>
                   </View>
                   <View style={styles.logDetailStatusRow}>
-                    <Ionicons name="finger-print-outline" size={18} color="#6B7280" />
-                    <Text style={styles.logDetailStatusText}>ID: {selectedLog.id}</Text>
+                    <Ionicons
+                      name="finger-print-outline"
+                      size={18}
+                      color="#6B7280"
+                    />
+                    <Text style={styles.logDetailStatusText}>
+                      ID: {selectedLog.id}
+                    </Text>
                   </View>
                 </View>
               </View>
@@ -846,7 +973,7 @@ const Logs: React.FC = () => {
         onCancel={() => setShowStartDatePicker(false)}
         title="Select Start Date"
       />
-      
+
       <DatePicker
         modal
         open={showEndDatePicker}
@@ -869,7 +996,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#F8FAFC",
   },
   header: {
-    paddingTop: Platform.OS === 'ios' ? 12 : 12,
+    paddingTop: Platform.OS === "ios" ? 12 : 12,
     paddingBottom: 20,
     paddingHorizontal: 24,
   },
@@ -1090,7 +1217,7 @@ const styles = StyleSheet.create({
   disabledButtonText: {
     color: "#94A3B8",
   },
-  
+
   // Filter styles
   headerActions: {
     flexDirection: "row",
@@ -1230,7 +1357,7 @@ const styles = StyleSheet.create({
     fontFamily: "Inter-Medium",
     color: "#FFFFFF",
   },
-  
+
   // Enhanced UI styles
   headerSubtitle: {
     fontSize: 12,
@@ -1460,7 +1587,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-
 });
 
 export default Logs;

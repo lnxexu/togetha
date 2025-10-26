@@ -46,7 +46,13 @@ class Note(models.Model):
     last_drawing_update = models.DateTimeField(auto_now=True)
     
     # Document fields
-    document_file = models.FileField(upload_to='documents/', null=True, blank=True)
+    # Support storing documents either as raw bytes (legacy) or as file on disk
+    document_content = models.BinaryField(null=True, blank=True)  # Legacy: store file content in database
+    document_file = models.FileField(upload_to='documents/', null=True, blank=True)  # Preferred: store on disk (MEDIA_ROOT)
+    document_filename = models.CharField(max_length=255, null=True, blank=True)
+    document_content_type = models.CharField(max_length=100, null=True, blank=True)
+    # Optionally store a single image attachment for image notes or thumbnails
+    image_file = models.ImageField(upload_to='uploads/', null=True, blank=True)
     document_annotations = models.JSONField(null=True, blank=True)  # Store annotations as JSON
     document_metadata = models.JSONField(null=True, blank=True)  # Store document metadata (page count, size, etc.)
     
@@ -156,29 +162,3 @@ class Note(models.Model):
     class Meta:
         # Prefer recently accessed notes first, then recently updated
         ordering = ['-last_accessed', '-updated_at']
-
-class Tag(models.Model):
-    name = models.CharField(max_length=100)
-    notes = models.ManyToManyField(Note, related_name='tags')
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='tags')
-    color = models.CharField(max_length=7, default='#667eea')  # Hex color for tag
-    created_at = models.DateTimeField(auto_now_add=True)
-    
-    class Meta:
-        unique_together = ['name', 'user']  # Prevent duplicate tag names per user
-        ordering = ['name']
-
-    def __str__(self):
-        return self.name
-
-class AudioRecording(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    note = models.ForeignKey(Note, on_delete=models.CASCADE, related_name='audio_recordings')
-    audio_file = models.FileField(upload_to='audio_recordings/')
-    duration = models.IntegerField(default=0)  # Duration in seconds
-    transcribed = models.BooleanField(default=False)
-    transcription = models.TextField(blank=True, null=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"Audio for {self.note.title}"

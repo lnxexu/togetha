@@ -97,6 +97,7 @@ export default function Home() {
   const weekDates = getCurrentWeek();
   const [username, setUsername] = useState("User");
   const [profilePicture, setProfilePicture] = useState<string | null>(null);
+  const [authToken, setAuthToken] = useState<string>("");
   // State for data - combine stats and actions
   const [quickCards] = useState([...initialQuickStats, ...initialQuickActions]);
   const [priorityTasks, setPriorityTasks] = useState<any[]>([]);
@@ -146,6 +147,15 @@ export default function Home() {
 
   // Entry animation effect
   useEffect(() => {
+    // Load auth token first
+    const loadAuthToken = async () => {
+      const token = await AsyncStorage.getItem("authToken");
+      if (token) {
+        setAuthToken(token);
+      }
+    };
+    loadAuthToken();
+
     // Check if we're coming from login for special animation
     const fromLogin = WelcomeAnimationUtils.isFromLogin();
 
@@ -282,7 +292,11 @@ export default function Home() {
           
           const cachedProfilePic = await AsyncStorage.getItem("userProfilePicture");
           if (cachedProfilePic) {
-            setProfilePicture(`${API_URL}${cachedProfilePic}`);
+            // Check if it's a full URL or just a path
+            const profilePicUrl = cachedProfilePic.startsWith('http') 
+              ? cachedProfilePic 
+              : `${API_URL}${cachedProfilePic}`;
+            setProfilePicture(profilePicUrl);
           }
         }
 
@@ -291,15 +305,7 @@ export default function Home() {
           return;
         }
 
-        // Using Promise.race to use whichever endpoint responds first
         const endpoints = [
-          fetch(`${API_URL}/auth/user/`, {
-            method: "GET",
-            headers: {
-              Authorization: `Token ${token}`,
-              "Cache-Control": "no-cache",
-            },
-          }),
           fetch(`${API_URL}${API_ENDPOINTS.USER_PROFILE}`, {
             method: "GET",
             headers: {
@@ -309,7 +315,6 @@ export default function Home() {
           }),
         ];
 
-        // Wait for the fastest response
         const fastestResponse = await Promise.race(endpoints);
 
         if (fastestResponse.ok) {
@@ -325,15 +330,19 @@ export default function Home() {
                 await AsyncStorage.setItem("username", extractedUsername);
               }
 
-              // Try to extract profile picture path
-              const profilePicPath =
-                userData.profile?.profile_picture ||
-                userData.profile_picture ||
-                userData.user?.profile?.profile_picture;
+              // Try to extract profile picture URL
+              const profilePicUrl =
+                userData.profile?.profile_picture_url ||
+                userData.profile_picture_url ||
+                userData.user?.profile?.profile_picture_url;
 
-              if (profilePicPath) {
-                setProfilePicture(`${API_URL}${profilePicPath}`);
-                await AsyncStorage.setItem("userProfilePicture", profilePicPath);
+              if (profilePicUrl) {
+                // Store and use the full URL
+                const fullUrl = profilePicUrl.startsWith('http') 
+                  ? profilePicUrl 
+                  : `${API_URL}${profilePicUrl}`;
+                setProfilePicture(fullUrl);
+                await AsyncStorage.setItem("userProfilePicture", profilePicUrl);
               }
             }
           }
@@ -357,13 +366,16 @@ export default function Home() {
                     await AsyncStorage.setItem("username", extractedUsername);
                   }
 
-                  const profilePicPath =
-                    userData.profile?.profile_picture ||
-                    userData.profile_picture ||
-                    userData.user?.profile?.profile_picture;
-                  if (profilePicPath) {
-                    setProfilePicture(`${API_URL}${profilePicPath}`);
-                    await AsyncStorage.setItem("userProfilePicture", profilePicPath);
+                  const profilePicUrl =
+                    userData.profile?.profile_picture_url ||
+                    userData.profile_picture_url ||
+                    userData.user?.profile?.profile_picture_url;
+                  if (profilePicUrl) {
+                    const fullUrl = profilePicUrl.startsWith('http') 
+                      ? profilePicUrl 
+                      : `${API_URL}${profilePicUrl}`;
+                    setProfilePicture(fullUrl);
+                    await AsyncStorage.setItem("userProfilePicture", profilePicUrl);
                   }
                 }
               }
@@ -873,9 +885,18 @@ export default function Home() {
               >
                 {profilePicture ? (
                   <Image
-                    source={{ uri: profilePicture }}
+                    source={{ 
+                      uri: profilePicture,
+                      headers: authToken ? {
+                        'Authorization': `Token ${authToken}`
+                      } : undefined
+                    }}
                     style={styles.profileImage}
                     resizeMode="cover"
+                    onError={(error) => {
+                      // Silently fall back to placeholder on error
+                      setProfilePicture(null);
+                    }}
                   />
                 ) : (
                   <View style={styles.profilePlaceholder}>

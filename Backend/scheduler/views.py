@@ -7,8 +7,6 @@ from datetime import datetime, timedelta
 from .tasks import check_due_tasks, send_individual_task_reminder
 from task_manager.models import Task
 from notifications.models import Notification
-from django_celery_beat.models import PeriodicTask, CrontabSchedule
-import json
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -72,17 +70,17 @@ def get_user_upcoming_tasks(request):
     now = timezone.now()
     upcoming_tasks = Task.objects.filter(
         user=request.user,
-        completed=False,  # Changed from is_completed
-        due_date__gte=now,  # Changed from due_datetime
-        due_date__lte=now + timedelta(days=7)  # Changed from due_datetime
-    ).order_by('due_date')  # Changed from due_datetime
-    
+        completed=False,
+        due_date__gte=now,
+        due_date__lte=now + timedelta(days=7)
+    ).order_by('due_date')
+
     task_data = []
     for task in upcoming_tasks:
         task_data.append({
             'id': task.id,
             'title': task.title,
-            'due_date': task.due_date,  # Changed from due_datetime
+            'due_date': task.due_date,
             'priority': task.priority
         })
     
@@ -91,7 +89,6 @@ def get_user_upcoming_tasks(request):
         'count': len(task_data)
     })
 
-# Add this new debug endpoint
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def test_scheduler(request):

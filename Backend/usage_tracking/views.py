@@ -1,20 +1,16 @@
+from .serializers import UserSessionSerializer, UserActivitySerializer, DailyUsageSummarySerializer, WeeklyUsageSummarySerializer
+from .models import UserSession, UserActivity, DailyUsageSummary, WeeklyUsageSummary
+from .services import UsageTrackingService
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
-from django.db.models import Sum, Avg, Count, Q
-from datetime import datetime, timedelta, date
+from django.db.models import Avg, Count, F, Value, FloatField
+from django.db.models import ExpressionWrapper
+from django.db.models.functions import Least
+from datetime import timedelta
 import uuid
-import json
-
-from .models import UserSession, UserActivity, DailyUsageSummary, WeeklyUsageSummary
-from .serializers import (
-    UserSessionSerializer, UserActivitySerializer, 
-    DailyUsageSummarySerializer, WeeklyUsageSummarySerializer,
-    UsageStatsSerializer
-)
-from .services import UsageTrackingService
 
 
 class SessionTrackingView(APIView):
@@ -327,21 +323,29 @@ class UsageStatsView(APIView):
         last_7_days = today - timedelta(days=7)
         prev_7_days = last_7_days - timedelta(days=7)
         
-        recent_avg = DailyUsageSummary.objects.filter(
+        # Build an expression matching DailyUsageSummary.engagement_score property
+        engagement_expr = ExpressionWrapper(
+            (
+                Least(F('total_active_time_seconds') / Value(3600.0), Value(1.0)) * Value(40.0)
+                + Least(F('total_interactions') / Value(100.0), Value(1.0)) * Value(30.0)
+                + Least((F('tasks_completed') + F('notes_created') + F('chat_messages')) / Value(10.0), Value(1.0)) * Value(30.0)
+            ),
+            output_field=FloatField()
+        )
+
+        recent_agg = DailyUsageSummary.objects.filter(
             user=user,
             date__gte=last_7_days,
             date__lt=today
-        ).aggregate(
-            avg_score=Avg('engagement_score')
-        )['avg_score'] or 0
-        
-        previous_avg = DailyUsageSummary.objects.filter(
+        ).aggregate(avg_score=Avg(engagement_expr))
+        recent_avg = recent_agg.get('avg_score') or 0
+
+        previous_agg = DailyUsageSummary.objects.filter(
             user=user,
             date__gte=prev_7_days,
             date__lt=last_7_days
-        ).aggregate(
-            avg_score=Avg('engagement_score')
-        )['avg_score'] or 0
+        ).aggregate(avg_score=Avg(engagement_expr))
+        previous_avg = previous_agg.get('avg_score') or 0
         
         if recent_avg > previous_avg * 1.1:
             return 'up'
@@ -371,7 +375,7 @@ class IdleDetectionView(APIView):
                 UserActivity.objects.create(
                     user=request.user,
                     session=session,
-                    activity_type='idle_start',
+                    activity_type='idSle_start',
                     details={'timestamp': timezone.now().isoformat()}
                 )
             elif action == 'idle_end':

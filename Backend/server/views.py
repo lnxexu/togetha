@@ -231,14 +231,14 @@ def test_token(request):
 @authentication_classes([TokenAuthentication, SessionAuthentication])
 @permission_classes([IsAuthenticated])
 def get_user_info(request):
+    from users.serializers import UserSerializer
     user = request.user
     if not user.is_authenticated:
         return Response({"error": "Authentication required"}, status=status.HTTP_401_UNAUTHORIZED)
-    return Response({
-        "username": user.username,
-        "email": user.email,
-        "date_joined": user.date_joined
-    }, status=status.HTTP_200_OK)
+    
+    # Use the UserSerializer to get full profile information including profile picture URL
+    serializer = UserSerializer(user, context={'request': request})
+    return Response(serializer.data, status=status.HTTP_200_OK)
 
 # logout user
 @api_view(['POST'])
@@ -291,30 +291,6 @@ def user_logout(request):
                     status=status.HTTP_200_OK)
 
 
-def login_page(request):
-    return render(request, 'login.html')
-
-def signup_page(request):
-    return render(request, 'signup.html')  
-
-def test_token_page(request):
-    return render(request, 'test_token.html')
-
-def home_page(request):
-    return render(request, 'home.html')
-
-def chatbot_page(request):
-    return render(request, 'chatbot.html')
-
-def notes_page(request):
-    return render(request, 'notes.html')
-
-def task_manager_page(request):
-    return render(request, 'tasks.html')
-
-def my_profile(request):
-    return render(request, 'myProfile.html')
-
 def forgot_password(request):
     from django.contrib.auth.forms import PasswordResetForm
     from django.contrib import messages
@@ -361,3 +337,27 @@ def health_check(request):
     return Response({
         'status': 'healthy'
     }, status=status.HTTP_200_OK)
+
+def login_page(request):
+    return render(request, 'login.html')
+
+def signup_page(request):
+    return render(request, 'signup.html')  
+
+def test_token_page(request):
+    return render(request, 'test_token.html')
+
+def home_page(request):
+    return render(request, 'home.html')
+
+def chatbot_page(request):
+    return render(request, 'chatbot.html')
+
+def notes_page(request):
+    return render(request, 'notes.html')
+
+def task_manager_page(request):
+    return render(request, 'tasks.html')
+
+def my_profile(request):
+    return render(request, 'myProfile.html')

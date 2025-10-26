@@ -1,23 +1,20 @@
-import pyotp
-import qrcode
-from io import BytesIO
-import base64
-from django.contrib.auth.models import User
+from rest_framework.decorators import api_view, permission_classes
 from django.contrib.auth import authenticate
 from django.core.mail import send_mail
+from rest_framework.permissions import IsAuthenticated, AllowAny
+from .models import TwoFactorAuth, LoginAttempt, SecuritySettings
+from rest_framework.authtoken.models import Token
+from rest_framework.response import Response
+from .serializers import UserSerializer
+from django.contrib.auth.models import User
 from django.conf import settings
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated, AllowAny
-from rest_framework.response import Response
-from rest_framework.authtoken.models import Token
 from django.utils import timezone
 from datetime import timedelta
-from .models import TwoFactorAuth, LoginAttempt, SecuritySettings
-from .serializers import UserSerializer
-import secrets
-import json
-from django.http import JsonResponse
+from io import BytesIO
+import qrcode
+import base64
+
 
 def get_client_ip(request):
     """Get client IP address from request"""
@@ -33,7 +30,7 @@ def log_login_attempt(email, ip_address, user_agent, success, failure_reason="")
     LoginAttempt.objects.create(
         email=email,
         ip_address=ip_address,
-        user_agent=user_agent[:1000],  # Limit length
+        user_agent=user_agent[:1000],
         success=success,
         failure_reason=failure_reason
     )

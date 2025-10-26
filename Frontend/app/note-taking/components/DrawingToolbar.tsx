@@ -7,10 +7,10 @@ import {
   ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import TemplatePreview from './TemplatePreview';
-import { TemplateType } from './TemplateOverlay';
-import { TEMPLATE_CONFIGS, getTemplateConfig } from '../utils/templateConfig';
-import { DrawingTool } from './DrawingCanvas';
+import TemplatePreview from "./TemplatePreview";
+import { TemplateType } from "./TemplateOverlay";
+import { TEMPLATE_CONFIGS, getTemplateConfig } from "../utils/templateConfig";
+import { DrawingTool } from "./DrawingCanvas";
 
 interface DrawingToolbarProps {
   currentTool: DrawingTool;
@@ -73,14 +73,15 @@ const TOOLS = [
   { name: "eraser", icon: "remove-outline", label: "Eraser" },
 ] as const;
 
-// Get template list from configuration
-const TEMPLATE_TYPES: TemplateType[] = Object.keys(TEMPLATE_CONFIGS) as TemplateType[];
+const TEMPLATE_TYPES: TemplateType[] = Object.keys(
+  TEMPLATE_CONFIGS
+) as TemplateType[];
 
 export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
   currentTool,
   currentColor,
   currentWidth,
-  currentTemplate = 'blank',
+  currentTemplate = "blank",
   currentZoom = 1,
   compact = false,
   onToolChange,
@@ -97,16 +98,14 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
   canUndo = false,
   canRedo = false,
 }) => {
-  // Use a single state to track which dropdown is open
-  const [activeDropdown, setActiveDropdown] = useState<"tools" | "color" | "width" | "template" | null>(null);
-  
-  // Helper functions to check which dropdown is active
+  const [activeDropdown, setActiveDropdown] = useState<
+    "tools" | "color" | "width" | "template" | null
+  >(null);
   const showToolSelector = activeDropdown === "tools";
   const showColorPicker = activeDropdown === "color";
   const showWidthPicker = activeDropdown === "width";
   const showTemplateSelector = activeDropdown === "template";
 
-  // notify parent when dropdown open state changes (used to hide template selector)
   React.useEffect(() => {
     onDropdownToggle?.(activeDropdown !== null);
   }, [activeDropdown, onDropdownToggle]);
@@ -128,34 +127,33 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
 
   const getCurrentToolInfo = () => {
     const tool = TOOLS.find((t) => t.name === currentTool);
-    return tool || TOOLS[0]; // fallback to first tool
+    return tool || TOOLS[0];
   };
 
-  // Image import functionality has been removed from the toolbar as requested.
-
   return (
-    <View style={[
-      styles.toolbarWrapper,
-      compact && {
-        marginTop: 0,
-        marginBottom: 0,
-        borderWidth: 0,
-        backgroundColor: 'transparent',
-        elevation: 0,
-        shadowColor: 'transparent',
-      }
-    ]}>
+    <View
+      style={[
+        styles.toolbarWrapper,
+        compact && {
+          marginTop: 0,
+          marginBottom: 0,
+          borderWidth: 0,
+          backgroundColor: "transparent",
+          elevation: 0,
+          shadowColor: "transparent",
+        },
+      ]}
+    >
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         style={styles.container}
         contentContainerStyle={[
           styles.contentContainer,
-          compact && { paddingHorizontal: 0, paddingVertical: 0 }
+          compact && { paddingHorizontal: 0, paddingVertical: 0 },
         ]}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Actions Section - moved to first position for quick access (download removed) */}
         <View style={styles.section}>
           <View style={styles.actionsRow}>
             <TouchableOpacity
@@ -187,13 +185,12 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
             </TouchableOpacity>
           </View>
         </View>
-        {/* Tools Section */}
         <View style={styles.section}>
           <View style={styles.toolsSection}>
             <TouchableOpacity
               style={[
                 styles.dropdown,
-                showToolSelector && styles.dropdownActive
+                showToolSelector && styles.dropdownActive,
               ]}
               onPress={() => {
                 setActiveDropdown(showToolSelector ? null : "tools");
@@ -209,13 +206,17 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
                 />
               </View>
               <View style={styles.labelContainer}>
-                <Text style={[
-                  styles.dropdownLabel,
-                  showToolSelector && { color: '#FFFFFF' }
-                ]}>{getCurrentToolInfo().label}</Text>
-                <Ionicons 
-                  name={showToolSelector ? "chevron-up" : "chevron-down"} 
-                  size={12} 
+                <Text
+                  style={[
+                    styles.dropdownLabel,
+                    showToolSelector && { color: "#FFFFFF" },
+                  ]}
+                >
+                  {getCurrentToolInfo().label}
+                </Text>
+                <Ionicons
+                  name={showToolSelector ? "chevron-up" : "chevron-down"}
+                  size={12}
                   color={showToolSelector ? "#FFFFFF" : "#666"}
                 />
               </View>
@@ -223,14 +224,13 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
           </View>
         </View>
 
-        {/* Template Section */}
         {onTemplateChange && (
           <View style={styles.section}>
             <View style={styles.templateSection}>
               <TouchableOpacity
                 style={[
                   styles.dropdown,
-                  showTemplateSelector && styles.dropdownActive
+                  showTemplateSelector && styles.dropdownActive,
                 ]}
                 onPress={() => {
                   setActiveDropdown(showTemplateSelector ? null : "template");
@@ -239,38 +239,38 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
                 hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
               >
                 <View style={styles.templateIndicator}>
-                  <TemplatePreview 
-                    template={currentTemplate} 
+                  <TemplatePreview
+                    template={currentTemplate}
                     width={16}
                     height={16}
                   />
                 </View>
                 <View style={styles.labelContainer}>
-                  <Text style={[
-                    styles.dropdownLabel,
-                    showTemplateSelector && { color: '#FFFFFF' }
-                  ]}>{getCurrentTemplateName()}</Text>
-                  <Ionicons 
-                    name={showTemplateSelector ? "chevron-up" : "chevron-down"} 
-                    size={12} 
+                  <Text
+                    style={[
+                      styles.dropdownLabel,
+                      showTemplateSelector && { color: "#FFFFFF" },
+                    ]}
+                  >
+                    {getCurrentTemplateName()}
+                  </Text>
+                  <Ionicons
+                    name={showTemplateSelector ? "chevron-up" : "chevron-down"}
+                    size={12}
                     color={showTemplateSelector ? "#FFFFFF" : "#666"}
                   />
                 </View>
               </TouchableOpacity>
-
-              {/* Template Selector Dropdown */}
-              {/* Moved to popout container below */}
             </View>
           </View>
         )}
 
-        {/* Color Section */}
         <View style={styles.section}>
           <View style={styles.colorSection}>
             <TouchableOpacity
               style={[
                 styles.dropdown,
-                showColorPicker && styles.dropdownActive
+                showColorPicker && styles.dropdownActive,
               ]}
               onPress={() => {
                 setActiveDropdown(showColorPicker ? null : "color");
@@ -279,33 +279,36 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
               hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
             >
               <View
-                style={[styles.colorIndicator, { backgroundColor: currentColor }]}
+                style={[
+                  styles.colorIndicator,
+                  { backgroundColor: currentColor },
+                ]}
               />
               <View style={styles.labelContainer}>
-                <Text style={[
-                  styles.dropdownLabel,
-                  showColorPicker && { color: '#FFFFFF' }
-                ]}>{getCurrentColorName()}</Text>
-                <Ionicons 
-                  name={showColorPicker ? "chevron-up" : "chevron-down"} 
-                  size={12} 
+                <Text
+                  style={[
+                    styles.dropdownLabel,
+                    showColorPicker && { color: "#FFFFFF" },
+                  ]}
+                >
+                  {getCurrentColorName()}
+                </Text>
+                <Ionicons
+                  name={showColorPicker ? "chevron-up" : "chevron-down"}
+                  size={12}
                   color={showColorPicker ? "#FFFFFF" : "#666"}
                 />
               </View>
             </TouchableOpacity>
-
-            {/* Color Picker Dropdown */}
-            {/* Moved to popout container below */}
           </View>
         </View>
 
-        {/* Brush Size Section */}
         <View style={styles.section}>
           <View style={styles.widthSection}>
             <TouchableOpacity
               style={[
                 styles.dropdown,
-                showWidthPicker && styles.dropdownActive
+                showWidthPicker && styles.dropdownActive,
               ]}
               onPress={() => {
                 setActiveDropdown(showWidthPicker ? null : "width");
@@ -324,26 +327,24 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
                 ]}
               />
               <View style={styles.labelContainer}>
-                <Text style={[
-                  styles.dropdownLabel,
-                  showWidthPicker && { color: '#FFFFFF' }
-                ]}>{getCurrentWidthLabel()}</Text>
-                <Ionicons 
-                  name={showWidthPicker ? "chevron-up" : "chevron-down"} 
-                  size={12} 
+                <Text
+                  style={[
+                    styles.dropdownLabel,
+                    showWidthPicker && { color: "#FFFFFF" },
+                  ]}
+                >
+                  {getCurrentWidthLabel()}
+                </Text>
+                <Ionicons
+                  name={showWidthPicker ? "chevron-up" : "chevron-down"}
+                  size={12}
                   color={showWidthPicker ? "#FFFFFF" : "#666"}
                 />
               </View>
             </TouchableOpacity>
-
-            {/* Width Picker Dropdown */}
-            {/* Moved to popout container below */}
           </View>
         </View>
 
-        {/* Image Import Section removed */}
-
-        {/* Zoom Section */}
         {(onZoomIn || onZoomOut || onZoomReset) && (
           <View style={styles.section}>
             <View style={styles.zoomSection}>
@@ -359,7 +360,9 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
                 onPress={onZoomReset}
                 activeOpacity={0.8}
               >
-                <Text style={styles.zoomText}>{Math.round(currentZoom * 100)}%</Text>
+                <Text style={styles.zoomText}>
+                  {Math.round(currentZoom * 100)}%
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.zoomButton}
@@ -371,16 +374,14 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
             </View>
           </View>
         )}
-
-        {/* Actions moved to the start of the toolbar for quick access */}
       </ScrollView>
-      
-      {/* Popout containers below the toolbar */}
-      <View style={[
-        styles.popoutContainer,
-        compact && { top: 36, paddingHorizontal: 0, paddingBottom: 0 }
-      ]}>
-        {/* Tools Selector Popout */}
+
+      <View
+        style={[
+          styles.popoutContainer,
+          compact && { top: 36, paddingHorizontal: 0, paddingBottom: 0 },
+        ]}
+      >
         {showToolSelector && (
           <View style={styles.toolsDropdown}>
             <View style={styles.toolsGrid}>
@@ -389,7 +390,7 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
                   key={tool.name}
                   style={[
                     styles.toolCard,
-                    currentTool === tool.name && styles.selectedToolCard
+                    currentTool === tool.name && styles.selectedToolCard,
                   ]}
                   onPress={() => {
                     onToolChange(tool.name as DrawingTool);
@@ -398,20 +399,24 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
                   activeOpacity={0.7}
                   hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
                 >
-                  <View style={[
-                    styles.toolCardIcon,
-                    currentTool === tool.name && styles.selectedToolIcon
-                  ]}>
+                  <View
+                    style={[
+                      styles.toolCardIcon,
+                      currentTool === tool.name && styles.selectedToolIcon,
+                    ]}
+                  >
                     <Ionicons
                       name={tool.icon as any}
                       size={20}
                       color={currentTool === tool.name ? "#FFFFFF" : "#374151"}
                     />
                   </View>
-                  <Text style={[
-                    styles.toolCardName,
-                    currentTool === tool.name && styles.selectedToolText
-                  ]}>
+                  <Text
+                    style={[
+                      styles.toolCardName,
+                      currentTool === tool.name && styles.selectedToolText,
+                    ]}
+                  >
                     {tool.label}
                   </Text>
                 </TouchableOpacity>
@@ -420,7 +425,6 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
           </View>
         )}
 
-        {/* Color Picker Popout */}
         {showColorPicker && (
           <View style={styles.colorDropdown}>
             <View style={styles.colorGrid}>
@@ -429,7 +433,7 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
                   key={color.value}
                   style={[
                     styles.colorCard,
-                    currentColor === color.value && styles.selectedColorCard
+                    currentColor === color.value && styles.selectedColorCard,
                   ]}
                   onPress={() => {
                     onColorChange(color.value);
@@ -438,15 +442,20 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
                   activeOpacity={0.7}
                   hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
                 >
-                  <View style={[
-                    styles.colorCardPreview,
-                    { backgroundColor: color.value },
-                    currentColor === color.value && styles.selectedColorPreview
-                  ]} />
-                  <Text style={[
-                    styles.colorCardName,
-                    currentColor === color.value && styles.selectedColorText
-                  ]}>
+                  <View
+                    style={[
+                      styles.colorCardPreview,
+                      { backgroundColor: color.value },
+                      currentColor === color.value &&
+                        styles.selectedColorPreview,
+                    ]}
+                  />
+                  <Text
+                    style={[
+                      styles.colorCardName,
+                      currentColor === color.value && styles.selectedColorText,
+                    ]}
+                  >
                     {color.name}
                   </Text>
                 </TouchableOpacity>
@@ -455,7 +464,6 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
           </View>
         )}
 
-        {/* Width Picker Popout */}
         {showWidthPicker && (
           <View style={styles.widthDropdown}>
             <View style={styles.widthGrid}>
@@ -464,7 +472,7 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
                   key={width.value}
                   style={[
                     styles.widthCard,
-                    currentWidth === width.value && styles.selectedWidthCard
+                    currentWidth === width.value && styles.selectedWidthCard,
                   ]}
                   onPress={() => {
                     onWidthChange(width.value);
@@ -473,25 +481,33 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
                   activeOpacity={0.7}
                   hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
                 >
-                  <View style={[
-                    styles.widthCardPreview,
-                    {
-                      width: Math.min(width.value + 8, 24),
-                      height: Math.min(width.value + 8, 24),
-                      backgroundColor: currentColor,
-                    },
-                    currentWidth === width.value && styles.selectedWidthPreview
-                  ]} />
-                  <Text style={[
-                    styles.widthCardLabel,
-                    currentWidth === width.value && styles.selectedWidthText
-                  ]}>
+                  <View
+                    style={[
+                      styles.widthCardPreview,
+                      {
+                        width: Math.min(width.value + 8, 24),
+                        height: Math.min(width.value + 8, 24),
+                        backgroundColor: currentColor,
+                      },
+                      currentWidth === width.value &&
+                        styles.selectedWidthPreview,
+                    ]}
+                  />
+                  <Text
+                    style={[
+                      styles.widthCardLabel,
+                      currentWidth === width.value && styles.selectedWidthText,
+                    ]}
+                  >
                     {width.label}
                   </Text>
-                  <Text style={[
-                    styles.widthCardValue,
-                    currentWidth === width.value && styles.selectedWidthValueText
-                  ]}>
+                  <Text
+                    style={[
+                      styles.widthCardValue,
+                      currentWidth === width.value &&
+                        styles.selectedWidthValueText,
+                    ]}
+                  >
                     {width.value}px
                   </Text>
                 </TouchableOpacity>
@@ -500,7 +516,6 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
           </View>
         )}
 
-        {/* Template Selector Popout */}
         {showTemplateSelector && onTemplateChange && (
           <View style={styles.templateDropdown}>
             <View style={styles.templateGrid}>
@@ -511,7 +526,8 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
                     key={templateType}
                     style={[
                       styles.templateCard,
-                      currentTemplate === templateType && styles.selectedTemplateCard
+                      currentTemplate === templateType &&
+                        styles.selectedTemplateCard,
                     ]}
                     onPress={() => {
                       onTemplateChange(templateType);
@@ -520,30 +536,38 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
                     activeOpacity={0.7}
                     hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
                   >
-                    <View style={[
-                      styles.templateCardIcon,
-                      currentTemplate === templateType && styles.selectedTemplateIcon
-                    ]}>
-                      <TemplatePreview 
-                        template={templateType} 
+                    <View
+                      style={[
+                        styles.templateCardIcon,
+                        currentTemplate === templateType &&
+                          styles.selectedTemplateIcon,
+                      ]}
+                    >
+                      <TemplatePreview
+                        template={templateType}
                         width={28}
                         height={28}
                       />
                     </View>
-                    <Text style={[
-                      styles.templateCardName,
-                      currentTemplate === templateType && styles.selectedTemplateText
-                    ]}>
+                    <Text
+                      style={[
+                        styles.templateCardName,
+                        currentTemplate === templateType &&
+                          styles.selectedTemplateText,
+                      ]}
+                    >
                       {config.name}
                     </Text>
-                    <Text style={[
-                      styles.templateCardDescription,
-                      currentTemplate === templateType && styles.selectedTemplateDescText
-                    ]}>
-                      {config.description.length > 25 ? 
-                        config.description.substring(0, 25) + '...' : 
-                        config.description
-                      }
+                    <Text
+                      style={[
+                        styles.templateCardDescription,
+                        currentTemplate === templateType &&
+                          styles.selectedTemplateDescText,
+                      ]}
+                    >
+                      {config.description.length > 25
+                        ? config.description.substring(0, 25) + "..."
+                        : config.description}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -551,8 +575,6 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
             </View>
           </View>
         )}
-
-        {/* Image Options Popout removed */}
       </View>
     </View>
   );
@@ -570,9 +592,9 @@ const styles = StyleSheet.create({
     zIndex: 100,
     elevation: 5,
   },
-  
+
   container: {
-    width: '100%',
+    width: "100%",
     minWidth: 0,
     backgroundColor: "transparent",
     borderRadius: 0,
@@ -582,21 +604,21 @@ const styles = StyleSheet.create({
   },
 
   popoutContainer: {
-    position: 'absolute',
-    top: '100%',
+    position: "absolute",
+    top: "100%",
     left: 0,
     right: 0,
     paddingHorizontal: 8,
     paddingBottom: 8,
     backgroundColor: "transparent",
-    alignItems: 'center',
+    alignItems: "center",
     zIndex: 99999,
     elevation: 999,
-    pointerEvents: 'box-none', // Allow touch events to pass through to children
+    pointerEvents: "box-none", // Allow touch events to pass through to children
   },
 
   contentContainer: {
-    flexDirection: 'row',
+    flexDirection: "row",
     flexGrow: 1,
     alignItems: "center",
     justifyContent: "flex-start",
@@ -611,25 +633,23 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-
-
   // Section Styles
   toolsSection: {
-    alignItems: 'center',
+    alignItems: "center",
   },
 
   colorSection: {
-    alignItems: 'center',
+    alignItems: "center",
   },
 
   widthSection: {
-    alignItems: 'center',
+    alignItems: "center",
   },
 
   // imageSection removed
 
   templateSection: {
-    alignItems: 'center',
+    alignItems: "center",
   },
 
   // Zoom Section
@@ -676,9 +696,9 @@ const styles = StyleSheet.create({
 
   // Dropdown Styles
   dropdown: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'transparent',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "transparent",
     borderRadius: 8,
     paddingHorizontal: 6,
     paddingVertical: 4,
@@ -688,9 +708,9 @@ const styles = StyleSheet.create({
   },
 
   dropdownActive: {
-    backgroundColor: '#6A009C',
-    borderColor: '#6A009C',
-    shadowColor: '#6A009C',
+    backgroundColor: "#6A009C",
+    borderColor: "#6A009C",
+    shadowColor: "#6A009C",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 3,
@@ -698,16 +718,16 @@ const styles = StyleSheet.create({
   },
 
   labelContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     flex: 1,
-    justifyContent: 'space-between',
+    justifyContent: "space-between",
   },
 
   dropdownLabel: {
     fontSize: 11,
-    fontFamily: 'Inter-Medium',
-    color: '#374151',
+    fontFamily: "Inter-Medium",
+    color: "#374151",
   },
 
   // Tool Dropdown Styles
@@ -715,11 +735,11 @@ const styles = StyleSheet.create({
     width: 14,
     height: 14,
     borderRadius: 8,
-    backgroundColor: '#F3F4F6',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "#F3F4F6",
+    justifyContent: "center",
+    alignItems: "center",
     borderWidth: 1,
-    borderColor: '#EEF2FF',
+    borderColor: "#EEF2FF",
   },
 
   // Color Dropdown Styles
@@ -728,7 +748,7 @@ const styles = StyleSheet.create({
     height: 14,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#EEF2FF',
+    borderColor: "#EEF2FF",
   },
 
   // Template Dropdown Styles
@@ -736,42 +756,42 @@ const styles = StyleSheet.create({
     width: 14,
     height: 14,
     borderRadius: 8,
-    backgroundColor: '#F3F4F6',
-    justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden',
+    backgroundColor: "#F3F4F6",
+    justifyContent: "center",
+    alignItems: "center",
+    overflow: "hidden",
     borderWidth: 1,
-    borderColor: '#EEF2FF',
+    borderColor: "#EEF2FF",
   },
 
   toolsDropdown: {
     width: 260,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#EEF2FF',
-    shadowColor: '#000',
+    borderColor: "#EEF2FF",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.15,
     shadowRadius: 15,
     elevation: 999,
     padding: 8,
-    pointerEvents: 'auto'
+    pointerEvents: "auto",
   },
 
   colorDropdown: {
     width: 220,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#EEF2FF',
-    shadowColor: '#000',
+    borderColor: "#EEF2FF",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.15,
     shadowRadius: 15,
     elevation: 999,
     padding: 8,
-    pointerEvents: 'auto',
+    pointerEvents: "auto",
   },
 
   // Width Dropdown Styles
@@ -779,22 +799,22 @@ const styles = StyleSheet.create({
     width: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: '#374151',
+    backgroundColor: "#374151",
   },
 
   widthDropdown: {
     width: 220,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#EEF2FF',
-    shadowColor: '#000',
+    borderColor: "#EEF2FF",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.15,
     shadowRadius: 15,
     elevation: 999,
     padding: 8,
-    pointerEvents: 'auto',
+    pointerEvents: "auto",
   },
 
   // Image Dropdown Styles removed
@@ -802,17 +822,17 @@ const styles = StyleSheet.create({
   // Template Dropdown Styles
   templateDropdown: {
     width: 240,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#EEF2FF',
-    shadowColor: '#000',
+    borderColor: "#EEF2FF",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.15,
     shadowRadius: 15,
     elevation: 999,
     padding: 8,
-    pointerEvents: 'auto',
+    pointerEvents: "auto",
   },
 
   // Actions Section
@@ -841,37 +861,37 @@ const styles = StyleSheet.create({
   // New Card-based Styles (Template-like)
   sectionTitle: {
     fontSize: 14,
-    fontFamily: 'Inter-Medium',
-    color: '#374151',
+    fontFamily: "Inter-Medium",
+    color: "#374151",
     marginBottom: 8,
-    textAlign: 'center',
+    textAlign: "center",
   },
 
   // Color Card Styles
   colorGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'flex-start',
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "flex-start",
     gap: 6,
   },
   colorCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderRadius: 10,
     padding: 6,
     width: 52,
-    alignItems: 'center',
+    alignItems: "center",
     borderWidth: 1,
-    borderColor: '#EEF2FF',
-    shadowColor: '#000',
+    borderColor: "#EEF2FF",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.03,
     shadowRadius: 2,
     elevation: 1,
   },
   selectedColorCard: {
-    backgroundColor: '#6A009C',
-    borderColor: '#6A009C',
-    shadowColor: '#6A009C',
+    backgroundColor: "#6A009C",
+    borderColor: "#6A009C",
+    shadowColor: "#6A009C",
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.25,
     shadowRadius: 5,
@@ -882,48 +902,48 @@ const styles = StyleSheet.create({
     height: 22,
     borderRadius: 12,
     borderWidth: 2,
-    borderColor: '#EEF2FF',
+    borderColor: "#EEF2FF",
     marginBottom: 6,
   },
   selectedColorPreview: {
-    borderColor: '#FFFFFF',
+    borderColor: "#FFFFFF",
     borderWidth: 3,
   },
   colorCardName: {
     fontSize: 10,
-    fontFamily: 'Inter-Medium',
-    color: '#374151',
-    textAlign: 'center',
+    fontFamily: "Inter-Medium",
+    color: "#374151",
+    textAlign: "center",
   },
   selectedColorText: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
   },
 
   // Width Card Styles
   widthGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'flex-start',
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "flex-start",
     gap: 6,
   },
   widthCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderRadius: 10,
     padding: 6,
     width: 60,
-    alignItems: 'center',
+    alignItems: "center",
     borderWidth: 1,
-    borderColor: '#EEF2FF',
-    shadowColor: '#000',
+    borderColor: "#EEF2FF",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.03,
     shadowRadius: 2,
     elevation: 1,
   },
   selectedWidthCard: {
-    backgroundColor: '#6A009C',
-    borderColor: '#6A009C',
-    shadowColor: '#6A009C',
+    backgroundColor: "#6A009C",
+    borderColor: "#6A009C",
+    shadowColor: "#6A009C",
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.25,
     shadowRadius: 5,
@@ -932,60 +952,60 @@ const styles = StyleSheet.create({
   widthCardPreview: {
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: "#E5E7EB",
     marginBottom: 6,
   },
   selectedWidthPreview: {
-    borderColor: '#FFFFFF',
+    borderColor: "#FFFFFF",
     borderWidth: 2,
   },
   widthCardLabel: {
     fontSize: 10,
-    fontFamily: 'Inter-Medium',
-    color: '#374151',
-    textAlign: 'center',
+    fontFamily: "Inter-Medium",
+    color: "#374151",
+    textAlign: "center",
     marginBottom: 2,
   },
   selectedWidthText: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
   },
   widthCardValue: {
     fontSize: 9,
-    fontFamily: 'Inter-Regular',
-    color: '#6B7280',
-    textAlign: 'center',
+    fontFamily: "Inter-Regular",
+    color: "#6B7280",
+    textAlign: "center",
   },
   selectedWidthValueText: {
-    color: '#E5E7EB',
+    color: "#E5E7EB",
   },
 
   // Image Card Styles removed
 
   // Template Card Styles (matching original TemplateSelector styles)
   templateGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'flex-start',
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "flex-start",
     gap: 6,
   },
   templateCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderRadius: 10,
     padding: 8,
     width: 72,
-    alignItems: 'center',
+    alignItems: "center",
     borderWidth: 1,
-    borderColor: '#EEF2FF',
-    shadowColor: '#000',
+    borderColor: "#EEF2FF",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.03,
     shadowRadius: 2,
     elevation: 1,
   },
   selectedTemplateCard: {
-    backgroundColor: '#6A009C',
-    borderColor: '#6A009C',
-    shadowColor: '#6A009C',
+    backgroundColor: "#6A009C",
+    borderColor: "#6A009C",
+    shadowColor: "#6A009C",
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.25,
     shadowRadius: 5,
@@ -995,63 +1015,63 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 8,
-    backgroundColor: '#F3F4F6',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "#F3F4F6",
+    justifyContent: "center",
+    alignItems: "center",
     marginBottom: 6,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   selectedTemplateIcon: {
-    backgroundColor: '#6A009C',
+    backgroundColor: "#6A009C",
     borderWidth: 2,
-    borderColor: '#FFFFFF',
+    borderColor: "#FFFFFF",
   },
   templateCardName: {
     fontSize: 11,
-    fontFamily: 'Inter-Medium',
-    color: '#374151',
-    textAlign: 'center',
+    fontFamily: "Inter-Medium",
+    color: "#374151",
+    textAlign: "center",
     marginBottom: 2,
   },
   selectedTemplateText: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
   },
   templateCardDescription: {
     fontSize: 9,
-    fontFamily: 'Inter-Regular',
-    color: '#6B7280',
-    textAlign: 'center',
+    fontFamily: "Inter-Regular",
+    color: "#6B7280",
+    textAlign: "center",
     lineHeight: 12,
   },
   selectedTemplateDescText: {
-    color: '#E5E7EB',
+    color: "#E5E7EB",
   },
 
   // Tool Card Styles
   toolsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'flex-start',
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "flex-start",
     gap: 6,
   },
   toolCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderRadius: 10,
     padding: 8,
     width: 68,
-    alignItems: 'center',
+    alignItems: "center",
     borderWidth: 1,
-    borderColor: '#EEF2FF',
-    shadowColor: '#000',
+    borderColor: "#EEF2FF",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.03,
     shadowRadius: 2,
     elevation: 1,
   },
   selectedToolCard: {
-    backgroundColor: '#6A009C',
-    borderColor: '#6A009C',
-    shadowColor: '#6A009C',
+    backgroundColor: "#6A009C",
+    borderColor: "#6A009C",
+    shadowColor: "#6A009C",
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.25,
     shadowRadius: 5,
@@ -1061,26 +1081,26 @@ const styles = StyleSheet.create({
     width: 30,
     height: 30,
     borderRadius: 8,
-    backgroundColor: '#F3F4F6',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "#F3F4F6",
+    justifyContent: "center",
+    alignItems: "center",
     marginBottom: 6,
     borderWidth: 1,
-    borderColor: '#EEF2FF',
+    borderColor: "#EEF2FF",
   },
   selectedToolIcon: {
-    backgroundColor: '#6A009C',
-    borderColor: '#FFFFFF',
+    backgroundColor: "#6A009C",
+    borderColor: "#FFFFFF",
     borderWidth: 2,
   },
   toolCardName: {
     fontSize: 11,
-    fontFamily: 'Inter-Medium',
-    color: '#374151',
-    textAlign: 'center',
+    fontFamily: "Inter-Medium",
+    color: "#374151",
+    textAlign: "center",
   },
   selectedToolText: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
   },
 });
 

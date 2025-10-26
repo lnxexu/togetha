@@ -1,7 +1,6 @@
 from django.contrib import admin
 from .models import UserSession, UserActivity, DailyUsageSummary, WeeklyUsageSummary
 
-
 @admin.register(UserSession)
 class UserSessionAdmin(admin.ModelAdmin):
     list_display = ['user', 'start_time', 'end_time', 'is_active', 'total_time_seconds', 'device_type']
@@ -11,7 +10,6 @@ class UserSessionAdmin(admin.ModelAdmin):
     
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('user')
-
 
 @admin.register(UserActivity)
 class UserActivityAdmin(admin.ModelAdmin):
@@ -23,7 +21,6 @@ class UserActivityAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('user', 'session')
 
-
 @admin.register(DailyUsageSummary)
 class DailyUsageSummaryAdmin(admin.ModelAdmin):
     list_display = ['user', 'date', 'total_active_time_seconds', 'session_count', 'engagement_score']
@@ -33,7 +30,6 @@ class DailyUsageSummaryAdmin(admin.ModelAdmin):
     
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('user')
-
 
 @admin.register(WeeklyUsageSummary)
 class WeeklyUsageSummaryAdmin(admin.ModelAdmin):

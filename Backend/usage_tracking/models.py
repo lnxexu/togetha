@@ -1,8 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
-from django.utils import timezone
-from datetime import timedelta
-
+from django.utils import timezone 
 
 class UserSession(models.Model):
     """Track user app sessions with idle detection"""
@@ -75,14 +73,11 @@ class UserActivity(models.Model):
     
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='activities')
     session = models.ForeignKey(UserSession, on_delete=models.CASCADE, related_name='activities')
-    
     activity_type = models.CharField(max_length=50, choices=ACTIVITY_TYPES)
-    screen_name = models.CharField(max_length=100, blank=True)  # Which screen/page
-    details = models.JSONField(default=dict, blank=True)  # Additional activity data
+    screen_name = models.CharField(max_length=100, blank=True) 
+    details = models.JSONField(default=dict, blank=True)  
     timestamp = models.DateTimeField(auto_now_add=True)
-    
-    # Performance metrics
-    duration_ms = models.IntegerField(null=True, blank=True)  # How long the action took
+    duration_ms = models.IntegerField(null=True, blank=True) 
     
     class Meta:
         ordering = ['-timestamp']

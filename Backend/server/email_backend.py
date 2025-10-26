@@ -1,13 +1,7 @@
-"""
-Custom email backend with ISP-resistant fallback options.
-This backend tries multiple SMTP configurations to bypass ISP blocking.
-"""
-
-import logging
 from django.core.mail.backends.smtp import EmailBackend
 from django.conf import settings
-from django.core.mail import get_connection
 import socket
+import logging
 
 logger = logging.getLogger(__name__)
 

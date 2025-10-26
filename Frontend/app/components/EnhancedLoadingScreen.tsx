@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -8,22 +8,23 @@ import {
   StatusBar,
   Platform,
   SafeAreaView,
-} from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { MaterialIcons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { OnboardingColors } from '../../constants/Colors';
+} from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { MaterialIcons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { OnboardingColors } from "../../constants/Colors";
 
 // BlurView alternative - using semi-transparent overlay
 const BlurAlternative = ({ intensity, style, tint, children }: any) => (
-  <View 
+  <View
     style={[
       style,
       {
-        backgroundColor: tint === 'dark' 
-          ? `rgba(0, 0, 0, ${Math.min(intensity / 100 * 0.6, 0.6)})` 
-          : `rgba(255, 255, 255, ${Math.min(intensity / 100 * 0.3, 0.3)})`
-      }
+        backgroundColor:
+          tint === "dark"
+            ? `rgba(0, 0, 0, ${Math.min((intensity / 100) * 0.6, 0.6)})`
+            : `rgba(255, 255, 255, ${Math.min((intensity / 100) * 0.3, 0.3)})`,
+      },
     ]}
   >
     {children}
@@ -38,7 +39,7 @@ interface LoadingScreenProps {
   blurIntensity?: number;
 }
 
-const { width, height } = Dimensions.get('window');
+const { width, height } = Dimensions.get("window");
 
 // Motivational quotes for long loading times
 const motivationalQuotes = [
@@ -56,12 +57,12 @@ const motivationalQuotes = [
   "Make today amazing!",
 ];
 
-export default function EnhancedLoadingScreen({ 
-  message = "Loading...", 
+export default function EnhancedLoadingScreen({
+  message = "Loading...",
   subMessage = "Please wait while we set things up",
   showLogo = true,
   showQuotes = true,
-  blurIntensity = 80
+  blurIntensity = 80,
 }: LoadingScreenProps) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
@@ -69,7 +70,7 @@ export default function EnhancedLoadingScreen({
   const quoteOpacity = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const insets = useSafeAreaInsets();
-  
+
   // State for motivational quotes
   const [currentQuote, setCurrentQuote] = useState(0);
   const [showMotivationalQuotes, setShowMotivationalQuotes] = useState(false);
@@ -106,7 +107,7 @@ export default function EnhancedLoadingScreen({
             useNativeDriver: true,
           }),
         ]).start();
-        
+
         setCurrentQuote((prev) => (prev + 1) % motivationalQuotes.length);
       }, 4000);
 
@@ -165,25 +166,29 @@ export default function EnhancedLoadingScreen({
 
   const spin = rotateAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: ['0deg', '360deg'],
+    outputRange: ["0deg", "360deg"],
   });
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar 
-        barStyle="light-content" 
-        backgroundColor="transparent" 
-        translucent 
+      <StatusBar
+        barStyle="light-content"
+        backgroundColor="transparent"
+        translucent
       />
-      
+
       {/* Background with Gradient */}
       <LinearGradient
-        colors={[OnboardingColors.primary.dark, OnboardingColors.primary.main, OnboardingColors.primary.light]}
+        colors={[
+          OnboardingColors.primary.dark,
+          OnboardingColors.primary.main,
+          OnboardingColors.primary.light,
+        ]}
         style={styles.background}
       >
         {/* Blur Overlay */}
-        <BlurAlternative 
-          intensity={blurIntensity} 
+        <BlurAlternative
+          intensity={blurIntensity}
           style={styles.blurContainer}
           tint="dark"
         >
@@ -192,10 +197,7 @@ export default function EnhancedLoadingScreen({
               styles.container,
               {
                 opacity: fadeAnim,
-                transform: [
-                  { scale: scaleAnim },
-                  { scale: pulseAnim }
-                ],
+                transform: [{ scale: scaleAnim }, { scale: pulseAnim }],
                 paddingTop: Math.max(insets.top, 20),
                 paddingBottom: Math.max(insets.bottom, 20),
               },
@@ -208,13 +210,13 @@ export default function EnhancedLoadingScreen({
                   <Animated.View
                     style={[
                       styles.spinnerContainer,
-                      { transform: [{ rotate: spin }] }
+                      { transform: [{ rotate: spin }] },
                     ]}
                   >
-                    <MaterialIcons 
-                      name="autorenew" 
-                      size={50} 
-                      color={OnboardingColors.primary.main} 
+                    <MaterialIcons
+                      name="autorenew"
+                      size={50}
+                      color={OnboardingColors.primary.main}
                     />
                   </Animated.View>
                 </View>
@@ -229,18 +231,15 @@ export default function EnhancedLoadingScreen({
 
             {/* Enhanced Spinner with Rings */}
             <View style={styles.spinnerSection}>
-              <Animated.View 
-                style={[
-                  styles.spinnerRing,
-                  { transform: [{ rotate: spin }] }
-                ]}
+              <Animated.View
+                style={[styles.spinnerRing, { transform: [{ rotate: spin }] }]}
               >
                 <View style={styles.spinnerDot} />
               </Animated.View>
-              <Animated.View 
+              <Animated.View
                 style={[
                   styles.spinnerRingInner,
-                  { transform: [{ rotate: spin }] }
+                  { transform: [{ rotate: spin }] },
                 ]}
               >
                 <View style={styles.spinnerDotInner} />
@@ -249,16 +248,13 @@ export default function EnhancedLoadingScreen({
 
             {/* Motivational Quotes */}
             {showMotivationalQuotes && (
-              <Animated.View 
-                style={[
-                  styles.quoteContainer,
-                  { opacity: quoteOpacity }
-                ]}
+              <Animated.View
+                style={[styles.quoteContainer, { opacity: quoteOpacity }]}
               >
-                <MaterialIcons 
-                  name="format-quote" 
-                  size={24} 
-                  color={OnboardingColors.text.white} 
+                <MaterialIcons
+                  name="format-quote"
+                  size={24}
+                  color={OnboardingColors.text.white}
                   style={styles.quoteIcon}
                 />
                 <Text style={styles.quoteText}>
@@ -280,33 +276,33 @@ const styles = StyleSheet.create({
   },
   background: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   blurContainer: {
     flex: 1,
-    width: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: "100%",
+    justifyContent: "center",
+    alignItems: "center",
   },
   container: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     paddingHorizontal: 40,
-    width: '100%',
+    width: "100%",
   },
   logoContainer: {
     marginBottom: 40,
-    alignItems: 'center',
+    alignItems: "center",
   },
   logoBackground: {
     width: 120,
     height: 120,
     borderRadius: 60,
     backgroundColor: OnboardingColors.text.white,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     shadowColor: OnboardingColors.shadow.purple,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.3,
@@ -314,62 +310,62 @@ const styles = StyleSheet.create({
     elevation: 15,
   },
   spinnerContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   textContainer: {
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: 50,
   },
   mainMessage: {
     fontSize: 28,
-    fontWeight: '700',
+    fontWeight: "700",
     color: OnboardingColors.text.white,
-    textAlign: 'center',
+    textAlign: "center",
     marginBottom: 12,
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
-    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
+    textShadowColor: "rgba(0, 0, 0, 0.3)",
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 4,
   },
   subMessage: {
     fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.8)',
-    textAlign: 'center',
+    color: "rgba(255, 255, 255, 0.8)",
+    textAlign: "center",
     lineHeight: 24,
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+    fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
     paddingHorizontal: 20,
   },
   spinnerSection: {
-    position: 'relative',
+    position: "relative",
     width: 80,
     height: 80,
     marginBottom: 40,
   },
   spinnerRing: {
-    position: 'absolute',
+    position: "absolute",
     width: 80,
     height: 80,
     borderRadius: 40,
     borderWidth: 3,
-    borderColor: 'transparent',
+    borderColor: "transparent",
     borderTopColor: OnboardingColors.text.white,
     borderRightColor: OnboardingColors.text.white,
   },
   spinnerRingInner: {
-    position: 'absolute',
+    position: "absolute",
     top: 10,
     left: 10,
     width: 60,
     height: 60,
     borderRadius: 30,
     borderWidth: 2,
-    borderColor: 'transparent',
-    borderTopColor: 'rgba(255, 255, 255, 0.6)',
-    borderLeftColor: 'rgba(255, 255, 255, 0.6)',
+    borderColor: "transparent",
+    borderTopColor: "rgba(255, 255, 255, 0.6)",
+    borderLeftColor: "rgba(255, 255, 255, 0.6)",
   },
   spinnerDot: {
-    position: 'absolute',
+    position: "absolute",
     top: -6,
     right: -6,
     width: 12,
@@ -378,25 +374,25 @@ const styles = StyleSheet.create({
     backgroundColor: OnboardingColors.text.white,
   },
   spinnerDotInner: {
-    position: 'absolute',
+    position: "absolute",
     top: -4,
     left: -4,
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.6)',
+    backgroundColor: "rgba(255, 255, 255, 0.6)",
   },
   quoteContainer: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 80,
     left: 40,
     right: 40,
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
     borderRadius: 20,
     padding: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   quoteIcon: {
     marginBottom: 10,
@@ -405,10 +401,10 @@ const styles = StyleSheet.create({
   quoteText: {
     fontSize: 16,
     color: OnboardingColors.text.white,
-    textAlign: 'center',
-    fontStyle: 'italic',
+    textAlign: "center",
+    fontStyle: "italic",
     lineHeight: 22,
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
-    fontWeight: '400',
+    fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
+    fontWeight: "400",
   },
 });

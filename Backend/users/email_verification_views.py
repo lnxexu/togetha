@@ -1,18 +1,17 @@
-from django.contrib.auth.models import User
+from rest_framework.decorators import api_view, permission_classes
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.crypto import get_random_string
 from django.core.mail import send_mail
 from django.conf import settings
-from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from django.utils.crypto import get_random_string
+from django.contrib.auth.models import User
+from rest_framework import status
 from django.utils import timezone
 from datetime import timedelta
 from .models import EmailVerification
-from django.views.decorators.csrf import csrf_exempt
-from django.utils.decorators import method_decorator
-import re
 import logging
+import re
 
 # Configure logging
 logger = logging.getLogger(__name__)

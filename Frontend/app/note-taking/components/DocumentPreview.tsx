@@ -1,38 +1,42 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { View, StyleSheet, Platform, ActivityIndicator } from 'react-native';
-import Svg, { Rect, Circle, Path, Text as SvgText } from 'react-native-svg';
-import { getLocalPDFPath } from '../utils/pdfUtils';
+import React, { useEffect, useMemo, useState } from "react";
+import { View, StyleSheet, Platform, ActivityIndicator } from "react-native";
+import Svg, { Rect, Circle, Path, Text as SvgText } from "react-native-svg";
+import { getLocalPDFPath } from "../utils/pdfUtils";
 
 // Lazy require to avoid web bundling issues
-const Pdf = Platform.OS !== 'web' ? require('react-native-pdf').default : null;
+const Pdf = Platform.OS !== "web" ? require("react-native-pdf").default : null;
 
 type DocAnnotation = {
   id: string;
-  type: 'highlight' | 'note' | 'underline' | 'strikethrough' | 'pen' | 'brush' | 'pencil' | 'text';
+  type:
+    | "highlight"
+    | "note"
+    | "underline"
+    | "strikethrough"
+    | "pen"
+    | "brush"
+    | "pencil"
+    | "text";
   page: number;
-  x: number; // 0..1 normalized
-  y: number; // 0..1 normalized
-  width?: number; // 0..1 normalized
-  height?: number; // 0..1 normalized
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
   color: string;
   text?: string;
-  path?: string; // normalized path (0..1)
+  path?: string;
   strokeWidth?: number;
   timestamp?: number;
 };
 
 interface DocumentPreviewProps {
   uri?: string | null;
-  documentUrl?: string | null; // fallback if uri not provided
+  documentUrl?: string | null;
   annotations?: DocAnnotation[] | null;
   width?: number;
   height?: number;
 }
 
-/**
- * DocumentPreview renders a small preview of the first page of a PDF document
- * with annotation overlays. For non-PDF documents, callers should render a fallback.
- */
 const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   uri,
   documentUrl,
@@ -67,18 +71,18 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     };
   }, [uri, documentUrl]);
 
-  // Scale a normalized SVG path (M/L absolute with 0..1 coords, optionally with :pressure suffix)
-  // Emits clean commands without invalid separators like "M," or "L." and normalizes spacing.
-  const scaleNormalizedPath = (rawPath: string, w: number, h: number): string => {
-    if (!rawPath) return '';
-
-    // Pre-sanitize: remove commas immediately after command letters and collapse whitespace
+  const scaleNormalizedPath = (
+    rawPath: string,
+    w: number,
+    h: number
+  ): string => {
+    if (!rawPath) return "";
     let path = rawPath
-      .replace(/([ML])\s*[\.,]\s*/g, '$1 ')
-      .replace(/\s+/g, ' ')
+      .replace(/([ML])\s*[\.,]\s*/g, "$1 ")
+      .replace(/\s+/g, " ")
       .trim();
 
-    let out = '';
+    let out = "";
     let i = 0;
     const len = path.length;
 
@@ -93,9 +97,9 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
 
     while (i < len) {
       const ch = path[i];
-      if (ch === 'M' || ch === 'L') {
+      if (ch === "M" || ch === "L") {
         // Emit command followed by a single space
-        out += ch + ' ';
+        out += ch + " ";
         i++;
 
         // Skip any separators between command and first number
@@ -103,7 +107,9 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
 
         // x
         let { num: x, next } = readNumber();
-        if (x === null) { continue; }
+        if (x === null) {
+          continue;
+        }
         i = next;
 
         // Skip any separators before y
@@ -111,11 +117,13 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
 
         // y
         let { num: y, next: next2 } = readNumber();
-        if (y === null) { continue; }
+        if (y === null) {
+          continue;
+        }
         i = next2;
 
         // Optional :pressure (preserve but don't output if present; not used in Path)
-        if (path[i] === ':') {
+        if (path[i] === ":") {
           // consume optional pressure value
           let k = i + 1;
           const presMatch = /^-?\d*\.?\d+/.exec(path.slice(k));
@@ -130,12 +138,17 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         out += `${sx.toFixed(2)},${sy.toFixed(2)}`;
       } else {
         // Ignore stray commas right after commands or duplicate separators; keep Z/z if present
-        if (ch === ',' || ch === '\\n' || ch === '\\r') { i++; continue; }
-        if (ch === 'Z' || ch === 'z') { out += ch; }
+        if (ch === "," || ch === "\\n" || ch === "\\r") {
+          i++;
+          continue;
+        }
+        if (ch === "Z" || ch === "z") {
+          out += ch;
+        }
         // Convert multiple spaces to single
-        if (ch === ' ') {
+        if (ch === " ") {
           // ensure single space separation between path segments
-          if (out.length && out[out.length - 1] !== ' ') out += ' ';
+          if (out.length && out[out.length - 1] !== " ") out += " ";
           i++;
           continue;
         }
@@ -143,7 +156,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         i++;
       }
       // Add a single space between segments
-      if (out.length && out[out.length - 1] !== ' ') out += ' ';
+      if (out.length && out[out.length - 1] !== " ") out += " ";
     }
     return out.trim();
   };
@@ -151,76 +164,102 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   const overlay = useMemo(() => {
     const anns = Array.isArray(annotations) ? annotations : [];
     return (
-      <Svg pointerEvents="none" width={width} height={height} style={StyleSheet.absoluteFill}>
-        {anns.filter(a => a.page === 1).map((a) => {
-          const x = (a.x || 0) * width;
-          const y = (a.y || 0) * height;
-          const w = (a.width || 0) * width;
-          const h = (a.height || 0) * height;
+      <Svg
+        pointerEvents="none"
+        width={width}
+        height={height}
+        style={StyleSheet.absoluteFill}
+      >
+        {anns
+          .filter((a) => a.page === 1)
+          .map((a) => {
+            const x = (a.x || 0) * width;
+            const y = (a.y || 0) * height;
+            const w = (a.width || 0) * width;
+            const h = (a.height || 0) * height;
 
-          if ((a.type === 'pen' || a.type === 'brush' || a.type === 'pencil' || a.type === 'text') && a.path) {
-            // Convert normalized path (0..1) to scaled pixels using width for x and height for y
-            const scaledPath = scaleNormalizedPath(a.path, width, height);
-            return (
-              <Path
-                key={a.id}
-                d={scaledPath}
-                stroke={a.color || '#FFEB3B'}
-                strokeWidth={(a.strokeWidth || 2) * 0.75}
-                fill="none"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            );
-          }
+            if (
+              (a.type === "pen" ||
+                a.type === "brush" ||
+                a.type === "pencil" ||
+                a.type === "text") &&
+              a.path
+            ) {
+              // Convert normalized path (0..1) to scaled pixels using width for x and height for y
+              const scaledPath = scaleNormalizedPath(a.path, width, height);
+              return (
+                <Path
+                  key={a.id}
+                  d={scaledPath}
+                  stroke={a.color || "#FFEB3B"}
+                  strokeWidth={(a.strokeWidth || 2) * 0.75}
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              );
+            }
 
-          if (a.type === 'highlight') {
-            return (
-              <Rect
-                key={a.id}
-                x={x}
-                y={y}
-                width={Math.max(1, w || width * 0.3)}
-                height={Math.max(1, h || height * 0.06)}
-                fill={a.color || '#FFEB3B'}
-                opacity={0.3}
-              />
-            );
-          }
+            if (a.type === "highlight") {
+              return (
+                <Rect
+                  key={a.id}
+                  x={x}
+                  y={y}
+                  width={Math.max(1, w || width * 0.3)}
+                  height={Math.max(1, h || height * 0.06)}
+                  fill={a.color || "#FFEB3B"}
+                  opacity={0.3}
+                />
+              );
+            }
 
-          if (a.type === 'note') {
-            return (
-              <>
-                <Circle key={`${a.id}-c`} cx={x} cy={y} r={8} fill={a.color || '#FFEB3B'} />
-                <SvgText key={`${a.id}-t`} x={x} y={y + 3} textAnchor="middle" fontSize={8} fill="#fff">
-                  N
-                </SvgText>
-              </>
-            );
-          }
+            if (a.type === "note") {
+              return (
+                <>
+                  <Circle
+                    key={`${a.id}-c`}
+                    cx={x}
+                    cy={y}
+                    r={8}
+                    fill={a.color || "#FFEB3B"}
+                  />
+                  <SvgText
+                    key={`${a.id}-t`}
+                    x={x}
+                    y={y + 3}
+                    textAnchor="middle"
+                    fontSize={8}
+                    fill="#fff"
+                  >
+                    N
+                  </SvgText>
+                </>
+              );
+            }
 
-          if (a.type === 'underline' || a.type === 'strikethrough') {
-            return (
-              <Rect
-                key={a.id}
-                x={x}
-                y={y}
-                width={Math.max(1, w || width * 0.3)}
-                height={2}
-                fill={a.color || '#FFEB3B'}
-              />
-            );
-          }
+            if (a.type === "underline" || a.type === "strikethrough") {
+              return (
+                <Rect
+                  key={a.id}
+                  x={x}
+                  y={y}
+                  width={Math.max(1, w || width * 0.3)}
+                  height={2}
+                  fill={a.color || "#FFEB3B"}
+                />
+              );
+            }
 
-          return null;
-        })}
+            return null;
+          })}
       </Svg>
     );
   }, [annotations, width, height]);
 
   if (loading) {
     return (
-      <View style={[styles.container, { width, height }]}> 
+      <View style={[styles.container, { width, height }]}>
         <ActivityIndicator size="small" color="#6366F1" />
       </View>
     );
@@ -232,7 +271,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   }
 
   return (
-    <View style={[styles.container, { width, height }]}> 
+    <View style={[styles.container, { width, height }]}>
       <Pdf
         source={{ uri: localUri }}
         page={1}
@@ -241,8 +280,12 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         scale={1.0}
         spacing={0}
         trustAllCerts={false}
-        onLoadComplete={() => { /* no-op */ }}
-        onError={() => { /* silent preview failure */ }}
+        onLoadComplete={() => {
+          /* no-op */
+        }}
+        onError={() => {
+          /* silent preview failure */
+        }}
       />
       {overlay}
     </View>
@@ -252,12 +295,12 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
 const styles = StyleSheet.create({
   container: {
     borderRadius: 6,
-    overflow: 'hidden',
-    backgroundColor: '#fff',
+    overflow: "hidden",
+    backgroundColor: "#fff",
   },
   placeholder: {
     borderRadius: 6,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: "#F3F4F6",
   },
 });
 

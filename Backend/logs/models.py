@@ -38,7 +38,6 @@ class Log(models.Model):
     entity_type = models.CharField(max_length=100, blank=True, null=True) 
     entity_id = models.CharField(max_length=64, blank=True, null=True) 
     timestamp = models.DateTimeField(default=timezone.now)
-    # Optional: store client-local timestamp and timezone for alignment/reporting
     local_timestamp = models.DateTimeField(null=True, blank=True)
     local_timestamp_text = models.CharField(max_length=40, null=True, blank=True)
     client_timezone = models.CharField(max_length=64, null=True, blank=True)

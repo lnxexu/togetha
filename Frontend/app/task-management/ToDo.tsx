@@ -50,7 +50,6 @@ const ToDo: React.FC = () => {
     "all"
   );
 
-  // Enhanced states for improved calendar and UX
   const [selectedStatus, setSelectedStatus] = useState<
     "all" | "pending" | "completed" | "overdue"
   >("all");
@@ -58,26 +57,20 @@ const ToDo: React.FC = () => {
   const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [showQuickFilters, setShowQuickFilters] = useState(false);
   
-  // Google Calendar date tasks modal state
   const [navbarHeight, setNavbarHeight] = useState<number>(0);
 
   const insets = useSafeAreaInsets();
 
-  // Date Tasks Modal state (restored)
   const [showDateTasksModal, setShowDateTasksModal] = useState(false);
   const [dateTasksModalDate, setDateTasksModalDate] = useState<Date | null>(null);
   const [dateTasksModalTasks, setDateTasksModalTasks] = useState<Task[]>([]);
 
-  // Compute FAB bottom dynamically: place it just above the navbar (navbar includes safe area padding)
-  // Add a small extra offset so the FAB sits clearly above the navbar
   const fabExtraOffset = 5; // smaller offset to position FAB lower, closer to navbar
   const defaultNavbarHeight = isLandscape ? 48 : Platform.OS === "ios" ? 64 : 56;
   const fabBottom = Math.max(insets.bottom, 0) + (navbarHeight || defaultNavbarHeight) + fabExtraOffset;
   
-  // More vert menu state
   const [showMoreVertMenu, setShowMoreVertMenu] = useState(false);
   
-  // Dropdown options
   const statusOptions = [
     { value: "all", label: "All Tasks" },
     { value: "pending", label: "Pending" },
@@ -89,7 +82,6 @@ const ToDo: React.FC = () => {
     { value: "list", label: "List View" },
   ];
 
-  // Dropdown handlers
   const handleStatusSelect = (
     status: "all" | "pending" | "completed" | "overdue"
   ) => {
@@ -97,7 +89,6 @@ const ToDo: React.FC = () => {
     setSelectedFilter(status);
   };
 
-  // Enhanced date task handlers
   const handleCalendarDateSelect = (date: Date, tasksForDate?: Task[]) => {
     const tasks = tasksForDate || getTasksForDate(date);
     setDateTasksModalDate(date);
@@ -113,12 +104,10 @@ const ToDo: React.FC = () => {
     });
   };
 
-  // Handle task interaction
   const handleTaskClick = (taskId: string) => {
     navigation.navigate("TaskDetails", { taskId });
   };
 
-  // Get tasks for a specific date (Google Calendar style)
   const getTasksForDate = (date: Date) => {
     return tasks.filter(task => {
       if (!task.due_datetime) return false;
@@ -127,13 +116,11 @@ const ToDo: React.FC = () => {
     });
   };
 
-  // Quick navigation functions
   const navigateToToday = () => {
     const today = new Date();
     setSelectedDate(today);
   };
 
-  // Load tasks when screen is focused
   useFocusEffect(
     useCallback(() => {
       loadTasks();
@@ -141,7 +128,6 @@ const ToDo: React.FC = () => {
     }, [])
   );
 
-  // Load categories function
   const loadCategories = async () => {
     try {
       const availableCategories = await categoryService.getCategories();
@@ -161,12 +147,9 @@ const ToDo: React.FC = () => {
     } catch (error) {
       console.error("Error loading tasks:", error);
       
-      // Check if we're offline to provide appropriate error message
       const isOnline = taskService.isOnline();
       if (!isOnline) {
-        // Offline - tasks might still load from local storage
       } else {
-        // Online but failed - show error
         Alert.alert(
           "Error",
           "Failed to load tasks. Please check your connection and try again."
@@ -194,12 +177,9 @@ const ToDo: React.FC = () => {
         onPress: async () => {
           try {
             await taskService.deleteTask(taskId);
-            // Optimistically update UI immediately
             setTasks((prev) => prev.filter((t) => t.id !== taskId));
-            // Refresh from source to reconcile with storage/server
             loadTasks();
             
-            // Show appropriate message based on online status
             if (!taskService.isOnline()) {
               Alert.alert("Task Deleted", "Task deleted offline. Changes will sync when you're back online.");
             }
@@ -215,7 +195,6 @@ const ToDo: React.FC = () => {
   const handleMarkComplete = async (taskId: string) => {
     try {
       await taskService.markTaskComplete(taskId);
-      // Optimistically update UI immediately so item drops from pending/overdue
       setTasks((prev) => prev.map((t) => {
         if (t.id !== taskId) return t;
         const completedAt = new Date();
@@ -227,12 +206,9 @@ const ToDo: React.FC = () => {
           updated_at: completedAt.toISOString(),
         };
       }));
-      // Refresh from source to reconcile with storage/server
       loadTasks();
       
-      // Show appropriate message based on online status
       if (!taskService.isOnline()) {
-        // Silent operation for offline - the offline indicator will show sync status
       }
     } catch (error) {
       console.error("Error updating task:", error);
@@ -242,12 +218,10 @@ const ToDo: React.FC = () => {
 
   const filteredTasks = tasks
     .filter((task) => {
-      // Filter by status/completion state
       if (selectedStatus === "completed") return task.completed;
       if (selectedStatus === "pending") return !task.completed && !task.overdue;
       if (selectedStatus === "overdue") return task.overdue && !task.completed;
       if (selectedStatus === "all") {
-        // Additional filtering by the horizontal filter buttons
         if (selectedFilter === "completed") return task.completed;
         if (selectedFilter === "pending")
           return !task.completed && !task.overdue;
@@ -257,12 +231,10 @@ const ToDo: React.FC = () => {
       return true;
     })
     .filter((task) => {
-      // Filter by category/subject
       if (selectedCategory === "all") return true;
       return task.category === selectedCategory;
     });
 
-  // Get category names for filtering (derived from categories state)
   const categoryNames = categories.map(cat => cat.name);
 
   const getCurrentDateDisplay = () => {
@@ -270,7 +242,6 @@ const ToDo: React.FC = () => {
     return today.getDate().toString();
   };
 
-  // More vert menu handlers
   const handleMoreVertPress = () => {
     setShowMoreVertMenu(!showMoreVertMenu);
   };
@@ -344,10 +315,8 @@ const ToDo: React.FC = () => {
       <View style={styles.rootContainer}> 
     
       <StatusBar barStyle="light-content" backgroundColor="#7C3AED" />
-        {/* Offline Indicator */}
         <OfflineIndicator style={{ top: 10 }} />
         
-        {/* Header */}
         <LinearGradient
           colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
           start={{ x: 0, y: 0 }}
@@ -410,7 +379,6 @@ const ToDo: React.FC = () => {
           </View>
         </View>
         
-        {/* Google Calendar Modal */}
         <Calendar
           visible={showCalendarModal}
           onClose={() => setShowCalendarModal(false)}
@@ -419,7 +387,6 @@ const ToDo: React.FC = () => {
           onAddTask={handleAddTaskForDate}
         />
 
-        {/* Date Tasks Modal */}
         <DateTasksModal
           visible={showDateTasksModal}
           onClose={() => setShowDateTasksModal(false)}
@@ -429,7 +396,6 @@ const ToDo: React.FC = () => {
           onAddTask={handleAddTaskForDate}
         />
 
-        {/* More Vert Menu Modal */}
         <Modal
           visible={showMoreVertMenu}
           transparent={true}
@@ -478,7 +444,6 @@ const ToDo: React.FC = () => {
           </TouchableOpacity>
         </Modal>
 
-        {/* Dropdown Backdrop - Only show in list view */}
         {viewMode === "list" && false && (
           <TouchableOpacity
             style={styles.dropdownBackdrop}
@@ -488,7 +453,6 @@ const ToDo: React.FC = () => {
         )}
       </LinearGradient>
 
-      {/* Dashboard Card with clickable filters - overlaps header and content */}
       <View style={styles.dashboardCardWrapper}>
         <View style={styles.dashboardCardContainer}>
           <View style={styles.dashboardRow}>
@@ -576,20 +540,17 @@ const ToDo: React.FC = () => {
 
 
 
-      {/* Enhanced Content Section with better navigation */}
       <View
         style={[
           styles.content,
           viewMode === "matrix" ? styles.contentMatrix : styles.contentList,
         ]}
       >
-        {/* Loading State */}
         {isLoading ? (
           <View style={styles.loadingContainer}>
             <SkeletonLoader type="tasks" count={viewMode === "matrix" ? 8 : 5} />
           </View>
         ) : (
-          /* Content Views */
           viewMode === "matrix" ? (
             <EisenhowerMatrix
               tasks={filteredTasks.filter(t => !t.completed)}
@@ -615,7 +576,6 @@ const ToDo: React.FC = () => {
         )}
       </View>
 
-      {/* Enhanced Floating Action Button with better positioning */}
       <TouchableOpacity
         style={[styles.addTaskButton, { bottom: fabBottom }]}
         onPress={() => handleAddTask()}
@@ -998,7 +958,6 @@ const styles = StyleSheet.create({
     minWidth: 30,
   },
   selectedDateItem: {
-    // Remove background color - no background highlighting
   },
   dashboardCardWrapper: {
     position: "absolute",
@@ -1124,7 +1083,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#F8FAFC",
     marginTop: 20, // Add top margin for better spacing
   },
-  // Modern Filter and Dropdown Styles
   listViewFilters: {
     marginBottom: 20,
   },
@@ -1164,7 +1122,6 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   
-  // Modern Dropdown Functionality
   dropdownWrapper: {
     flex: 1,
     position: "relative",
@@ -1235,9 +1192,7 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     backgroundColor: "rgba(255,255,255,0.15)",
   },
-  // Dashboard styles
 
-  // Status buttons styles
   statusButtons: {
     flexDirection: "row",
     paddingHorizontal: 0,
@@ -1280,7 +1235,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   
-  // Date Tasks Modal styles
   dateTasksModalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.6)",
@@ -1402,7 +1356,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   
-  // More Vert Button styles
   moreVertButton: {
     width: 44,
     height: 44,
@@ -1412,7 +1365,6 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255, 255, 255, 0.15)",
   },
   
-  // More Vert Menu styles
   moreVertOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.4)",

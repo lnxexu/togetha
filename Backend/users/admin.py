@@ -1,6 +1,5 @@
 from django.contrib import admin
-from .models import UserSession, UserProgress, UserProfile, PasswordResetCode
-
+from .models import PasswordResetCode
 
 @admin.register(PasswordResetCode)
 class PasswordResetCodeAdmin(admin.ModelAdmin):

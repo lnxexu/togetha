@@ -13,7 +13,6 @@ User = get_user_model()
 class LogPagination(PageNumberPagination):
     page_size = 20
 
-
 class LogViewSet(viewsets.ModelViewSet):
     queryset = Log.objects.all()
     serializer_class = LogSerializer

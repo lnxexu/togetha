@@ -1,3 +1,6 @@
+from server.decorators import api_auth_required
+from notifications.views import create_notification
+from logs.views import create_log
 from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Q
@@ -5,9 +8,7 @@ from datetime import timedelta
 from django.utils import timezone
 from .models import Task
 from .serializers import TaskSerializer
-from server.decorators import api_auth_required
-from logs.views import create_log
-from notifications.views import create_notification
+
 
 @api_auth_required(['GET', 'POST'])
 def task_list(request):
@@ -122,8 +123,6 @@ def task_detail(request, pk):
         serializer = TaskSerializer(task, data=request.data, partial=request.method=='PATCH', context={'request': request})
         if serializer.is_valid():
             updated_task = serializer.save()
-            
-            # Create log entry for task update
             # Build a change message that captures the significant changes
             changes = []
             updated_task_title = getattr(updated_task, 'title', getattr(updated_task, 'name', str(updated_task.id)))
@@ -155,9 +154,7 @@ def task_detail(request, pk):
                 print(f"Error creating log: {str(e)}")
             
             # Create notification for important task updates
-            try:
-                notification_created = False
-                
+            try:                
                 # Notification for task completion
                 if updated_task.completed and not original_completed:
                     create_notification(

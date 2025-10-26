@@ -1,32 +1,28 @@
-import { useEffect, useRef, useState } from 'react';
-import { AppState, AppStateStatus, Dimensions, Platform } from 'react-native';
-import { EdgeInsets } from 'react-native-safe-area-context';
+import { useEffect, useRef, useState } from "react";
+import { AppState, AppStateStatus, Dimensions, Platform } from "react-native";
+import { EdgeInsets } from "react-native-safe-area-context";
 
-/**
- * Hook to monitor app state changes and prevent layout disruption
- * when users leave and return to the app - especially important for Android
- */
 export const useAppStateStabilizer = () => {
   const appState = useRef(AppState.currentState);
   const [isLayoutStable, setIsLayoutStable] = useState(true);
-  const dimensions = useRef(Dimensions.get('window'));
+  const dimensions = useRef(Dimensions.get("window"));
   const stabilityTimeout = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
-      if (Platform.OS === 'android') {
+      if (Platform.OS === "android") {
         if (
           appState.current.match(/inactive|background/) &&
-          nextAppState === 'active'
+          nextAppState === "active"
         ) {
           // App has come to the foreground - prevent immediate layout changes
           setIsLayoutStable(false);
-          
+
           // Clear any existing timeout
           if (stabilityTimeout.current) {
             clearTimeout(stabilityTimeout.current);
           }
-          
+
           // Allow layout to stabilize after a delay
           stabilityTimeout.current = setTimeout(() => {
             setIsLayoutStable(true);
@@ -48,12 +44,12 @@ export const useAppStateStabilizer = () => {
     };
 
     const appStateSubscription = AppState.addEventListener(
-      'change',
+      "change",
       handleAppStateChange
     );
 
     const dimensionSubscription = Dimensions.addEventListener(
-      'change',
+      "change",
       handleDimensionChange
     );
 
@@ -90,14 +86,15 @@ export const useStableSafeArea = (insets: EdgeInsets) => {
     }
 
     // Only update insets when layout is stable and we're not in transition
-    if (isLayoutStable && Platform.OS === 'android') {
+    if (isLayoutStable && Platform.OS === "android") {
       // For Android, be more conservative about inset changes
       // Only update if there's a significant change (not just transparency changes)
       const bottomDiff = Math.abs(insets.bottom - stableInsets.current.bottom);
-      if (bottomDiff > 10) { // Only update if change is significant
+      if (bottomDiff > 10) {
+        // Only update if change is significant
         stableInsets.current = insets;
       }
-    } else if (Platform.OS === 'ios') {
+    } else if (Platform.OS === "ios") {
       // iOS is more stable, can update more freely
       stableInsets.current = insets;
     }

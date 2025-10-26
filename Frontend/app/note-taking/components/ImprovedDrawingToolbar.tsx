@@ -9,10 +9,10 @@ import {
   Pressable,
 } from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
-import TemplatePreview from './TemplatePreview';
-import { TemplateType } from './TemplateOverlay';
-import { TEMPLATE_CONFIGS } from '../utils/templateConfig';
-import { DrawingTool } from './DrawingCanvas';
+import TemplatePreview from "./TemplatePreview";
+import { TemplateType } from "./TemplateOverlay";
+import { TEMPLATE_CONFIGS } from "../utils/templateConfig";
+import { DrawingTool } from "./DrawingCanvas";
 
 interface ImprovedDrawingToolbarProps {
   currentTool: DrawingTool;
@@ -73,14 +73,15 @@ const TOOLS = [
   { name: "eraser", icon: "remove-outline", label: "Eraser" },
 ] as const;
 
-// Get template list from configuration
-const TEMPLATE_TYPES: TemplateType[] = Object.keys(TEMPLATE_CONFIGS) as TemplateType[];
+const TEMPLATE_TYPES: TemplateType[] = Object.keys(
+  TEMPLATE_CONFIGS
+) as TemplateType[];
 
 export const ImprovedDrawingToolbar: React.FC<ImprovedDrawingToolbarProps> = ({
   currentTool,
   currentColor,
   currentWidth,
-  currentTemplate = 'blank',
+  currentTemplate = "blank",
   currentZoom = 1,
   onToolChange,
   onColorChange,
@@ -99,65 +100,75 @@ export const ImprovedDrawingToolbar: React.FC<ImprovedDrawingToolbarProps> = ({
   const [showColorsModal, setShowColorsModal] = useState(false);
   const [showWidthsModal, setShowWidthsModal] = useState(false);
   const [showTemplatesModal, setShowTemplatesModal] = useState(false);
-  
-  // Find current width label
-  const currentWidthOption = WIDTHS.find((w) => w.value === currentWidth) || WIDTHS[2];
-  
-  // Main toolbar buttons
   const renderMainToolbar = () => (
     <View style={styles.mainToolbar}>
-      {/* Current tool button (opens tool selector) */}
-      <TouchableOpacity 
-        style={styles.mainButton} 
+      <TouchableOpacity
+        style={styles.mainButton}
         onPress={() => setShowToolsModal(true)}
       >
         <Ionicons
-          name={TOOLS.find((t) => t.name === currentTool)?.icon || "create-outline"}
+          name={
+            TOOLS.find((t) => t.name === currentTool)?.icon || "create-outline"
+          }
           size={24}
           color="#333"
         />
       </TouchableOpacity>
-      
-      {/* Color selector button */}
-      <TouchableOpacity 
-        style={[styles.mainButton, styles.colorButton, { backgroundColor: currentColor }]} 
+
+      <TouchableOpacity
+        style={[
+          styles.mainButton,
+          styles.colorButton,
+          { backgroundColor: currentColor },
+        ]}
         onPress={() => setShowColorsModal(true)}
       />
-      
-      {/* Width selector button */}
-      <TouchableOpacity 
-        style={styles.mainButton} 
+
+      <TouchableOpacity
+        style={styles.mainButton}
         onPress={() => setShowWidthsModal(true)}
       >
-        <View style={[styles.widthIndicator, { height: Math.min(20, currentWidth) }]} />
+        <View
+          style={[
+            styles.widthIndicator,
+            { height: Math.min(20, currentWidth) },
+          ]}
+        />
       </TouchableOpacity>
-      
-      {/* Undo button */}
+
       <TouchableOpacity
         style={[styles.mainButton, !canUndo && styles.disabledButton]}
         onPress={onUndo}
         disabled={!canUndo}
       >
-        <Ionicons name="arrow-undo" size={24} color={canUndo ? "#333" : "#ccc"} />
+        <Ionicons
+          name="arrow-undo"
+          size={24}
+          color={canUndo ? "#333" : "#ccc"}
+        />
       </TouchableOpacity>
-      
-      {/* Redo button */}
+
       <TouchableOpacity
         style={[styles.mainButton, !canRedo && styles.disabledButton]}
         onPress={onRedo}
         disabled={!canRedo}
       >
-        <Ionicons name="arrow-redo" size={24} color={canRedo ? "#333" : "#ccc"} />
+        <Ionicons
+          name="arrow-redo"
+          size={24}
+          color={canRedo ? "#333" : "#ccc"}
+        />
       </TouchableOpacity>
-      
-      {/* More options button */}
-      <TouchableOpacity style={styles.mainButton} onPress={() => setShowTemplatesModal(true)}>
+
+      <TouchableOpacity
+        style={styles.mainButton}
+        onPress={() => setShowTemplatesModal(true)}
+      >
         <Ionicons name="grid-outline" size={24} color="#333" />
       </TouchableOpacity>
     </View>
   );
-  
-  // Tool selector modal
+
   const renderToolsModal = () => (
     <Modal
       visible={showToolsModal}
@@ -165,8 +176,14 @@ export const ImprovedDrawingToolbar: React.FC<ImprovedDrawingToolbarProps> = ({
       animationType="fade"
       onRequestClose={() => setShowToolsModal(false)}
     >
-      <Pressable style={styles.modalOverlay} onPress={() => setShowToolsModal(false)}>
-        <View style={styles.modalContainer} onStartShouldSetResponder={() => true}>
+      <Pressable
+        style={styles.modalOverlay}
+        onPress={() => setShowToolsModal(false)}
+      >
+        <View
+          style={styles.modalContainer}
+          onStartShouldSetResponder={() => true}
+        >
           <Text style={styles.modalTitle}>Select Tool</Text>
           <View style={styles.toolsGrid}>
             {TOOLS.map((tool) => (
@@ -201,8 +218,7 @@ export const ImprovedDrawingToolbar: React.FC<ImprovedDrawingToolbarProps> = ({
       </Pressable>
     </Modal>
   );
-  
-  // Color selector modal
+
   const renderColorsModal = () => (
     <Modal
       visible={showColorsModal}
@@ -210,8 +226,14 @@ export const ImprovedDrawingToolbar: React.FC<ImprovedDrawingToolbarProps> = ({
       animationType="fade"
       onRequestClose={() => setShowColorsModal(false)}
     >
-      <Pressable style={styles.modalOverlay} onPress={() => setShowColorsModal(false)}>
-        <View style={styles.modalContainer} onStartShouldSetResponder={() => true}>
+      <Pressable
+        style={styles.modalOverlay}
+        onPress={() => setShowColorsModal(false)}
+      >
+        <View
+          style={styles.modalContainer}
+          onStartShouldSetResponder={() => true}
+        >
           <Text style={styles.modalTitle}>Select Color</Text>
           <View style={styles.colorsGrid}>
             {COLORS.map((color) => (
@@ -233,8 +255,7 @@ export const ImprovedDrawingToolbar: React.FC<ImprovedDrawingToolbarProps> = ({
       </Pressable>
     </Modal>
   );
-  
-  // Width selector modal
+
   const renderWidthsModal = () => (
     <Modal
       visible={showWidthsModal}
@@ -242,8 +263,14 @@ export const ImprovedDrawingToolbar: React.FC<ImprovedDrawingToolbarProps> = ({
       animationType="fade"
       onRequestClose={() => setShowWidthsModal(false)}
     >
-      <Pressable style={styles.modalOverlay} onPress={() => setShowWidthsModal(false)}>
-        <View style={styles.modalContainer} onStartShouldSetResponder={() => true}>
+      <Pressable
+        style={styles.modalOverlay}
+        onPress={() => setShowWidthsModal(false)}
+      >
+        <View
+          style={styles.modalContainer}
+          onStartShouldSetResponder={() => true}
+        >
           <Text style={styles.modalTitle}>Select Width</Text>
           <ScrollView contentContainerStyle={styles.widthsList}>
             {WIDTHS.map((width) => (
@@ -274,8 +301,7 @@ export const ImprovedDrawingToolbar: React.FC<ImprovedDrawingToolbarProps> = ({
       </Pressable>
     </Modal>
   );
-  
-  // Template selector modal
+
   const renderTemplatesModal = () => (
     <Modal
       visible={showTemplatesModal}
@@ -283,19 +309,28 @@ export const ImprovedDrawingToolbar: React.FC<ImprovedDrawingToolbarProps> = ({
       animationType="fade"
       onRequestClose={() => setShowTemplatesModal(false)}
     >
-      <Pressable style={styles.modalOverlay} onPress={() => setShowTemplatesModal(false)}>
-        <View style={[styles.modalContainer, styles.templatesModalContainer]} onStartShouldSetResponder={() => true}>
+      <Pressable
+        style={styles.modalOverlay}
+        onPress={() => setShowTemplatesModal(false)}
+      >
+        <View
+          style={[styles.modalContainer, styles.templatesModalContainer]}
+          onStartShouldSetResponder={() => true}
+        >
           <Text style={styles.modalTitle}>More Options</Text>
-          
-          {/* Templates section */}
           <Text style={styles.sectionTitle}>Templates</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.templatesList}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.templatesList}
+          >
             {TEMPLATE_TYPES.map((templateType) => (
               <TouchableOpacity
                 key={templateType}
                 style={[
                   styles.templateOption,
-                  currentTemplate === templateType && styles.selectedTemplateOption,
+                  currentTemplate === templateType &&
+                    styles.selectedTemplateOption,
                 ]}
                 onPress={() => {
                   if (onTemplateChange) onTemplateChange(templateType);
@@ -305,26 +340,31 @@ export const ImprovedDrawingToolbar: React.FC<ImprovedDrawingToolbarProps> = ({
                 <View style={styles.templatePreviewContainer}>
                   <TemplatePreview template={templateType} />
                 </View>
-                <Text style={styles.templateName}>{templateType.charAt(0).toUpperCase() + templateType.slice(1)}</Text>
+                <Text style={styles.templateName}>
+                  {templateType.charAt(0).toUpperCase() + templateType.slice(1)}
+                </Text>
               </TouchableOpacity>
             ))}
           </ScrollView>
-          
-          {/* Zoom controls */}
+
           <Text style={styles.sectionTitle}>Zoom</Text>
           <View style={styles.zoomControls}>
             <TouchableOpacity style={styles.zoomButton} onPress={onZoomOut}>
               <Ionicons name="remove" size={20} color="#333" />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.zoomResetButton} onPress={onZoomReset}>
-              <Text style={styles.zoomText}>{Math.round(currentZoom * 100)}%</Text>
+            <TouchableOpacity
+              style={styles.zoomResetButton}
+              onPress={onZoomReset}
+            >
+              <Text style={styles.zoomText}>
+                {Math.round(currentZoom * 100)}%
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.zoomButton} onPress={onZoomIn}>
               <Ionicons name="add" size={20} color="#333" />
             </TouchableOpacity>
           </View>
-          
-          {/* Clear canvas button */}
+
           <TouchableOpacity
             style={styles.clearButton}
             onPress={() => {

@@ -125,6 +125,14 @@ const AddTask: React.FC = () => {
     return Math.min(320, screenData.height * 0.4); // 40% of screen height in portrait
   };
 
+  // Helper function to check if selected date is today
+  const isSelectedDateToday = () => {
+    if (!formData.due_datetime) return false;
+    const today = new Date();
+    const selected = new Date(formData.due_datetime);
+    return selected.toDateString() === today.toDateString();
+  };
+
   React.useEffect(() => {
     const onChange = (result: any) => {
       setScreenData(result.window);
@@ -186,6 +194,13 @@ const AddTask: React.FC = () => {
         0,
         0
       );
+
+      // Check if the selected date is today and the merged time is in the past
+      if (isSelectedDateToday() && merged < new Date()) {
+        showErrorToast("Cannot select a time in the past for today");
+        return;
+      }
+
       handleInputChange("due_datetime", merged);
       
       // Update due_time for display purposes
@@ -428,8 +443,9 @@ const AddTask: React.FC = () => {
                   <DateTimePicker
                     value={formData.due_datetime}
                     mode="time"
-                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    display="spinner"
                     onChange={handleTimeChange}
+                    minimumDate={isSelectedDateToday() ? new Date() : undefined}
                   />
                 )}
 
