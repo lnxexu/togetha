@@ -1,13 +1,21 @@
 import os
 import sqlite3
+import uuid
 from PyPDF2 import PdfReader
-from sentence_transformers import SentenceTransformer
 import numpy as np
+from django.conf import settings
+from google import genai
+from django.db import transaction
+from .models import DocumentChunk
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "rag.sqlite3")
 
-# Load embedding model once
-EMBED_MODEL = SentenceTransformer("all-MiniLM-L6-v2")
+# Configure Gemini/Embeddings
+GEMINI_API_KEY = getattr(settings, "GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY"))
+EMBEDDING_MODEL = getattr(settings, "EMBEDDING_MODEL", os.environ.get("EMBEDDING_MODEL", "text-embedding-004"))
+EMBEDDING_MODEL_CANDIDATES = getattr(settings, "EMBEDDING_MODEL_CANDIDATES", [EMBEDDING_MODEL])
+
+GENAI_CLIENT = None  # Client will be created lazily per call to reflect current config
 
 
 def init_db():
@@ -81,13 +89,91 @@ def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50):
     return chunks
 
 
+def _embed_one(text: str) -> np.ndarray:
+    """Embed a single text using Google's embeddings with graceful fallback."""
+    api_key = getattr(settings, "GEMINI_API_KEY", None) or os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise RuntimeError("AI provider not configured. Please set GEMINI_API_KEY on the server.")
+
+    client = genai.Client(api_key=api_key)
+    errors = []
+    for model_name in EMBEDDING_MODEL_CANDIDATES:
+        try:
+            # google-genai has had signature changes; try multiple variants for compatibility
+            res = None
+            try:
+                # Old signature
+                res = client.models.embed_content(model=model_name, content=text)
+            except TypeError:
+                # Newer signature uses 'contents'
+                try:
+                    res = client.models.embed_content(model=model_name, contents=text)
+                except Exception:
+                    res = None
+            if res is None:
+                # Try top-level client method fallbacks
+                try:
+                    res = client.embed_content(model=model_name, content=text)
+                except TypeError:
+                    res = client.embed_content(model=model_name, contents=text)
+            values = None
+            try:
+                embeddings = getattr(res, "embeddings", None)
+                if embeddings:
+                    first = embeddings[0]
+                    if hasattr(first, "values"):
+                        values = first.values
+                    elif isinstance(first, dict):
+                        values = first.get("values")
+            except Exception:
+                values = None
+            if values is None:
+                if isinstance(res, dict):
+                    maybe = res.get("embedding") or res.get("embeddings")
+                    if isinstance(maybe, dict):
+                        values = maybe.get("values")
+                    elif isinstance(maybe, list) and maybe:
+                        item = maybe[0]
+                        if isinstance(item, dict):
+                            values = item.get("values")
+            if values is None:
+                raise RuntimeError("Failed to obtain embedding vector from Google API response")
+            return np.array(values, dtype=np.float32)
+        except Exception as e:
+            err_text = str(e)
+            if any(k in err_text.lower() for k in ["rate limit", "quota", "exceeded", "resource exhausted", "insufficient", "invalid model", "not found"]):
+                errors.append((model_name, err_text))
+                continue
+            errors.append((model_name, err_text))
+            continue
+    last = errors[-1][1] if errors else "Unknown embedding error"
+    raise RuntimeError(f"Embedding error: {last}")
+
+
 def embed_texts(texts):
-    """Generate embeddings for a list of texts."""
-    return EMBED_MODEL.encode(texts, convert_to_numpy=True)
+    """Generate embeddings for a list of texts via Google embeddings API."""
+    return [
+        _embed_one(t)
+        for t in texts
+    ]
 
 
-def save_chunks(chunks, embeddings, user_id=None, conversation_id=None, document_name="", page_num=-1):
-    """Store chunks + embeddings into SQLite with user/conversation context."""
+def save_chunks(chunks, embeddings, user_id=None, conversation_id=None, document_name="", page_num=-1, doc_id: uuid.UUID | None = None):
+    """Store chunks + embeddings into SQLite with user/conversation context, and mirror to Django DB.
+
+    Args:
+        chunks: list[str] text chunks
+        embeddings: list[np.ndarray] embedding vectors aligned with chunks
+        user_id: int or None, owner of the chunks
+        conversation_id: optional conversation id string
+        document_name: original file name
+        page_num: page number for PDF context, -1 if not applicable
+        doc_id: UUID shared by all chunks from the same source document; auto-generated if None
+    """
+    if doc_id is None:
+        doc_id = uuid.uuid4()
+
+    # 1) Persist to local RAG SQLite for fast cosine search across all users
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     for txt, emb in zip(chunks, embeddings):
@@ -96,18 +182,44 @@ def save_chunks(chunks, embeddings, user_id=None, conversation_id=None, document
             INSERT INTO chunks (user_id, conversation_id, document_name, page_num, chunk_text, embedding)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (user_id, conversation_id, document_name, page_num, txt, emb.tobytes())
+            (user_id, conversation_id, document_name, page_num, txt, emb.astype(np.float32).tobytes())
         )
     conn.commit()
     conn.close()
 
+    # 2) Mirror to primary Django DB (PostgreSQL) in DocumentChunk for doc-specific queries
+    try:
+        with transaction.atomic():
+            objs = []
+            for txt, emb in zip(chunks, embeddings):
+                # Convert embedding to plain list[float] for JSONField
+                emb_list = emb.astype(float).tolist()
+                objs.append(
+                    DocumentChunk(
+                        user_id=user_id,
+                        doc_id=doc_id,
+                        document_name=document_name,
+                        chunk_text=txt,
+                        embedding=emb_list,
+                    )
+                )
+            if objs:
+                DocumentChunk.objects.bulk_create(objs, ignore_conflicts=True)
+    except Exception:
+        # Do not fail the request if the mirror write fails; best-effort
+        pass
 
-def process_pdf(file_path: str, user_id=None, conversation_id=None, document_name=""):
+    return doc_id
+
+
+def process_pdf(file_path: str, user_id=None, conversation_id=None, document_name="", doc_id: uuid.UUID | None = None):
     """
     Extract, chunk, embed, and save PDF page by page.
     Each page is chunked separately so context stays tighter.
     """
     pages = extract_text_by_page(file_path)
+    if doc_id is None:
+        doc_id = uuid.uuid4()
 
     for page_num, text in pages:
         chunks = chunk_text(text, chunk_size=500, overlap=50)
@@ -121,8 +233,10 @@ def process_pdf(file_path: str, user_id=None, conversation_id=None, document_nam
             user_id=user_id,
             conversation_id=conversation_id,
             document_name=document_name,
-            page_num=page_num
+            page_num=page_num,
+            doc_id=doc_id,
         )
+    return {"doc_id": str(doc_id), "pages": len(pages)}
 
 
 def process_file_for_user(file_path: str, user_id=None, conversation_id=None, document_name=None):
@@ -145,10 +259,10 @@ def process_file_for_user(file_path: str, user_id=None, conversation_id=None, do
             text = f.read()
         if not text.strip():
             return
-        chunks = chunk_text(text, chunk_size=500, overlap=50)
-        embeddings = embed_texts(chunks)
-        save_chunks(chunks, embeddings, user_id=user_id, conversation_id=conversation_id, document_name=document_name, page_num=-1)
-        return
+    chunks = chunk_text(text, chunk_size=500, overlap=50)
+    embeddings = embed_texts(chunks)
+    doc_id = save_chunks(chunks, embeddings, user_id=user_id, conversation_id=conversation_id, document_name=document_name, page_num=-1)
+    return {"doc_id": str(doc_id), "pages": 1}
 
     # TODO: add OCR for images and other formats if needed
     raise NotImplementedError(f"Unsupported file type for processing: {file_path}")
@@ -159,7 +273,7 @@ def search_similar_for_user(query_text, user_id, top_k=5):
     init_db()
 
     # Embed query
-    query_emb = EMBED_MODEL.encode([query_text])[0]
+    query_emb = _embed_one(query_text)
 
     # Fetch chunks for this user
     conn = sqlite3.connect(DB_PATH)
@@ -187,7 +301,7 @@ def search_similar(query_text, top_k=5):
     init_db()
 
     # Embed query
-    query_emb = EMBED_MODEL.encode([query_text])[0]
+    query_emb = _embed_one(query_text)
 
     # Fetch all chunks
     conn = sqlite3.connect(DB_PATH)

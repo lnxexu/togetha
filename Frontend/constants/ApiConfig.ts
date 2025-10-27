@@ -7,7 +7,6 @@ function getEnvironmentConfig(): EnvironmentConfig {
     // Try to get configuration from environment variables first
     const envConfig = {
         apiUrl: process.env.EXPO_PUBLIC_API_URL,
-        ollamaApiUrl: process.env.EXPO_PUBLIC_OLLAMA_API_URL,
         environment: process.env.EXPO_PUBLIC_ENVIRONMENT as 'development' | 'staging' | 'production',
         debug: process.env.EXPO_PUBLIC_DEBUG === 'true',
     };
@@ -15,7 +14,6 @@ function getEnvironmentConfig(): EnvironmentConfig {
     // Use environment config if available, otherwise fall back to defaults
     return {
         apiUrl: envConfig.apiUrl || DEFAULT_CONFIG.apiUrl,
-        ollamaApiUrl: envConfig.ollamaApiUrl || DEFAULT_CONFIG.ollamaApiUrl,
         environment: envConfig.environment || DEFAULT_CONFIG.environment,
         debug: envConfig.debug !== undefined ? envConfig.debug : DEFAULT_CONFIG.debug,
     };
@@ -46,33 +44,7 @@ function getApiBaseUrl(): string {
     return DEFAULT_CONFIG.apiUrl;
 }
 
-function getOllamaApiUrl(): string {
-    const config = getEnvironmentConfig();
-    
-    // If we have a configured Ollama URL from environment, use it
-    if (config.ollamaApiUrl && config.ollamaApiUrl !== DEFAULT_CONFIG.ollamaApiUrl) {
-        return config.ollamaApiUrl;
-    }
-
-    // Otherwise, use platform-specific defaults for development
-    if (Platform.OS === 'android' && Constants.executionEnvironment?.includes('expo')) {
-        return PLATFORM_DEFAULTS.android.emulator.ollamaApiUrl;
-    }
-    
-    if (Platform.OS === 'ios' && Constants.executionEnvironment?.includes('expo')) {
-        return PLATFORM_DEFAULTS.ios.simulator.ollamaApiUrl;
-    }
-    
-    if (Platform.OS === 'web') {
-        return PLATFORM_DEFAULTS.web.ollamaApiUrl;
-    }
-    
-    // Default fallback
-    return DEFAULT_CONFIG.ollamaApiUrl;
-}
-
 export const API_URL = getApiBaseUrl();
-export const OLLAMA_API_URL = getOllamaApiUrl();
 
 // Safely join base URL and path to avoid accidental double slashes
 export function joinUrl(base: string, path: string): string {
@@ -129,11 +101,7 @@ export const API_ENDPOINTS = {
     // Dictionary endpoints
     CHATBOT_DICTIONARY_DEFINE: '/chatbot/dictionary/define/',
     CHATBOT_DICTIONARY_CONCEPT: '/chatbot/dictionary/concept/',
-    // Ollama endpoints
-    OLLAMA_CHAT: '/api/chat',
-    OLLAMA_GENERATE: '/api/generate',
-    OLLAMA_TAGS: '/api/tags',
-    OLLAMA_SHOW: '/api/show',
+    // Deprecated Ollama endpoints removed
 
     // Notification endpoints
     NOTIFICATIONS: '/notifications/',
@@ -168,7 +136,6 @@ export function logCurrentConfiguration(): void {
     if (config.debug && config.environment === 'development') {
         console.log('🔧 API Configuration:', {
             apiUrl: API_URL,
-            ollamaApiUrl: OLLAMA_API_URL,
             environment: config.environment,
             platform: Platform.OS,
         });
@@ -188,9 +155,6 @@ export function validateConfiguration(): { isSecure: boolean; warnings: string[]
         if (API_URL.includes('localhost') || API_URL.includes('127.0.0.1')) {
             warnings.push('⚠️  Using localhost URL in production environment');
         }
-        if (OLLAMA_API_URL.includes('localhost') || OLLAMA_API_URL.includes('127.0.0.1')) {
-            warnings.push('⚠️  Using localhost Ollama URL in production environment');
-        }
     }
     
     // Check if URLs look like development IPs in production
@@ -198,9 +162,6 @@ export function validateConfiguration(): { isSecure: boolean; warnings: string[]
     if (config.environment === 'production') {
         if (privateIPPattern.test(API_URL)) {
             warnings.push('⚠️  Using private IP address in production environment');
-        }
-        if (privateIPPattern.test(OLLAMA_API_URL)) {
-            warnings.push('⚠️  Using private Ollama IP address in production environment');
         }
     }
     

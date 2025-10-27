@@ -2,15 +2,19 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
-import requests
 from django.conf import settings
 from .. import rag
 from ..models import Conversation, Message
 import traceback
+import os
+from google import genai
 
-OLLAMA_URL = "http://127.0.0.1:11434/api/chat"
-# Timeout (seconds) for requests to the Ollama API; configurable in Django settings
-OLLAMA_TIMEOUT = getattr(settings, "OLLAMA_TIMEOUT", 300)
+# Configure Gemini API
+GEMINI_API_KEY = getattr(settings, "GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY"))
+GEMINI_MODEL = getattr(settings, "GEMINI_MODEL", os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"))
+GEMINI_MODEL_CANDIDATES = getattr(settings, "GEMINI_MODEL_CANDIDATES", [])
+# Do not create a global client with a possibly missing/invalid key; create per-request.
+GENAI_CLIENT = None
 
 class ChatView(APIView):
     permission_classes = [IsAuthenticated]
@@ -58,13 +62,14 @@ class ChatView(APIView):
                 ""
                 "CONTEXT HANDLING RULES:"
                 "- ALWAYS refer to the CURRENT CONVERSATION THREAD only"
+                "- Reject any context outside non-medical topics then remind to stay on medical topics"
+                "- Include references if the response is based on online sources"
                 "- When files are attached to a message, they are specific to THAT message"
                 "- When users ask for 'more examples' or 'explain further', refer to YOUR LAST RESPONSE in this conversation"
                 "- When asked to summarize or generate quizzes, refer to YOUR PREVIOUS MESSAGE in this conversation"
-                "- If documents are uploaded, they are available for analysis throughout the conversation"
+                "- If documents are uploaded, they are available for analysis throughout the conversation and bypass the rule of staying on medical topics"
                 "- Never reference previous conversations or unrelated topics"
                 "- If you don't have enough context, ask for clarification"
-                "- If the user asks about "
                 ""
                 "FILE HANDLING:"
                 "- When text is extracted from images (OCR), treat it as direct content from the user and ignore it as the pytesseract source will be processed separatelySS"
@@ -95,26 +100,86 @@ class ChatView(APIView):
             current_query = f"Answer using:\n{context}\n\nUser: {query_text}" if context else query_text
             conversation_messages.append({"role": "user", "content": current_query})
 
-            # Send to Ollama
-            payload = {
-                "model": "llama3.2",
-                "messages": conversation_messages,
-                "stream": False,
-                "options": {"temperature": 0.7, "top_p": 0.9, "max_tokens": 2048}
-            }
-            response = requests.post(OLLAMA_URL, json=payload, timeout=OLLAMA_TIMEOUT)
-            response.raise_for_status()
-            ollama_reply = response.json()
+            # Compose prompt for Gemini (single-shot with context and history)
+            history_text = []
+            for m in conversation_messages:
+                if m["role"] == "system":
+                    history_text.append(f"System: {m['content']}")
+                elif m["role"] == "user":
+                    history_text.append(f"User: {m['content']}")
+                else:
+                    history_text.append(f"Assistant: {m['content']}")
 
-            content = ollama_reply.get("message", {}).get("content") or ollama_reply.get("content")
+            prompt_text = "\n\n".join(history_text)
+
+            # Ensure API key exists
+            api_key = getattr(settings, "GEMINI_API_KEY", None) or os.environ.get("GEMINI_API_KEY")
+            if not api_key:
+                return Response({
+                    "error": "AI provider not configured. Please set GEMINI_API_KEY on the server."
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            # Create client per request to reflect current configuration
+            client = genai.Client(api_key=api_key)
+
+            # Try candidates in order with graceful fallback
+            errors = []
+            used_model = None
+            candidates = []
+            # Ensure primary model is first, then configured candidates
+            seen = set()
+            for m in [GEMINI_MODEL] + list(GEMINI_MODEL_CANDIDATES):
+                if m and m not in seen:
+                    candidates.append(m)
+                    seen.add(m)
+
+            gemini_resp = None
+            for model_name in candidates:
+                try:
+                    gemini_resp = client.models.generate_content(model=model_name, contents=prompt_text)
+                    used_model = model_name
+                    break
+                except Exception as api_err:
+                    err_text = str(api_err)
+                    # Invalid API key -> immediate 400
+                    if (
+                        "API key not valid" in err_text
+                        or "API_KEY_INVALID" in err_text
+                        or "invalid api key" in err_text.lower()
+                    ):
+                        return Response({
+                            "error": "AI provider authentication failed: invalid GEMINI_API_KEY. Contact an administrator."
+                        }, status=status.HTTP_400_BAD_REQUEST)
+                    # Limit/rate/quota -> try next candidate
+                    if any(k in err_text.lower() for k in [
+                        "rate limit", "quota", "exceeded", "resource exhausted", "insufficient"
+                    ]):
+                        errors.append((model_name, err_text))
+                        continue
+                    # Invalid model or not found -> try next
+                    if any(k in err_text.lower() for k in ["not found", "invalid model", "unknown model"]):
+                        errors.append((model_name, err_text))
+                        continue
+                    # Other errors -> try next but record
+                    errors.append((model_name, err_text))
+                    continue
+            if gemini_resp is None:
+                last = errors[-1][1] if errors else "No candidates available"
+                return Response({"error": f"AI provider error: {last}"}, status=status.HTTP_502_BAD_GATEWAY)
+            content = getattr(gemini_resp, "text", None)
             if not content:
-                raise Exception("No content from Ollama")
+                try:
+                    content = gemini_resp.candidates[0].content.parts[0].text
+                except Exception:
+                    content = None
+            if not content:
+                raise Exception("No content from Gemini response")
 
             ai_message = Message.objects.create(
                 conversation=conversation,
                 content=content,
                 message_type='assistant',
-                model_used="llama3.2"
+                model_used=used_model or GEMINI_MODEL
             )
 
             if conversation.messages.count() == 2:
@@ -132,9 +197,6 @@ class ChatView(APIView):
                 },
                 status=status.HTTP_200_OK
             )
-
-        except requests.exceptions.RequestException as e:
-            return Response({"error": f"AI model error: {str(e)}"}, status=status.HTTP_502_BAD_GATEWAY)
 
         except Exception as e:
             print("🔥 ChatView Error:", traceback.format_exc())

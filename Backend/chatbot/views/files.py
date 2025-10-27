@@ -5,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.conf import settings
 import os
-from ..rag import process_file_for_user
+from ..rag import process_file_for_user, extract_text_by_page
 
 
 class FileUploadView(APIView):
@@ -27,13 +27,30 @@ class FileUploadView(APIView):
                 for chunk in uploaded_file.chunks():
                     dest.write(chunk)
 
-            # Hand off to rag.py for OCR/embedding/etc.
-            process_file_for_user(file_path, request.user.id)
+            # Optional conversation context
+            conversation_id = request.data.get("conversation_id") or request.data.get("conversation")
 
-            return Response(
-                {"message": "File uploaded and processed successfully"},
-                status=status.HTTP_201_CREATED,
-            )
+            # Hand off to rag.py for OCR/embedding/etc. This returns { doc_id, pages }
+            result = process_file_for_user(file_path, request.user.id, conversation_id=conversation_id)
+
+            # Build a small preview (first page snippet for PDFs)
+            extracted_preview = None
+            if uploaded_file.name.lower().endswith('.pdf'):
+                try:
+                    pages = extract_text_by_page(file_path)
+                    if pages:
+                        extracted_preview = pages[0][1][:300]
+                except Exception:
+                    extracted_preview = None
+
+            payload = {
+                "message": "File uploaded and processed successfully",
+                "extracted_preview": extracted_preview,
+                "doc_id": result.get("doc_id") if isinstance(result, dict) else None,
+                "pages": result.get("pages") if isinstance(result, dict) else None,
+                "conversation_id": conversation_id,
+            }
+            return Response(payload, status=status.HTTP_201_CREATED)
 
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

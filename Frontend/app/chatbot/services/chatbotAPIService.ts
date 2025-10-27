@@ -1,6 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_URL, API_ENDPOINTS } from "../../../constants/ApiConfig";
-import offlineChatService from "./offlineServices";
 
 async function getAuthHeaders() {
   const token = await AsyncStorage.getItem("authToken");
@@ -381,20 +380,6 @@ class ChatbotAPIService {
       );
       return response;
     } catch (error: any) {
-      // Check if it's a network error and offline model is available
-      const isNetworkError = error.message?.includes('connect') || 
-                            error.message?.includes('Network') || 
-                            error.message?.includes('timeout') ||
-                            error.code === 'NETWORK_ERROR';
-      
-      if (isNetworkError) {
-        const modelDownloaded = await offlineChatService.isModelDownloaded();
-        if (modelDownloaded) {
-          console.log('📡 Network error detected, switching to offline mode...');
-          return await offlineChatService.sendMessage(message, conversationId, messages);
-        }
-      }
-      
       this.handleNetworkError(error, "Sending message");
       throw error;
     }
@@ -419,7 +404,7 @@ class ChatbotAPIService {
   async uploadFile(
     file: any,
     conversationId?: string
-  ): Promise<{ message: string; file_id: string; conversation_id: string }> {
+  ): Promise<{ message: string; file_id?: string; conversation_id?: string; extracted_preview?: string; doc_id?: string; pages?: number }> {
     try {
       const token = await this.getAuthToken();
       const formData = new FormData();
@@ -444,7 +429,7 @@ class ChatbotAPIService {
         180000 // 3 minutes timeout for file processing
       );
       
-      return response;
+  return response;
     } catch (error: any) {
       console.error("❌ Upload error details:", {
         name: error.name,
@@ -584,6 +569,7 @@ async extractTextFromImage(file: any): Promise<{ id: number; text: string }> {
       throw error;
     }
   }
+
 }
 
 // Export singleton instance

@@ -6,7 +6,6 @@ export const CONFIGURATION_TEMPLATES = {
   // Template for local development
   LOCAL_DEVELOPMENT: `# Local Development Configuration
 EXPO_PUBLIC_API_URL=http://localhost:8000
-EXPO_PUBLIC_OLLAMA_API_URL=http://localhost:11434
 EXPO_PUBLIC_ENVIRONMENT=development
 EXPO_PUBLIC_DEBUG=true`,
 
@@ -14,21 +13,18 @@ EXPO_PUBLIC_DEBUG=true`,
   TEAM_DEVELOPMENT: `# Team Development Configuration
 # Replace YOUR_LOCAL_IP with your actual IP address
 EXPO_PUBLIC_API_URL=http://YOUR_LOCAL_IP:8000
-EXPO_PUBLIC_OLLAMA_API_URL=http://YOUR_LOCAL_IP:11434
 EXPO_PUBLIC_ENVIRONMENT=development
 EXPO_PUBLIC_DEBUG=true`,
 
   // Template for staging environment
   STAGING: `# Staging Environment Configuration
 EXPO_PUBLIC_API_URL=https://your-staging-domain.com/api
-EXPO_PUBLIC_OLLAMA_API_URL=https://your-staging-ollama.com
 EXPO_PUBLIC_ENVIRONMENT=staging
 EXPO_PUBLIC_DEBUG=false`,
 
   // Template for production environment
   PRODUCTION: `# Production Environment Configuration
 EXPO_PUBLIC_API_URL=https://your-production-domain.com/api
-EXPO_PUBLIC_OLLAMA_API_URL=https://your-production-ollama.com
 EXPO_PUBLIC_ENVIRONMENT=production
 EXPO_PUBLIC_DEBUG=false`,
 };
