@@ -1,0 +1,81 @@
+services:
+  # Django Web Service
+  - type: web
+    name: togetha-backend
+    env: python
+    region: oregon
+    plan: free
+    branch: main
+    buildCommand: "./build.sh"
+    startCommand: "gunicorn server.wsgi:application --workers 3 --bind 0.0.0.0:$PORT"
+    healthCheckPath: /
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: False
+      - key: ALLOWED_HOSTS
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: togetha-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: togetha-redis
+          property: connectionString
+      - key: PYTHON_VERSION
+        value: 3.11.0
+
+  # Celery Worker Service (optional - if you need background tasks)
+  - type: worker
+    name: togetha-celery-worker
+    env: python
+    region: oregon
+    plan: free
+    branch: main
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "celery -A server worker --loglevel=info"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: togetha-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: togetha-redis
+          property: connectionString
+
+  # Celery Beat Service (optional - for scheduled tasks)
+  - type: worker
+    name: togetha-celery-beat
+    env: python
+    region: oregon
+    plan: free
+    branch: main
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "celery -A server beat --loglevel=info"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: togetha-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: togetha-redis
+          property: connectionString
+
+databases:
+  - name: togetha-db
+    databaseName: togetha
+    user: togetha_user
+    region: oregon
+    plan: free
+
+  - name: togetha-redis
+    region: oregon
+    plan: free
+    maxmemoryPolicy: noeviction

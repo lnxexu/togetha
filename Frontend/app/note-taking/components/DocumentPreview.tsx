@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { View, StyleSheet, Platform, ActivityIndicator } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import Svg, { Rect, Circle, Path, Text as SvgText } from "react-native-svg";
 import { getLocalPDFPath } from "../utils/pdfUtils";
 
@@ -57,7 +58,9 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
           return;
         }
         // Ensure we have a local file path for react-native-pdf
-        const result = await getLocalPDFPath(source);
+        const token = await AsyncStorage.getItem("authToken");
+        const authHeaders = token ? { Authorization: `Token ${token}` } : undefined;
+        const result = await getLocalPDFPath(source, undefined, authHeaders);
         if (!mounted) return;
         setLocalUri(result);
       } catch (e) {

@@ -31,7 +31,7 @@ class Note(models.Model):
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    title = models.CharField(max_length=200)
+    title = models.CharField(max_length=200, blank=True, default='')
     content = models.TextField(blank=True)
     formatted_content = models.TextField(blank=True, null=True)  # For rich text or HTML content
     folder = models.ForeignKey(Folder, on_delete=models.CASCADE, related_name='notes', null=True, blank=True)

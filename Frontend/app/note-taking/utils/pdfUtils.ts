@@ -402,10 +402,11 @@ export async function downloadPDFToLocal(remoteUrl: string, customFileName?: str
  * Gets the local path for a PDF, downloading it if it's remote (legacy version)
  * @param uri The PDF URI (local or remote)
  * @param fileName Optional custom filename
+ * @param fetchHeaders Optional headers for remote requests
  * @returns Local file URI
  */
-export async function getLocalPDFPath(uri: string, fileName?: string): Promise<string> {
-  const result = await getLocalPDFPathEnhanced(uri, fileName);
+export async function getLocalPDFPath(uri: string, fileName?: string, fetchHeaders?: HeadersInit): Promise<string> {
+  const result = await getLocalPDFPathEnhanced(uri, fileName, undefined, fetchHeaders);
   return result.uri;
 }
 

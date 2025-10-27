@@ -8,6 +8,7 @@ class NoteSerializer(serializers.ModelSerializer):
     document_content = serializers.CharField(required=False, write_only=True)  # For base64 encoded content
     document_url = serializers.SerializerMethodField()
     document_annotations = serializers.JSONField(required=False)
+    title = serializers.CharField(required=False, allow_blank=True, default='Untitled Note')
 
     class Meta:
         model = Note
@@ -20,7 +21,13 @@ class NoteSerializer(serializers.ModelSerializer):
             'version', 'last_modified_by', 'content_hash', 'auto_save_enabled',
             'last_auto_save', 'manual_save_count', 'auto_save_count', 'last_accessed'
         ]
-        read_only_fields = ['created_at', 'updated_at', 'last_drawing_update', 'folder_name', 'folder_color', 'last_modified_by', 'content_hash', 'last_auto_save', 'manual_save_count', 'auto_save_count', 'last_accessed']
+        read_only_fields = ['id', 'created_at', 'updated_at', 'last_drawing_update', 'folder_name', 'folder_color', 'last_modified_by', 'content_hash', 'last_auto_save', 'manual_save_count', 'auto_save_count', 'last_accessed']
+    
+    def validate_title(self, value):
+        """Ensure title is never completely empty"""
+        if not value or not value.strip():
+            return 'Untitled Note'
+        return value
     
     def get_document_url(self, obj):
         """Generate the full URL for the document file.
@@ -52,8 +59,11 @@ class NoteSerializer(serializers.ModelSerializer):
     
     
     def create(self, validated_data):
+        from django.utils import timezone
         note = Note.objects.create(**validated_data)
         note.user = self.context['request'].user
+        # Set last_accessed to current time for newly created notes
+        note.last_accessed = timezone.now()
         note.save()
         return note
         

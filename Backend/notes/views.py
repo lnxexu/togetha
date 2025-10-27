@@ -134,7 +134,20 @@ def note_list(request):
         from django.utils import timezone
         from datetime import timedelta
         
-        title = request.data.get('title', '').strip()
+        # Remove any client-provided ID from the data to prevent UUID validation errors
+        # The backend will always generate its own UUID for new notes
+        request_data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
+        if 'id' in request_data:
+            # Client sent an ID (likely a local temporary ID), ignore it
+            del request_data['id']
+        
+        # Ensure title is never completely empty - provide default
+        title = request_data.get('title', '').strip()
+        if not title:
+            request_data['title'] = 'Untitled Note'
+            title = 'Untitled Note'
+        
+        # Check for potential duplicate creations occurring in a short burst (e.g., autosave + back)
         if title:
             five_seconds_ago = timezone.now() - timedelta(seconds=5)
             existing_note = Note.objects.filter(
@@ -151,7 +164,7 @@ def note_list(request):
                     'message': 'Note already exists, returning existing note'
                 }, status=status.HTTP_200_OK)
         
-        serializer = NoteSerializer(data=request.data, context={'request': request})
+        serializer = NoteSerializer(data=request_data, context={'request': request})
         if serializer.is_valid():
             note = serializer.save(user=user, last_modified_by=user)
             # Create a log for note creation
@@ -171,6 +184,17 @@ def note_list(request):
 def note_detail(request, pk):
     """Get, update or delete a note"""
     user = request.user
+    
+    # Check if the pk is a valid UUID format
+    import re
+    uuid_pattern = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$', re.IGNORECASE)
+    if not uuid_pattern.match(str(pk)):
+        # Not a valid UUID - this is likely a temporary local ID from the client
+        # The client should create the note first, which will return a server-generated UUID
+        return Response({
+            "error": "Invalid note ID format",
+            "detail": "Please create the note first to get a valid server ID"
+        }, status=status.HTTP_400_BAD_REQUEST)
     
     try:
         note = Note.objects.get(pk=pk, user=user)
@@ -969,6 +993,16 @@ def serve_document(request, note_id):
 def touch_note_access(request, note_id):
     """Explicitly update last_accessed for a note"""
     try:
+        # Check if the note_id is a valid UUID format
+        import re
+        uuid_pattern = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$', re.IGNORECASE)
+        if not uuid_pattern.match(str(note_id)):
+            # Not a valid UUID - this is likely a temporary local ID from the client
+            return Response({
+                'error': 'Invalid note ID format',
+                'detail': 'Please create the note first to get a valid server ID'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
         note = get_object_or_404(Note, id=note_id, user=request.user)
         note.last_accessed = timezone.now()
         note.save(update_fields=['last_accessed'])

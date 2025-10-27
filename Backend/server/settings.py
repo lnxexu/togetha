@@ -1,6 +1,7 @@
 from pathlib import Path
 import os
 from decouple import config, Csv
+import dj_database_url
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -9,12 +10,17 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
+# PRODUCTION SETTINGS - Read from environment variables
+SECRET_KEY = os.environ.get("SECRET_KEY", "django-insecure-dev-key")
+DEBUG = os.environ.get("DEBUG", "False") == "True"
+
+# DEVELOPMENT SETTINGS - Commented out for production
 # Load from environment variable, fallback to insecure default for development only
-SECRET_KEY = config('SECRET_KEY', default='django-insecure-+^2p59aom-1u1r7%z0pg_vi4wg^y%10swf-=1!rpp!q6sr)q0p')
+# SECRET_KEY = config('SECRET_KEY', default='django-insecure-+^2p59aom-1u1r7%z0pg_vi4wg^y%10swf-=1!rpp!q6sr)q0p')
 
 # Debug mode: enable serving of media/static files in development by default.
 # Use environment variable DEBUG to override in non-development environments.
-DEBUG = config('DEBUG', default=True, cast=bool)
+# DEBUG = config('DEBUG', default=True, cast=bool)
 
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='*,192.168.0.153,localhost,127.0.0.1', cast=Csv())
 
@@ -61,6 +67,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # Add WhiteNoise for static files in production
     'django.contrib.sessions.middleware.SessionMiddleware',
     'server.middleware.ClientTimezoneMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -135,17 +142,23 @@ WSGI_APPLICATION = 'server.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'togetha',
-        'USER': 'kobe',
-        'PASSWORD': 'Kobe@1314',
-        'HOST': 'localhost',
-        'PORT': '5432',
+# PRODUCTION DATABASE - Uses DATABASE_URL from environment
+if os.environ.get("DATABASE_URL"):
+    DATABASES = {
+        "default": dj_database_url.parse(os.environ["DATABASE_URL"], conn_max_age=600)
     }
-}
+else:
+    # DEVELOPMENT DATABASE - Fallback for local development
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': 'togetha',
+            'USER': 'kobe',
+            'PASSWORD': 'Kobe@1314',
+            'HOST': 'localhost',
+            'PORT': '5432',
+        }
+    }
 
 
 # Password validation
@@ -166,10 +179,12 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
+# REDIS CACHE - Use REDIS_URL from environment or fallback to localhost
+REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/1')
 CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.redis.RedisCache',
-        'LOCATION': 'redis://localhost:6379/1',
+        'LOCATION': REDIS_URL,
         'OPTIONS': {
             'CLIENT_CLASS': 'django_redis.client.DefaultClient',
         }
@@ -203,12 +218,26 @@ REST_FRAMEWORK = {
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
-MEDIA_URL = '/media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 STATIC_URL = '/static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')  # For collectstatic in production
 STATICFILES_DIRS = [
     os.path.join(BASE_DIR, 'templates'), 
 ]
+
+# WhiteNoise configuration for efficient static file serving
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
+
+# Media files - WARNING: Local storage not persistent on Render
+# For production, consider using AWS S3 or similar cloud storage
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -255,8 +284,10 @@ LOGGING = {
 TIME_ZONE = 'UTC'
 USE_TZ = True
 
-CELERY_BROKER_URL = 'redis://localhost:6379/0'  
-CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
+# CELERY CONFIGURATION - Use REDIS_URL from environment or fallback to localhost
+REDIS_BROKER_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+CELERY_BROKER_URL = REDIS_BROKER_URL
+CELERY_RESULT_BACKEND = REDIS_BROKER_URL
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_ACCEPT_CONTENT = ['json']

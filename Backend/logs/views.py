@@ -70,6 +70,10 @@ def create_log(user=None, level="INFO", message="", action="", entity_type=None,
         except Exception:
             pass
 
+    # Truncate client timezone to fit database field (max 64 chars)
+    if client_tzname and len(client_tzname) > 64:
+        client_tzname = client_tzname[:64]
+
     # Prepare local timestamp text with offset if available
     local_ts_text = None
     if local_ts is not None:
@@ -77,6 +81,10 @@ def create_log(user=None, level="INFO", message="", action="", entity_type=None,
             local_ts_text = local_ts.isoformat()
         except Exception:
             local_ts_text = None
+
+    # Truncate entity_id to fit database field (max 64 chars)
+    if entity_id and len(str(entity_id)) > 64:
+        entity_id = str(entity_id)[:61] + "..."
 
     log = Log.objects.create(
         user=user,

@@ -24,11 +24,23 @@ export interface SaveStatus {
 class NoteService {
   private saveInProgress = new Set<string>();
   private noteVersions = new Map<string, number>();
+  // Track in-flight create requests per temporary note ID to coalesce POSTs
+  private pendingCreates = new Map<string, Promise<{ note: Note; status: SaveStatus }>>();
+  // Map temporary IDs (note_*) to server UUIDs to ensure subsequent saves use updates
+  private tempIdToServerId = new Map<string, string>();
 
   /**
    * Google Docs-style save that handles new notes and updates intelligently
    */
   async saveNote(note: Note, isAutoSave = true): Promise<{ note: Note; status: SaveStatus }> {
+    // If this note was previously created and we have the server ID, switch to it
+    if (note?.id && note.id.startsWith('note_')) {
+      const mapped = this.tempIdToServerId.get(note.id);
+      if (mapped) {
+        note = { ...note, id: mapped };
+      }
+    }
+
     const noteKey = note.id;
 
     // Prevent duplicate saves for the same note
@@ -42,8 +54,8 @@ class NoteService {
     try {
       this.saveInProgress.add(noteKey);
 
-      // First, save to local storage immediately (optimistic update)
-      await this.saveToLocalStorage(note);
+  // First, save to local storage immediately (optimistic update)
+  await this.saveToLocalStorage(note);
 
       // Check network connectivity using real network service
       const networkStatus = networkService.getCurrentStatus();
@@ -62,8 +74,39 @@ class NoteService {
         };
       }
 
-      // Attempt to sync to cloud
-      const result = await this.syncToCloud(note, isAutoSave);
+      // Attempt to sync to cloud. Coalesce creates for temp IDs so we don't POST multiple times.
+      let result: { savedNote?: Note; conflict?: boolean };
+      const isTempId = !!note?.id && note.id.startsWith('note_');
+      if (isTempId) {
+        const existing = this.pendingCreates.get(note.id);
+        if (existing) {
+          const r = await existing;
+          return r; // Return the same result to all callers
+        }
+        // Start a single create request and share it
+        const createPromise = this.syncToCloud(note, isAutoSave).then(async (res) => {
+          if (res.savedNote && res.savedNote.id && res.savedNote.id !== note.id) {
+            // Remember mapping from temp to server UUID
+            this.tempIdToServerId.set(note.id, res.savedNote.id);
+          }
+          // Prepare return shape consistent with this method
+          const ret = {
+            note: res.savedNote || note,
+            status: {
+              status: res.conflict ? 'conflict' : 'saved',
+              message: !isAutoSave ? (res.conflict ? 'Version conflict' : 'Note saved successfully') : undefined,
+              lastSaved: new Date(),
+            } as SaveStatus,
+          };
+          return ret;
+        }).finally(() => {
+          this.pendingCreates.delete(note.id);
+        });
+        this.pendingCreates.set(note.id, createPromise);
+        return await createPromise;
+      } else {
+        result = await this.syncToCloud(note, isAutoSave);
+      }
       
       if (result.conflict) {
         return {
@@ -136,7 +179,7 @@ class NoteService {
       throw new Error('No auth token found');
     }
 
-    const isNewNote = this.shouldCreateNewNote(note);
+  const isNewNote = this.shouldCreateNewNote(note);
     const currentVersion = this.noteVersions.get(note.id);
 
     const requestBody: any = {
@@ -157,7 +200,7 @@ class NoteService {
       ? joinUrl(API_URL, API_ENDPOINTS.NOTES)
       : joinUrl(API_URL, `${API_ENDPOINTS.NOTES}${note.id}/`);
 
-    const method = isNewNote ? 'POST' : 'PUT';
+  const method = isNewNote ? 'POST' : 'PUT';
 
     const response = await fetch(url, {
       method,

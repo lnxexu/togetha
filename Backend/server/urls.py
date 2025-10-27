@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.urls import path, include, re_path
 from django.conf import settings
 from django.conf.urls.static import static
+from django.views.static import serve
 from server import views
 from django.contrib.auth import views as auth_views
 from rest_framework.authtoken import views as auth_view
@@ -53,6 +54,14 @@ urlpatterns = [
     path('', views.home_page, name='home_page')
 ]
 
-# Serve media files from MEDIA_ROOT during development.
-# In production use a proper static/media server or CDN.
-urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# Serve media files - works in both development and production (local dev)
+# For cloud production (Render, AWS, etc.), use cloud storage (S3) or CDN
+if settings.DEBUG:
+    # Development mode: use static() helper
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+else:
+    # Non-DEBUG mode (local testing): serve media files explicitly
+    # This allows testing with DEBUG=False locally
+    urlpatterns += [
+        re_path(r'^media/(?P<path>.*)$', serve, {'document_root': settings.MEDIA_ROOT}),
+    ]

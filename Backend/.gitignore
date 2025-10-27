@@ -14,6 +14,7 @@ celerybeat.pid
 
 # Email debug files (you already have email_debug.log in your backend)
 *.eml
+email_debug.log
 
 # Test databases
 test_*.sqlite3
@@ -33,6 +34,13 @@ __pycache__/
 *.pyc
 *.pyo
 
+# Environment files - NEVER commit these to git
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+
 # IDE files
 .vscode/
 .idea/
@@ -40,3 +48,10 @@ __pycache__/
 # OS files
 .DS_Store
 Thumbs.db
+
+# SQLite databases (not persistent on Render)
+*.sqlite3
+*.db
+
+# Media files (should use cloud storage in production)
+media/

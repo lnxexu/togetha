@@ -18,11 +18,9 @@ import { TaskProvider } from "./app/contexts/TaskContext";
 import { TaskNotificationChecker } from "./app/notifications/components/TaskNotificationChecker";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
+
 SplashScreen.preventAutoHideAsync();
 
-// Disable in-app warning overlays (LogBox) and optionally silence console output
-// so logs don't appear inside the app UI. Keep this limited to development
-// so production behavior isn't changed unexpectedly.
 try {
   LogBox.ignoreAllLogs(true);
 } catch (e) {
@@ -30,13 +28,9 @@ try {
 }
 
 if (__DEV__) {
-  // Optional: silence console methods to avoid printing logs in the in-app UI
-  // Remove or change these assignments if you still want to see logs in the
-  // native debugger/terminal.
   console.log = () => {};
   console.debug = () => {};
   console.info = () => {};
-  // Keep console.error so real errors still surface
   console.warn = () => {};
 }
 

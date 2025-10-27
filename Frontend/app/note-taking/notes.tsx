@@ -222,6 +222,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
   >(null);
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
   const [editingFolderName, setEditingFolderName] = useState("");
+  const [editingFolderColor, setEditingFolderColor] = useState("#667EEA");
   const [showEditFolderModal, setShowEditFolderModal] = useState(false);
   const [lastFolderFetch, setLastFolderFetch] = useState<number>(0);
   const [lastNoteFetch, setLastNoteFetch] = useState<number>(0);
@@ -1067,7 +1068,11 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
         let finalDocumentUri = documentUrl;
         if (documentType === "pdf" && isRemoteURL(documentUrl)) {
           try {
-            finalDocumentUri = await getLocalPDFPath(documentUrl);
+            // Get auth token for PDF download
+            const token = await AsyncStorage.getItem('authToken');
+            const authHeaders: HeadersInit | undefined = token ? { 'Authorization': `Token ${token}` } : undefined;
+            
+            finalDocumentUri = await getLocalPDFPath(documentUrl, undefined, authHeaders);
           } catch (error) {
             console.error("Failed to download PDF to local storage:", error);
             // Fall back to original URL - PDFAnnotationViewer will handle the error
@@ -1330,7 +1335,9 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
 
             if (documentType === "pdf" && isRemoteURL(documentUrl)) {
               try {
-                finalDocumentUri = await getLocalPDFPath(documentUrl);
+                const token = await AsyncStorage.getItem("authToken");
+                const authHeaders: HeadersInit | undefined = token ? { Authorization: `Token ${token}` } : undefined;
+                finalDocumentUri = await getLocalPDFPath(documentUrl, undefined, authHeaders);
               } catch (error) {
                 console.warn("Failed to download PDF, using remote URL", error);
                 finalDocumentUri = documentUrl;
@@ -1677,6 +1684,42 @@ const updateFolderName = async (folderId: string, newName: string) => {
     Alert.alert("Error", "Failed to update folder name. Please try again.");
   }
 };
+
+// Add new updateFolder function that can update both name and color
+const updateFolder = async (folderId: string, updates: { name?: string; color?: string }) => {
+  // Check for duplicate folder name if name is being updated
+  if (updates.name) {
+    const normalizedNewName = updates.name.trim().toLowerCase();
+    const isDuplicate = folders.some(
+      (folder) =>
+        folder.id !== folderId &&
+        folder.name.trim().toLowerCase() === normalizedNewName
+    );
+
+    if (isDuplicate) {
+      showErrorToast("A folder with this name already exists");
+      return;
+    }
+  }
+
+  try {
+    // Use offline service to update folder (works both online and offline)
+    await offlineNotesService.updateFolder(folderId, updates);
+
+    // Update folder in state
+    setFolders(
+      folders.map((folder) =>
+        folder.id === folderId ? { ...folder, ...updates } : folder
+      )
+    );
+
+    showSuccessToast("Folder updated successfully");
+  } catch (error) {
+    console.error("Error updating folder:", error);
+    showErrorToast("Failed to update folder");
+    Alert.alert("Error", "Failed to update folder. Please try again.");
+  }
+};
 const handleCreateFolder = async () => {
   if (newFolderName.trim() === "") {
     Alert.alert("Error", "Please enter a folder name");
@@ -1883,6 +1926,7 @@ const handleCreateFolder = async () => {
     if (folder) {
       setEditingFolderId(folderId);
       setEditingFolderName(folder.name);
+      setEditingFolderColor(Array.isArray(folder.color) ? folder.color[0] : folder.color);
       setShowEditFolderModal(true);
       setShowFolderOptionsModal(false);
     }
@@ -2137,6 +2181,7 @@ const handleCreateFolder = async () => {
 
                 {strokeCount > 0 ? (
                   <TemplatePreview
+                    key={`${item.id}-${item.updatedAt?.getTime?.() || 0}`}
                     note={item}
                     width={windowWidth / 2 - 64}
                     height={120}
@@ -2162,6 +2207,7 @@ const handleCreateFolder = async () => {
             <View style={styles.previewImageContainer}>
               {isPdf ? (
                 <DocumentPreview
+                  key={`${item.id}-${item.updatedAt?.getTime?.() || 0}`}
                   documentUrl={docUrl}
                   annotations={Array.isArray(item.document_annotations) ? item.document_annotations as any : []}
                   width={windowWidth / 2 - 64}
@@ -2169,6 +2215,7 @@ const handleCreateFolder = async () => {
                 />
               ) : (
                 <TemplatePreview
+                  key={`${item.id}-${item.updatedAt?.getTime?.() || 0}`}
                   note={item}
                   width={windowWidth / 2 - 64}
                   height={120}
@@ -2192,7 +2239,9 @@ const handleCreateFolder = async () => {
                   // For PDF files, download to local storage if it's a remote URL
                   if (docType === 'pdf' && isRemoteURL(documentUrl)) {
                     try {
-                      finalDocumentUri = await getLocalPDFPath(documentUrl);
+                      const token = await AsyncStorage.getItem("authToken");
+                      const authHeaders: HeadersInit | undefined = token ? { Authorization: `Token ${token}` } : undefined;
+                      finalDocumentUri = await getLocalPDFPath(documentUrl, undefined, authHeaders);
                     } catch (error) {
                       console.error('Failed to download PDF to local storage:', error);
                       // Fall back to original URL - PDFAnnotationViewer will handle the error
@@ -2224,6 +2273,7 @@ const handleCreateFolder = async () => {
           // Enhanced text note preview
           return (
             <TemplatePreview
+              key={`${item.id}-${item.updatedAt?.getTime?.() || 0}`}
               note={item}
               width={windowWidth / 2 - 64}
               height={120}
@@ -3020,7 +3070,7 @@ const handleCreateFolder = async () => {
           <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
             <View style={styles.modalContent}>
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Edit Folder Name</Text>
+                <Text style={styles.modalTitle}>Edit Folder</Text>
                 <TouchableOpacity
                   onPress={() => setShowEditFolderModal(false)}
                   style={styles.modalCloseButton}
@@ -3029,17 +3079,51 @@ const handleCreateFolder = async () => {
                 </TouchableOpacity>
               </View>
 
-              <View style={styles.modalBody}>
-                <TextInput
-                  style={styles.textInput}
-                  value={editingFolderName}
-                  onChangeText={setEditingFolderName}
-                  placeholder="Enter folder name"
-                  placeholderTextColor="#9CA3AF"
-                  autoFocus={true}
-                  maxLength={20}
-                />
-              </View>
+              <ScrollView
+                style={styles.modalBody}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Folder Name</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={editingFolderName}
+                    onChangeText={setEditingFolderName}
+                    placeholder="Enter folder name"
+                    placeholderTextColor="#9CA3AF"
+                    autoFocus={true}
+                    maxLength={20}
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Choose Color</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.colorSelector}
+                    keyboardShouldPersistTaps="always"
+                  >
+                    {FOLDER_COLORS.map((color) => (
+                      <TouchableOpacity
+                        key={color}
+                        style={[
+                          styles.colorOption,
+                          { backgroundColor: color },
+                          editingFolderColor === color &&
+                            styles.selectedColorOption,
+                        ]}
+                        onPress={() => setEditingFolderColor(color)}
+                      >
+                        {editingFolderColor === color && (
+                          <MaterialIcons name="check" size={20} color="#FFFFFF" />
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              </ScrollView>
 
               <View style={styles.modalFooter}>
                 <TouchableOpacity
@@ -3052,10 +3136,10 @@ const handleCreateFolder = async () => {
                   style={styles.createButton}
                   onPress={() => {
                     if (editingFolderName.trim() !== "" && editingFolderId) {
-                      updateFolderName(
-                        editingFolderId,
-                        editingFolderName.trim()
-                      );
+                      updateFolder(editingFolderId, {
+                        name: editingFolderName.trim(),
+                        color: editingFolderColor,
+                      });
                       setShowEditFolderModal(false);
                     }
                   }}
