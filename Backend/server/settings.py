@@ -1,10 +1,13 @@
 from pathlib import Path
 import os
 from decouple import config, Csv
+from dotenv import load_dotenv
+from pathlib import Path
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-
+load_dotenv(dotenv_path=BASE_DIR / '.env')
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
@@ -32,8 +35,31 @@ EMAIL_HOST_PASSWORD = 'lbqi deda bbux ebxd'
 EMAIL_TIMEOUT = 60 
 EMAIL_USE_LOCALTIME = False
  
-# Timeout for Ollama/model API calls (seconds)
-OLLAMA_TIMEOUT = 300
+from decouple import Csv
+
+# Gemini / Embeddings configuration
+# Do NOT provide a hardcoded default for API keys. Require environment or .env to supply it.
+GEMINI_API_KEY = config('GEMINI_API_KEY', default=None)
+GEMINI_MODEL = config('GEMINI_MODEL', default='gemini-2.5-flash')
+EMBEDDING_MODEL = config('EMBEDDING_MODEL', default='text-embedding-004')
+
+# Ordered model candidates for graceful fallback
+GEMINI_MODEL_CANDIDATES = config('GEMINI_MODEL_CANDIDATES', default='', cast=Csv())
+if not GEMINI_MODEL_CANDIDATES:
+    GEMINI_MODEL_CANDIDATES = [
+        GEMINI_MODEL,
+        'gemini-2.5-flash-lite',
+        'gemini-2.5-flash-lite-preview',
+        'gemini-2.0-flash',
+        'gemini-2.0-flash-lite',
+    ]
+
+EMBEDDING_MODEL_CANDIDATES = config('EMBEDDING_MODEL_CANDIDATES', default='', cast=Csv())
+if not EMBEDDING_MODEL_CANDIDATES:
+    EMBEDDING_MODEL_CANDIDATES = [
+        EMBEDDING_MODEL,
+        'embedding-001',
+    ]
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -139,9 +165,9 @@ WSGI_APPLICATION = 'server.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'togetha',
-        'USER': 'kobe',
-        'PASSWORD': 'Kobe@1314',
+        'NAME': 'Togetha',
+        'USER': 'Togetha',
+        'PASSWORD': 'lol',
         'HOST': 'localhost',
         'PORT': '5432',
     }

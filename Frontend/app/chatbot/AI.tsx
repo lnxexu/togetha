@@ -30,7 +30,8 @@ import {chatbotAPI,
   ConversationFile,
   ChatResponse 
 } from "./services/chatbotAPIService";
-import offlineChatService from "./services/offlineServices";
+import FlashcardModal, { Flashcard } from "./components/FlashcardModal";
+// Offline mode removed; always use backend Gemini via API
 
 type Role = "user" | "assistant";
 
@@ -94,20 +95,184 @@ function ChatBot(): React.ReactElement {
   const [ocrResult, setOCRResult] = useState<string>("");
   const [ocrLoading, setOCRLoading] = useState(false);
 
-  // Offline mode states
-  const [isOfflineMode, setIsOfflineMode] = useState(false);
-  const [modelDownloaded, setModelDownloaded] = useState(false);
-  const [downloadingModel, setDownloadingModel] = useState(false);
+  // Flashcard Modal states
+  const [showFlashcardModal, setShowFlashcardModal] = useState(false);
+  const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
+  const [hasFlashcardAvailable, setHasFlashcardAvailable] = useState(false);
+  const [lastFlashcard, setLastFlashcard] = useState<Flashcard | null>(null);
+  // Track if the current outgoing prompt should open flashcards when the response arrives
+  const flashcardTriggerRef = useRef<boolean>(false);
 
+  // Utilities: detect and parse flashcards from AI text
+  const isFlashcardTrigger = (text: string) => {
+    const t = (text || '').toLowerCase();
+    return (
+      t.includes('practice question') ||
+      t.includes('practice questions') ||
+      t.includes('create a flashcard') ||
+      t.includes('create flashcard') ||
+      t.includes('make flashcards') ||
+      t.includes('flashcard')
+    );
+  };
+
+  const parseFirstFlashcard = (content: string): Flashcard | null => {
+    if (!content || typeof content !== 'string') return null;
+
+    const lines = content.split(/\r?\n/);
+    const isQuestionLine = (line: string) => /^(?:\s*(?:q(?:uestion)?\s*\d*[:.)-]|\d+[.)-]|[-*•]))\s+/i.test(line);
+    const extractQuestion = (line: string) => line.replace(/^(?:\s*(?:q(?:uestion)?\s*\d*[:.)-]|\d+[.)-]|[-*•]))\s+/i, '').trim();
+    const isAnswerLine = (line: string) => /^(?:\s*(?:a(?:nswer)?\s*[:.)-]|\*\*answer\*\*\s*[:.-]))/i.test(line) || /^\s*(?:correct\s+answer|answer)\s*[:.-]/i.test(line);
+    const extractAnswer = (line: string) => line
+      .replace(/^(?:\s*(?:a(?:nswer)?\s*[:.)-]|\*\*answer\*\*\s*[:.-]))/i, '')
+      .replace(/^\s*(?:correct\s+answer|answer)\s*[:.-]/i, '')
+      .trim();
+    const isChoiceLine = (line: string) => /^\s*[A-Da-d][).\-]\s+.+/.test(line);
+    const extractChoice = (line: string) => {
+      const m = line.match(/^\s*([A-Da-d])[).\-]\s+(.+)$/);
+      if (!m) return null;
+      return { key: m[1].toUpperCase(), text: m[2].trim() };
+    };
+
+    let question: string | null = null;
+    let answer: string | null = null;
+    const choices: Record<string, string> = {};
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (!question && isQuestionLine(line)) {
+        question = extractQuestion(line);
+        continue;
+      }
+      if (question && isChoiceLine(line)) {
+        const ch = extractChoice(line);
+        if (ch) choices[ch.key] = ch.text;
+        continue;
+      }
+      if (question && isAnswerLine(line)) {
+        const raw = extractAnswer(line);
+        // If the answer is just a letter, try to map to choice text
+        const m = raw.match(/^([A-Da-d])\s*(?:[).\-]|$)/);
+        if (m && choices[m[1].toUpperCase()]) {
+          answer = choices[m[1].toUpperCase()];
+        } else {
+          answer = raw;
+        }
+        break;
+      }
+    }
+
+    if (question) {
+      const qClean = question.trim();
+      const aClean = (answer || '').trim();
+      return { question: qClean || 'Question', answer: aClean || undefined };
+    }
+
+    // Fallback: create one card with the whole content if pattern not found
+    return { question: 'Review', answer: content.trim() };
+  };
+
+  // Parse multiple flashcards in the numbered two-line format we request:
+  // 1) Q: question text\nA: answer text
+  const parseFlashcardsFromMarkdown = (content: string): Flashcard[] => {
+    if (!content || typeof content !== 'string') return [];
+    const lines = content.split(/\r?\n/);
+    const cards: Flashcard[] = [];
+
+    // Regexes for the enforced format
+    const qRe = /^\s*(\d{1,3})[).\-]\s*Q\s*:\s*(.+)$/i;
+    const aRe = /^\s*A\s*:\s*(.+)$/i;
+
+    for (let i = 0; i < lines.length; i++) {
+      const qMatch = lines[i].match(qRe);
+      if (qMatch) {
+        const questionText = qMatch[2]?.trim() || '';
+        let answerText = '';
+        // Look ahead for the next A: line
+        if (i + 1 < lines.length) {
+          const aMatch = lines[i + 1].match(aRe);
+          if (aMatch) {
+            answerText = aMatch[1]?.trim() || '';
+            i = i + 1; // consume the answer line
+          }
+        }
+        cards.push({ question: questionText, answer: answerText || undefined });
+      }
+    }
+
+    // Fallback: if no strict matches, try to parse the first card only
+    if (cards.length === 0) {
+      const first = parseFirstFlashcard(content);
+      return first ? [first] : [];
+    }
+    return cards;
+  };
+
+  // Build a structured instruction for generating flashcards/practice questions
+  const buildFlashcardPrompt = (raw: string, fileContextPresent: boolean): string => {
+    const text = (raw || '').trim();
+
+    // Heuristics to extract topic
+    const triggerPatterns = [
+      /\bcreate\s+(?:a\s+)?flashcards?\b/i,
+      /\bmake\s+flashcards?\b/i,
+      /\bpractice\s+questions?\b/i,
+      /\bmake\s+practice\s+questions?\b/i,
+      /\bflashcard\b/i,
+    ];
+    let topic = '';
+    let working = text;
+    triggerPatterns.forEach((re) => { working = working.replace(re, '').trim(); });
+
+    // Try to capture topic after common prepositions
+    const topicMatch = working.match(/(?:on|about|regarding|for)\s+(.+)/i);
+    if (topicMatch && topicMatch[1]) {
+      topic = topicMatch[1].trim();
+    } else {
+      topic = working.trim();
+    }
+    // Trim trailing punctuation
+    topic = topic.replace(/[.!?]+$/g, '').trim();
+
+    // Count detection: look for an explicit number
+    let count = 10;
+    const countMatch = text.match(/\b(\d{1,2})\b\s*(?:flashcards?|questions?)?/i);
+    if (countMatch) {
+      const n = parseInt(countMatch[1], 10);
+      if (!Number.isNaN(n) && n >= 1 && n <= 50) count = n;
+    }
+
+    const topicPart = topic.length > 0 ? topic : (fileContextPresent ? 'the provided material/content above' : 'the topic we discussed');
+
+  const prompt = `Create a set of flashcard-style study questions and answers on the topic of ${topicPart}.
+
+Use concise phrasing for both questions and answers.
+
+Number each flashcard from 1 to ${count}.
+
+Format each flashcard on two lines as:
+<number>) Q: (question)
+A: (answer)
+
+Include a mix of definitions, concepts, examples, and key facts.
+
+Provide ${count} total flashcards.
+
+If applicable, include mnemonics or memory tips for harder terms.
+
+Example format:
+1) Q: What is the powerhouse of the cell?
+A: The mitochondrion.`;
+
+    return prompt;
+  };
 
   useEffect(() => {
   const initChat = async () => {
     try {
       await loadConversations();        
       await restoreActiveConversation();
-      // Check if offline model is downloaded
-      const downloaded = await offlineChatService.isModelDownloaded();
-      setModelDownloaded(downloaded);
+  // Offline model download check removed
     } catch (error) {
       console.warn("Failed to initialize chat:", error);
     }
@@ -465,7 +630,7 @@ function ChatBot(): React.ReactElement {
     }
   };
 
-  const fetchOllamaMessage = async ({ messageContent }: MutationVariables): Promise<BackendResponse> => {
+  const fetchChatMessage = async ({ messageContent }: MutationVariables): Promise<BackendResponse> => {
     try {
       // Format all messages properly for the API (including conversation history)
       const formattedMessages = messages.map(msg => ({
@@ -476,58 +641,39 @@ function ChatBot(): React.ReactElement {
       // Add the new user message
       formattedMessages.push({ role: "user", content: messageContent });
 
-      // Try online API first
-      try {
-        const response = await chatbotAPI.sendMessage(
-          messageContent, 
-          currentConversation?.id, 
-          formattedMessages
-        );
+      const response = await chatbotAPI.sendMessage(
+        messageContent,
+        currentConversation?.id,
+        formattedMessages
+      );
 
-        // Update offline mode status based on response source
-        setIsOfflineMode(false);
-        setIsOnline(true);
+      setIsOnline(true);
 
-        return {
-          content: response.content,
-          source: response.source,
-          conversation_id: response.conversation_id,
-          message_id: response.message_id
-        };
-      } catch (apiError: any) {
-        // If online API fails and offline model is available, use offline mode
-        if (modelDownloaded) {
-          console.log("📴 Online API failed, switching to offline mode...");
-          setIsOfflineMode(true);
-          setIsOnline(false);
-
-          const offlineResponse = await offlineChatService.sendMessage(
-            messageContent,
-            currentConversation?.id,
-            formattedMessages
-          );
-
-          return {
-            content: `🔌 [Offline Mode]\n\n${offlineResponse.content}`,
-            source: 'offline',
-            conversation_id: offlineResponse.conversation_id,
-            message_id: offlineResponse.message_id
-          };
-        }
-
-        // No offline model available, throw the original error
-        throw apiError;
-      }
+      return {
+        content: response.content,
+        source: response.source,
+        conversation_id: response.conversation_id,
+        message_id: response.message_id
+      };
     } catch (err: any) {
-      console.error("fetchOllamaMessage error:", err);
-      throw new Error(err.message || "Failed to send message. Please check your connection and try again.");
+      console.error("fetchChatMessage error:", err);
+      const msg = err?.message || "Failed to send message. Please check your connection and try again.";
+      // Provide a clearer, user-friendly message for server AI configuration issues
+      if (
+        msg.includes("GEMINI_API_KEY") ||
+        msg.toLowerCase().includes("ai provider not configured") ||
+        msg.toLowerCase().includes("ai provider authentication failed")
+      ) {
+        throw new Error("AI is temporarily unavailable. The server's AI key is missing or invalid. Please contact an administrator.");
+      }
+      throw new Error(msg);
     }
   };
 
   const mutation = useMutation<BackendResponse, Error, MutationVariables>({
-    mutationFn: fetchOllamaMessage,
+    mutationFn: fetchChatMessage,
     onError: (error) => {
-      // Only set error message, don't log as it's already logged in fetchOllamaMessage
+  // Only set error message, don't log as it's already logged in fetchChatMessage
       setErrorMessage(error.message);
     },
     onSuccess: (data) => {
@@ -559,11 +705,11 @@ function ChatBot(): React.ReactElement {
   const handleSend = async () => {
     if (!input.trim() && pendingFiles.length === 0) return;
 
-    // Check if we're online or have offline model
-    if (!isOnline && !modelDownloaded) {
+    // Check if we're online
+    if (!isOnline) {
       Alert.alert(
         "Connection Error", 
-        "You appear to be offline and no offline model is available. Please check your internet connection or download the offline model.",
+        "You appear to be offline. Please check your internet connection and try again.",
         [
           { text: "Retry", onPress: () => loadConversations() },
           { text: "Cancel", style: "cancel" }
@@ -575,7 +721,9 @@ function ChatBot(): React.ReactElement {
     setErrorMessage(null);
 
     // Store current message and files for this specific message
-    const currentInput = input.trim();
+  const currentInput = input.trim();
+  // Record whether this prompt intends to create practice questions/flashcards
+  flashcardTriggerRef.current = isFlashcardTrigger(currentInput);
     const currentFiles = [...pendingFiles];
 
     // Clear input and pending files immediately for better UX
@@ -674,7 +822,16 @@ function ChatBot(): React.ReactElement {
       }
 
       // Create the final message content
-      const finalMessageContent = messageContent + fileContext;
+      let finalMessageContent = messageContent + fileContext;
+
+      // If this is a flashcard/practice request, rewrite into structured instruction
+      if (flashcardTriggerRef.current) {
+        finalMessageContent = buildFlashcardPrompt(currentInput, (successfulFiles.length + failedFiles.length) > 0);
+        // If there was fileContext, append a hint so the model uses it
+        if ((successfulFiles.length + failedFiles.length) > 0) {
+          finalMessageContent += `\n\nBase the flashcards strictly on the extracted/uploaded content included above.`;
+        }
+      }
 
       // Validate that we have some content to send
       const hasContent = finalMessageContent.trim().length > 0;
@@ -706,19 +863,45 @@ function ChatBot(): React.ReactElement {
         scrollViewRef.current?.scrollToEnd({ animated: true });
       }, 100);
 
-      // Send to AI with the message and file context
-      const response = await mutation.mutateAsync({ 
-        messageContent: finalMessageContent || "Please analyze the attached files and their content." 
-      });
+      {
+        // Non-streaming path
+        const response = await mutation.mutateAsync({ 
+          messageContent: finalMessageContent || "Please analyze the attached files and their content." 
+        });
+        setMessages(prev => [...prev, { role: "assistant" as Role, content: response.content, timestamp: new Date() }]);
 
-      // Add AI response to local state
-      const aiMessage: Message = {
-        role: "assistant",
-        content: response.content,
-        timestamp: new Date()
-      };
+        // If this message was a flashcard/practice request, parse and open modal
+        if (flashcardTriggerRef.current) {
+          const parsedList = parseFlashcardsFromMarkdown(response.content);
+          if (parsedList && parsedList.length > 0) {
+            setFlashcards(parsedList);
+            setLastFlashcard(parsedList[0]);
+            setHasFlashcardAvailable(true);
+            setShowFlashcardModal(true);
+          } else {
+            const parsedFirst = parseFirstFlashcard(response.content);
+            if (parsedFirst) {
+              setFlashcards([parsedFirst]);
+              setLastFlashcard(parsedFirst);
+              setHasFlashcardAvailable(true);
+              setShowFlashcardModal(true);
+            }
+          }
+          flashcardTriggerRef.current = false;
+        }
 
-      setMessages(prev => [...prev, aiMessage]);
+        // Update current conversation if we got an ID back
+        if (response.conversation_id && !currentConversation) {
+          try {
+            const newConversation = await chatbotAPI.getConversation(response.conversation_id);
+            setCurrentConversation(newConversation);
+            await saveActiveConversation(newConversation.id);
+            await loadConversations();
+          } catch (convError) {
+            console.warn("Failed to load conversation details, but message was sent successfully");
+          }
+        }
+      }
 
       // Show file processing results to user if there were any issues
       if (failedFiles.length > 0) {
@@ -733,32 +916,10 @@ function ChatBot(): React.ReactElement {
         }, 1000);
       }
 
-      // Update current conversation if we got an ID back
-      if (response.conversation_id && !currentConversation) {
-        try {
-          const newConversation = await chatbotAPI.getConversation(response.conversation_id);
-          setCurrentConversation(newConversation);
-
-          // Update chat head context with new active conversation
-       
-
-          // Save the new conversation as active
-          await saveActiveConversation(newConversation.id);
-
-          await loadConversations(); // Refresh conversation list
-        } catch (convError) {
-          console.warn("Failed to load conversation details, but message was sent successfully");
-        }
-      }
+      
 
       // Generate title if this is the first AI response (conversation has 2 messages)
-      if (messages.length === 1 && response.conversation_id) {
-        try {
-          await generateConversationTitle(response.conversation_id, messageContent);
-        } catch (titleError) {
-          console.warn("Failed to generate title, but conversation continues normally");
-        }
-      }
+      // Title generation is handled as part of normal backend flow; for streaming, we skip here.
 
       // Auto-scroll to bottom
       setTimeout(() => {
@@ -938,32 +1099,7 @@ function ChatBot(): React.ReactElement {
     }
   };
 
-  const handleDownloadOfflineModel = async () => {
-    if (downloadingModel) return;
-    
-    Alert.alert(
-      "Download Offline Model",
-      "This will download a 1.5GB AI model for offline use. Continue?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Download",
-          onPress: async () => {
-            try {
-              setDownloadingModel(true);
-              await offlineChatService.preloadModel();
-              setModelDownloaded(true);
-              Alert.alert("Success", "Offline model downloaded successfully!");
-            } catch (error: any) {
-              Alert.alert("Error", error.message || "Failed to download model");
-            } finally {
-              setDownloadingModel(false);
-            }
-          }
-        }
-      ]
-    );
-  };
+  // Offline model download removed
 
   // ✅ Opens the OCR modal manually
 const handleOCRModalOpen = () => {
@@ -1241,6 +1377,9 @@ const handleOCR = async () => {
             accessibilityHint="Manage chat conversations"
           >
             <Ionicons name="ellipsis-vertical" size={24} color="#FFFFFF" />
+            {hasFlashcardAvailable && (
+              <View style={styles.menuBadge} />
+            )}
           </TouchableOpacity>
         </LinearGradient>
 
@@ -1264,30 +1403,26 @@ const handleOCR = async () => {
               </>
             )}
 
-            <TouchableOpacity 
-              style={styles.chatOption} 
-              onPress={handleDownloadOfflineModel}
-              disabled={downloadingModel || modelDownloaded}
-            >
-              <Ionicons 
-                name={modelDownloaded ? "checkmark-circle" : "cloud-download"} 
-                size={20} 
-                color={modelDownloaded ? "#10B981" : "#6B46C1"} 
-              />
-              <Text style={styles.chatOptionText}>
-                {downloadingModel ? "Downloading..." : modelDownloaded ? "Offline Model Ready" : "Download Offline Model"}
-              </Text>
-            </TouchableOpacity>
-
-            {isOfflineMode && (
-              <View style={styles.offlineBadge}>
-                <Ionicons name="cloud-offline" size={16} color="#F59E0B" />
-                <Text style={styles.offlineBadgeText}>Offline Mode Active</Text>
-              </View>
-            )}
+            {/* Offline options removed */}
 
             {currentConversation && (
               <>
+                <TouchableOpacity 
+                  style={styles.chatOption}
+                  onPress={() => {
+                    if (flashcards && flashcards.length > 0) {
+                      setShowFlashcardModal(true);
+                    } else if (lastFlashcard) {
+                      setFlashcards([lastFlashcard]);
+                      setShowFlashcardModal(true);
+                    } else {
+                      Alert.alert('No Flashcard', 'No flashcard is available yet. Ask Rina to create a practice question.');
+                    }
+                  }}
+                >
+                  <Ionicons name="school" size={20} color={hasFlashcardAvailable ? "#16A34A" : "#94A3B8"} />
+                  <Text style={[styles.chatOptionText, { color: hasFlashcardAvailable ? '#16A34A' : '#64748B' }]}>Show Flashcard</Text>
+                </TouchableOpacity>
                 <TouchableOpacity 
                   style={styles.chatOption} 
                   onPress={resetCurrentConversation}
@@ -1941,6 +2076,14 @@ const handleOCR = async () => {
           </SafeAreaView>
         </Modal>
 
+        {/* Flashcard Modal */}
+        <FlashcardModal
+          visible={showFlashcardModal}
+          onClose={() => setShowFlashcardModal(false)}
+          flashcards={flashcards}
+          title="Practice Questions"
+        />
+
     </>
   );
 }
@@ -2028,6 +2171,18 @@ const styles = StyleSheet.create({
     padding: 8,
     borderRadius: 12,
     backgroundColor: "rgba(255, 255, 255, 0.2)",
+    position: 'relative',
+  },
+  menuBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#16A34A',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.9)'
   },
   messagesContainer: {
     flex: 1,
@@ -3047,7 +3202,7 @@ const styles = StyleSheet.create({
   },
 });
 
-export default function OllamaChatTanstack(): React.ReactElement {
+export default function ChatTanstack(): React.ReactElement {
   return (
     <QueryClientProvider client={queryClient}>
       <ChatBot />
