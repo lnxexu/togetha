@@ -340,9 +340,15 @@ const TaskListView: React.FC<TaskListViewProps> = ({
             </View>
           </TouchableOpacity>
 
-          {/* Category Dropdown Options */}
+          {/* Category Dropdown Options - use ScrollView so long lists can be scrolled */}
           {showCategoryDropdown && (
-            <View style={styles.categoryFilterOptions}>
+            <ScrollView
+              style={styles.categoryFilterOptions}
+              nestedScrollEnabled={true}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={true}
+              contentContainerStyle={{ paddingVertical: 4 }}
+            >
               <TouchableOpacity
                 style={[
                   styles.categoryFilterOption,
@@ -363,7 +369,7 @@ const TaskListView: React.FC<TaskListViewProps> = ({
                   <MaterialIcons name="check" size={16} color="#8B5CF6" />
                 )}
               </TouchableOpacity>
-              
+
               {categories.map((category) => (
                 <TouchableOpacity
                   key={category.id}
@@ -395,7 +401,7 @@ const TaskListView: React.FC<TaskListViewProps> = ({
                   )}
                 </TouchableOpacity>
               ))}
-            </View>
+            </ScrollView>
           )}
         </View>
         {renderQuadrantFilters()}
