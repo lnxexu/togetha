@@ -1056,6 +1056,11 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
     }
   };
 
+  // Add missing state and ref for drawing share
+  const [shareTargetNote, setShareTargetNote] = useState<Note | null>(null);
+  const [isSharing, setIsSharing] = useState(false);
+  const shareCaptureRef = React.useRef<any>(null);
+
   const shareDrawingNote = async (note: Note) => {
     try {
       setIsSharing(true);

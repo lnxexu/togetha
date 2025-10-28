@@ -123,6 +123,19 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
 
   const actualDocumentType = getActualDocumentType();
 
+  // Helper to detect paths served by our backend (media, document endpoints, etc.)
+  const isBackendDocumentUri = (uri: string) => {
+    if (!uri) return false;
+    const lc = uri.toLowerCase();
+    return (
+      lc.includes('/note_taking/documents/') ||
+      lc.includes('/api/users/') ||
+      lc.includes('/media/') ||
+      lc.includes('/documents/') ||
+      lc.startsWith('/')
+    );
+  };
+
   // Auto-save functionality similar to drawing feature
   const autoSave = useCallback(async () => {
     try {
@@ -436,15 +449,25 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
     }
 
     if (actualDocumentType === "pdf") {
-      // For PDFs, use enhanced PDF.js viewer
+      // Only use remote (web-hosted) viewers for HTTP(S) URLs. If the
+      // document is a local file (file://, content:// or app storage path),
+      // return the local URI directly so the native PDF renderer or WebView
+      // can open it without the remote PDF.js viewer (which will load a
+      // default sample PDF if the `file` parameter is invalid).
+      const isRemote = typeof documentUri === 'string' && (documentUri.startsWith('http://') || documentUri.startsWith('https://'));
+
+      if (!isRemote) {
+        console.log('PDF appears to be a local file, returning local URI for direct viewing:', documentUri);
+        return documentUri;
+      }
+
+      // For remote PDFs, use the selected web viewer
       if (useAlternativeViewer) {
-        // Alternative: Try Google Docs viewer as fallback
         const encodedUri = encodeURIComponent(documentUri);
         const googleDocsUrl = `https://docs.google.com/viewer?url=${encodedUri}&embedded=true`;
         console.log("Using Google Docs PDF viewer:", googleDocsUrl);
         return googleDocsUrl;
       } else {
-        // Primary: Use PDF.js viewer with enhanced controls
         const encodedUri = encodeURIComponent(documentUri);
         const pdfJsUrl = `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodedUri}`;
         console.log("Using PDF.js viewer:", pdfJsUrl);
@@ -820,12 +843,12 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
           ref={webViewRef}
           source={{
             uri: getDocumentUrl(),
-            headers: (documentUri.includes('/note_taking/documents/') || documentUri.includes('/api/users/')) && authToken
+            headers: isBackendDocumentUri(documentUri) && authToken
               ? {
-                  "Authorization": `Token ${authToken}`,
+                  Authorization: `Token ${authToken}`,
                   "Cache-Control": "no-cache, no-store, must-revalidate",
-                  "Pragma": "no-cache",
-                  "Expires": "0",
+                  Pragma: "no-cache",
+                  Expires: "0",
                 }
               : actualDocumentType === "image"
               ? {

@@ -15,6 +15,7 @@ import {
   Modal,
   TextInput,
   ScrollView,
+  FlatList,
   Platform,
   ActivityIndicator,
   Animated,
@@ -303,6 +304,8 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     width: number;
     height: number;
   } | null>(null);
+  // Debug helpers
+  const [showDebugMarkers, setShowDebugMarkers] = useState(false);
   const [showTextPreviewModal, setShowTextPreviewModal] = useState(false);
   const [previewExtractedText, setPreviewExtractedText] = useState<string>("");
   const [showAIModal, setShowAIModal] = useState(false);
@@ -418,7 +421,48 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       showErrorToast("Could not save snapshot");
     }
   };
-  // Floating AI button removed; AI action moved into More menu
+ const [buttonPosition, setButtonPosition] = useState({
+    x: Math.max(20, screenWidth - 76),
+    y: 100,
+  });
+  const buttonPositionRef = useRef({
+    x: Math.max(20, screenWidth - 76),
+    y: 100,
+  });
+  const [isDraggingButton, setIsDraggingButton] = useState(false);
+  const buttonPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        setIsDraggingButton(true);
+      },
+      onPanResponderMove: (_, gestureState) => {
+        buttonPositionRef.current = {
+          x: Math.max(
+            10,
+            Math.min(
+              screenWidth - 66,
+              buttonPositionRef.current.x + gestureState.dx
+            )
+          ),
+          y: Math.max(
+            80,
+            Math.min(
+              screenHeight - 180,
+              buttonPositionRef.current.y + gestureState.dy
+            )
+          ),
+        };
+        setButtonPosition(buttonPositionRef.current);
+      },
+      onPanResponderRelease: (_, __) => {
+        setIsDraggingButton(false);
+      },
+      onPanResponderTerminate: () => {
+        setIsDraggingButton(false);
+      },
+    })
+  ).current;
 
   const updatePathWithAnimation = useCallback(() => {
     if (currentPointsRef.current.length === 0) return;
@@ -602,7 +646,36 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     height: screenHeight,
   });
   const pdfContainerRef = useRef<View>(null);
-  const pdfScrollRef = useRef<ScrollView>(null);
+  const pdfScrollRef = useRef<any>(null);
+  // Keep the pager (single Pdf instance) in sync when displayCurrentPage changes
+  useEffect(() => {
+    const target = Math.max(1, displayCurrentPage || currentPageRef.current || 1);
+    const pdf = pdfRef.current as any;
+    if (!pdf) return;
+    try {
+      // react-native-pdf exposes setPage on the native ref
+      if (typeof pdf.setPage === "function") {
+        pdf.setPage(target);
+      } else if (typeof pdf.setNativeProps === "function") {
+        // best-effort fallback: update page prop via native props
+        try {
+          pdf.setNativeProps?.({ page: target });
+        } catch (e) {}
+      }
+    } catch (e) {
+      // ignore errors
+    }
+  }, [displayCurrentPage]);
+  const onViewableItemsChangedRef = useRef<any>(({ viewableItems }: { viewableItems?: any[] }) => {
+    if (viewableItems && viewableItems.length > 0) {
+      const first = viewableItems[0];
+      const page = first.item as number;
+      if (page !== currentPageRef.current) {
+        currentPageRef.current = page;
+        if (displayCurrentPage !== page) setDisplayCurrentPage(page);
+      }
+    }
+  });
   const [pdfContainerLayout, setPdfContainerLayout] = useState<{
     x: number;
     y: number;
@@ -3255,12 +3328,22 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         ? pdfPageDimensions.height / pdfPageDimensions.width
         : containerH / containerW;
 
-    const displayW = containerW; // fit-to-width
-    const displayH = displayW * pageAspect;
+    // Fit the PDF page inside the container while preserving aspect ratio
+    let displayW = containerW;
+    let displayH = displayW * pageAspect;
     const pageSpacing = 10; // keep in sync with Pdf prop
+
+    // If the computed display height is taller than container, fit to height instead
+    if (displayH > containerH) {
+      displayH = containerH;
+      displayW = displayH / pageAspect;
+    }
+
+    // Center offsets
     const offsetX = Math.max(0, (containerW - displayW) / 2);
+    const offsetY = Math.max(0, (containerH - displayH) / 2);
     const totalPagesCount = totalPagesRef.current || totalPages || 0;
-    const contentHeight = effectiveSafeMode
+    const rawContentHeight = effectiveSafeMode
       ? displayH
       : Math.max(
           1,
@@ -3269,6 +3352,16 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
             : displayH
         );
 
+    // Defensive clamp to avoid extremely large SVG/container heights which
+    // can crash native PDF rendering or exhaust memory on low-end devices.
+    const contentHeight = Math.min(rawContentHeight, maxContentHeight);
+    if (rawContentHeight > maxContentHeight && __DEV__) {
+      console.warn(
+        "⚠️ getLayoutMetrics clamped contentHeight to avoid native crash:",
+        { rawContentHeight, maxContentHeight }
+      );
+    }
+
     return {
       containerW,
       containerH,
@@ -3276,6 +3369,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       displayH,
       pageSpacing,
       offsetX,
+      offsetY,
       contentHeight,
     };
   };
@@ -3305,17 +3399,16 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     path: string,
     penType: "pen" | "brush" | "pencil"
   ) => {
-    let actualPage = currentPageRef.current;
-    if (currentPointsRef.current && currentPointsRef.current.length > 0) {
+    // For single-native-Pdf mode we rely on the current page reported by Pdf
+    // to determine the annotation page. Fall back to content Y if needed.
+    let actualPage = displayCurrentPage || currentPageRef.current || 1;
+    if (
+      (!displayCurrentPage && !currentPageRef.current) &&
+      currentPointsRef.current &&
+      currentPointsRef.current.length > 0
+    ) {
       const firstPoint = currentPointsRef.current[0];
       actualPage = getPageFromContentY(firstPoint.y);
-      if (__DEV__) {
-        console.log(
-          `🖊️ Drawing on page ${actualPage} - First point Y: ${firstPoint.y.toFixed(
-            2
-          )}`
-        );
-      }
     }
     const normalizedPath = convertPathToNormalized(path, actualPage);
 
@@ -3341,17 +3434,14 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   };
 
   const addFreehandHighlight = (path: string) => {
-    let actualPage = currentPageRef.current;
-    if (currentPointsRef.current && currentPointsRef.current.length > 0) {
+    let actualPage = displayCurrentPage || currentPageRef.current || 1;
+    if (
+      (!displayCurrentPage && !currentPageRef.current) &&
+      currentPointsRef.current &&
+      currentPointsRef.current.length > 0
+    ) {
       const firstPoint = currentPointsRef.current[0];
       actualPage = getPageFromContentY(firstPoint.y);
-      if (__DEV__) {
-        console.log(
-          `✨ Highlighting on page ${actualPage} - First point Y: ${firstPoint.y.toFixed(
-            2
-          )}`
-        );
-      }
     }
     const normalizedPath = convertPathToNormalized(path, actualPage);
 
@@ -3523,13 +3613,18 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     }
 
     const pageIndex = Math.max(0, effectivePage - 1);
+    const singlePageRenderMode = true; // viewer currently uses a single centered Pdf instance
     const pageStartY = effectiveSafeMode
+      ? 0
+      : singlePageRenderMode
       ? 0
       : pageIndex * (displayH + pageSpacing);
 
+    const offsetXUsed = singlePageRenderMode ? 0 : offsetX;
+
     let normalized = "";
     for (let i = 0; i < points.length; i++) {
-      const px = (points[i].x - offsetX) / displayW;
+      const px = (points[i].x - offsetXUsed) / displayW;
       const py = (points[i].y - pageStartY) / displayH;
       const nx = Math.max(0, Math.min(1, px));
       const ny = Math.max(0, Math.min(1, py));
@@ -3545,10 +3640,17 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       if (!path) return "";
 
       const { displayW, displayH, offsetX, pageSpacing } = getLayoutMetrics();
+      // When using a single native Pdf instance with horizontal paging we render
+      // only the visible page. In that mode the overlay's origin is the page
+      // itself (no stacked vertical offset). Use `singlePageRenderMode` to
+      // control that behavior.
+      const singlePageRenderMode = true; // viewer now uses a single Pdf component
       const pageIndex = Math.max(0, (page || 1) - 1);
+      const effectivePageIndex = singlePageRenderMode ? 0 : pageIndex;
       const pageStartY = effectiveSafeMode
         ? 0
-        : pageIndex * (displayH + pageSpacing);
+        : effectivePageIndex * (displayH + pageSpacing);
+      const offsetXUsed = singlePageRenderMode ? 0 : offsetX;
 
       const cacheKey = `${path}|${page}|${displayW.toFixed(
         0
@@ -3572,7 +3674,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
             const normalizedY = parseFloat(coords[1]);
             if (Number.isFinite(normalizedX) && Number.isFinite(normalizedY)) {
               const x =
-                Math.max(0, Math.min(1, normalizedX)) * displayW + offsetX;
+                Math.max(0, Math.min(1, normalizedX)) * displayW + offsetXUsed;
               const y =
                 Math.max(0, Math.min(1, normalizedY)) * displayH + pageStartY;
               svgPath += `${x.toFixed(2)},${y.toFixed(2)}`;
@@ -3607,13 +3709,30 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     return convertNormalizedPathToScreenForPage(path, targetPage);
   };
 
+  const getFirstNormalizedPointFromPath = (path: string) => {
+    if (!path) return { x: 0, y: 0 };
+    try {
+      const match = path.match(/M\s*([0-9.+-eE]+)\s*,?\s*([0-9.+-eE]+)/);
+      if (match && match.length >= 3) {
+        const nx = parseFloat(match[1]);
+        const ny = parseFloat(match[2]);
+        if (Number.isFinite(nx) && Number.isFinite(ny)) return { x: nx, y: ny };
+      }
+    } catch (e) {}
+    return { x: 0, y: 0 };
+  };
+
   const scalePathForZoom = (path: string, scale: number): string => {
     return convertNormalizedPathToScreen(path);
   };
 
   const partialEraseAnnotations = (eraserPath: string) => {
-    let actualErasePage = currentPageRef.current;
-    if (currentPointsRef.current && currentPointsRef.current.length > 0) {
+    let actualErasePage = displayCurrentPage || currentPageRef.current || 1;
+    if (
+      (!displayCurrentPage && !currentPageRef.current) &&
+      currentPointsRef.current &&
+      currentPointsRef.current.length > 0
+    ) {
       const firstPoint = currentPointsRef.current[0];
       actualErasePage = getPageFromContentY(firstPoint.y);
     }
@@ -4009,8 +4128,8 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         return acc;
       }, {} as Record<number, number>);
 
-      console.log("� ENHANCED EXPORT DEBUG:");
-      console.log("�📊 Annotation distribution by page:", pageDistribution);
+      console.log("  ENHANCED EXPORT DEBUG:");
+      console.log(" 📊 Annotation distribution by page:", pageDistribution);
       console.log("📄 Total pages in PDF viewer:", totalPages);
       console.log("📝 Total annotations to export:", pdfAnnotations.length);
       console.log("📏 Container dimensions:", containerSize);
@@ -5182,9 +5301,207 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     strokes,
   ]);
 
+  const renderAnnotationsForPage = useCallback(
+    (page: number) => {
+      const anns = memoizedAnnotations.get(page) || [];
+      const { displayW, displayH, offsetX } = getLayoutMetrics();
+
+      return (
+        <Svg
+          pointerEvents="box-none"
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
+            right: 0,
+            height: displayH,
+          }}
+          width={displayW}
+          height={displayH}
+          viewBox={`0 0 ${displayW} ${displayH}`}
+          preserveAspectRatio="xMidYMid meet"
+        >
+          {anns.map((annotation) => {
+            try {
+              switch (annotation.type) {
+                case "highlight":
+                  if (annotation.path) {
+                    const svgPath = convertNormalizedPathToScreenForPage(
+                      annotation.path,
+                      page
+                    );
+                    const highlightBase = annotation.strokeWidth || 12;
+                    const highlightStrokeWidth = scaleStrokesWithZoom
+                      ? highlightBase * (currentZoom || 1)
+                      : highlightBase;
+                    return (
+                      <Path
+                        key={annotation.id}
+                        d={svgPath}
+                        stroke={annotation.color}
+                        strokeWidth={highlightStrokeWidth}
+                        fill="none"
+                        opacity={
+                          typeof annotation.opacity === "number"
+                            ? annotation.opacity
+                            : Math.max(0.1, Math.min(1, highlightOpacity))
+                        }
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeMiterlimit={10}
+                        onPress={() => deleteAnnotation(annotation.id)}
+                      />
+                    );
+                  } else {
+                    // In single-page (centered) rendering we don't apply the
+                    // container horizontal offset here — the Svg viewport is
+                    // already sized to the page. Use page-local coords only.
+                    const x = (annotation.x || 0) * displayW;
+                    const y = (annotation.y || 0) * displayH;
+                    const w = (annotation.width || 0.15) * displayW;
+                    const h = (annotation.height || 0.025) * displayH;
+                    return (
+                      <Rect
+                        key={annotation.id}
+                        x={x}
+                        y={y}
+                        width={w}
+                        height={h}
+                        rx={4}
+                        fill={annotation.color}
+                        opacity={
+                          typeof annotation.opacity === "number"
+                            ? annotation.opacity
+                            : Math.max(0.1, Math.min(1, highlightOpacity))
+                        }
+                      />
+                    );
+                  }
+
+                case "pen":
+                case "brush":
+                case "pencil": {
+                  const baseStroke = annotation.strokeWidth || 3;
+                  const penStyle = (() => {
+                    switch (annotation.type) {
+                      case "pen":
+                        return { strokeWidth: baseStroke, opacity: 1 } as any;
+                      case "brush":
+                        return { strokeWidth: baseStroke * 1.8, opacity: 0.9 } as any;
+                      case "pencil":
+                        return { strokeWidth: baseStroke * 0.8, opacity: 0.8 } as any;
+                      default:
+                        return { strokeWidth: baseStroke, opacity: 1 } as any;
+                    }
+                  })();
+                  const strokeW = scaleStrokesWithZoom
+                    ? (penStyle.strokeWidth as number) * (currentZoom || 1)
+                    : (penStyle.strokeWidth as number);
+                  const penPath = convertNormalizedPathToScreenForPage(
+                    annotation.path || "",
+                    page
+                  );
+                  return (
+                    <Path
+                      key={annotation.id}
+                      d={penPath}
+                      stroke={annotation.color}
+                      strokeWidth={strokeW}
+                      strokeLinecap={"round"}
+                      strokeLinejoin={"round"}
+                      fill="none"
+                      opacity={penStyle.opacity}
+                      onPress={() => deleteAnnotation(annotation.id)}
+                    />
+                  );
+                }
+
+                case "note": {
+                  const cx = (annotation.x || 0) * displayW;
+                  const cy = (annotation.y || 0) * displayH;
+                  const noteRadius = 12;
+                  return (
+                    <Circle
+                      key={annotation.id}
+                      cx={cx}
+                      cy={cy}
+                      r={noteRadius}
+                      fill={annotation.color}
+                    />
+                  );
+                }
+
+                case "text": {
+                  const tx = (annotation.x || 0) * displayW;
+                  const ty = (annotation.y || 0) * displayH;
+                  return (
+                    <SvgText
+                      key={annotation.id}
+                      x={tx}
+                      y={ty}
+                      fill={annotation.color}
+                      fontSize={14}
+                      fontWeight="bold"
+                      onPress={() => {
+                        Alert.alert("Text", annotation.text, [
+                          {
+                            text: "Delete",
+                            onPress: () => deleteAnnotation(annotation.id),
+                          },
+                          { text: "Close" },
+                        ]);
+                      }}
+                    >
+                      {annotation.text}
+                    </SvgText>
+                  );
+                }
+
+                default:
+                  return null;
+              }
+            } catch (e) {
+              return null;
+            }
+          })}
+        </Svg>
+      );
+    },
+    [memoizedAnnotations, convertNormalizedPathToScreenForPage, scaleStrokesWithZoom, currentZoom, highlightOpacity, deleteAnnotation]
+  );
+
   return (
     <GestureHandlerRootView style={styles.container}>
-      {/* AI action is available under the More (⋮) menu */}
+      {/* Floating AI Button */}
+      <Animated.View
+        style={[
+          styles.floatingAIButton,
+          {
+            left: buttonPosition.x,
+            bottom: buttonPosition.y,
+            transform: [{ scale: isDraggingButton ? 1.1 : 1 }],
+          },
+        ]}
+        {...buttonPanResponder.panHandlers}
+      >
+        <TouchableOpacity
+          style={styles.floatingAIButtonContent}
+          onLongPress={() => {}}
+          delayLongPress={200}
+          onPress={() => {
+            if (!isDraggingButton) {
+              setShowAIModal(true);
+              Animated.timing(aiModalAnimation, {
+                toValue: 1,
+                duration: 300,
+                useNativeDriver: true,
+              }).start();
+            }
+          }}
+        >
+          <MaterialCommunityIcons name="robot" size={28} color="#FFFFFF" />
+        </TouchableOpacity>
+      </Animated.View>
       {/* Header as background (hidden in focus mode) */}
       {!uiHidden && (
         <View style={styles.headerBackground}>
@@ -5489,244 +5806,130 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
                       style={[{ flex: 1 }, pdfAnimatedStyle]}
                     >
                       {(() => {
-                        const { contentHeight, displayH, pageSpacing } =
-                          getLayoutMetrics();
-                        if (effectiveSafeMode) {
-                          const pageToShow =
-                            currentPageRef.current || displayCurrentPage || 1;
-                          return (
-                            <View style={{ flex: 1, height: displayH }}>
-                              {Platform.OS !== "web" && Pdf ? (
-                                <>
-                                  {/* @ts-ignore - library typing mismatch */}
-                                  <PdfAny
-                                    ref={pdfRef}
-                                    source={currentSource}
-                                    style={{ width: "100%", height: displayH }}
-                                    page={pageToShow}
-                                    onLoadComplete={onPdfLoadComplete}
-                                    onLoadProgress={onPdfLoadProgress}
-                                    onError={onPdfError}
-                                    enablePaging={false}
-                                    horizontal={false}
-                                    fitPolicy={2}
-                                    spacing={10}
-                                    enableDoubleTapZoom={false}
-                                    enableRTL={false}
-                                    enableAnnotationRendering={true}
-                                    enableAntialiasing={true}
-                                    singlePage={true}
-                                    enableSwipe={false}
-                                  />
-                                </>
-                              ) : (
-                                <View style={styles.webPdfPlaceholder}>
-                                  <MaterialIcons
-                                    name="description"
-                                    size={64}
-                                    color="#9CA3AF"
-                                  />
-                                  <Text style={styles.webPdfText}>
-                                    PDF viewing not supported on web
-                                  </Text>
-                                  <Text style={styles.webPdfSubtext}>
-                                    Please use the mobile app to view and
-                                    annotate PDFs
-                                  </Text>
-                                </View>
-                              )}
-                              {/* Annotation Layer - current page only */}
-                              <View
-                                style={{
-                                  position: "absolute",
-                                  left: 0,
-                                  top: 0,
-                                  right: 0,
-                                  height: displayH,
-                                  zIndex: 10,
-                                }}
-                                pointerEvents="box-none"
-                              >
-                                {renderAnnotations()}
-                              </View>
-                              {/* Gesture capture overlay - only active when NOT drawing */}
-                              {(!isEditMode || selectedTool === null) && (
-                                <GestureDetector gesture={combinedGesture}>
-                                  <View
-                                    pointerEvents="auto"
-                                    style={{
-                                      position: "absolute",
-                                      left: 0,
-                                      top: 0,
-                                      right: 0,
-                                      height: displayH,
-                                      zIndex: 9998,
-                                      backgroundColor: "transparent",
-                                    }}
-                                    collapsable={false}
-                                  />
-                                </GestureDetector>
-                              )}
-                              {/* Drawing overlay - only active when drawing tool selected */}
-                              {isEditMode && selectedTool !== null && (
-                                <View
-                                  pointerEvents="auto"
-                                  style={{
-                                    position: "absolute",
-                                    left: 0,
-                                    top: 0,
-                                    right: 0,
-                                    height: displayH,
-                                    zIndex: 9999,
-                                    backgroundColor: "transparent",
-                                  }}
-                                  collapsable={false}
-                                  {...panResponder.panHandlers}
-                                />
-                              )}
-                            </View>
-                          );
-                        }
+                        // Render a single native Pdf instance that handles horizontal paging internally.
+                        // This mirrors PDFAnnotationViewerHorizontal.md: one heavy native view, overlays on top.
+                        const { displayW, displayH } = getLayoutMetrics();
+                        const pageToShow = displayCurrentPage || currentPageRef.current || 1;
 
                         return (
-                          <ScrollView
-                            ref={pdfScrollRef as any}
-                            style={{ flex: 1 }}
-                            contentContainerStyle={{ height: contentHeight }}
-                            scrollEventThrottle={16}
-                            showsVerticalScrollIndicator={false}
-                            horizontal={false}
-                            scrollEnabled={
-                              !isEditMode
-                                ? !shouldCaptureGestures && !isPinching
-                                : !shouldCaptureGestures &&
-                                  !isPinching &&
-                                  (selectedTool === null ||
-                                    selectedTool === "selection")
-                            }
-                            onScroll={(e) => {
-                              const y = e.nativeEvent.contentOffset.y;
-                              if (pdfScrollOffset.y !== y)
-                                setPdfScrollOffset({ x: 0, y });
-                              const denom = displayH + pageSpacing;
-                              const approx = Math.max(
-                                1,
-                                Math.min(
-                                  totalPagesRef.current || totalPages || 1,
-                                  Math.floor((y + displayH * 0.5) / denom) + 1
-                                )
-                              );
-                              if (approx !== currentPageRef.current) {
-                                currentPageRef.current = approx;
-                                if (displayCurrentPage !== approx)
-                                  setDisplayCurrentPage(approx);
-                              }
-                            }}
-                          >
-                            <View style={{ height: contentHeight }}>
-                              {Platform.OS !== "web" && Pdf ? (
-                                <>
-                                  {/* @ts-ignore - library typing mismatch */}
-                                  <PdfAny
-                                    ref={pdfRef}
-                                    source={currentSource}
-                                    style={{
-                                      width: "100%",
-                                      height: contentHeight,
-                                    }}
-                                    page={currentPage}
-                                    onLoadComplete={onPdfLoadComplete}
-                                    onLoadProgress={onPdfLoadProgress}
-                                    onError={onPdfError}
-                                    enablePaging={false}
-                                    horizontal={false}
-                                    fitPolicy={2}
-                                    spacing={10}
-                                    enableDoubleTapZoom={false}
-                                    enableRTL={false}
-                                    enableAnnotationRendering={true}
-                                    enableAntialiasing={true}
-                                    singlePage={false}
-                                    enableSwipe={false}
-                                    onPageChanged={(
-                                      page: number,
-                                      pageCount: number
-                                    ) => {
-                                      currentPageRef.current = page;
-                                      if (pageCount !== totalPagesRef.current) {
-                                        totalPagesRef.current = pageCount;
-                                        if (displayTotalPages !== pageCount)
-                                          setDisplayTotalPages(pageCount);
-                                      }
-                                    }}
-                                  />
-                                </>
+                          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                            <View style={{ width: displayW, height: displayH }}>
+                                {Platform.OS !== 'web' && Pdf ? (
+                                <PdfAny
+                                  ref={pdfRef}
+                                  source={currentSource}
+                                  style={{ width: Math.max(1, displayW), height: Math.max(1, displayH) }}
+                                  page={pageToShow}
+                                  onLoadComplete={onPdfLoadComplete}
+                                  onLoadProgress={onPdfLoadProgress}
+                                  onError={onPdfError}
+                                  onPageChanged={(page: number, pageCount: number) => {
+                                    setCurrentPage(page);
+                                    currentPageRef.current = page;
+                                    if (pageCount && pageCount !== totalPagesRef.current) {
+                                      setTotalPages(pageCount);
+                                      totalPagesRef.current = pageCount;
+                                      if (displayTotalPages !== pageCount) setDisplayTotalPages(pageCount);
+                                    }
+                                    if (displayCurrentPage !== page) setDisplayCurrentPage(page);
+                                  }}
+                                  enablePaging={true}
+                                  horizontal={true}
+                                  fitPolicy={2}
+                                  spacing={10}
+                                  enableDoubleTapZoom={false}
+                                  enableRTL={false}
+                                  enableAnnotationRendering={true}
+                                  enableAntialiasing={true}
+                                  singlePage={false}
+                                  // Allow native swipe when not editing and at 1x zoom. When zoomed or
+                                  // in edit mode we capture gestures in JS to support pinch/pan/draw.
+                                  enableSwipe={!isEditMode && (currentZoom <= 1)}
+                                />
                               ) : (
                                 <View style={styles.webPdfPlaceholder}>
-                                  <MaterialIcons
-                                    name="description"
-                                    size={64}
-                                    color="#9CA3AF"
-                                  />
-                                  <Text style={styles.webPdfText}>
-                                    PDF viewing not supported on web
-                                  </Text>
-                                  <Text style={styles.webPdfSubtext}>
-                                    Please use the mobile app to view and
-                                    annotate PDFs
-                                  </Text>
+                                  <MaterialIcons name="description" size={64} color="#9CA3AF" />
+                                  <Text style={styles.webPdfText}>PDF viewing not supported on web</Text>
+                                  <Text style={styles.webPdfSubtext}>Please use the mobile app to view and annotate PDFs</Text>
                                 </View>
                               )}
+
+                              {/* Annotation overlay for the visible page */}
                               <View
-                                style={{
-                                  position: "absolute",
-                                  left: 0,
-                                  top: 0,
-                                  right: 0,
-                                  height: contentHeight,
-                                  zIndex: 10,
-                                }}
+                                style={{ position: 'absolute', left: 0, top: 0, right: 0, height: displayH, zIndex: 10 }}
                                 pointerEvents="box-none"
                               >
-                                {renderAnnotations()}
+                                {renderAnnotationsForPage(pageToShow)}
+
+                                {/* Debug markers overlay (pixel markers) */}
+                                {showDebugMarkers && (
+                                  <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, width: displayW, height: displayH }}>
+                                    {(memoizedAnnotations.get(pageToShow) || []).map((ann) => {
+                                      try {
+                                        let nx = 0;
+                                        let ny = 0;
+                                        if (ann.path) {
+                                          const p = getFirstNormalizedPointFromPath(ann.path);
+                                          nx = p.x;
+                                          ny = p.y;
+                                        } else {
+                                          nx = ann.x || 0;
+                                          ny = ann.y || 0;
+                                        }
+
+                                        const px = Math.max(0, Math.min(1, nx)) * displayW;
+                                        const py = Math.max(0, Math.min(1, ny)) * displayH;
+
+                                        return (
+                                          <View
+                                            key={`dbg-${ann.id}`}
+                                            style={{
+                                              position: 'absolute',
+                                              left: px - 6,
+                                              top: py - 6,
+                                              width: 12,
+                                              height: 12,
+                                              borderRadius: 6,
+                                              backgroundColor: 'rgba(255,0,0,0.9)',
+                                              borderWidth: 1,
+                                              borderColor: '#fff',
+                                              zIndex: 99999,
+                                            }}
+                                          />
+                                        );
+                                      } catch (e) {
+                                        return null;
+                                      }
+                                    })}
+                                  </View>
+                                )}
                               </View>
+
                               {/* Gesture capture overlay - only active when NOT drawing */}
-                              {(!isEditMode || selectedTool === null) && (
+                              {/* Capture gestures only when necessary. When not editing and at 1x
+                                  zoom we allow the native Pdf to handle horizontal swipes. When
+                                  zoomed or editing we capture pinch/pan/draw here. */}
+                              {(isPinching || currentZoom > 1 || isEditMode || shouldCaptureGestures) ? (
                                 <GestureDetector gesture={combinedGesture}>
                                   <View
                                     pointerEvents="auto"
-                                    style={{
-                                      position: "absolute",
-                                      left: 0,
-                                      top: 0,
-                                      right: 0,
-                                      height: contentHeight,
-                                      zIndex: 9998,
-                                      backgroundColor: "transparent",
-                                    }}
+                                    style={{ position: 'absolute', left: 0, top: 0, right: 0, height: displayH, zIndex: 9998, backgroundColor: 'transparent' }}
                                     collapsable={false}
                                   />
                                 </GestureDetector>
-                              )}
+                              ) : null}
+
                               {/* Drawing overlay - only active when drawing tool selected */}
                               {isEditMode && selectedTool !== null && (
                                 <View
                                   pointerEvents="auto"
-                                  style={{
-                                    position: "absolute",
-                                    left: 0,
-                                    top: 0,
-                                    right: 0,
-                                    height: contentHeight,
-                                    zIndex: 9999,
-                                    backgroundColor: "transparent",
-                                  }}
+                                  style={{ position: 'absolute', left: 0, top: 0, right: 0, height: displayH, zIndex: 9999, backgroundColor: 'transparent' }}
                                   collapsable={false}
                                   {...panResponder.panHandlers}
                                 />
                               )}
                             </View>
-                          </ScrollView>
+                          </View>
                         );
                       })()}
                     </AnimatedRe.View>
@@ -5779,16 +5982,18 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
                   const target = Math.max(1, (currentPageRef.current || 1) - 1);
                   currentPageRef.current = target;
                   setDisplayCurrentPage(target);
-                  if (!effectiveSafeMode) {
-                    const { displayH, pageSpacing } = getLayoutMetrics();
-                    const y = Math.max(
-                      0,
-                      (target - 1) * (displayH + pageSpacing)
-                    );
-                    (pdfScrollRef.current as any)?.scrollTo?.({
-                      y,
-                      animated: true,
-                    });
+                    if (!effectiveSafeMode) {
+                    // Use single Pdf ref to change page instead of scrolling a FlatList
+                    const pdf = pdfRef.current as any;
+                    try {
+                      if (pdf && typeof pdf.setPage === "function") {
+                        pdf.setPage(target);
+                      } else if (pdf && typeof pdf.setNativeProps === "function") {
+                        pdf.setNativeProps({ page: target });
+                      }
+                    } catch (e) {
+                      // ignore
+                    }
                   }
                 }}
                 disabled={(currentPageRef.current || 1) <= 1}
@@ -5824,22 +6029,37 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
                   if (num !== currentPageRef.current) {
                     currentPageRef.current = num;
                     setDisplayCurrentPage(num);
-                    if (!effectiveSafeMode) {
-                      const { displayH, pageSpacing } = getLayoutMetrics();
-                      const y = Math.max(
-                        0,
-                        (num - 1) * (displayH + pageSpacing)
-                      );
-                      (pdfScrollRef.current as any)?.scrollTo?.({
-                        y,
-                        animated: true,
-                      });
+                      if (!effectiveSafeMode) {
+                      const pdf = pdfRef.current as any;
+                      try {
+                        if (pdf && typeof pdf.setPage === "function") {
+                          pdf.setPage(num);
+                        } else if (pdf && typeof pdf.setNativeProps === "function") {
+                          pdf.setNativeProps({ page: num });
+                        }
+                      } catch (e) {}
                     }
                   }
                 }}
                 returnKeyType="done"
               />
               <Text style={styles.floatingPageText}>/ {displayTotalPages}</Text>
+
+              {/* Debug toggle button */}
+              <TouchableOpacity
+                style={[
+                  styles.floatingPageButton,
+                  { marginLeft: 8, backgroundColor: showDebugMarkers ? '#F87171' : undefined },
+                ]}
+                activeOpacity={0.8}
+                onPress={() => setShowDebugMarkers((v) => !v)}
+              >
+                <MaterialIcons
+                  name="bug-report"
+                  size={18}
+                  color={showDebugMarkers ? '#fff' : '#374151'}
+                />
+              </TouchableOpacity>
 
               <TouchableOpacity
                 style={styles.floatingPageButton}
@@ -5850,16 +6070,15 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
                   const target = Math.min(max, current + 1);
                   currentPageRef.current = target;
                   setDisplayCurrentPage(target);
-                  if (!effectiveSafeMode) {
-                    const { displayH, pageSpacing } = getLayoutMetrics();
-                    const y = Math.max(
-                      0,
-                      (target - 1) * (displayH + pageSpacing)
-                    );
-                    (pdfScrollRef.current as any)?.scrollTo?.({
-                      y,
-                      animated: true,
-                    });
+                    if (!effectiveSafeMode) {
+                    const pdf = pdfRef.current as any;
+                    try {
+                      if (pdf && typeof pdf.setPage === "function") {
+                        pdf.setPage(target);
+                      } else if (pdf && typeof pdf.setNativeProps === "function") {
+                        pdf.setNativeProps({ page: target });
+                      }
+                    } catch (e) {}
                   }
                 }}
                 disabled={
@@ -6090,49 +6309,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
           onPress={() => setShowMoreMenu(false)}
         >
           <View style={styles.moreMenuContainer}>
-            {/* Ask Rina (New Chat) */}
-            <TouchableOpacity
-              style={styles.moreMenuItem}
-              onPress={() => {
-                setShowMoreMenu(false);
-                Alert.alert(
-                  "Summarize with AI?",
-                  "You'll be redirected to the AI chatbot to summarize. You may need to upload the file again.",
-                  [
-                    { text: "Cancel", style: "cancel" },
-                    {
-                      text: "Proceed",
-                      style: "default",
-                      onPress: () => {
-                        try {
-                          navigation.navigate(
-                            "RINA",
-                            {
-                              source: "pdf_annotation",
-                              intent: "summarize",
-                              newChat: true,
-                              pdfUri: (currentSource?.uri || source?.uri),
-                              pdfName: fileName,
-                            } as any
-                          );
-                        } catch (e) {
-                          setShowAIModal(true);
-                          Animated.timing(aiModalAnimation, {
-                            toValue: 1,
-                            duration: 300,
-                            useNativeDriver: true,
-                          }).start();
-                        }
-                      },
-                    },
-                  ]
-                );
-              }}
-              activeOpacity={0.8}
-            >
-              <MaterialIcons name="smart-toy" size={20} color="#8B5CF6" />
-              <Text style={[styles.moreMenuText, { color: "#8B5CF6" }]}>Ask Rina (New Chat)</Text>
-            </TouchableOpacity>
             {/* Quick actions moved from header */}
             <TouchableOpacity
               style={styles.moreMenuItem}
@@ -6597,9 +6773,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
                       initialQuery: fullQuery,
                       contextText: selectedText,
                       source: "pdf_annotation",
-                      pdfUri: (currentSource?.uri || source?.uri),
-                      pdfName: fileName,
-                      newChat: true,
                     } as any);
 
                     handleRinaModalClose();
