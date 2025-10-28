@@ -20,7 +20,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useMutation, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as DocumentPicker from "expo-document-picker";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
+import * as FileSystem from 'expo-file-system';
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Markdown from "react-native-markdown-display";
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -64,6 +65,7 @@ const queryClient = new QueryClient();
 
 function ChatBot(): React.ReactElement {
   const navigation = useNavigation();
+  const route: any = useRoute();
   const scrollViewRef = useRef<ScrollView>(null);
   const insets = useSafeAreaInsets();
 
@@ -88,6 +90,8 @@ function ChatBot(): React.ReactElement {
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   // Animated value for smooth keyboard movement
   const animatedBottomValue = useRef(new Animated.Value(0)).current;
+  // Track PDFs auto-processed from navigation params to avoid duplicates
+  const processedPdfRef = useRef<Record<string, boolean>>({});
 
   // OCR Modal states
   const [showOCRModal, setShowOCRModal] = useState(false);
@@ -280,6 +284,107 @@ A: The mitochondrion.`;
 
   initChat();
 }, []);
+
+  // If navigated here with a flag to start a new chat, create one immediately
+  const handledNewChatRef = useRef(false);
+  useEffect(() => {
+    const shouldStartNew = (route as any)?.params?.newChat === true;
+    if (shouldStartNew && !handledNewChatRef.current) {
+      handledNewChatRef.current = true;
+      // Create a fresh conversation and clear messages
+      createNewConversation();
+    }
+  }, [(route as any)?.params?.newChat]);
+
+  // If navigated here with a pdfUri/pdfName and without a docId, auto-upload the PDF so RAG embeddings are prepared
+  useEffect(() => {
+    const maybeProcessPdf = async () => {
+      try {
+        const docIdParam: string | undefined = route?.params?.docId;
+        const pdfUri: string | undefined = route?.params?.pdfUri;
+        const pdfNameParam: string | undefined = route?.params?.pdfName;
+        // If docId already provided by Import flow, skip auto-upload
+        if (docIdParam) {
+          if (pdfNameParam) {
+            setMessages(prev => ([
+              ...prev,
+              { role: 'assistant', content: `Ready to answer questions about "${pdfNameParam}".`, timestamp: new Date() }
+            ]));
+          }
+          return;
+        }
+        if (!pdfUri || processedPdfRef.current[pdfUri]) return;
+
+        // Derive a reasonable file name
+        let derivedName = pdfNameParam || (pdfUri.split('/').pop() || 'document.pdf');
+        if (!derivedName.toLowerCase().endsWith('.pdf')) {
+          derivedName = `${derivedName}.pdf`;
+        }
+
+        // Basic validation that the URI is reachable (best-effort)
+        try {
+          const info = await FileSystem.getInfoAsync(pdfUri);
+          if (!info.exists) {
+            // Proceed anyway; some URIs may be blob/data or remote with auth handled by fetch
+            console.warn('PDF path appears not to exist locally:', pdfUri);
+          }
+        } catch (e) {
+          // Not fatal; continue to try upload
+        }
+
+        setProcessingFiles(true);
+
+        // Compose a file object for the uploader
+        const file: any = {
+          uri: pdfUri,
+          name: derivedName,
+          mimeType: 'application/pdf',
+        };
+
+        // Upload to backend and attach to current conversation if any
+  const uploadResp = await chatbotAPI.uploadFile(file, currentConversation?.id);
+
+        // Mark as processed to prevent duplicate uploads if user navigates back and forth
+        processedPdfRef.current[pdfUri] = true;
+
+        // If backend created or returned a conversation, load it so messages reflect the context
+        const convId = (uploadResp as any)?.conversation_id;
+        if (convId && (!currentConversation || currentConversation.id !== convId)) {
+          try {
+            const conv = await chatbotAPI.getConversation(convId);
+            setCurrentConversation(conv);
+            await saveActiveConversation(convId);
+            await loadConversations(true);
+          } catch (e) {
+            console.warn('Uploaded file, but failed to load conversation context');
+          }
+        }
+
+        // Let the user know the doc is ready for questions
+        setMessages(prev => [
+          ...prev,
+          {
+            role: 'assistant',
+            content: `Your document "${derivedName}" has been uploaded and indexed. Ask any question about it.`,
+            timestamp: new Date(),
+          },
+        ]);
+
+      } catch (err: any) {
+        console.error('Auto PDF upload failed:', err);
+        Alert.alert('Upload Error', err?.message || 'Failed to process the PDF.');
+        setMessages(prev => [
+          ...prev,
+          { role: 'assistant', content: `[Error] Failed to prepare the PDF for RAG: ${err?.message || 'Unknown error'}` },
+        ]);
+      } finally {
+        setProcessingFiles(false);
+      }
+    };
+
+    maybeProcessPdf();
+    // Only rerun when the incoming params change
+  }, [route?.params?.pdfUri, route?.params?.pdfName, route?.params?.docId]);
 
   // Set up keyboard visibility listeners with frame information
   useEffect(() => {
@@ -632,6 +737,7 @@ A: The mitochondrion.`;
 
   const fetchChatMessage = async ({ messageContent }: MutationVariables): Promise<BackendResponse> => {
     try {
+      const docIdParam: string | undefined = route?.params?.docId;
       // Format all messages properly for the API (including conversation history)
       const formattedMessages = messages.map(msg => ({
         role: msg.role,
@@ -640,6 +746,19 @@ A: The mitochondrion.`;
 
       // Add the new user message
       formattedMessages.push({ role: "user", content: messageContent });
+
+      // If we have a docId reference, prefer the RAG endpoint with doc_ids to constrain retrieval
+      if (docIdParam) {
+        const ragResp: any = await chatbotAPI.askRag(messageContent, [docIdParam]);
+        const content = ragResp?.content || ragResp?.answer || JSON.stringify(ragResp);
+        setIsOnline(true);
+        return {
+          content,
+          source: 'rag',
+          conversation_id: currentConversation?.id || '',
+          message_id: '',
+        };
+      }
 
       const response = await chatbotAPI.sendMessage(
         messageContent,
@@ -696,6 +815,51 @@ A: The mitochondrion.`;
 
   const handleMenuPress = () => {
     setShowChatHistory(true);
+  };
+
+  // Manually re-upload the PDF from navigation params to refresh RAG indexing
+  const handleReuploadPdf = async () => {
+    try {
+      const pdfUri: string | undefined = (route as any)?.params?.pdfUri;
+      let pdfNameParam: string | undefined = (route as any)?.params?.pdfName;
+      if (!pdfUri) {
+        Alert.alert('No document found', 'There is no PDF associated with this chat to re-upload.');
+        return;
+      }
+
+      let derivedName = pdfNameParam || (pdfUri.split('/').pop() || 'document.pdf');
+      if (!derivedName.toLowerCase().endsWith('.pdf')) {
+        derivedName = `${derivedName}.pdf`;
+      }
+
+      setProcessingFiles(true);
+
+      const file: any = { uri: pdfUri, name: derivedName, mimeType: 'application/pdf' };
+      const uploadResp = await chatbotAPI.uploadFile(file, currentConversation?.id);
+
+      // After re-upload, let the user know we refreshed indexing
+      setMessages(prev => ([
+        ...prev,
+        { role: 'assistant', content: `Re-uploaded and re-indexed "${derivedName}". You can continue asking about this document.`, timestamp: new Date() }
+      ]));
+
+      // If backend returns a conversation_id, align our active conversation
+      const convId = (uploadResp as any)?.conversation_id;
+      if (convId && (!currentConversation || currentConversation.id !== convId)) {
+        try {
+          const conv = await chatbotAPI.getConversation(convId);
+          setCurrentConversation(conv);
+          await saveActiveConversation(convId);
+          await loadConversations(true);
+        } catch {}
+      }
+    } catch (err: any) {
+      console.error('Re-upload failed:', err);
+      Alert.alert('Upload Error', err?.message || 'Failed to re-upload the PDF.');
+      setMessages(prev => ([...prev, { role: 'assistant', content: `[Error] Re-upload failed: ${err?.message || 'Unknown error'}` }]));
+    } finally {
+      setProcessingFiles(false);
+    }
   };
 
   const handlePromptSelection = (promptText: string) => {
@@ -1393,6 +1557,16 @@ const handleOCR = async () => {
 
             {currentConversation && (
               <>
+                {/* Re-upload the current PDF if available via navigation params */}
+                {Boolean((route as any)?.params?.pdfUri) && (
+                  <TouchableOpacity 
+                    style={styles.chatOption}
+                    onPress={handleReuploadPdf}
+                  >
+                    <Ionicons name="cloud-upload" size={20} color="#3B82F6" />
+                    <Text style={[styles.chatOptionText, { color: "#3B82F6" }]}>Re-upload PDF</Text>
+                  </TouchableOpacity>
+                )}
                 <TouchableOpacity 
                   style={styles.chatOption} 
                   onPress={deleteCurrentConversation}

@@ -418,48 +418,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       showErrorToast("Could not save snapshot");
     }
   };
- const [buttonPosition, setButtonPosition] = useState({
-    x: Math.max(20, screenWidth - 76),
-    y: 100,
-  });
-  const buttonPositionRef = useRef({
-    x: Math.max(20, screenWidth - 76),
-    y: 100,
-  });
-  const [isDraggingButton, setIsDraggingButton] = useState(false);
-  const buttonPanResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onPanResponderGrant: () => {
-        setIsDraggingButton(true);
-      },
-      onPanResponderMove: (_, gestureState) => {
-        buttonPositionRef.current = {
-          x: Math.max(
-            10,
-            Math.min(
-              screenWidth - 66,
-              buttonPositionRef.current.x + gestureState.dx
-            )
-          ),
-          y: Math.max(
-            80,
-            Math.min(
-              screenHeight - 180,
-              buttonPositionRef.current.y + gestureState.dy
-            )
-          ),
-        };
-        setButtonPosition(buttonPositionRef.current);
-      },
-      onPanResponderRelease: (_, __) => {
-        setIsDraggingButton(false);
-      },
-      onPanResponderTerminate: () => {
-        setIsDraggingButton(false);
-      },
-    })
-  ).current;
+  // Floating AI button removed; AI action moved into More menu
 
   const updatePathWithAnimation = useCallback(() => {
     if (currentPointsRef.current.length === 0) return;
@@ -5225,36 +5184,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
   return (
     <GestureHandlerRootView style={styles.container}>
-      {/* Floating AI Button */}
-      <Animated.View
-        style={[
-          styles.floatingAIButton,
-          {
-            left: buttonPosition.x,
-            bottom: buttonPosition.y,
-            transform: [{ scale: isDraggingButton ? 1.1 : 1 }],
-          },
-        ]}
-        {...buttonPanResponder.panHandlers}
-      >
-        <TouchableOpacity
-          style={styles.floatingAIButtonContent}
-          onLongPress={() => {}}
-          delayLongPress={200}
-          onPress={() => {
-            if (!isDraggingButton) {
-              setShowAIModal(true);
-              Animated.timing(aiModalAnimation, {
-                toValue: 1,
-                duration: 300,
-                useNativeDriver: true,
-              }).start();
-            }
-          }}
-        >
-          <MaterialCommunityIcons name="robot" size={28} color="#FFFFFF" />
-        </TouchableOpacity>
-      </Animated.View>
+      {/* AI action is available under the More (⋮) menu */}
       {/* Header as background (hidden in focus mode) */}
       {!uiHidden && (
         <View style={styles.headerBackground}>
@@ -6160,6 +6090,49 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
           onPress={() => setShowMoreMenu(false)}
         >
           <View style={styles.moreMenuContainer}>
+            {/* Ask Rina (New Chat) */}
+            <TouchableOpacity
+              style={styles.moreMenuItem}
+              onPress={() => {
+                setShowMoreMenu(false);
+                Alert.alert(
+                  "Summarize with AI?",
+                  "You'll be redirected to the AI chatbot to summarize. You may need to upload the file again.",
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    {
+                      text: "Proceed",
+                      style: "default",
+                      onPress: () => {
+                        try {
+                          navigation.navigate(
+                            "RINA",
+                            {
+                              source: "pdf_annotation",
+                              intent: "summarize",
+                              newChat: true,
+                              pdfUri: (currentSource?.uri || source?.uri),
+                              pdfName: fileName,
+                            } as any
+                          );
+                        } catch (e) {
+                          setShowAIModal(true);
+                          Animated.timing(aiModalAnimation, {
+                            toValue: 1,
+                            duration: 300,
+                            useNativeDriver: true,
+                          }).start();
+                        }
+                      },
+                    },
+                  ]
+                );
+              }}
+              activeOpacity={0.8}
+            >
+              <MaterialIcons name="smart-toy" size={20} color="#8B5CF6" />
+              <Text style={[styles.moreMenuText, { color: "#8B5CF6" }]}>Ask Rina (New Chat)</Text>
+            </TouchableOpacity>
             {/* Quick actions moved from header */}
             <TouchableOpacity
               style={styles.moreMenuItem}
@@ -6624,6 +6597,9 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
                       initialQuery: fullQuery,
                       contextText: selectedText,
                       source: "pdf_annotation",
+                      pdfUri: (currentSource?.uri || source?.uri),
+                      pdfName: fileName,
+                      newChat: true,
                     } as any);
 
                     handleRinaModalClose();

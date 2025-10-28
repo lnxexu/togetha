@@ -37,6 +37,7 @@ interface PDFDocument {
   annotationCount: number;
   noteId?: string; // Link to backend note
   annotations?: any[]; // Store annotations
+  docId?: string; // Backend RAG document reference
 }
 
 interface AnnotationSaveStatus {
@@ -205,6 +206,9 @@ const ImportPDFPage = () => {
         annotationCount: 0,
       };
 
+      // Note: RAG upload/indexing is no longer triggered during import.
+      // It will occur when the user explicitly opens the document.
+
       const updatedDocs = [...documents, newDocument];
       await saveDocuments(updatedDocs);
       
@@ -264,7 +268,7 @@ const ImportPDFPage = () => {
       }
       
       if (isOnline) {
-        showSuccessToast("PDF imported successfully!");
+        showSuccessToast("PDF imported successfully. Open the document to start AI indexing.");
       } else {
         showSuccessToast("PDF imported offline. Will sync when online.");
       }
@@ -294,6 +298,25 @@ const ImportPDFPage = () => {
         return;
       }
       
+      // If the document wasn't indexed before and we're online, try indexing now
+      if (!document.docId && isOnline) {
+        try {
+          const { chatbotAPI } = await import("../chatbot/services/chatbotAPIService");
+          const uploadResp = await chatbotAPI.uploadFile(
+            { uri: document.uri, name: document.name, mimeType: "application/pdf" } as any,
+            undefined
+          );
+          if ((uploadResp as any)?.doc_id) {
+            document.docId = (uploadResp as any).doc_id as string;
+            // persist update in stored documents
+            const updated = documents.map(d => d.id === document.id ? { ...d, docId: document.docId } : d);
+            await saveDocuments(updated);
+          }
+        } catch (e) {
+          console.warn("Deferred RAG upload failed for this document:", e);
+        }
+      }
+
       setSelectedDocument(document);
       
       // Load existing annotations for this document
@@ -649,6 +672,7 @@ const ImportPDFPage = () => {
       <PDFAnnotationViewer
         source={{ uri: selectedDocument.uri }}
         fileName={selectedDocument.name}
+        docId={selectedDocument.docId}
         onClose={handleCloseDocument}
         enableDirectSave={true}
         autoSave={true}

@@ -48,42 +48,8 @@ class ChatView(APIView):
                 message_type='user'
             )
 
-            # Prepare system + history
-            system_prompt = (
-                "You are an AI tutoring assistant. Format your responses with proper markdown:"
-                "- Use **bold** for emphasis and important points"
-                "- Use *italics* for definitions or explanations"
-                "- Use ### for headers and subheaders"
-                "- Use bullet points (- ) for lists"
-                "- Use numbered lists (1. ) when showing steps"
-                "- Use | tables | when presenting data"
-                "- Use `code blocks` for technical terms"
-                "- Be clear, helpful, and educational in your responses."
-                ""
-                "CONTEXT HANDLING RULES:"
-                "- ALWAYS refer to the CURRENT CONVERSATION THREAD only"
-                "- Reject any context outside non-medical topics then remind to stay on medical topics"
-                "- Include references if the response is based on online sources"
-                "- When files are attached to a message, they are specific to THAT message"
-                "- When users ask for 'more examples' or 'explain further', refer to YOUR LAST RESPONSE in this conversation"
-                "- When asked to summarize or generate quizzes, refer to YOUR PREVIOUS MESSAGE in this conversation"
-                "- If documents are uploaded, they are available for analysis throughout the conversation and bypass the rule of staying on medical topics"
-                "- Never reference previous conversations or unrelated topics"
-                "- If you don't have enough context, ask for clarification"
-                ""
-                "FILE HANDLING:"
-                "- When text is extracted from images (OCR), treat it as direct content from the user and ignore it as the pytesseract source will be processed separatelySS"
-                "- When documents are uploaded, they become part of the knowledge base for this conversation"
-                "- Always acknowledge when you're referencing uploaded content"
-                "- If files failed to upload, work with the available information"
-            )
-            conversation_messages = [{"role": "system", "content": system_prompt}]
-            for msg in conversation.messages.exclude(id=user_message.id).order_by('created_at'):
-                conversation_messages.append({
-                    "role": "user" if msg.message_type == 'user' else "assistant",
-                    "content": msg.content
-                })
-
+            # Determine if we should bypass medical-only restriction
+            attachments_exist = conversation.attached_files.exists()
             # RAG context check
             use_rag = any(k in query_text.lower() for k in ["document", "file", "pdf", "uploaded"])
             context = ""
@@ -96,6 +62,57 @@ class ChatView(APIView):
                     context = "\n\n".join([c[1] for c in chunks]) if chunks else ""
                 except Exception as e:
                     print("RAG failed:", e)
+
+            bypass_medical = attachments_exist or (use_rag and bool(context))
+
+            # Prepare system + history with conditional topic policy
+            rules = [
+                "ALWAYS refer to the CURRENT CONVERSATION THREAD only",
+                # Topic policy: restrictive when not using docs, lenient otherwise
+                (
+                    "You may discuss any topic when it is grounded in or necessary to analyze the referenced or uploaded document(s); do not restrict to medical topics when documents are provided or RAG context is used."
+                    if bypass_medical
+                    else "Reject any context outside non-medical topics then remind to stay on medical related topics"
+                ),
+                "Include references if the response is based on online sources",
+                "When files are attached to a message, they are specific to THAT message",
+                "When users ask for 'more examples' or 'explain further', refer to YOUR LAST RESPONSE in this conversation",
+                "When asked to summarize or generate quizzes, refer to YOUR PREVIOUS MESSAGE in this conversation",
+                "If document is uploaded, they are available for analysis throughout the conversation and bypass the rule of only discussing medical topics",
+                "Never reference previous conversations or unrelated topics",
+                "If you don't have enough context, ask for clarification",
+            ]
+
+            formatting = [
+                "Use **bold** for emphasis and important points",
+                "Use *italics* for definitions or explanations",
+                "Use ### for headers and subheaders",
+                "Use bullet points (- ) for lists",
+                "Use numbered lists (1. ) when showing steps",
+                "Use | tables | when presenting data",
+                "Use `code blocks` for technical terms",
+                "Be clear, helpful, and educational in your responses.",
+            ]
+
+            system_prompt = (
+                "You are an AI tutoring assistant. Format your responses with proper markdown:\n- "
+                + "\n- ".join(formatting)
+                + "\n\nCONTEXT HANDLING RULES:\n- "
+                + "\n- ".join(rules)
+                + "\n\nFILE HANDLING:\n- "
+                + "\n- ".join([
+                    "When text is extracted from images (OCR), treat it as direct content from the user and ignore it as the pytesseract source will be processed separately",
+                    "When documents are uploaded, they become part of the knowledge base for this conversation",
+                    "Always acknowledge when you're referencing uploaded content",
+                    "If files failed to upload, work with the available information",
+                ])
+            )
+            conversation_messages = [{"role": "system", "content": system_prompt}]
+            for msg in conversation.messages.exclude(id=user_message.id).order_by('created_at'):
+                conversation_messages.append({
+                    "role": "user" if msg.message_type == 'user' else "assistant",
+                    "content": msg.content
+                })
 
             current_query = f"Answer using:\n{context}\n\nUser: {query_text}" if context else query_text
             conversation_messages.append({"role": "user", "content": current_query})

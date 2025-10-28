@@ -101,7 +101,18 @@ export type RootStackParamList = {
     onViewAll?: () => void;
   };
   PDFs: undefined;
-  RINA: undefined;
+  RINA:
+    | {
+        pdfUri?: string;
+        pdfName?: string;
+        docId?: string;
+        initialQuery?: string;
+        contextText?: string;
+        source?: string;
+        intent?: string;
+        newChat?: boolean;
+      }
+    | undefined;
   DrawingEditor:
     | {
         noteId?: string;

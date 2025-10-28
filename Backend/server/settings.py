@@ -46,7 +46,8 @@ from decouple import Csv
 # Gemini / Embeddings configuration
 # Do NOT provide a hardcoded default for API keys. Require environment or .env to supply it.
 GEMINI_API_KEY = config('GEMINI_API_KEY', default=None)
-GEMINI_MODEL = config('GEMINI_MODEL', default='gemini-2.5-flash')
+# Use the lite model by default as requested
+GEMINI_MODEL = config('GEMINI_MODEL', default='gemini-2.5-flash-lite')
 EMBEDDING_MODEL = config('EMBEDDING_MODEL', default='text-embedding-004')
 
 # Ordered model candidates for graceful fallback
@@ -55,6 +56,7 @@ if not GEMINI_MODEL_CANDIDATES:
     GEMINI_MODEL_CANDIDATES = [
         GEMINI_MODEL,
         'gemini-2.5-flash-lite',
+        'gemini-2.5-flash',
         'gemini-2.5-flash-lite-preview',
         'gemini-2.0-flash',
         'gemini-2.0-flash-lite',
@@ -178,9 +180,9 @@ else:
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
-            'NAME': 'togetha',
-            'USER': 'kobe',
-            'PASSWORD': 'Kobe@1314',
+            'NAME': 'Togetha',
+            'USER': 'Togetha',
+            'PASSWORD': 'lol',
             'HOST': 'localhost',
             'PORT': '5432',
         }

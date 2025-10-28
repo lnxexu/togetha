@@ -115,7 +115,9 @@ Backend/
 - `CORS_ALLOWED_ORIGINS` - Allowed CORS origins
 - `EMAIL_HOST_USER` - Email username
 - `EMAIL_HOST_PASSWORD` - Email password
-- `OLLAMA_TIMEOUT` - AI model timeout (default: 300)
+- `GEMINI_API_KEY` or `GOOGLE_API_KEY` - Google Generative AI API key
+- `GEMINI_MODEL` - Gemini model name (default: `gemini-1.5-flash`)
+- `OLLAMA_TIMEOUT` - AI model timeout (legacy, not used when Gemini is enabled)
 
 ## 📝 API Documentation
 
