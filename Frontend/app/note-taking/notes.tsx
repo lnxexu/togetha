@@ -2400,7 +2400,6 @@ const handleCreateFolder = async () => {
           // Document preview with enhanced PDF first-page + overlays (if PDF)
           const isPdf = (item.type === 'document' && (item.document_file?.toLowerCase().endsWith('.pdf') || item.title?.toLowerCase().endsWith('.pdf'))) ?? false;
           const docUrl = item.document_url || item.document_file || '';
-          console.log(`Rendering DocumentPreview for note "${item.title}" (ID: ${item.id}). Is PDF: ${isPdf}. URL: ${docUrl}`);
           return (
             <View style={styles.previewImageContainer}>
               {isPdf ? (

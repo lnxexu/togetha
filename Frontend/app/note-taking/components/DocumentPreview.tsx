@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { View, StyleSheet, Platform, ActivityIndicator, Text } from "react-native";
+import { View, StyleSheet, Platform, ActivityIndicator } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Svg, { Rect, Circle, Path, Text as SvgText } from "react-native-svg";
 import { getLocalPDFPath } from "../utils/pdfUtils";
@@ -47,35 +47,24 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
 }) => {
   const [localUri, setLocalUri] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
     (async () => {
       setLoading(true); // Start loading
-      setError(null);
       try {
         const source = uri || documentUrl || undefined;
         if (!source) {
-          console.log("DocumentPreview: No source URI provided.");
-          setError("No source URI provided.");
           setLoading(false);
           return;
         }
-        console.log("DocumentPreview: Source URI:", source);
         // Ensure we have a local file path for react-native-pdf
         const token = await AsyncStorage.getItem("authToken");
         const authHeaders = token ? { Authorization: `Token ${token}` } : undefined;
         const result = await getLocalPDFPath(source, undefined, authHeaders);
         if (!mounted) return;
-        console.log("DocumentPreview: Local URI result:", result);
-        if (!result) {
-          throw new Error("getLocalPDFPath returned null or undefined.");
-        }
         setLocalUri(result);
-      } catch (e: any) {
-        console.error("DocumentPreview: Error getting local PDF path:", e);
-        setError(e.message || "Failed to load PDF.");
+      } catch (e) {
         // fall back to undefined
         // no-op
       } finally {
@@ -273,14 +262,6 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     );
   }, [annotations, width, height]);
 
-  if (error) {
-    return (
-      <View style={[styles.container, { width, height, backgroundColor: '#FEE2E2', justifyContent: 'center', alignItems: 'center', padding: 4 }]}>
-        <Text style={{ color: '#B91C1C', fontSize: 10, textAlign: 'center' }}>{error}</Text>
-      </View>
-    );
-  }
-
   if (loading) {
     return (
       <View style={[styles.container, { width, height }]}>
@@ -305,12 +286,11 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         spacing={0}
         fitPolicy={2}
         trustAllCerts={false}
-        onLoadComplete={(numberOfPages: number, filePath: string) => {
-          console.log(`DocumentPreview: PDF loaded successfully. Pages: ${numberOfPages}, Path: ${filePath}`);
+        onLoadComplete={() => {
+          /* no-op */
         }}
-        onError={(pdfError: any) => {
-          console.error("DocumentPreview: react-native-pdf error:", pdfError);
-          setError(`PDF Error: ${pdfError.message || 'Unknown error'}`);
+        onError={() => {
+          /* silent preview failure */
         }}
       />
       {overlay}
