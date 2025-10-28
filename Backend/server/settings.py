@@ -25,7 +25,7 @@ DEBUG = os.environ.get("DEBUG", "False") == "True"
 # Use environment variable DEBUG to override in non-development environments.
 # DEBUG = config('DEBUG', default=True, cast=bool)
 
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='*,192.168.0.153,localhost,127.0.0.1', cast=Csv())
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1,192.168.0.153', cast=Csv())
 
 DEFAULT_FROM_EMAIL = 'kcorpuz_220000002183@uic.edu.ph'
 
@@ -36,8 +36,8 @@ EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 465
 EMAIL_USE_SSL = True  
 EMAIL_USE_TLS = False
-EMAIL_HOST_USER = 'wlage35@gmail.com'
-EMAIL_HOST_PASSWORD = 'lbqi deda bbux ebxd'
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD')
 EMAIL_TIMEOUT = 60 
 EMAIL_USE_LOCALTIME = False
  
@@ -120,10 +120,10 @@ CSRF_TRUSTED_ORIGINS = config(
 
 CORS_ALLOWED_ORIGINS = config(
     'CORS_ALLOWED_ORIGINS', 
-    default='http://localhost:3000,http://127.0.0.1:8000,http://192.168.0.153:8000',
+    default='http://localhost:3000,http://127.0.0.1:3000,http://192.168.0.153:3000',
     cast=Csv()
 )
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = False  # Disabled for security in production
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_METHODS = [
     'DELETE',
@@ -182,7 +182,7 @@ else:
             'ENGINE': 'django.db.backends.postgresql',
             'NAME': 'togetha',
             'USER': 'postgres',
-            'PASSWORD': 'Kobe@1314',
+            'PASSWORD': os.environ.get('DB_PASSWORD', 'Kobe@1314'),  # Only for local dev
             'HOST': 'localhost',
             'PORT': '5432',
         }
