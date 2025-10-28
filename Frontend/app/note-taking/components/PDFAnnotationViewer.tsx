@@ -1137,6 +1137,19 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
   const [currentSource, setCurrentSource] = useState<{ uri: string }>(source);
 
+  // Resolved PDF context for passing to RINA (ensure AI screen can auto-upload without asking user)
+  const resolvedPdfUri = useMemo(
+    () => (currentSource?.uri || source?.uri) as string | undefined,
+    [currentSource?.uri, source?.uri]
+  );
+  const resolvedPdfName = useMemo(() => {
+    if (fileName && typeof fileName === "string" && fileName.trim().length) {
+      return fileName;
+    }
+    const fallback = resolvedPdfUri ? resolvedPdfUri.split("/").pop() : null;
+    return fallback || "document.pdf";
+  }, [fileName, resolvedPdfUri]);
+
   const pendingAnnotationUpdates = useRef<Annotation[] | null>(null);
   const annotationUpdateTimer = useRef<NodeJS.Timeout | null>(null);
 
@@ -6097,7 +6110,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
                 setShowMoreMenu(false);
                 Alert.alert(
                   "Summarize with AI?",
-                  "You'll be redirected to the AI chatbot to summarize. You may need to upload the file again.",
+                  "You'll be redirected to the AI chatbot to summarize. We'll pass the current PDF automatically.",
                   [
                     { text: "Cancel", style: "cancel" },
                     {
@@ -6111,8 +6124,8 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
                               source: "pdf_annotation",
                               intent: "summarize",
                               newChat: true,
-                              pdfUri: (currentSource?.uri || source?.uri),
-                              pdfName: fileName,
+                              pdfUri: resolvedPdfUri,
+                              pdfName: resolvedPdfName,
                             } as any
                           );
                         } catch (e) {
@@ -6597,8 +6610,8 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
                       initialQuery: fullQuery,
                       contextText: selectedText,
                       source: "pdf_annotation",
-                      pdfUri: (currentSource?.uri || source?.uri),
-                      pdfName: fileName,
+                      pdfUri: resolvedPdfUri,
+                      pdfName: resolvedPdfName,
                       newChat: true,
                     } as any);
 
