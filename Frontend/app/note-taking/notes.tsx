@@ -262,6 +262,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
     noteId: string;
     type: "pdf" | "word" | "document" | "image" | "txt";
   } | null>(null);
+  const [pdfViewerKey, setPdfViewerKey] = useState<number>(0);
 
   // Memoize HTML tag styles for grid view (now the only view)
   const htmlTagStyles = useMemo(
@@ -1046,49 +1047,98 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
       // Update access time to move note to top - AWAIT this to ensure storage is updated
       await updateNoteAccessTime(note.id);
 
-      // Check if it's a document type note - prioritize this over content-based detection
-      if (note.type === "document") {
-        // Get document URL from note data - prioritize document_url over document_file
-        let documentUrl = (note as any).document_url || (note as any).document_file || "";
-        
-        // If no document URL, construct it from the API for server-hosted documents
-        if (!documentUrl) {
-          documentUrl = `${API_URL}/note_taking/documents/${note.id}/serve/`;
-        }
-        
-        const lowerTitle = note.title?.toLowerCase?.() || "";
-        const lowerUrl = documentUrl?.toLowerCase?.() || "";
-        const documentType = (lowerUrl.includes('.pdf') || lowerTitle.includes('.pdf'))
+      // Determine if this should be treated as a document (robust check)
+      const rawDocUrl = (note as any).document_url || note.document_file || "";
+      const hasDocRef = typeof rawDocUrl === 'string' && rawDocUrl.trim() !== '';
+      const titleLc = note.title?.toLowerCase?.() || "";
+      const inferredByTitle = titleLc.endsWith('.pdf') || titleLc.endsWith('.doc') || titleLc.endsWith('.docx');
+      const isDocumentNote = note.type === "document" || hasDocRef || inferredByTitle;
+
+      if (isDocumentNote) {
+        console.log('Opening as document note:', { id: note.id, type: note.type, hasDocRef, inferredByTitle, rawDocUrl });
+        // Prefer explicit URL/file; otherwise build a server URL
+        let documentUrl = hasDocRef ? rawDocUrl : `${API_URL}/note_taking/documents/${note.id}/serve/`;
+
+        const urlLc = documentUrl?.toLowerCase?.() || "";
+        const documentType = (urlLc.includes('.pdf') || titleLc.includes('.pdf'))
           ? 'pdf'
-          : (lowerUrl.includes('.doc') || lowerTitle.includes('.doc'))
+          : (urlLc.includes('.doc') || titleLc.includes('.doc'))
           ? 'word'
           : 'document';
 
-        // For PDF files, download to local storage if it's a remote URL
+        // For PDFs, cache locally when remote
         let finalDocumentUri = documentUrl;
-        if (documentType === "pdf" && isRemoteURL(documentUrl)) {
+        if (documentType === 'pdf' && isRemoteURL(documentUrl)) {
           try {
-            // Get auth token for PDF download
             const token = await AsyncStorage.getItem('authToken');
-            const authHeaders: HeadersInit | undefined = token ? { 'Authorization': `Token ${token}` } : undefined;
-            
+            const authHeaders: HeadersInit | undefined = token ? { Authorization: `Token ${token}` } : undefined;
             finalDocumentUri = await getLocalPDFPath(documentUrl, undefined, authHeaders);
           } catch (error) {
-            console.error("Failed to download PDF to local storage:", error);
-            // Fall back to original URL - PDFAnnotationViewer will handle the error
-            finalDocumentUri = documentUrl;
+            console.error('Failed to cache PDF locally:', error);
+            finalDocumentUri = documentUrl; // fallback
           }
         }
 
+        // Normalize local file URIs: ensure file:// prefix for local FS paths
+        const normalizeUri = (u: string) => {
+          if (!u) return u;
+          const lc = u.toLowerCase();
+          if (lc.startsWith("file://") || lc.startsWith("http://") || lc.startsWith("https://") || lc.startsWith("content://")) return u;
+          if (u.startsWith("/")) return `file://${u}`;
+          return u;
+        };
+
+        let normalizedUri = normalizeUri(finalDocumentUri);
+
+        // Verify file exists for local URIs. If missing and remote, try to download again.
+        try {
+          const checkAndEnsureLocal = async () => {
+            try {
+              // Only check local file existence for file:// or content://
+              const lc = (normalizedUri || "").toLowerCase();
+              if (lc.startsWith("file://") || lc.startsWith("content://") || lc.startsWith(FileSystem.documentDirectory || "")) {
+                const info = await FileSystem.getInfoAsync(normalizedUri);
+                if (!info.exists) {
+                  throw new Error('Local file missing');
+                }
+                return normalizedUri;
+              }
+
+              // If it's remote, attempt to fetch/cached local copy
+              if (isRemoteURL(normalizedUri)) {
+                try {
+                  const token = await AsyncStorage.getItem('authToken');
+                  const authHeaders: HeadersInit | undefined = token ? { Authorization: `Token ${token}` } : undefined;
+                  const r = await getLocalPDFPath(normalizedUri, undefined, authHeaders);
+                  return r;
+                } catch (downloadErr) {
+                  throw downloadErr;
+                }
+              }
+
+              // Otherwise assume it's usable
+              return normalizedUri;
+            } catch (e) {
+              throw e;
+            }
+          };
+
+          normalizedUri = await checkAndEnsureLocal();
+        } catch (err) {
+          console.error('PDF open failed - URI check/download failed:', err, 'uri=', normalizedUri);
+          showErrorToast('Unable to open document. The file may be missing or inaccessible.');
+          return;
+        }
+
         setCurrentDocument({
-          uri: finalDocumentUri,
-          name: note.title || "Untitled Document",
+          uri: normalizedUri,
+          name: note.title || 'Untitled Document',
           noteId: note.id,
           type: documentType,
         });
+        setPdfViewerKey((k) => k + 1);
 
-        // Use PDFAnnotationViewer for PDF files, DocumentViewer for others
-        if (documentType === "pdf") {
+        if (documentType === 'pdf') {
           setShowPDFViewer(true);
         } else {
           setShowDocumentViewer(true);
@@ -1189,6 +1239,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
           readOnly: false,
         });
       } else {
+        console.log('Not opening as document - falling back to editor:', { id: note.id, type: note.type, hasDocRef, inferredByTitle, rawDocUrl });
         // Convert tag objects to strings for the editor if needed
         const processedTags = note.tags?.map((tag) =>
           typeof tag === "object" && tag !== null && "name" in tag
@@ -1238,6 +1289,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
   // Show drawing setup modal
   const handleCreateDrawing = () => {
     setShowDrawingSetupModal(true);
+
   };
 
   // Show document import preview modal
@@ -2249,8 +2301,36 @@ const handleCreateFolder = async () => {
                     }
                   }
 
+                  // Normalize uri like in handleNotePress
+                  const normalizeUriInline = (u: string) => {
+                    if (!u) return u;
+                    const lc = u.toLowerCase();
+                    if (lc.startsWith("file://") || lc.startsWith("http://") || lc.startsWith("https://") || lc.startsWith("content://")) return u;
+                    if (u.startsWith("/")) return `file://${u}`;
+                    return u;
+                  };
+
+                  let normalized = normalizeUriInline(finalDocumentUri);
+
+                  try {
+                    // If local path, ensure file exists; if remote, attempt to cache
+                    const lc = (normalized || "").toLowerCase();
+                    if (lc.startsWith("file://") || lc.startsWith("content://") || lc.startsWith(FileSystem.documentDirectory || "")) {
+                      const info = await FileSystem.getInfoAsync(normalized);
+                      if (!info.exists) throw new Error('Local file missing');
+                    } else if (isRemoteURL(normalized)) {
+                      const token = await AsyncStorage.getItem('authToken');
+                      const authHeaders: HeadersInit | undefined = token ? { Authorization: `Token ${token}` } : undefined;
+                      normalized = await getLocalPDFPath(normalized, undefined, authHeaders);
+                    }
+                  } catch (err) {
+                    console.error('Failed to prepare PDF for viewing:', err, 'uri=', normalized);
+                    showErrorToast('Unable to open document. The file may be missing.');
+                    return;
+                  }
+
                   setCurrentDocument({
-                    uri: finalDocumentUri,
+                    uri: normalized,
                     name: item.title || 'Untitled Document',
                     noteId: item.id,
                     type: docType,
@@ -2258,6 +2338,7 @@ const handleCreateFolder = async () => {
 
                   // Use PDFAnnotationViewer for PDF files, DocumentViewer for others
                   if (docType === 'pdf') {
+                    setPdfViewerKey((k) => k + 1);
                     setShowPDFViewer(true);
                   } else {
                     setShowDocumentViewer(true);
@@ -3694,6 +3775,7 @@ const handleCreateFolder = async () => {
           onRequestClose={() => setShowPDFViewer(false)}
         >
           <PDFAnnotationViewer
+            key={currentDocument.noteId || pdfViewerKey}
             source={{ uri: currentDocument.uri }}
             fileName={currentDocument.name}
             noteId={currentDocument.noteId}
