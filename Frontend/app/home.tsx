@@ -109,6 +109,7 @@ export default function Home() {
   const [showTaskOptions, setShowTaskOptions] = useState<string | null>(null);
   const [notesCount, setNotesCount] = useState(0);
   const [notesFolders, setNotesFolders] = useState<any[]>([]);
+  const [unorganizedCount, setUnorganizedCount] = useState(0);
 
   // Animation state
   const [fadeAnim] = useState(new Animated.Value(0));
@@ -683,6 +684,10 @@ export default function Home() {
         if (cachedFolders) {
           setNotesFolders(JSON.parse(cachedFolders));
         }
+        const cachedUnorganized = await AsyncStorage.getItem("unorganizedNotesCount");
+        if (cachedUnorganized && !isNaN(Number(cachedUnorganized))) {
+          setUnorganizedCount(Number(cachedUnorganized));
+        }
 
         const online = isOnlineStrict();
         const token = await AsyncStorage.getItem("authToken");
@@ -735,17 +740,38 @@ export default function Home() {
 
           if (notesResponse.ok) {
             const notes = await notesResponse.json();
-            // Count notes per folder
+
+            // Helper to normalize folder id from various API shapes
+            const getFolderId = (n: any): string | null => {
+              // common fields: folder_id, folderId, folder (id or object)
+              const raw =
+                n.folder_id ??
+                n.folderId ??
+                (typeof n.folder === "object" && n.folder !== null
+                  ? (n.folder.id ?? n.folder.pk ?? null)
+                  : n.folder);
+              if (raw === undefined || raw === null || raw === "") return null;
+              try {
+                return raw.toString();
+              } catch {
+                return null;
+              }
+            };
+
+            // Count notes per folder using normalized id
             notesCounts = notes.reduce(
-              (counts: Record<string, number>, note: any) => {
-                const folderId = note.folder ? note.folder.toString() : null;
-                if (folderId) {
-                  counts[folderId] = (counts[folderId] || 0) + 1;
-                }
+              (counts: Record<string, number>, n: any) => {
+                const fid = getFolderId(n);
+                if (fid) counts[fid] = (counts[fid] || 0) + 1;
                 return counts;
               },
               {}
             );
+
+            // Count unorganized notes (no folder id after normalization)
+            const uncount = notes.reduce((acc: number, n: any) => acc + (getFolderId(n) ? 0 : 1), 0);
+            setUnorganizedCount(uncount);
+            await AsyncStorage.setItem("unorganizedNotesCount", String(uncount));
           }
 
           // Transform folders data to match the expected format with accurate counts
@@ -753,7 +779,7 @@ export default function Home() {
             id: folder.id,
             name: folder.name,
             color: getFolderColor(folder.name),
-            count: notesCounts[folder.id.toString()] || 0,
+            count: notesCounts[(folder.id ?? "").toString()] || 0,
           }));
 
           setNotesFolders(foldersArray);
@@ -1272,9 +1298,12 @@ export default function Home() {
                 <Text style={styles.emptyText}>No folders yet</Text>
                 <TouchableOpacity
                   style={styles.addButton}
-                  onPress={() => navigation.navigate("NoteEditor")}
+                  onPress={() =>
+                    // Open Notes screen directly to the Create Folder flow for consistent logic
+                    navigation.navigate("Notes" as any, { openCreateFolder: true } as any)
+                  }
                 >
-                  <Text style={styles.addButtonText}>Create Note</Text>
+                  <Text style={styles.addButtonText}>Create Folder</Text>
                 </TouchableOpacity>
               </View>
             ) : (
@@ -1295,7 +1324,6 @@ export default function Home() {
                     onPress={() =>
                       navigation.navigate("Notes", {
                         folderId: folder.id.toString(),
-                        folderName: folder.name,
                       })
                     }
                   >
@@ -1338,6 +1366,78 @@ export default function Home() {
                     </View>
                   </TouchableOpacity>
                 ))}
+
+                {/* Unorganized notes tile placed last; hidden if count is 0 */}
+                {unorganizedCount > 0 ? (
+                  <TouchableOpacity
+                    key="unorganized"
+                    style={[styles.folderCardHorizontal]}
+                    activeOpacity={0.8}
+                    onPress={() =>
+                      navigation.navigate("Notes", { folderId: "unorganized" })
+                    }
+                  >
+                    <View
+                      style={[
+                        styles.folderBorderAccent,
+                        { backgroundColor: "#9CA3AF" },
+                      ]}
+                    />
+                    <View
+                      style={[
+                        styles.folderIconHorizontal,
+                        { backgroundColor: `#9CA3AF25` },
+                      ]}
+                    >
+                      <MaterialIcons name="folder-open" size={28} color="#9CA3AF" />
+                    </View>
+                    <View style={styles.folderInfoHorizontal}>
+                      <Text style={styles.folderTitleHorizontal} numberOfLines={1}>
+                        Unorganized
+                      </Text>
+                      <Text style={styles.folderCountHorizontal}>
+                        {unorganizedCount} {unorganizedCount === 1 ? "note" : "notes"}
+                      </Text>
+                    </View>
+                    <View style={styles.folderArrowContainer}>
+                      <MaterialIcons name="arrow-forward-ios" size={16} color="#9CA3AF" />
+                    </View>
+                  </TouchableOpacity>
+                ) : (
+                  // Show a Create Folder card when there are no unorganized notes
+                  <TouchableOpacity
+                    key="create-folder"
+                    style={[styles.folderCardHorizontal]}
+                    activeOpacity={0.8}
+                    onPress={() =>
+                      navigation.navigate("Notes" as any, { openCreateFolder: true } as any)
+                    }
+                  >
+                    <View
+                      style={[
+                        styles.folderBorderAccent,
+                        { backgroundColor: "#6C2BD9" },
+                      ]}
+                    />
+                    <View
+                      style={[
+                        styles.folderIconHorizontal,
+                        { backgroundColor: `#6C2BD925` },
+                      ]}
+                    >
+                      <MaterialIcons name="add" size={28} color="#6C2BD9" />
+                    </View>
+                    <View style={styles.folderInfoHorizontal}>
+                      <Text style={styles.folderTitleHorizontal} numberOfLines={1}>
+                        Create Folder
+                      </Text>
+                      <Text style={styles.folderCountHorizontal}>Tap to organize notes</Text>
+                    </View>
+                    <View style={styles.folderArrowContainer}>
+                      <MaterialIcons name="arrow-forward-ios" size={16} color="#6C2BD9" />
+                    </View>
+                  </TouchableOpacity>
+                )}
               </ScrollView>
             )}
           </Animated.View>

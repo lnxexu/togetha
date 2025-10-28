@@ -672,7 +672,6 @@ const ImportPDFPage = () => {
       <PDFAnnotationViewer
         source={{ uri: selectedDocument.uri }}
         fileName={selectedDocument.name}
-        docId={selectedDocument.docId}
         onClose={handleCloseDocument}
         enableDirectSave={true}
         autoSave={true}

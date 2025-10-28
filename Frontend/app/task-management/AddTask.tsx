@@ -37,28 +37,28 @@ const priorities: {
   description: string;
 }[] = [
   {
-    label: "Urgent & Important",
+    label: "Do First",
     value: "urgent-important",
     color: "#e74c3c",
-    description: "Do First - Critical tasks",
+    description: "Critical tasks",
   },
   {
-    label: "Important, Not Urgent",
+    label: "Schedule",
     value: "not-urgent-important",
     color: "#1abc9c",
-    description: "Schedule - Plan for these",
+    description: "Plan for these",
   },
   {
-    label: "Urgent, Not Important",
+    label: "Delegate",
     value: "urgent-not-important",
     color: "#f39c12",
-    description: "Delegate - Can be delegated",
+    description: "Can be delegated",
   },
   {
-    label: "Neither Urgent nor Important",
+    label: "Eliminate",
     value: "not-urgent-not-important",
     color: "#27ae60",
-    description: "Eliminate - Consider removing",
+    description: "Consider removing",
   },
 ];
 
