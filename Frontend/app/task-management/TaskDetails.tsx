@@ -72,6 +72,8 @@ const TaskDetails: React.FC = () => {
       const fetchedTask = await taskService.getTaskById(taskId);
 
       if (fetchedTask) {
+        // If the task is already completed, ensure editing is turned off
+        if (fetchedTask.completed) setIsEditing(false);
         setTask({
           ...fetchedTask,
           due_datetime: fetchedTask.due_datetime
@@ -131,6 +133,8 @@ const TaskDetails: React.FC = () => {
 
   const handleSave = async () => {
     if (!task) return;
+    // Do not allow saving if task is completed
+    if (task.completed) return;
 
     try {
       let mergedDueDatetime = editedDate;
@@ -228,6 +232,11 @@ const TaskDetails: React.FC = () => {
           ? new Date(updatedTask.completed_at)
           : undefined,
       });
+
+      // If the task is now completed, disable editing and show lock overlay
+      if (updatedTask.completed) {
+        setIsEditing(false);
+      }
 
       showSuccessToast(
         task.completed ? "Task marked as pending" : "Task marked as completed"
@@ -451,7 +460,11 @@ const TaskDetails: React.FC = () => {
               </TouchableOpacity>
             </>
           ) : (
-            <TouchableOpacity style={styles.editButton} onPress={handleEdit}>
+            <TouchableOpacity
+              style={[styles.editButton, task.completed && styles.disabledButton]}
+              onPress={() => { if (!task.completed) handleEdit(); }}
+              disabled={task.completed}
+            >
               <MaterialIcons name="edit" size={20} color="#fff" />
               <Text style={styles.editButtonText}>Edit</Text>
             </TouchableOpacity>
@@ -460,7 +473,8 @@ const TaskDetails: React.FC = () => {
       </LinearGradient>
 
       {/* Content */}
-      <View style={styles.content}>
+      <View style={styles.contentWrapper}>
+        <View style={styles.content}>
         {/* Task Name */}
         <View style={styles.taskNameSection}>
           <Text style={styles.taskNameLabel}>Task Name:</Text>
@@ -471,6 +485,7 @@ const TaskDetails: React.FC = () => {
               onChangeText={setEditedTitle}
               placeholder="Enter task name"
               multiline
+              editable={!task.completed}
             />
           ) : (
             <Text style={styles.taskName}>{task.title}</Text>
@@ -484,7 +499,7 @@ const TaskDetails: React.FC = () => {
             <>
               <TouchableOpacity
                 style={[styles.infoCard, styles.editableCard]}
-                onPress={() => setShowDatePicker(true)}
+                onPress={() => !task.completed && setShowDatePicker(true)}
               >
                 <Text style={styles.cardValue}>
                   {editedDate ? formatDate(editedDate) : "Select Date"}
@@ -661,7 +676,7 @@ const TaskDetails: React.FC = () => {
             <>
               <TouchableOpacity
                 style={[styles.infoCard, styles.editableCard]}
-                onPress={() => setShowTimePicker(true)}
+                onPress={() => !task.completed && setShowTimePicker(true)}
               >
                 <Text style={styles.cardValue}>
                   {editedTime
@@ -726,8 +741,8 @@ const TaskDetails: React.FC = () => {
           {/* Priority Card */}
           <TouchableOpacity
             style={[styles.infoCard, isEditing && styles.editableCard]}
-            onPress={isEditing ? () => setShowPriorityModal(true) : undefined}
-            disabled={!isEditing}
+            onPress={isEditing && !task.completed ? () => setShowPriorityModal(true) : undefined}
+            disabled={!isEditing || task.completed}
           >
             <Text
               style={[
@@ -760,8 +775,8 @@ const TaskDetails: React.FC = () => {
           {/* Category Card */}
           <TouchableOpacity
             style={[styles.infoCard, isEditing && styles.editableCard]}
-            onPress={isEditing ? () => setShowCategoryModal(true) : undefined}
-            disabled={!isEditing}
+            onPress={isEditing && !task.completed ? () => setShowCategoryModal(true) : undefined}
+            disabled={!isEditing || task.completed}
           >
             <Text style={styles.cardValue}>
               {(isEditing ? editedCategory : task.category) || "No category"}
@@ -788,6 +803,7 @@ const TaskDetails: React.FC = () => {
               placeholder="Enter task description"
               multiline
               textAlignVertical="top"
+              editable={!task.completed}
             />
           ) : (
             <Text style={styles.description}>
@@ -795,7 +811,14 @@ const TaskDetails: React.FC = () => {
             </Text>
           )}
         </View>
+        {/* Overlay to block interaction when task is completed */}
+        {task.completed && (
+          <View style={styles.lockOverlay} pointerEvents="auto">
+            <Text style={styles.lockMessage}>This task is completed — editing disabled.</Text>
+          </View>
+        )}
       </View>
+        </View>
 
       {/* Mark as Done Button - Fixed position in lower right */}
       <TouchableOpacity
@@ -1162,6 +1185,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
+    zIndex: 3,
     gap: 8,
   },
   markAsDoneButtonText: {
@@ -1246,6 +1270,31 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#2c3e50",
     fontFamily: "Inter-Regular",
+  },
+  /* Overlay and wrapper when task is completed */
+  contentWrapper: {
+    position: "relative",
+    flex: 1,
+  },
+  lockOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(255,255,255,0.75)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 2,
+    padding: 20,
+  },
+  lockMessage: {
+    fontSize: 16,
+    color: "#6c757d",
+    textAlign: "center",
+  },
+  disabledButton: {
+    opacity: 0.5,
   },
 });
 

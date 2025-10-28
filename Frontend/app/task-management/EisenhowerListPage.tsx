@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -10,13 +10,14 @@ import {
   TextInput,
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RouteProp } from "@react-navigation/native";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import { Task } from "./types/Task";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import taskService from "./services/taskService";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type EisenhowerListRouteProp = RouteProp<RootStackParamList, "EisenhowerList">;
@@ -76,17 +77,46 @@ const EisenhowerListPage: React.FC = () => {
   const { tasks: serializedTasks, quadrant } = route.params;
   const quadrantData = quadrants[quadrant];
 
-  const tasks = serializedTasks.map((task) => ({
-    ...task,
-    createdAt: new Date(task.createdAt),
-    due_datetime: task.due_datetime ? new Date(task.due_datetime) : null,
-    updatedAt: task.updatedAt ? new Date(task.updatedAt) : undefined,
-    completedAt: task.completedAt ? new Date(task.completedAt) : undefined,
-  }));
+  // Convert serialized tasks (from navigation params) into usable local state
+  const convertTasks = (arr: any[]) =>
+    (arr || []).map((task) => ({
+      ...task,
+      createdAt: task.createdAt ? new Date(task.createdAt) : undefined,
+      due_datetime: task.due_datetime ? new Date(task.due_datetime) : null,
+      updatedAt: task.updatedAt ? new Date(task.updatedAt) : undefined,
+      completedAt: task.completedAt ? new Date(task.completedAt) : undefined,
+    }));
 
-  const quadrantTasks = serializedTasks.filter(
-    (task) => task.priority === quadrant
+  const [tasksState, setTasksState] = useState(() => convertTasks(serializedTasks));
+
+  // Refresh local tasks when screen comes into focus so changes from TaskDetails are reflected
+  useFocusEffect(
+    useCallback(() => {
+      let isActive = true;
+
+      const fetchTasks = async () => {
+        try {
+          // Attempt to fetch fresh tasks by priority from the service
+          const loaded = await taskService.getTasksByPriority(quadrant);
+          if (isActive && loaded) setTasksState(convertTasks(loaded));
+        } catch (err) {
+          // Fallback to navigation params if service call fails or offline
+          if (isActive)
+            setTasksState(
+              convertTasks(route.params?.tasks || serializedTasks || [])
+            );
+        }
+      };
+
+      fetchTasks();
+
+      return () => {
+        isActive = false;
+      };
+    }, [quadrant, route.params?.tasks, serializedTasks])
   );
+
+  const quadrantTasks = tasksState.filter((task) => task.priority === quadrant);
 
   // Filter tasks based on search query
   const filteredTasks = quadrantTasks.filter((task) =>
@@ -236,6 +266,16 @@ const EisenhowerListPage: React.FC = () => {
               </View>
             </View>
           </View>
+          {/* If completed, show a dim overlay and a badge indicator */}
+          {task.completed && (
+            <>
+              <View style={styles.cardBlurOverlay} pointerEvents="none" />
+              <View style={styles.completedBadge} pointerEvents="none">
+                <MaterialIcons name="check-circle" size={16} color="#fff" />
+                <Text style={styles.completedBadgeText}>Completed</Text>
+              </View>
+            </>
+          )}
         </TouchableOpacity>
       </View>
     );
@@ -504,6 +544,7 @@ const styles = StyleSheet.create({
   listContainer: {
     paddingHorizontal: 24,
     paddingTop: 20,
+    paddingBottom: 20,
     flexGrow: 1,
   },
   taskCard: {
@@ -663,6 +704,35 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 8,
+  },
+  /* overlay to simulate dim on completed cards */
+  cardBlurOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.7)",
+    zIndex: 2,
+  },
+  completedBadge: {
+    position: "absolute",
+    top: 8,
+    right: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.6)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    zIndex: 3,
+  },
+  completedBadgeText: {
+    color: "#fff",
+    marginLeft: 6,
+    fontSize: 12,
+    fontFamily: "Inter-Medium",
   },
   separator: {
     height: 12,
