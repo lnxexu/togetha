@@ -1,32 +1,33 @@
 import os
-import google as genai  # package name may vary; see SDK docs
+from google import genai  # Updated import for latest SDK
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-2.5-flash')
 
-genai.configure(api_key=GEMINI_API_KEY)
+# No need to configure globally; client will use GEMINI_API_KEY env var
 
 def generate_with_gemini(prompt: str, max_output_tokens: int = 512):
     """
     Returns text string from Gemini model.
     """
+    if not GEMINI_API_KEY:
+        raise RuntimeError("GEMINI_API_KEY not set")
+
+    # Ensure the env var is set
+    os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
+
+    client = genai.Client()
     model_name = GEMINI_MODEL
-    # The SDK exposes 'generate' or 'GenerativeModel' based on version; adjust to the sdk you installed.
-    # Example:
-    response = genai.generate(
+
+    response = client.models.generate_content(
         model=model_name,
-        input=prompt,
-        max_output_tokens=max_output_tokens
+        contents=prompt,
+        config=genai.GenerateContentConfig(max_output_tokens=max_output_tokens)
     )
-    # response shape differs by SDK version; try common fields:
-    if hasattr(response, 'text'):  # some wrappers
+
+    # Get the text from the response
+    if hasattr(response, 'text') and response.text:
         return response.text
-    # else check nested dict
-    if isinstance(response, dict):
-        # e.g. response['candidates'][0]['output']
-        cand = response.get('candidates')
-        if cand and len(cand)>0 and 'output' in cand[0]:
-            return cand[0]['output']
-        # or response.get('output', '')
-        return str(response)
-    # fallback
-    return str(response)
+    elif response.candidates and response.candidates[0].content.parts:
+        return response.candidates[0].content.parts[0].text
+    else:
+        return "No response generated"
