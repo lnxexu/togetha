@@ -47,7 +47,7 @@ from decouple import Csv
 # Do NOT provide a hardcoded default for API keys. Require environment or .env to supply it.
 GEMINI_API_KEY = config('GEMINI_API_KEY', default=None)
 GEMINI_MODEL = config('GEMINI_MODEL', default='gemini-2.5-flash')
-EMBEDDING_MODEL = config('EMBEDDING_MODEL', default='text-embedding-004')
+EMBEDDING_MODEL = config('EMBEDDING_MODEL', default='gemini-embedding-001')
 
 # Ordered model candidates for graceful fallback
 GEMINI_MODEL_CANDIDATES = config('GEMINI_MODEL_CANDIDATES', default='', cast=Csv())
@@ -64,7 +64,7 @@ EMBEDDING_MODEL_CANDIDATES = config('EMBEDDING_MODEL_CANDIDATES', default='', ca
 if not EMBEDDING_MODEL_CANDIDATES:
     EMBEDDING_MODEL_CANDIDATES = [
         EMBEDDING_MODEL,
-        'embedding-001',
+        'text-embedding-004',
     ]
 
 INSTALLED_APPS = [

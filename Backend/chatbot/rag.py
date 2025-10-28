@@ -90,54 +90,20 @@ def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50):
 
 
 def _embed_one(text: str) -> np.ndarray:
-    """Embed a single text using Google's embeddings with graceful fallback."""
+    """Embed a single text using Google's embeddings."""
     api_key = getattr(settings, "GEMINI_API_KEY", None) or os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("AI provider not configured. Please set GEMINI_API_KEY on the server.")
 
-    client = genai.Client(api_key=api_key)
+    # Set the environment variable for the SDK
+    os.environ["GEMINI_API_KEY"] = api_key
+
+    client = genai.Client()
     errors = []
     for model_name in EMBEDDING_MODEL_CANDIDATES:
         try:
-            # google-genai has had signature changes; try multiple variants for compatibility
-            res = None
-            try:
-                # Old signature
-                res = client.models.embed_content(model=model_name, content=text)
-            except TypeError:
-                # Newer signature uses 'contents'
-                try:
-                    res = client.models.embed_content(model=model_name, contents=text)
-                except Exception:
-                    res = None
-            if res is None:
-                # Try top-level client method fallbacks
-                try:
-                    res = client.embed_content(model=model_name, content=text)
-                except TypeError:
-                    res = client.embed_content(model=model_name, contents=text)
-            values = None
-            try:
-                embeddings = getattr(res, "embeddings", None)
-                if embeddings:
-                    first = embeddings[0]
-                    if hasattr(first, "values"):
-                        values = first.values
-                    elif isinstance(first, dict):
-                        values = first.get("values")
-            except Exception:
-                values = None
-            if values is None:
-                if isinstance(res, dict):
-                    maybe = res.get("embedding") or res.get("embeddings")
-                    if isinstance(maybe, dict):
-                        values = maybe.get("values")
-                    elif isinstance(maybe, list) and maybe:
-                        item = maybe[0]
-                        if isinstance(item, dict):
-                            values = item.get("values")
-            if values is None:
-                raise RuntimeError("Failed to obtain embedding vector from Google API response")
+            res = client.models.embed_content(model=model_name, contents=text)
+            values = res.embeddings[0].values
             return np.array(values, dtype=np.float32)
         except Exception as e:
             err_text = str(e)
