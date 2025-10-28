@@ -421,48 +421,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       showErrorToast("Could not save snapshot");
     }
   };
- const [buttonPosition, setButtonPosition] = useState({
-    x: Math.max(20, screenWidth - 76),
-    y: 100,
-  });
-  const buttonPositionRef = useRef({
-    x: Math.max(20, screenWidth - 76),
-    y: 100,
-  });
-  const [isDraggingButton, setIsDraggingButton] = useState(false);
-  const buttonPanResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onPanResponderGrant: () => {
-        setIsDraggingButton(true);
-      },
-      onPanResponderMove: (_, gestureState) => {
-        buttonPositionRef.current = {
-          x: Math.max(
-            10,
-            Math.min(
-              screenWidth - 66,
-              buttonPositionRef.current.x + gestureState.dx
-            )
-          ),
-          y: Math.max(
-            80,
-            Math.min(
-              screenHeight - 180,
-              buttonPositionRef.current.y + gestureState.dy
-            )
-          ),
-        };
-        setButtonPosition(buttonPositionRef.current);
-      },
-      onPanResponderRelease: (_, __) => {
-        setIsDraggingButton(false);
-      },
-      onPanResponderTerminate: () => {
-        setIsDraggingButton(false);
-      },
-    })
-  ).current;
+  
 
   const updatePathWithAnimation = useCallback(() => {
     if (currentPointsRef.current.length === 0) return;
@@ -2371,6 +2330,26 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       }\n\nAnnotations:\n${countText || "No annotations"}`
     );
   };
+
+  // Open AI via triple-dot menu with confirmation
+  const handleOpenAIFromMenu = useCallback(() => {
+    // Close the menu first
+    setShowMoreMenu(false);
+    Alert.alert(
+      "Proceed to AI for summarization",
+      "If you wish to proceed to summarize the text. You would need to reupload the file to get the whole context.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Proceed",
+          onPress: () => {
+            // Navigate to RINA (Chatbot) and start a new chat session
+            navigation.navigate("RINA", { newChat: true });
+          },
+        },
+      ]
+    );
+  }, [navigation]);
 
   const onPdfLoadComplete = (
     numberOfPages: number,
@@ -5486,36 +5465,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
   return (
     <GestureHandlerRootView style={styles.container}>
-      {/* Floating AI Button */}
-      <Animated.View
-        style={[
-          styles.floatingAIButton,
-          {
-            left: buttonPosition.x,
-            bottom: buttonPosition.y,
-            transform: [{ scale: isDraggingButton ? 1.1 : 1 }],
-          },
-        ]}
-        {...buttonPanResponder.panHandlers}
-      >
-        <TouchableOpacity
-          style={styles.floatingAIButtonContent}
-          onLongPress={() => {}}
-          delayLongPress={200}
-          onPress={() => {
-            if (!isDraggingButton) {
-              setShowAIModal(true);
-              Animated.timing(aiModalAnimation, {
-                toValue: 1,
-                duration: 300,
-                useNativeDriver: true,
-              }).start();
-            }
-          }}
-        >
-          <MaterialCommunityIcons name="robot" size={28} color="#FFFFFF" />
-        </TouchableOpacity>
-      </Animated.View>
       {/* Header as background (hidden in focus mode) */}
       {!uiHidden && (
         <View style={styles.headerBackground}>
@@ -6324,6 +6273,16 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         >
           <View style={styles.moreMenuContainer}>
             {/* Quick actions moved from header */}
+            {/* Open AI (New Chat) */}
+            <TouchableOpacity
+              style={styles.moreMenuItem}
+              onPress={handleOpenAIFromMenu}
+              activeOpacity={0.8}
+            >
+              <MaterialIcons name="smart-toy" size={20} color="#6B46C1" />
+              <Text style={[styles.moreMenuText, { color: "#6B46C1" }]}>Ask AI for summary</Text>
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={styles.moreMenuItem}
               onPress={() => {
