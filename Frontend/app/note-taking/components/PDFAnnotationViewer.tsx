@@ -140,7 +140,10 @@ const ANNOTATION_COLORS = [
   "#A8E6CF",
 ];
 
-const DEFAULT_SCALE_STROKES_WITH_ZOOM = true;
+// When the SVG overlay lives inside the same transformed container as the PDF,
+// stroke widths will naturally scale with zoom. Keep this false to avoid
+// double-scaling thickness (content transform already scales it visually).
+const DEFAULT_SCALE_STROKES_WITH_ZOOM = false;
 const DEFAULT_LARGE_PDF_PAGE_THRESHOLD = 40;
 const DEFAULT_MAX_CONTENT_HEIGHT_PX = 250000;
 
@@ -308,13 +311,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const [showDebugMarkers, setShowDebugMarkers] = useState(false);
   const [showTextPreviewModal, setShowTextPreviewModal] = useState(false);
   const [previewExtractedText, setPreviewExtractedText] = useState<string>("");
-  const [showAIModal, setShowAIModal] = useState(false);
-  const [aiMessage, setAiMessage] = useState<string>("");
-  const [aiModalAnimation] = useState(new Animated.Value(0));
-  const [chatMessages, setChatMessages] = useState<
-    Array<{ type: "user" | "ai"; text: string }>
-  >([{ type: "ai", text: "How can I help you with this document?" }]);
-  const chatScrollViewRef = useRef<ScrollView>(null);
+  
 
   type ToolbarTool = DrawingTool;
   const mapToolbarToolToViewer = (t: ToolbarTool): typeof selectedTool => {
@@ -421,48 +418,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       showErrorToast("Could not save snapshot");
     }
   };
- const [buttonPosition, setButtonPosition] = useState({
-    x: Math.max(20, screenWidth - 76),
-    y: 100,
-  });
-  const buttonPositionRef = useRef({
-    x: Math.max(20, screenWidth - 76),
-    y: 100,
-  });
-  const [isDraggingButton, setIsDraggingButton] = useState(false);
-  const buttonPanResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onPanResponderGrant: () => {
-        setIsDraggingButton(true);
-      },
-      onPanResponderMove: (_, gestureState) => {
-        buttonPositionRef.current = {
-          x: Math.max(
-            10,
-            Math.min(
-              screenWidth - 66,
-              buttonPositionRef.current.x + gestureState.dx
-            )
-          ),
-          y: Math.max(
-            80,
-            Math.min(
-              screenHeight - 180,
-              buttonPositionRef.current.y + gestureState.dy
-            )
-          ),
-        };
-        setButtonPosition(buttonPositionRef.current);
-      },
-      onPanResponderRelease: (_, __) => {
-        setIsDraggingButton(false);
-      },
-      onPanResponderTerminate: () => {
-        setIsDraggingButton(false);
-      },
-    })
-  ).current;
 
   const updatePathWithAnimation = useCallback(() => {
     if (currentPointsRef.current.length === 0) return;
@@ -1210,18 +1165,13 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
   const [currentSource, setCurrentSource] = useState<{ uri: string }>(source);
 
-  // Resolved PDF context for passing to RINA (ensure AI screen can auto-upload without asking user)
-  const resolvedPdfUri = useMemo(
-    () => (currentSource?.uri || source?.uri) as string | undefined,
-    [currentSource?.uri, source?.uri]
-  );
+  // Only keep the name; do not pass or depend on URI anymore
   const resolvedPdfName = useMemo(() => {
     if (fileName && typeof fileName === "string" && fileName.trim().length) {
       return fileName;
     }
-    const fallback = resolvedPdfUri ? resolvedPdfUri.split("/").pop() : null;
-    return fallback || "document.pdf";
-  }, [fileName, resolvedPdfUri]);
+    return "document.pdf";
+  }, [fileName]);
 
   const pendingAnnotationUpdates = useRef<Annotation[] | null>(null);
   const annotationUpdateTimer = useRef<NodeJS.Timeout | null>(null);
@@ -5316,8 +5266,8 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
   const renderAnnotationsForPage = useCallback(
     (page: number) => {
-      const anns = memoizedAnnotations.get(page) || [];
-      const { displayW, displayH, offsetX } = getLayoutMetrics();
+  const anns = memoizedAnnotations.get(page) || [];
+  const { displayW, displayH } = getLayoutMetrics();
 
       return (
         <Svg
@@ -5477,44 +5427,101 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
               return null;
             }
           })}
+
+          {/* Drawing Strokes Layer (saved strokes provided via props) */}
+          {strokes && Array.isArray(strokes)
+            ? strokes
+                .filter((s) => (Math.max(1, s.page || 1) === Math.max(1, page)))
+                .map((stroke) => {
+                  const pg = Math.max(1, stroke.page || 1);
+                  if (pg !== Math.max(1, page)) return null;
+
+                  // Map normalized points to this page's pixel space
+                  const displayPoints = (stroke.points || []).map((pt) => ({
+                    x: (pt.x || 0) * displayW,
+                    y: (pt.y || 0) * displayH,
+                  }));
+                  const simplified = simplifyPoints(displayPoints, 300);
+                  const cacheKey = `${stroke.id}-${simplified.length}-${Math.round(
+                    (stroke.width || 2) * 10
+                  )}`;
+                  let pathData = strokePathCacheRef.current.get(cacheKey);
+                  if (!pathData) {
+                    pathData = pointsToPath(simplified);
+                    strokePathCacheRef.current.set(cacheKey, pathData);
+                  }
+
+                  const baseStrokeWidth = stroke.width ?? 2;
+                  const strokeWidth = scaleStrokesWithZoom
+                    ? baseStrokeWidth * (currentZoom || 1)
+                    : baseStrokeWidth;
+
+                  return (
+                    <AnimatedPath
+                      key={`drawing-stroke-${stroke.id}`}
+                      d={pathData}
+                      stroke={stroke.color || "#000000"}
+                      strokeWidth={strokeWidth}
+                      fill="none"
+                      opacity={0.95}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      pointerEvents="none"
+                    />
+                  );
+                })
+            : null}
+
+          {/* Live in-progress stroke for this page (if any) */}
+          {(() => {
+            try {
+              const liveKey = `live-${page}`;
+              const livePath = strokePathCacheRef.current.get(liveKey);
+              if (livePath) {
+                const baseStroke = strokeWidth || 3;
+                const liveStrokeWidth = scaleStrokesWithZoom
+                  ? baseStroke * (currentZoom || 1)
+                  : baseStroke;
+                let liveOpacity = 1;
+                if (selectedTool === "highlight")
+                  liveOpacity = Math.max(0.1, Math.min(1, highlightOpacity));
+                if (selectedTool === "eraser") liveOpacity = 0.6;
+                return (
+                  <AnimatedPath
+                    key={`live-path-${page}`}
+                    d={livePath}
+                    stroke={selectedColor}
+                    strokeWidth={liveStrokeWidth}
+                    fill="none"
+                    opacity={liveOpacity}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    pointerEvents="none"
+                  />
+                );
+              }
+            } catch (e) {}
+            return null;
+          })()}
         </Svg>
       );
     },
-    [memoizedAnnotations, convertNormalizedPathToScreenForPage, scaleStrokesWithZoom, currentZoom, highlightOpacity, deleteAnnotation]
+    [
+      memoizedAnnotations,
+      convertNormalizedPathToScreenForPage,
+      scaleStrokesWithZoom,
+      currentZoom,
+      highlightOpacity,
+      deleteAnnotation,
+      strokes,
+      strokeWidth,
+      selectedTool,
+      selectedColor,
+    ]
   );
 
   return (
     <GestureHandlerRootView style={styles.container}>
-      {/* Floating AI Button */}
-      <Animated.View
-        style={[
-          styles.floatingAIButton,
-          {
-            left: buttonPosition.x,
-            bottom: buttonPosition.y,
-            transform: [{ scale: isDraggingButton ? 1.1 : 1 }],
-          },
-        ]}
-        {...buttonPanResponder.panHandlers}
-      >
-        <TouchableOpacity
-          style={styles.floatingAIButtonContent}
-          onLongPress={() => {}}
-          delayLongPress={200}
-          onPress={() => {
-            if (!isDraggingButton) {
-              setShowAIModal(true);
-              Animated.timing(aiModalAnimation, {
-                toValue: 1,
-                duration: 300,
-                useNativeDriver: true,
-              }).start();
-            }
-          }}
-        >
-          <MaterialCommunityIcons name="robot" size={28} color="#FFFFFF" />
-        </TouchableOpacity>
-      </Animated.View>
       {/* Header as background (hidden in focus mode) */}
       {!uiHidden && (
         <View style={styles.headerBackground}>
@@ -6329,7 +6336,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
                 setShowMoreMenu(false);
                 Alert.alert(
                   "Summarize with AI?",
-                  "You'll be redirected to the AI chatbot to summarize. We'll pass the current PDF automatically.",
+                  "You'll be redirected to the AI chatbot to summarize. You'll need to upload the PDF there.",
                   [
                     { text: "Cancel", style: "cancel" },
                     {
@@ -6343,17 +6350,11 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
                               source: "pdf_annotation",
                               intent: "summarize",
                               newChat: true,
-                              pdfUri: resolvedPdfUri,
                               pdfName: resolvedPdfName,
                             } as any
                           );
                         } catch (e) {
-                          setShowAIModal(true);
-                          Animated.timing(aiModalAnimation, {
-                            toValue: 1,
-                            duration: 300,
-                            useNativeDriver: true,
-                          }).start();
+                          console.warn("Navigation to RINA failed:", e);
                         }
                       },
                     },
@@ -6493,139 +6494,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       </Modal>
 
       {/* AI Assistant Modal */}
-      <Modal
-        visible={showAIModal}
-        transparent={true}
-        animationType="none"
-        onRequestClose={() => {
-          Animated.timing(aiModalAnimation, {
-            toValue: 0,
-            duration: 250,
-            useNativeDriver: true,
-          }).start(() => setShowAIModal(false));
-        }}
-      >
-        <TouchableOpacity
-          style={styles.aiModalOverlay}
-          activeOpacity={1}
-          onPress={() => {
-            Animated.timing(aiModalAnimation, {
-              toValue: 0,
-              duration: 250,
-              useNativeDriver: true,
-            }).start(() => setShowAIModal(false));
-          }}
-        >
-          <Animated.View
-            style={[
-              styles.aiModalContainer,
-              {
-                transform: [
-                  {
-                    translateY: aiModalAnimation.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [600, 0],
-                    }),
-                  },
-                ],
-              },
-            ]}
-          >
-            <View style={styles.aiModalContent}>
-              <View style={styles.aiModalHandle} />
-              <View style={styles.aiModalHeader}>
-                <View style={styles.aiModalIconContainer}>
-                  <MaterialCommunityIcons
-                    name="robot"
-                    size={24}
-                    color="#8B5CF6"
-                  />
-                </View>
-                <Text style={styles.aiModalTitle}>AI Assistant</Text>
-                <TouchableOpacity
-                  style={styles.aiModalCloseButton}
-                  onPress={() => {
-                    Animated.timing(aiModalAnimation, {
-                      toValue: 0,
-                      duration: 250,
-                      useNativeDriver: true,
-                    }).start(() => setShowAIModal(false));
-                  }}
-                >
-                  <MaterialIcons name="close" size={24} color="#6B7280" />
-                </TouchableOpacity>
-              </View>
-
-              <ScrollView
-                ref={chatScrollViewRef}
-                style={styles.aiModalBody}
-                contentContainerStyle={{ flexGrow: 1 }}
-                onContentSizeChange={() => {
-                  if (chatMessages.length > 1) {
-                    chatScrollViewRef.current?.scrollToEnd({ animated: true });
-                  }
-                }}
-              >
-                <View style={styles.aiChatContainer}>
-                  {chatMessages.map((message, index) =>
-                    message.type === "ai" ? (
-                      <View key={index} style={styles.aiMessageBubble}>
-                        <Text style={styles.aiMessageText}>{message.text}</Text>
-                      </View>
-                    ) : (
-                      <View key={index} style={styles.userMessageBubble}>
-                        <Text style={styles.userMessageText}>
-                          {message.text}
-                        </Text>
-                      </View>
-                    )
-                  )}
-                </View>
-              </ScrollView>
-
-              <View style={styles.aiInputContainer}>
-                <TextInput
-                  style={styles.aiInput}
-                  placeholder="Ask me anything about this document..."
-                  placeholderTextColor="#9CA3AF"
-                  value={aiMessage}
-                  onChangeText={setAiMessage}
-                  multiline
-                />
-                <TouchableOpacity
-                  style={styles.aiSendButton}
-                  onPress={() => {
-                    if (aiMessage.trim() === "") return;
-
-                    const userMessage = aiMessage.trim();
-                    setChatMessages((prev) => [
-                      ...prev,
-                      { type: "user", text: userMessage },
-                    ]);
-
-                    setAiMessage("");
-
-                    setTimeout(() => {
-                      const aiResponse = `I understand your query about "${userMessage.substring(
-                        0,
-                        20
-                      )}${
-                        userMessage.length > 20 ? "..." : ""
-                      }". Let me analyze this document further.`;
-                      setChatMessages((prev) => [
-                        ...prev,
-                        { type: "ai", text: aiResponse },
-                      ]);
-                    }, 1000);
-                  }}
-                >
-                  <Ionicons name="send" size={20} color="#FFFFFF" />
-                </TouchableOpacity>
-              </View>
-            </View>
-          </Animated.View>
-        </TouchableOpacity>
-      </Modal>
+      {/* AI Assistant modal removed; use the header's More menu (Ask Rina) */}
 
       {/* Ask Rina Popup */}
       {showAskRinaPopup && !uiHidden && (
@@ -6829,7 +6698,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
                       initialQuery: fullQuery,
                       contextText: selectedText,
                       source: "pdf_annotation",
-                      pdfUri: resolvedPdfUri,
                       pdfName: resolvedPdfName,
                       newChat: true,
                     } as any);
@@ -8373,155 +8241,6 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
 
-  floatingAIButton: {
-    position: "absolute",
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#8B5CF6",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 8,
-    zIndex: 1000,
-  },
-  floatingAIButtonContent: {
-    width: "100%",
-    height: "100%",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 28,
-  },
-  aiModalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.4)",
-    justifyContent: "flex-end",
-  },
-  aiModalContainer: {
-    backgroundColor: "transparent",
-    width: "100%",
-    height: "90%", // Allow the modal to take up to 90% of screen height
-    justifyContent: "flex-end",
-  },
-  aiModalContent: {
-    backgroundColor: "#FFFFFF",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingBottom: Platform.OS === "ios" ? 48 : 24, // Extra padding for iOS devices with home indicator
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 16,
-    minHeight: "50%",
-    maxHeight: "92%",
-  },
-  aiModalHandle: {
-    width: 40,
-    height: 4,
-    backgroundColor: "#E5E7EB",
-    borderRadius: 2,
-    alignSelf: "center",
-    marginTop: 12,
-    marginBottom: 8,
-  },
-  aiModalHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F3F4F6",
-  },
-  aiModalIconContainer: {
-    backgroundColor: "rgba(139, 92, 246, 0.1)",
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  aiModalTitle: {
-    flex: 1,
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#1F2937",
-    marginLeft: 12,
-  },
-  aiModalCloseButton: {
-    padding: 6,
-    borderRadius: 20,
-  },
-  aiModalBody: {
-    flexGrow: 1,
-    padding: 16,
-    maxHeight: "70%",
-  },
-  aiChatContainer: {
-    paddingBottom: 16,
-  },
-  aiMessageBubble: {
-    backgroundColor: "#F3F4F6",
-    borderRadius: 16,
-    borderTopLeftRadius: 4,
-    padding: 12,
-    marginBottom: 12,
-    maxWidth: "80%",
-    alignSelf: "flex-start",
-  },
-  aiMessageText: {
-    fontSize: 16,
-    color: "#1F2937",
-    lineHeight: 22,
-  },
-  userMessageBubble: {
-    backgroundColor: "#8B5CF6",
-    borderRadius: 16,
-    borderTopRightRadius: 4,
-    padding: 12,
-    marginBottom: 12,
-    maxWidth: "80%",
-    alignSelf: "flex-end",
-  },
-  userMessageText: {
-    fontSize: 16,
-    color: "#FFFFFF",
-    lineHeight: 22,
-  },
-  aiInputContainer: {
-    flexDirection: "row",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    alignItems: "flex-end",
-    borderTopWidth: 1,
-    borderTopColor: "#F3F4F6",
-    backgroundColor: "#FFFFFF", // Ensure the input area has a solid background
-  },
-  aiInput: {
-    flex: 1,
-    backgroundColor: "#F9FAFB",
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    paddingRight: 48,
-    fontSize: 16,
-    maxHeight: 120,
-  },
-  aiSendButton: {
-    position: "absolute",
-    right: 24,
-    bottom: 20,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#8B5CF6",
-    alignItems: "center",
-    justifyContent: "center",
-  },
   toolboxModal: {
     width: "92%",
     maxWidth: 480,

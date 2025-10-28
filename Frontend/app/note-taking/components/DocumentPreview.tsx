@@ -282,6 +282,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         enablePaging={false}
         scale={1.0}
         spacing={0}
+        fitPolicy={2}
         trustAllCerts={false}
         onLoadComplete={() => {
           /* no-op */
