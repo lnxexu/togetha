@@ -21,6 +21,7 @@ import {
   TouchableWithoutFeedback,
   RefreshControl,
   ActivityIndicator,
+  Share,
 } from "react-native";
 import {
   MaterialIcons,
@@ -51,6 +52,9 @@ import { getLocalPDFPath, isRemoteURL } from "./utils/pdfUtils";
 import { parseServerDate, formatShortLocalDate } from "./utils/localDate";
 import offlineNotesService from "./services/offlineNotesService";
 import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import ViewShot from "react-native-view-shot";
+import { drawingAPI } from "./services/drawingAPI";
 
 const { width } = Dimensions.get("window");
 
@@ -222,7 +226,6 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
   >(null);
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
   const [editingFolderName, setEditingFolderName] = useState("");
-  const [editingFolderColor, setEditingFolderColor] = useState("#667EEA");
   const [showEditFolderModal, setShowEditFolderModal] = useState(false);
   const [lastFolderFetch, setLastFolderFetch] = useState<number>(0);
   const [lastNoteFetch, setLastNoteFetch] = useState<number>(0);
@@ -497,7 +500,9 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
   };
 
   useEffect(() => {
-    fetchNotes(false);
+    // Force refresh when the selected folder changes so we always show current folder contents.
+    // We pass `true` to bypass the short throttle that prevents very-frequent background refreshes.
+    fetchNotes(true);
   }, [selectedFilterFolder]);
 
   // Handle folder navigation from home screen
@@ -507,6 +512,19 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
       setSelectedFilterFolder(folderId);
     }
   }, [folderId]);
+
+  // If navigation requested to open the add options (from Home "New Note"), show the menu
+  useEffect(() => {
+    try {
+      const openAdd = (route && (route.params as any)?.openAddOptions) || false;
+      if (openAdd) {
+        // Small delay to ensure the screen UI is mounted before opening the menu
+        setTimeout(() => setShowAddOptionsMenu(true), 220);
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, [route?.params]);
 
   useFocusEffect(
     useCallback(() => {
@@ -687,30 +705,22 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
           const createdAt = toDate(n.createdAt) || toDate(n.created_at) || new Date(0);
           const updatedAt = toDate(n.updatedAt) || toDate(n.updated_at) || toDate(n.lastModified) || createdAt;
           const lastAccessedAt = toDate(n.lastAccessedAt) || toDate(n.last_accessed);
-          // Preserve document URL from server responses if present
-          const serverDocumentUrl = (n.document_url || n.documentURL || n.document || null);
-          const serverDocumentFile = (n.document_file || n.documentFile || null);
-          // Compute type: if there's a document URL/file, treat as a document even if n.type is missing
-          const computedType = (n.type && typeof n.type === 'string')
-            ? n.type
-            : ((serverDocumentUrl || serverDocumentFile) ? 'document' : 'text');
           return {
             id: n.id?.toString?.() ?? String(n.id),
             title: n.title || "",
-            content: computedType === 'document' ? "" : (n.content || ""),  // Clear content for document notes
+            content: n.content || "",
             formatted_content: n.formatted_content || "",
             folder: n.folder || n.folder_name || null,
             folderId: n.folderId || (n.folder ? n.folder.toString() : null),
             createdAt,
             updatedAt,
             lastAccessedAt,
-            type: computedType,
+            type: n.type || "text",
             is_archived: n.is_archived || false,
             tags: n.tags || [],
             template: n.template || null,
             drawing_data: n.drawing_data || null,
-            document_file: serverDocumentFile,
-            document_url: serverDocumentUrl,
+            document_file: n.document_file || null,
             document_annotations: n.document_annotations || null,
           };
         });
@@ -939,6 +949,150 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
     },
     [notes, navigation, setIsLoading, setActiveNoteOptions, fetchNotes]
   );
+
+  // Share handler
+  const stripHtml = (html?: string) => {
+    if (!html) return '';
+    try {
+      return html
+        .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, '')
+        .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/(p|div|h1|h2|h3|h4|h5|h6)>/gi, '\n')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&');
+    } catch {}
+    return html;
+  };
+
+  const shareTextNote = async (note: Note) => {
+    const title = note.title || 'Note';
+    const raw = note.formatted_content && note.formatted_content.trim()
+      ? note.formatted_content
+      : (note.content || '');
+    const message = `${title}\n\n${stripHtml(raw)}`.trim();
+    try {
+      await Share.share({ message, title });
+    } catch (e) {
+      showErrorToast('Failed to share note');
+      console.error('Share text note failed:', e);
+    }
+  };
+
+  const ensureLocalFile = async (uri: string, fileNameFallback = 'document') => {
+    // If already local file
+    if (uri.startsWith('file://')) return uri;
+    try {
+      const lower = uri.toLowerCase();
+      // For PDFs, prefer existing helper
+      if (lower.endsWith('.pdf') && isRemoteURL(uri)) {
+        try {
+          const local = await getLocalPDFPath(uri);
+          return local;
+        } catch (e) {
+          console.warn('getLocalPDFPath failed, falling back to downloadAsync:', e);
+        }
+      }
+      // Generic download
+      const fileName = uri.split('/').pop() || fileNameFallback;
+      const dest = `${FileSystem.cacheDirectory}${Date.now()}_${fileName}`;
+      const res = await FileSystem.downloadAsync(uri, dest);
+      return res.uri;
+    } catch (e) {
+      console.error('ensureLocalFile failed:', e);
+      return uri; // fallback
+    }
+  };
+
+  const shareDocumentNote = async (note: Note) => {
+    try {
+      const src = note.document_url || note.document_file;
+      if (!src) {
+        await Share.share({
+          message: `${note.title || 'Document'}\n${note.content || ''}`.trim(),
+          title: note.title || 'Document',
+        });
+        return;
+      }
+      let localUri = await ensureLocalFile(src, note.title || 'document');
+
+      // If this is a PDF and we have annotations, embed them before sharing
+      const isPdf = localUri.toLowerCase().endsWith('.pdf');
+      const annotations = Array.isArray((note as any).document_annotations)
+        ? (note as any).document_annotations
+        : [];
+
+      if (isPdf && annotations.length > 0) {
+        try {
+          const outputName = `shared_${(note.title || 'annotated').replace(/[^a-z0-9_\-\.]+/gi, '_')}.pdf`;
+          const result = await drawingAPI.savePDFAnnotations(localUri, annotations, {
+            saveDirectly: false,
+            createBackup: false,
+            outputFileName: outputName,
+          });
+          if (result?.savedPath) {
+            localUri = result.savedPath;
+          }
+        } catch (embedErr) {
+          console.warn('Failed to embed annotations for sharing, falling back to original PDF:', embedErr);
+          // Fall back to sharing original PDF
+        }
+      }
+
+      if (await Sharing.isAvailableAsync()) {
+        const mime = (localUri.toLowerCase().endsWith('.pdf') ? 'application/pdf' : undefined);
+        await Sharing.shareAsync(localUri, {
+          mimeType: mime,
+          dialogTitle: `Share ${note.title || 'Document'}`,
+        });
+      } else {
+        // Fallback to RN Share with URL (may not attach file)
+        await Share.share({ url: localUri, title: note.title || 'Document' });
+      }
+    } catch (e) {
+      showErrorToast('Failed to share document');
+      console.error('Share document failed:', e);
+    }
+  };
+
+  const shareDrawingNote = async (note: Note) => {
+    try {
+      setIsSharing(true);
+      setShareTargetNote(note);
+      // Wait one frame so ViewShot mounts
+      await new Promise((r) => setTimeout(r, 60));
+      if (shareCaptureRef.current?.capture) {
+        const uri: string = await shareCaptureRef.current.capture();
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(uri, {
+            mimeType: 'image/png',
+            dialogTitle: `Share ${note.title || 'Drawing'}`,
+          });
+        } else {
+          await Share.share({ url: uri, title: note.title || 'Drawing' });
+        }
+      } else {
+        // Fallback to sharing JSON strokes
+        const data = typeof note.drawing_data === 'string' ? note.drawing_data : JSON.stringify(note.drawing_data || []);
+        await Share.share({ message: data, title: note.title || 'Drawing' });
+      }
+    } catch (e) {
+      showErrorToast('Failed to share drawing');
+      console.error('Share drawing failed:', e);
+    } finally {
+      setIsSharing(false);
+      setShareTargetNote(null);
+    }
+  };
+
+  const handleShareNote = async (note: Note) => {
+    const isDrawing = isDrawingNote(note);
+    const isDocument = note.type === 'document' || !!note.document_file || !!note.document_url;
+    if (isDocument) return shareDocumentNote(note);
+    if (isDrawing) return shareDrawingNote(note);
+    return shareTextNote(note);
+  };
 
   const handleDeleteNote = useCallback(
     (noteId: string) => {
@@ -1345,7 +1499,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
 
           const formData = new FormData();
           formData.append("title", documentInfo.name);
-          formData.append("content", "");  // Don't set content for document notes
+          formData.append("content", `Imported document: ${documentInfo.name}`);
           formData.append("type", "document");
 
           formData.append("document", {
@@ -1387,9 +1541,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
 
             if (documentType === "pdf" && isRemoteURL(documentUrl)) {
               try {
-                const token = await AsyncStorage.getItem("authToken");
-                const authHeaders: HeadersInit | undefined = token ? { Authorization: `Token ${token}` } : undefined;
-                finalDocumentUri = await getLocalPDFPath(documentUrl, undefined, authHeaders);
+                finalDocumentUri = await getLocalPDFPath(documentUrl);
               } catch (error) {
                 console.warn("Failed to download PDF, using remote URL", error);
                 finalDocumentUri = documentUrl;
@@ -1470,7 +1622,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
         console.log('💾 Creating offline note with document data...');
         const noteData = {
           title: documentInfo.name,
-          content: "",  // Don't set content for document notes
+          content: `Imported document: ${documentInfo.name}`,
           type: "document" as const,
           document_file: localUri, // Store local file URI
           document_url: localUri, // Store local file URI
@@ -1736,42 +1888,6 @@ const updateFolderName = async (folderId: string, newName: string) => {
     Alert.alert("Error", "Failed to update folder name. Please try again.");
   }
 };
-
-// Add new updateFolder function that can update both name and color
-const updateFolder = async (folderId: string, updates: { name?: string; color?: string }) => {
-  // Check for duplicate folder name if name is being updated
-  if (updates.name) {
-    const normalizedNewName = updates.name.trim().toLowerCase();
-    const isDuplicate = folders.some(
-      (folder) =>
-        folder.id !== folderId &&
-        folder.name.trim().toLowerCase() === normalizedNewName
-    );
-
-    if (isDuplicate) {
-      showErrorToast("A folder with this name already exists");
-      return;
-    }
-  }
-
-  try {
-    // Use offline service to update folder (works both online and offline)
-    await offlineNotesService.updateFolder(folderId, updates);
-
-    // Update folder in state
-    setFolders(
-      folders.map((folder) =>
-        folder.id === folderId ? { ...folder, ...updates } : folder
-      )
-    );
-
-    showSuccessToast("Folder updated successfully");
-  } catch (error) {
-    console.error("Error updating folder:", error);
-    showErrorToast("Failed to update folder");
-    Alert.alert("Error", "Failed to update folder. Please try again.");
-  }
-};
 const handleCreateFolder = async () => {
   if (newFolderName.trim() === "") {
     Alert.alert("Error", "Please enter a folder name");
@@ -1978,7 +2094,6 @@ const handleCreateFolder = async () => {
     if (folder) {
       setEditingFolderId(folderId);
       setEditingFolderName(folder.name);
-      setEditingFolderColor(Array.isArray(folder.color) ? folder.color[0] : folder.color);
       setShowEditFolderModal(true);
       setShowFolderOptionsModal(false);
     }
@@ -2073,7 +2188,11 @@ const handleCreateFolder = async () => {
     }
 
     // Then apply route-based folder filtering (from home screen navigation)
-    if (folderId) {
+    // Only apply the route folder filter when the user has NOT selected
+    // a folder via the UI. If selectedFilterFolder is set (including
+    // "unorganized"), we should ignore route.folderId because the UI
+    // selection takes precedence.
+    if (!selectedFilterFolder && folderId) {
       folderFilteredNotes = folderFilteredNotes.filter(
         (note) => note.folderId === folderId
       );
@@ -2165,10 +2284,10 @@ const handleCreateFolder = async () => {
       // Use the enhanced drawing detection
       const isDrawing = isDrawingNote(item);
 
-      // Document detection - prioritize type over URL/file presence
-      const isDocument = item.type === "document" ||
-        (!!item.document_file && item.document_file.trim() !== "") ||
-        (!!(item as any).document_url && String((item as any).document_url).trim() !== "");
+      // Document detection
+      const isDocument =
+        item.type === "document" ||
+        (item.document_file && item.document_file.trim() !== "");
 
       // Enhanced stroke count calculation
       const getStrokeCount = () => {
@@ -2233,7 +2352,6 @@ const handleCreateFolder = async () => {
 
                 {strokeCount > 0 ? (
                   <TemplatePreview
-                    key={`${item.id}-${item.updatedAt?.getTime?.() || 0}`}
                     note={item}
                     width={windowWidth / 2 - 64}
                     height={120}
@@ -2253,13 +2371,12 @@ const handleCreateFolder = async () => {
           );
         } else if (isDocument) {
           // Document preview with enhanced PDF first-page + overlays (if PDF)
-          const docUrl = (item as any).document_url || item.document_file || '';
-          const isPdf = (item.title?.toLowerCase().includes('.pdf') || docUrl?.toLowerCase?.().includes('.pdf')) ?? false;
+          const isPdf = (item.title?.toLowerCase().includes('.pdf') || item.document_file?.toLowerCase().includes('.pdf')) ?? false;
+          const docUrl = item.document_url || item.document_file || '';
           return (
             <View style={styles.previewImageContainer}>
               {isPdf ? (
                 <DocumentPreview
-                  key={`${item.id}-${item.updatedAt?.getTime?.() || 0}`}
                   documentUrl={docUrl}
                   annotations={Array.isArray(item.document_annotations) ? item.document_annotations as any : []}
                   width={windowWidth / 2 - 64}
@@ -2267,7 +2384,6 @@ const handleCreateFolder = async () => {
                 />
               ) : (
                 <TemplatePreview
-                  key={`${item.id}-${item.updatedAt?.getTime?.() || 0}`}
                   note={item}
                   width={windowWidth / 2 - 64}
                   height={120}
@@ -2291,9 +2407,7 @@ const handleCreateFolder = async () => {
                   // For PDF files, download to local storage if it's a remote URL
                   if (docType === 'pdf' && isRemoteURL(documentUrl)) {
                     try {
-                      const token = await AsyncStorage.getItem("authToken");
-                      const authHeaders: HeadersInit | undefined = token ? { Authorization: `Token ${token}` } : undefined;
-                      finalDocumentUri = await getLocalPDFPath(documentUrl, undefined, authHeaders);
+                      finalDocumentUri = await getLocalPDFPath(documentUrl);
                     } catch (error) {
                       console.error('Failed to download PDF to local storage:', error);
                       // Fall back to original URL - PDFAnnotationViewer will handle the error
@@ -2354,7 +2468,6 @@ const handleCreateFolder = async () => {
           // Enhanced text note preview
           return (
             <TemplatePreview
-              key={`${item.id}-${item.updatedAt?.getTime?.() || 0}`}
               note={item}
               width={windowWidth / 2 - 64}
               height={120}
@@ -2614,10 +2727,7 @@ const handleCreateFolder = async () => {
                     onPress={() => {
                       setActiveNoteOptions(null);
                       setDropdownPosition(null);
-                      Alert.alert(
-                        "Share Note",
-                        "Sharing functionality will be available in a future update."
-                      );
+                      handleShareNote(item);
                     }}
                   >
                     <View style={styles.noteOptionItem}>
@@ -3151,7 +3261,7 @@ const handleCreateFolder = async () => {
           <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
             <View style={styles.modalContent}>
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Edit Folder</Text>
+                <Text style={styles.modalTitle}>Edit Folder Name</Text>
                 <TouchableOpacity
                   onPress={() => setShowEditFolderModal(false)}
                   style={styles.modalCloseButton}
@@ -3160,51 +3270,17 @@ const handleCreateFolder = async () => {
                 </TouchableOpacity>
               </View>
 
-              <ScrollView
-                style={styles.modalBody}
-                showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-              >
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Folder Name</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    value={editingFolderName}
-                    onChangeText={setEditingFolderName}
-                    placeholder="Enter folder name"
-                    placeholderTextColor="#9CA3AF"
-                    autoFocus={true}
-                    maxLength={20}
-                  />
-                </View>
-
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Choose Color</Text>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    style={styles.colorSelector}
-                    keyboardShouldPersistTaps="always"
-                  >
-                    {FOLDER_COLORS.map((color) => (
-                      <TouchableOpacity
-                        key={color}
-                        style={[
-                          styles.colorOption,
-                          { backgroundColor: color },
-                          editingFolderColor === color &&
-                            styles.selectedColorOption,
-                        ]}
-                        onPress={() => setEditingFolderColor(color)}
-                      >
-                        {editingFolderColor === color && (
-                          <MaterialIcons name="check" size={20} color="#FFFFFF" />
-                        )}
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-              </ScrollView>
+              <View style={styles.modalBody}>
+                <TextInput
+                  style={styles.textInput}
+                  value={editingFolderName}
+                  onChangeText={setEditingFolderName}
+                  placeholder="Enter folder name"
+                  placeholderTextColor="#9CA3AF"
+                  autoFocus={true}
+                  maxLength={20}
+                />
+              </View>
 
               <View style={styles.modalFooter}>
                 <TouchableOpacity
@@ -3217,10 +3293,10 @@ const handleCreateFolder = async () => {
                   style={styles.createButton}
                   onPress={() => {
                     if (editingFolderName.trim() !== "" && editingFolderId) {
-                      updateFolder(editingFolderId, {
-                        name: editingFolderName.trim(),
-                        color: editingFolderColor,
-                      });
+                      updateFolderName(
+                        editingFolderId,
+                        editingFolderName.trim()
+                      );
                       setShowEditFolderModal(false);
                     }
                   }}
@@ -3623,36 +3699,11 @@ const handleCreateFolder = async () => {
                 style={styles.moreVertMenuItem}
                 onPress={() => {
                   setShowMoreVertMenu(false);
-                  // Clear all filters
-                  setSelectedFilterFolder(null);
-                  setSearchQuery("");
-                  setSelectedFilter("all");
-                }}
-              >
-                <MaterialIcons name="clear-all" size={20} color="#EF4444" />
-                <Text style={styles.moreVertMenuText}>Clear All Filters</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.moreVertMenuItem}
-                onPress={() => {
-                  setShowMoreVertMenu(false);
                   onRefresh();
                 }}
               >
                 <MaterialIcons name="refresh" size={20} color="#3B82F6" />
                 <Text style={styles.moreVertMenuText}>Refresh Notes</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.moreVertMenuItem, styles.moreVertMenuItemLast]}
-                onPress={() => {
-                  setShowMoreVertMenu(false);
-                  setShowStatsModal(true);
-                }}
-              >
-                <MaterialIcons name="analytics" size={20} color="#64748B" />
-                <Text style={styles.moreVertMenuText}>View Statistics</Text>
               </TouchableOpacity>
             </View>
           </TouchableOpacity>
@@ -3761,6 +3812,9 @@ const handleCreateFolder = async () => {
             onClose={() => {
               setShowDocumentViewer(false);
               setCurrentDocument(null);
+              // Refresh notes/folders after possible changes
+              fetchNotes(true);
+              fetchFolders();
             }}
           />
         </Modal>
@@ -3782,9 +3836,24 @@ const handleCreateFolder = async () => {
             onClose={() => {
               setShowPDFViewer(false);
               setCurrentDocument(null);
+              // Refresh notes/folders after possible changes
+              fetchNotes(true);
+              fetchFolders();
             }}
           />
         </Modal>
+      )}
+
+      {/* Hidden renderer for drawing share capture */}
+      {!!shareTargetNote && isDrawingNote(shareTargetNote) && (
+        <View style={{ position: 'absolute', left: -9999, top: -9999 }} pointerEvents="none">
+          <ViewShot ref={shareCaptureRef} options={{ format: 'png', quality: 1 }}>
+            <View style={{ backgroundColor: '#FFFFFF', padding: 12 }}>
+              <TemplatePreview note={shareTargetNote} width={1024} height={768} />
+              <Text style={{ position: 'absolute', left: -9999 }}>export</Text>
+            </View>
+          </ViewShot>
+        </View>
       )}
 
       {/* Statistics Modal */}
@@ -4666,6 +4735,7 @@ const styles = StyleSheet.create({
   },
   inputGroup: {
     marginBottom: 28,
+    paddingHorizontal: 24,
   },
   singleRowTitleContainer: {
     flexDirection: "row",
@@ -5990,3 +6060,4 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
 });
+

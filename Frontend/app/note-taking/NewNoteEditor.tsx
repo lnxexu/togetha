@@ -897,26 +897,34 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   };
 
   const askRinaForHelp = async (text: string) => {
-  try {
-    setIsLoadingMeaning(true);
-    setSelectedWord(text);
-    setShowWordMeaningModal(true);
+    try {
+      setIsLoadingMeaning(true);
+      // Enforce single-word lookup on the client side
+      const match = text.match(/[A-Za-z0-9]+(?:'[A-Za-z0-9]+)?/);
+      const firstWord = match ? match[0] : '';
+      if (!firstWord) {
+        showWarningToast('Please select a single word.');
+        setIsLoadingMeaning(false);
+        return;
+      }
+      setSelectedWord(firstWord);
+      setShowWordMeaningModal(true);
 
-    // Call your dictionary service (already set up in dictionaryService.ts)
-    const response = await dictionaryService.getConcept(text);
+      // Call dictionary service with the single word
+      const response = await dictionaryService.getConcept(firstWord);
 
-    if (response) {
-      setWordData(response);
-    } else {
+      if (response) {
+        setWordData(response);
+      } else {
+        setWordData(null);
+      }
+    } catch (error) {
+      console.error("Error asking RINA for help:", error);
       setWordData(null);
+    } finally {
+      setIsLoadingMeaning(false);
     }
-  } catch (error) {
-    console.error("Error asking RINA for help:", error);
-    setWordData(null);
-  } finally {
-    setIsLoadingMeaning(false);
-  }
-};
+  };
 
 
   const getSyncStatusIcon = () => {
@@ -1812,10 +1820,22 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
         ) : wordData ? (
           <ScrollView style={styles.wordMeaningScrollView}>
             <Text style={styles.sectionTitle}>Meaning:</Text>
-            <Text style={styles.wordMeaningText}>{wordData.Meaning}</Text>
+            <Text style={styles.wordMeaningText}>
+              {Array.isArray(wordData.Meaning) && wordData.Meaning.length
+                ? wordData.Meaning.join("; ")
+                : typeof wordData.Meaning === 'string' && wordData.Meaning.trim()
+                ? wordData.Meaning
+                : '—'}
+            </Text>
 
             <Text style={styles.sectionTitle}>Part of Speech:</Text>
-            <Text style={styles.wordMeaningText}>{wordData.PartOfSpeech}</Text>
+            <Text style={styles.wordMeaningText}>
+              {Array.isArray(wordData.PartOfSpeech) && wordData.PartOfSpeech.length
+                ? wordData.PartOfSpeech.join(", ")
+                : typeof wordData.PartOfSpeech === 'string' && wordData.PartOfSpeech.trim()
+                ? wordData.PartOfSpeech
+                : '—'}
+            </Text>
 
             <Text style={styles.sectionTitle}>Synonyms:</Text>
             <Text style={styles.wordMeaningText}>
@@ -1846,8 +1866,8 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     onPress={() => {
       if (wordData) {
         const copyText = `
-          ${selectedWord} (${wordData.PartOfSpeech})
-          Meaning: ${wordData.Meaning}
+          ${selectedWord} (${Array.isArray(wordData.PartOfSpeech) ? wordData.PartOfSpeech.join(', ') : (wordData.PartOfSpeech || '')})
+          Meaning: ${Array.isArray(wordData.Meaning) ? wordData.Meaning.join('; ') : (wordData.Meaning || '')}
           Synonyms: ${wordData.Synonyms?.length ? wordData.Synonyms.join(", ") : "None"}
           Antonyms: ${wordData.Antonyms?.length ? wordData.Antonyms.join(", ") : "None"}
           Examples: ${wordData.Examples?.join(" | ")}
@@ -1870,8 +1890,8 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     onPress={() => {
       if (wordData) {
         const meaningText = `
-          <p><strong>${selectedWord}</strong> (${wordData.PartOfSpeech})</p>
-          <p><em>Meaning:</em> ${wordData.Meaning}</p>
+          <p><strong>${selectedWord}</strong> (${Array.isArray(wordData.PartOfSpeech) ? wordData.PartOfSpeech.join(', ') : (wordData.PartOfSpeech || '')})</p>
+          <p><em>Meaning:</em> ${Array.isArray(wordData.Meaning) ? wordData.Meaning.join('; ') : (wordData.Meaning || '')}</p>
           <p><em>Synonyms:</em> ${wordData.Synonyms?.length ? wordData.Synonyms.join(", ") : "None"}</p>
           <p><em>Antonyms:</em> ${wordData.Antonyms?.length ? wordData.Antonyms.join(", ") : "None"}</p>
           <p><em>Examples:</em></p>

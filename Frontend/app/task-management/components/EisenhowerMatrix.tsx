@@ -360,9 +360,15 @@ const EisenhowerMatrix: React.FC<EisenhowerMatrixProps> = ({
             </View>
           </TouchableOpacity>
 
-          {/* Category Dropdown Options */}
+          {/* Category Dropdown Options - use ScrollView so long lists can be scrolled */}
           {showCategoryDropdown && (
-            <View style={styles.categoryFilterOptions}>
+            <ScrollView
+              style={styles.categoryFilterOptions}
+              nestedScrollEnabled={true}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={true}
+              contentContainerStyle={{ paddingVertical: 4 }}
+            >
               <TouchableOpacity
                 style={[
                   styles.categoryFilterOption,
@@ -383,7 +389,7 @@ const EisenhowerMatrix: React.FC<EisenhowerMatrixProps> = ({
                   <MaterialIcons name="check" size={16} color="#8B5CF6" />
                 )}
               </TouchableOpacity>
-              
+
               {categories.map((category) => (
                 <TouchableOpacity
                   key={category.id}
@@ -415,7 +421,7 @@ const EisenhowerMatrix: React.FC<EisenhowerMatrixProps> = ({
                   )}
                 </TouchableOpacity>
               ))}
-            </View>
+            </ScrollView>
           )}
         </View>
       </View>

@@ -6,6 +6,7 @@ from .views.chat import ChatView
 from .views.files import FileUploadView
 from .views.ocr import OCRView
 from .views.RAG_view import ChatRAGView
+from .views.dictionary_views import ConceptHelpView
 
 router = DefaultRouter()
 router.register(r"conversations", ConversationViewSet, basename="conversation")
@@ -16,6 +17,8 @@ urlpatterns = [
     path("upload_pdf/", FileUploadView.as_view(), name="chatbot_upload_pdf"),
     path("ocr/", OCRView.as_view(), name="chatbot_ocr"),
     path("chat/rag/", ChatRAGView.as_view(), name="chatbot_rag"),
+    # Dictionary endpoints
+    path("dictionary/concept/", ConceptHelpView.as_view(), name="chatbot_dictionary_concept"),
     path("messages/actions/", message_actions, name="chatbot_message_actions"),
     path("conversations/<uuid:conversation_id>/messages/", get_messages, name="chatbot_conversation_messages"),
 ] + router.urls

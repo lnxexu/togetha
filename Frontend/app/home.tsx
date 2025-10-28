@@ -1,3 +1,5 @@
+
+
 import { MaterialIcons } from "@expo/vector-icons";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -97,7 +99,6 @@ export default function Home() {
   const weekDates = getCurrentWeek();
   const [username, setUsername] = useState("User");
   const [profilePicture, setProfilePicture] = useState<string | null>(null);
-  const [authToken, setAuthToken] = useState<string>("");
   // State for data - combine stats and actions
   const [quickCards] = useState([...initialQuickStats, ...initialQuickActions]);
   const [priorityTasks, setPriorityTasks] = useState<any[]>([]);
@@ -147,15 +148,6 @@ export default function Home() {
 
   // Entry animation effect
   useEffect(() => {
-    // Load auth token first
-    const loadAuthToken = async () => {
-      const token = await AsyncStorage.getItem("authToken");
-      if (token) {
-        setAuthToken(token);
-      }
-    };
-    loadAuthToken();
-
     // Check if we're coming from login for special animation
     const fromLogin = WelcomeAnimationUtils.isFromLogin();
 
@@ -292,11 +284,7 @@ export default function Home() {
           
           const cachedProfilePic = await AsyncStorage.getItem("userProfilePicture");
           if (cachedProfilePic) {
-            // Check if it's a full URL or just a path
-            const profilePicUrl = cachedProfilePic.startsWith('http') 
-              ? cachedProfilePic 
-              : `${API_URL}${cachedProfilePic}`;
-            setProfilePicture(profilePicUrl);
+            setProfilePicture(`${API_URL}${cachedProfilePic}`);
           }
         }
 
@@ -305,7 +293,15 @@ export default function Home() {
           return;
         }
 
+        // Using Promise.race to use whichever endpoint responds first
         const endpoints = [
+          fetch(`${API_URL}/auth/user/`, {
+            method: "GET",
+            headers: {
+              Authorization: `Token ${token}`,
+              "Cache-Control": "no-cache",
+            },
+          }),
           fetch(`${API_URL}${API_ENDPOINTS.USER_PROFILE}`, {
             method: "GET",
             headers: {
@@ -315,6 +311,7 @@ export default function Home() {
           }),
         ];
 
+        // Wait for the fastest response
         const fastestResponse = await Promise.race(endpoints);
 
         if (fastestResponse.ok) {
@@ -330,19 +327,15 @@ export default function Home() {
                 await AsyncStorage.setItem("username", extractedUsername);
               }
 
-              // Try to extract profile picture URL
-              const profilePicUrl =
-                userData.profile?.profile_picture_url ||
-                userData.profile_picture_url ||
-                userData.user?.profile?.profile_picture_url;
+              // Try to extract profile picture path
+              const profilePicPath =
+                userData.profile?.profile_picture ||
+                userData.profile_picture ||
+                userData.user?.profile?.profile_picture;
 
-              if (profilePicUrl) {
-                // Store and use the full URL
-                const fullUrl = profilePicUrl.startsWith('http') 
-                  ? profilePicUrl 
-                  : `${API_URL}${profilePicUrl}`;
-                setProfilePicture(fullUrl);
-                await AsyncStorage.setItem("userProfilePicture", profilePicUrl);
+              if (profilePicPath) {
+                setProfilePicture(`${API_URL}${profilePicPath}`);
+                await AsyncStorage.setItem("userProfilePicture", profilePicPath);
               }
             }
           }
@@ -366,16 +359,13 @@ export default function Home() {
                     await AsyncStorage.setItem("username", extractedUsername);
                   }
 
-                  const profilePicUrl =
-                    userData.profile?.profile_picture_url ||
-                    userData.profile_picture_url ||
-                    userData.user?.profile?.profile_picture_url;
-                  if (profilePicUrl) {
-                    const fullUrl = profilePicUrl.startsWith('http') 
-                      ? profilePicUrl 
-                      : `${API_URL}${profilePicUrl}`;
-                    setProfilePicture(fullUrl);
-                    await AsyncStorage.setItem("userProfilePicture", profilePicUrl);
+                  const profilePicPath =
+                    userData.profile?.profile_picture ||
+                    userData.profile_picture ||
+                    userData.user?.profile?.profile_picture;
+                  if (profilePicPath) {
+                    setProfilePicture(`${API_URL}${profilePicPath}`);
+                    await AsyncStorage.setItem("userProfilePicture", profilePicPath);
                   }
                 }
               }
@@ -633,7 +623,8 @@ export default function Home() {
           navigation.navigate("TaskDetails", { taskId });
           break;
         case "edit":
-          navigation.navigate("editTaskId", { editTaskId: taskId });
+          // Open TaskDetails for the selected task instead of navigating to an edit route
+          navigation.navigate("TaskDetails", { taskId });
           break;
         case "complete":
           await taskService.markTaskComplete(taskId);
@@ -885,18 +876,9 @@ export default function Home() {
               >
                 {profilePicture ? (
                   <Image
-                    source={{ 
-                      uri: profilePicture,
-                      headers: authToken ? {
-                        'Authorization': `Token ${authToken}`
-                      } : undefined
-                    }}
+                    source={{ uri: profilePicture }}
                     style={styles.profileImage}
                     resizeMode="cover"
-                    onError={(error) => {
-                      // Silently fall back to placeholder on error
-                      setProfilePicture(null);
-                    }}
                   />
                 ) : (
                   <View style={styles.profilePlaceholder}>
@@ -1025,7 +1007,8 @@ export default function Home() {
 
                 {/* Quick Actions */}
                 <TouchableOpacity
-                  onPress={() => navigation.navigate("Notes")}
+                  // Cast to any to allow passing a lightweight navigation hint param
+                  onPress={() => navigation.navigate("Notes" as any, { openAddOptions: true } as any)}
                   activeOpacity={0.7}
                 >
                   <View style={[styles.quickCard, styles.newNoteCard]}>
@@ -1662,6 +1645,3 @@ const styles = StyleSheet.create({
   folderCountHorizontal: { fontSize: 12, color: "#6B7280", marginTop: 4 },
   folderArrowContainer: { position: "absolute", top: 10, right: 10, width: 28, height: 28, borderRadius: 14, backgroundColor: "rgba(255,255,255,0.9)", justifyContent: "center", alignItems: "center" },
 });
-function fetchTasks() {
-  throw new Error("Function not implemented.");
-}

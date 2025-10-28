@@ -55,6 +55,7 @@ if not GEMINI_MODEL_CANDIDATES:
     GEMINI_MODEL_CANDIDATES = [
         GEMINI_MODEL,
         'gemini-2.5-flash-lite',
+        'gemini-2.5-flash',
         'gemini-2.5-flash-lite-preview',
         'gemini-2.0-flash',
         'gemini-2.0-flash-lite',
@@ -64,6 +65,7 @@ EMBEDDING_MODEL_CANDIDATES = config('EMBEDDING_MODEL_CANDIDATES', default='', ca
 if not EMBEDDING_MODEL_CANDIDATES:
     EMBEDDING_MODEL_CANDIDATES = [
         EMBEDDING_MODEL,
+        'text-embedding-004',
         'text-embedding-004',
     ]
 
@@ -179,7 +181,7 @@ else:
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
             'NAME': 'togetha',
-            'USER': 'kobe',
+            'USER': 'postgres',
             'PASSWORD': 'Kobe@1314',
             'HOST': 'localhost',
             'PORT': '5432',
