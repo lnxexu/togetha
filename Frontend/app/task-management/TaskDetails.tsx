@@ -19,6 +19,7 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { MaterialIcons } from "@expo/vector-icons";
+import DateTimePicker from '@react-native-community/datetimepicker';
 import {
   useNavigation,
   useRoute,
@@ -45,7 +46,6 @@ const TaskDetails: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [editedDate, setEditedDate] = useState<Date | undefined>(undefined);
-  const [calendarDate, setCalendarDate] = useState(new Date());
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [editedTime, setEditedTime] = useState<string>("");
 
@@ -106,11 +106,6 @@ const TaskDetails: React.FC = () => {
             ? new Date(fetchedTask.due_datetime)
             : undefined
         );
-        setCalendarDate(
-          fetchedTask.due_datetime
-            ? new Date(fetchedTask.due_datetime)
-            : new Date()
-        );
       } else {
         showErrorToast("Task not found");
         navigation.goBack();
@@ -137,6 +132,14 @@ const TaskDetails: React.FC = () => {
     const ampm = hours >= 12 ? "PM" : "AM";
     const hours12 = hours % 12 || 12;
     return `${hours12}:${formattedMinutes} ${ampm}`;
+  };
+
+  // Helper function to check if selected date is today
+  const isSelectedDateToday = () => {
+    if (!editedDate) return false;
+    const today = new Date();
+    const selected = new Date(editedDate);
+    return selected.toDateString() === today.toDateString();
   };
 
   const handleSave = async () => {
@@ -182,21 +185,44 @@ const TaskDetails: React.FC = () => {
     }
   };
 
-  const handleDateChange = (newDate: Date) => {
-    let merged = newDate;
-    if (editedTime) {
-      merged = mergeDateAndTime(newDate, editedTime);
-    }
-    setEditedDate(merged);
+  const handleDateChange = (event: any, selectedDate?: Date) => {
     setShowDatePicker(false);
+    if (selectedDate) {
+      setEditedDate(selectedDate);
+    }
   };
 
-  const handleTimeChange = (newTime: string) => {
-    setEditedTime(newTime);
-    if (editedDate) {
-      setEditedDate(mergeDateAndTime(editedDate, newTime));
-    }
+  const handleTimeChange = (event: any, selectedTime?: Date) => {
     setShowTimePicker(false);
+    if (selectedTime && editedDate) {
+      // Merge selected time into the selected date using local time to prevent date shifts
+      const base = new Date(editedDate);
+      const merged = new Date(
+        base.getFullYear(),
+        base.getMonth(),
+        base.getDate(),
+        selectedTime.getHours(),
+        selectedTime.getMinutes(),
+        0,
+        0
+      );
+
+      // Check if the selected date is today and the merged time is in the past
+      if (isSelectedDateToday() && merged < new Date()) {
+        showErrorToast("Cannot select a time in the past for today");
+        return;
+      }
+
+      setEditedDate(merged);
+      
+      // Update due_time for display purposes
+      const timeString = selectedTime.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      });
+      setEditedTime(timeString);
+    }
   };
 
   const handleCancel = () => {
@@ -209,10 +235,11 @@ const TaskDetails: React.FC = () => {
       setEditedDate(
         task.due_datetime ? new Date(task.due_datetime) : undefined
       );
-      setCalendarDate(
-        task.due_datetime ? new Date(task.due_datetime) : new Date()
-      );
     }
+    setShowDatePicker(false);
+    setShowTimePicker(false);
+    setShowPriorityModal(false);
+    setShowCategoryModal(false);
     setIsEditing(false);
   };
 
@@ -346,88 +373,6 @@ const TaskDetails: React.FC = () => {
 
     return `${dayNames[date.getDay()]}, ${monthNames[monthIndex]} ${dayNum}, ${year}`;
   };
-  const TimePicker = ({
-    value,
-    onChange,
-  }: {
-    value: string;
-    onChange: (val: string) => void;
-  }) => {
-    // Parse value to hour, minute, period
-    const match = value.match(/(\d+):(\d+) (AM|PM)/);
-    let hour = match ? parseInt(match[1]) : 12;
-    let minute = match ? match[2] : "00";
-    let period = match ? match[3] : "AM";
-
-    return (
-      <View
-        style={{
-          flexDirection: "row",
-          justifyContent: "space-around",
-          marginVertical: 16,
-        }}
-      >
-        {/* Hour Picker */}
-        <ScrollView style={{ height: 100 }}>
-          {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => (
-            <TouchableOpacity
-              key={h}
-              onPress={() =>
-                onChange(`${h.toString().padStart(2, "0")}:${minute} ${period}`)
-              }
-              style={{
-                padding: 8,
-                backgroundColor: hour === h ? "#f0e6ff" : undefined,
-              }}
-            >
-              <Text style={{ fontSize: 18 }}>
-                {h.toString().padStart(2, "0")}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-        {/* Minute Picker */}
-        <ScrollView style={{ height: 100 }}>
-          {Array.from({ length: 60 }, (_, i) => i).map((m) => {
-            const mStr = m.toString().padStart(2, "0");
-            return (
-              <TouchableOpacity
-                key={mStr}
-                onPress={() =>
-                  onChange(
-                    `${hour.toString().padStart(2, "0")}:${mStr} ${period}`
-                  )
-                }
-                style={{
-                  padding: 8,
-                  backgroundColor: minute === mStr ? "#f0e6ff" : undefined,
-                }}
-              >
-                <Text style={{ fontSize: 18 }}>{mStr}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-        {/* AM/PM Picker */}
-        <View>
-          {["AM", "PM"].map((p) => (
-            <TouchableOpacity
-              key={p}
-              onPress={() =>
-                onChange(`${hour.toString().padStart(2, "0")}:${minute} ${p}`)
-              }
-              style={{
-                padding: 8,
-                backgroundColor: period === p ? "#f0e6ff" : undefined,
-              }}
-            >
-              <Text style={{ fontSize: 18 }}>{p}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-    );
-  };
 
   if (!task) {
     return (
@@ -520,153 +465,13 @@ const TaskDetails: React.FC = () => {
                 />
               </TouchableOpacity>
               {showDatePicker && (
-                <Modal
-                  visible={showDatePicker}
-                  transparent={true}
-                  animationType="slide"
-                  onRequestClose={() => setShowDatePicker(false)}
-                >
-                  <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                      <View style={styles.modalHeader}>
-                        <Text style={styles.modalTitle}>Select Date</Text>
-                        <TouchableOpacity
-                          onPress={() => setShowDatePicker(false)}
-                          style={styles.modalCloseButton}
-                        >
-                          <MaterialIcons name="close" size={24} color="#666" />
-                        </TouchableOpacity>
-                      </View>
-                      {/* Calendar Picker, similar to AddTask */}
-                      <View style={styles.calendarContainer}>
-                        <View style={styles.calendarHeader}>
-                          <TouchableOpacity
-                            style={styles.monthNavButton}
-                            onPress={() => {
-                              const newDate = new Date(calendarDate);
-                              newDate.setMonth(newDate.getMonth() - 1);
-                              setCalendarDate(newDate);
-                            }}
-                          >
-                            <MaterialIcons
-                              name="chevron-left"
-                              size={20}
-                              color="#495057"
-                            />
-                          </TouchableOpacity>
-                          <Text style={styles.monthYearText}>
-                            {calendarDate.toLocaleDateString("en-US", {
-                              month: "long",
-                              year: "numeric",
-                            })}
-                          </Text>
-                          <TouchableOpacity
-                            style={styles.monthNavButton}
-                            onPress={() => {
-                              const newDate = new Date(calendarDate);
-                              newDate.setMonth(newDate.getMonth() + 1);
-                              setCalendarDate(newDate);
-                            }}
-                          >
-                            <MaterialIcons
-                              name="chevron-right"
-                              size={20}
-                              color="#495057"
-                            />
-                          </TouchableOpacity>
-                        </View>
-                        <View style={styles.calendarGrid}>
-                          {/* Day headers */}
-                          <View style={styles.dayHeadersRow}>
-                            {[
-                              "Sun",
-                              "Mon",
-                              "Tue",
-                              "Wed",
-                              "Thu",
-                              "Fri",
-                              "Sat",
-                            ].map((day) => (
-                              <Text key={day} style={styles.dayHeader}>
-                                {day}
-                              </Text>
-                            ))}
-                          </View>
-                          {/* Calendar days */}
-                          <View style={styles.daysContainer}>
-                            {Array.from({ length: 42 }, (_, index) => {
-                              const firstDay = new Date(
-                                calendarDate.getFullYear(),
-                                calendarDate.getMonth(),
-                                1
-                              );
-                              const startDate = new Date(firstDay);
-                              startDate.setDate(
-                                startDate.getDate() - firstDay.getDay()
-                              );
-                              const currentDate = new Date(startDate);
-                              currentDate.setDate(startDate.getDate() + index);
-
-                              const isCurrentMonth =
-                                currentDate.getMonth() ===
-                                calendarDate.getMonth();
-                              const isToday =
-                                currentDate.toDateString() ===
-                                new Date().toDateString();
-                              const isSelected =
-                                editedDate &&
-                                currentDate.toDateString() ===
-                                  editedDate.toDateString();
-
-                              return (
-                                <TouchableOpacity
-                                  key={index}
-                                  style={[
-                                    styles.calendarDay,
-                                    !isCurrentMonth && styles.inactiveDay,
-                                    isToday && styles.todayCalendarDay,
-                                    isSelected && styles.selectedCalendarDay,
-                                  ]}
-                                  onPress={() => {
-                                    // Use LOCAL date so the selected day matches the user's calendar
-                                    const selectedDate = new Date(
-                                      currentDate.getFullYear(),
-                                      currentDate.getMonth(),
-                                      currentDate.getDate(),
-                                      0,
-                                      0,
-                                      0,
-                                      0
-                                    );
-                                    setEditedDate(selectedDate);
-                                    setShowDatePicker(false);
-                                  }}
-                                >
-                                  <Text
-                                    style={[
-                                      styles.calendarDayText,
-                                      !isCurrentMonth && styles.inactiveDayText,
-                                      isToday && styles.todayDayText,
-                                      isSelected && styles.selectedDayText,
-                                    ]}
-                                  >
-                                    {currentDate.getDate()}
-                                  </Text>
-                                </TouchableOpacity>
-                              );
-                            })}
-                          </View>
-                        </View>
-                      </View>
-                      <TouchableOpacity
-                        style={[styles.saveButton, { marginTop: 16 }]}
-                        onPress={() => handleDateChange(calendarDate)}
-                      >
-                        <Text style={styles.saveButtonText}>Done</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                </Modal>
+                <DateTimePicker
+                  value={editedDate || new Date()}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={handleDateChange}
+                  minimumDate={new Date()}
+                />
               )}
             </>
           ) : (
@@ -702,38 +507,14 @@ const TaskDetails: React.FC = () => {
                   style={styles.cardEditIcon}
                 />
               </TouchableOpacity>
-              {showTimePicker && (
-                <Modal
-                  visible={showTimePicker}
-                  transparent={true}
-                  animationType="slide"
-                  onRequestClose={() => setShowTimePicker(false)}
-                >
-                  <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                      <View style={styles.modalHeader}>
-                        <Text style={styles.modalTitle}>Select Time</Text>
-                        <TouchableOpacity
-                          onPress={() => setShowTimePicker(false)}
-                          style={styles.modalCloseButton}
-                        >
-                          <MaterialIcons name="close" size={24} color="#666" />
-                        </TouchableOpacity>
-                      </View>
-                      {/* Simple hour/minute/AM-PM picker, similar to AddTask */}
-                      <TimePicker
-                        value={editedTime}
-                        onChange={handleTimeChange}
-                      />
-                      <TouchableOpacity
-                        style={[styles.saveButton, { marginTop: 16 }]}
-                        onPress={() => setShowTimePicker(false)}
-                      >
-                        <Text style={styles.saveButtonText}>Done</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                </Modal>
+              {showTimePicker && editedDate && (
+                <DateTimePicker
+                  value={editedDate}
+                  mode="time"
+                  display="spinner"
+                  onChange={handleTimeChange}
+                  minimumDate={isSelectedDateToday() ? new Date() : undefined}
+                />
               )}
             </>
           ) : (
@@ -829,14 +610,16 @@ const TaskDetails: React.FC = () => {
         </View>
 
       {/* Mark as Done Button - Fixed position in lower right */}
-      <TouchableOpacity
-        style={styles.markAsDoneButton}
-        onPress={handleMarkAsDone}
-      >
-        <Text style={styles.markAsDoneButtonText}>
-          {task.completed ? "Mark Pending" : "Mark as Done"}
-        </Text>
-      </TouchableOpacity>
+      {!isEditing && (
+        <TouchableOpacity
+          style={styles.markAsDoneButton}
+          onPress={handleMarkAsDone}
+        >
+          <Text style={styles.markAsDoneButtonText}>
+            {task.completed ? "Mark Pending" : "Mark as Done"}
+          </Text>
+        </TouchableOpacity>
+      )}
 
       {/* Priority Selection Modal */}
       <Modal
@@ -991,78 +774,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#6c757d",
     fontFamily: "Inter-Medium",
-  },
-  calendarContainer: {
-    padding: 16,
-  },
-  calendarHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  monthNavButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: "#f8f9fa",
-  },
-  monthYearText: {
-    fontSize: 16,
-    fontFamily: "Inter-SemiBold",
-    color: "#2c3e50",
-  },
-  calendarGrid: {
-    gap: 8,
-  },
-  dayHeadersRow: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    marginBottom: 8,
-  },
-  dayHeader: {
-    fontSize: 12,
-    color: "#6c757d",
-    fontFamily: "Inter-Medium",
-    textAlign: "center",
-    flex: 1,
-  },
-  daysContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between", // Add this for better spacing
-  },
-  calendarDay: {
-    width: "14.28%", // This is already correct for 7 columns
-    aspectRatio: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    borderRadius: 8,
-    marginBottom: 2, // Add small margin for better visual separation
-  },
-  inactiveDay: {
-    opacity: 0.3,
-  },
-  todayCalendarDay: {
-    backgroundColor: "#AD00FF",
-  },
-  selectedCalendarDay: {
-    backgroundColor: "#6A009C",
-  },
-  calendarDayText: {
-    fontSize: 14,
-    color: "#495057",
-    fontFamily: "Inter-Medium",
-  },
-  inactiveDayText: {
-    color: "#adb5bd",
-  },
-  todayDayText: {
-    color: "#fff",
-    fontFamily: "Inter-Bold",
-  },
-  selectedDayText: {
-    color: "#fff",
-    fontFamily: "Inter-Bold",
   },
   saveButton: {
     paddingHorizontal: 12,

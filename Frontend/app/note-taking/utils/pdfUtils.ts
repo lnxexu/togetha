@@ -317,9 +317,25 @@ export async function downloadPDFToLocalEnhanced(
 
     console.log('📥 Enhanced PDF download from:', remoteUrl);
     
-    // Extract filename from URL or use custom name
-    let fileName = customFileName || remoteUrl.split('/').pop() || 'downloaded.pdf';
-    
+    // Create a safe, unique filename for the downloaded PDF to avoid collisions
+    // between different remote URLs that may share the same final path segment.
+    const hashUri = (s: string) => {
+      // Simple DJB2 hash -> hex string
+      let h = 5381;
+      for (let i = 0; i < s.length; i++) {
+        h = (h * 33) ^ s.charCodeAt(i);
+      }
+      // Convert to unsigned and hex
+      return (h >>> 0).toString(16);
+    };
+
+    const urlLastSegment = remoteUrl.split('/').pop() || 'downloaded.pdf';
+    // Prefer explicit customFileName when provided, otherwise use a hashed prefix
+    // plus the original last path segment so names are still recognizable.
+    let fileName = customFileName
+      ? customFileName
+      : `${hashUri(remoteUrl)}_${urlLastSegment}`;
+
     // Ensure .pdf extension
     if (!fileName.toLowerCase().endsWith('.pdf')) {
       fileName += '.pdf';
@@ -888,7 +904,7 @@ async function embedAnnotationsInMemory(
     const missingPages = maxAnnotationPage - pages.length;
     console.log(`🔧 Need ${missingPages} more pages to accommodate annotations`);
     console.log(`❌ This indicates annotations are being stored with incorrect page numbers`);
-    console.log(`� Check the PDF viewer coordinate conversion and page calculation logic`);
+    console.log(`  Check the PDF viewer coordinate conversion and page calculation logic`);
   }
   
   for (const [pageNum, pageAnnotations] of Object.entries(annotationsByPage)) {

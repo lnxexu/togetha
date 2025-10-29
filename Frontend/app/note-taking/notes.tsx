@@ -431,8 +431,9 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
 
     // Count notes for each folder (including both text and drawing notes)
     notes.forEach((note) => {
-      if (note.folderId && counts.hasOwnProperty(note.folderId)) {
-        counts[note.folderId]++;
+      const key = note.folderId != null ? String(note.folderId) : "";
+      if (key && Object.prototype.hasOwnProperty.call(counts, key)) {
+        counts[key]++;
       }
     });
 
@@ -520,6 +521,19 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
       if (openAdd) {
         // Small delay to ensure the screen UI is mounted before opening the menu
         setTimeout(() => setShowAddOptionsMenu(true), 220);
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, [route?.params]);
+
+  // If navigation requested to open the Create Folder modal (from Home empty state), open it
+  useEffect(() => {
+    try {
+      const openCreateFolder = (route && (route.params as any)?.openCreateFolder) || false;
+      if (openCreateFolder) {
+        // Small delay to ensure the screen UI is mounted before opening the modal
+        setTimeout(() => setShowCreateFolderModal(true), 220);
       }
     } catch (e) {
       // ignore
@@ -682,15 +696,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
         }
 
         // Use offline service so notes appear when offline and are cached when online
-        let data = await offlineNotesService.getAllNotes();
-
-        // Client-side filter by selected folder if provided
-        if (selectedFilterFolder) {
-          data = (data || []).filter((n: any) => {
-            const fid = n.folderId || n.folder?.toString?.();
-            return fid ? fid.toString() === selectedFilterFolder : false;
-          });
-        }
+        const data = await offlineNotesService.getAllNotes();
 
         // Normalize into local Note type where necessary
         const toDate = (val: any): Date | undefined => {
@@ -721,6 +727,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
             template: n.template || null,
             drawing_data: n.drawing_data || null,
             document_file: n.document_file || null,
+            document_url: n.document_url || n.document_file || null,
             document_annotations: n.document_annotations || null,
           };
         });
@@ -2187,9 +2194,10 @@ const handleCreateFolder = async () => {
     if (selectedFilterFolder === "unorganized") {
       folderFilteredNotes = filteredNotes.filter((note) => !note.folderId);
     } else if (selectedFilterFolder) {
-      folderFilteredNotes = filteredNotes.filter(
-        (note) => note.folderId === selectedFilterFolder
-      );
+      folderFilteredNotes = filteredNotes.filter((note) => {
+        const fid = note.folderId != null ? String(note.folderId) : "";
+        return fid === selectedFilterFolder;
+      });
     }
 
     // Then apply route-based folder filtering (from home screen navigation)
@@ -2198,9 +2206,14 @@ const handleCreateFolder = async () => {
     // "unorganized"), we should ignore route.folderId because the UI
     // selection takes precedence.
     if (!selectedFilterFolder && folderId) {
-      folderFilteredNotes = folderFilteredNotes.filter(
-        (note) => note.folderId === folderId
-      );
+      if (folderId === "unorganized") {
+        folderFilteredNotes = folderFilteredNotes.filter((note) => !note.folderId);
+      } else {
+        folderFilteredNotes = folderFilteredNotes.filter((note) => {
+          const fid = note.folderId != null ? String(note.folderId) : "";
+          return fid === folderId;
+        });
+      }
     }
 
     // Deduplicate notes by ID to prevent React key warnings
@@ -2213,6 +2226,15 @@ const handleCreateFolder = async () => {
 
     return Array.from(uniqueNotes.values());
   }, [filteredNotes, selectedFilterFolder, folderId]);
+
+  // Live-count of unorganized notes for responsive UI elements
+  const unorganizedCount = useMemo(() => {
+    try {
+      return notes.filter((n) => !n.folderId).length;
+    } catch {
+      return 0;
+    }
+  }, [notes]);
 
   // No separator component needed for grid view
 
@@ -2376,8 +2398,9 @@ const handleCreateFolder = async () => {
           );
         } else if (isDocument) {
           // Document preview with enhanced PDF first-page + overlays (if PDF)
-          const isPdf = (item.title?.toLowerCase().includes('.pdf') || item.document_file?.toLowerCase().includes('.pdf')) ?? false;
+          const isPdf = (item.type === 'document' && (item.document_file?.toLowerCase().endsWith('.pdf') || item.title?.toLowerCase().endsWith('.pdf'))) ?? false;
           const docUrl = item.document_url || item.document_file || '';
+          console.log(`Rendering DocumentPreview for note "${item.title}" (ID: ${item.id}). Is PDF: ${isPdf}. URL: ${docUrl}`);
           return (
             <View style={styles.previewImageContainer}>
               {isPdf ? (
@@ -3340,7 +3363,7 @@ const handleCreateFolder = async () => {
         <View style={styles.headerTopRow}>
           <View style={styles.headerTitleSection}>
             <Text style={styles.headerTitle}>
-              {folderName ? `${folderName} Notes` : "All Notes"}
+              {folderName ? `${folderName} Notes` : "Notes"}
             </Text>
           </View>
           <View style={styles.headerActions}>
@@ -3522,13 +3545,14 @@ const handleCreateFolder = async () => {
                       >
                         {item.name}
                       </Text>
-                      <Text style={styles.folderCount}>
-                        {
-                          notes.filter((note) => note.folderId === item.id)
-                            .length
-                        }{" "}
-                        notes
-                      </Text>
+                      {(() => {
+                        const count = folderCounts[item.id] || 0;
+                        return (
+                          <Text style={styles.folderCount}>
+                            {count} {count === 1 ? "note" : "notes"}
+                          </Text>
+                        );
+                      })()}
                     </TouchableOpacity>
                   );
                 }}
@@ -3564,7 +3588,7 @@ const handleCreateFolder = async () => {
                   Unorganized Notes
                 </Text>
                 <Text style={styles.unorganizedFolderCount}>
-                  {notes.filter((note) => !note.folderId).length} notes
+                  {unorganizedCount} {unorganizedCount === 1 ? "note" : "notes"}
                 </Text>
               </TouchableOpacity>
             </View>

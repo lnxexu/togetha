@@ -289,6 +289,11 @@ const AddTask: React.FC = () => {
             due_datetime: undefined,
             due_time: undefined,
           });
+          setDatePickerDate(new Date());
+          setShowDatePicker(false);
+          setShowTimePicker(false);
+          setShowPriorityPicker(false);
+          setShowCategoryPicker(false);
           showSuccessToast("Form reset successfully");
         },
       },
