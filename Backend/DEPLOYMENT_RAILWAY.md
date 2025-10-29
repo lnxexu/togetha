@@ -29,6 +29,8 @@ Create three services from the same repo (or use Railway Deploy Templates):
 - Worker (Celery worker)
 - Beat (Celery beat scheduler)
 
+Option A: Nixpacks (auto)
+
 Railway will detect `nixpacks.toml`. You can pick which process each service should run from the defined processes:
 
 ```toml
@@ -37,6 +39,19 @@ web = "gunicorn server.wsgi:application --workers 3 --bind 0.0.0.0:$PORT"
 worker = "celery -A server worker --loglevel=info"
 beat = "celery -A server beat --loglevel=info"
 ```
+
+Option B: Dockerfile (explicit)
+
+If you prefer a Docker-based deploy, a `Backend/Dockerfile` and `Backend/entrypoint.sh` are provided.
+
+- Build context: `Backend/`
+- Start command: leave blank (Dockerfile sets CMD)
+- Set `ROLE` per service:
+  - Web: `ROLE=web`
+  - Worker: `ROLE=worker`
+  - Beat: `ROLE=beat`
+
+The container reads `PORT` from the environment (Railway sets this automatically). Migrations and collectstatic can be toggled with `RUN_MIGRATIONS=1`, `COLLECTSTATIC=1` (defaults: migrate=1, collectstatic=0 at runtime; already collected at build).
 
 ## 4) Environment variables (all services)
 
@@ -59,6 +74,20 @@ Set these in Railway → Variables for each service (web, worker, beat):
   - EMBEDDING_MODEL (optional, defaults in settings)
 - Python version (optional, already set via runtime.txt and nixpacks.toml)
   - PYTHON_VERSION = 3.11.0
+
+### Recommended Railway variables (all services)
+
+Set these in Railway → Variables for each service (Web, Worker, Beat):
+
+- SECRET_KEY
+- DEBUG
+- ALLOWED_HOSTS
+- CSRF_TRUSTED_ORIGINS
+- CORS_ALLOWED_ORIGINS
+- DATABASE_URL (from Railway Postgres)
+- REDIS_URL (from Railway Redis)
+- GEMINI_API_KEY (optional: GEMINI_MODEL, EMBEDDING_MODEL)
+- EMAIL_HOST_USER, EMAIL_HOST_PASSWORD (if emailing)
 
 ## 5) Build & start commands
 
@@ -102,3 +131,12 @@ After deployment:
 - Debug Toolbar: Consider disabling in production or gating by IP/DEBUG flag.
 - RAG vector search: The RAG pipeline stores embeddings in Postgres using pgvector (see `chatbot/models.py -> DocumentChunk`). Ensure your Railway Postgres has the `pgvector` extension enabled; the included migrations will attempt to create it automatically.
 - Migrations: Keeping `migrate` in the build step works fine; you can also run it manually if you prefer controlled rollouts.
+
+### Troubleshooting: connection refused to 127.0.0.1:5432
+
+If you see errors like “connection to server at 127.0.0.1, port 5432 failed: Connection refused”, it means the app is trying to use a local Postgres instead of the managed Railway database.
+
+Fix:
+- In Railway, open your Postgres service → copy the Connection URL, and set it as `DATABASE_URL` on your Web/Worker/Beat services.
+- Ensure your service Root Directory is `Backend/` so this project’s `nixpacks.toml` is used.
+- Remove/ignore any local `.env` for production; Railway Variables will be used automatically at runtime.

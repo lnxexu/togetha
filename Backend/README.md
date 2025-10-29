@@ -45,6 +45,22 @@ Django REST API backend for the Togetha application.
    ```
 
 8. **Run Celery (Optional - in separate terminals)**
+### Local Postgres (pgvector) via Docker
+
+You can spin up a local Postgres with the pgvector extension (plus Redis) using Docker Compose:
+
+1. Start services
+   - Ensure Docker Desktop is running
+   - From `Backend/`: `docker compose up -d`
+2. Configure your `.env`
+   - `DATABASE_URL=postgres://Togetha:lol@localhost:5433/Togetha`
+   - `REDIS_URL=redis://localhost:6379/1`
+3. Run migrations and start the backend as usual
+
+Alternatively on Windows PowerShell, you can use the helper script:
+
+- `scripts/start_postgres_docker.ps1` (starts the same pgvector image on port 5433)
+
    ```bash
    # Worker
    celery -A server worker --loglevel=info --pool=solo

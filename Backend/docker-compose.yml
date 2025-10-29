@@ -1,0 +1,30 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: togetha-postgres
+    environment:
+      POSTGRES_DB: Togetha
+      POSTGRES_USER: Togetha
+      POSTGRES_PASSWORD: lol
+    ports:
+      - "5433:5432"  # expose on 5433 to avoid clashing with local 5432
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U Togetha -d Togetha"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7
+    container_name: togetha-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+volumes:
+  pgdata:
