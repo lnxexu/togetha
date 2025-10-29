@@ -27,24 +27,26 @@ DEBUG = os.environ.get("DEBUG", "False") == "True"
 
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1,192.168.0.153,192.168.1.187,192.168.15.50,172.16.3.152,172.23.176.1,togetha-production-2546.up.railway.app', cast=Csv())
 
-# Email sender defaults
-# Prefer environment-provided values. If DEFAULT_FROM_EMAIL is not set,
-# fall back to EMAIL_HOST_USER to keep the authenticated sender aligned.
+# Email configuration (Railway-ready)
+# Use environment variables to avoid committing credentials and to support different providers.
+# Recommended for Gmail on Railway: set EMAIL_PORT=587, EMAIL_USE_TLS=True, EMAIL_USE_SSL=False
 EMAIL_HOST_USER = config('EMAIL_HOST_USER', default=None)
 EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default=None)
 DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default=None) or EMAIL_HOST_USER
 
 EMAIL_BACKEND = 'server.email_backend.FallbackSMTPBackend'
 
-# Primary SMTP configuration (these will be overridden by the fallback backend as needed)
-EMAIL_HOST = 'smtp.gmail.com'
-EMAIL_PORT = 465
-EMAIL_USE_SSL = True
-EMAIL_USE_TLS = False
+# Primary SMTP configuration (overridable via env variables)
+# The FallbackSMTPBackend will try multiple ports, but these defaults are used for credentials
+# and as the initial attempt. Override on Railway using variables.
+EMAIL_HOST = config('EMAIL_HOST', default='smtp.gmail.com')
+EMAIL_PORT = config('EMAIL_PORT', default=465, cast=int)
+EMAIL_USE_SSL = config('EMAIL_USE_SSL', default=True, cast=bool)
+EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=False, cast=bool)
 EMAIL_TIMEOUT = 60
 EMAIL_USE_LOCALTIME = False
  
-from decouple import Csv
+# from decouple import Csv  # already imported above
 
 # Gemini / Embeddings configuration
 # Do NOT provide a hardcoded default for API keys. Require environment or .env to supply it.

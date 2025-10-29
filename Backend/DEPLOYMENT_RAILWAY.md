@@ -67,7 +67,12 @@ Set these in Railway → Variables for each service (web, worker, beat):
   - DATABASE_URL = (from Railway Postgres service)
   - REDIS_URL = (from Railway Redis service)
 - Email (if used)
-  - EMAIL_HOST_USER, EMAIL_HOST_PASSWORD
+  - EMAIL_HOST=smtp.gmail.com
+  - EMAIL_PORT=587
+  - EMAIL_USE_TLS=True
+  - EMAIL_USE_SSL=False
+  - EMAIL_HOST_USER=your-gmail-address
+  - EMAIL_HOST_PASSWORD=your-gmail-app-password
 - RAG/Embeddings
   - GEMINI_API_KEY (required)
   - GEMINI_MODEL (optional, defaults in settings)
@@ -87,7 +92,17 @@ Set these in Railway → Variables for each service (Web, Worker, Beat):
 - DATABASE_URL (from Railway Postgres)
 - REDIS_URL (from Railway Redis)
 - GEMINI_API_KEY (optional: GEMINI_MODEL, EMBEDDING_MODEL)
-- EMAIL_HOST_USER, EMAIL_HOST_PASSWORD (if emailing)
+- EMAIL_HOST, EMAIL_PORT, EMAIL_USE_TLS, EMAIL_USE_SSL, EMAIL_HOST_USER, EMAIL_HOST_PASSWORD (if emailing)
+
+### Email on Railway (Gmail)
+
+If you use Gmail SMTP:
+
+- Create an App Password in your Google Account (2FA required) and use it for `EMAIL_HOST_PASSWORD`.
+- Use TLS on port 587 (`EMAIL_PORT=587`, `EMAIL_USE_TLS=True`, `EMAIL_USE_SSL=False`).
+- Set `DEFAULT_FROM_EMAIL` to your Gmail address (or configure "Send mail as" in Gmail if you need a different From domain).
+
+If outbound SMTP is blocked in your region/network, consider an email provider with an HTTPS API (e.g., SendGrid, Mailgun, AWS SES) to avoid SMTP port issues.
 
 ## 5) Build & start commands
 
