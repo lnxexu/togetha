@@ -8,7 +8,7 @@ export interface EnvironmentConfig {
 }
 //change ni sa IP address atm
 export const DEFAULT_CONFIG: EnvironmentConfig = {
-  apiUrl: 'http://192.168.15.50:8000',
+  apiUrl: 'http://192.168.1.187:8000',
   environment: 'development',
   debug: true,
 };

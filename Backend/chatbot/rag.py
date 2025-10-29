@@ -189,6 +189,38 @@ def search_similar_for_user(query_text, user_id, top_k=5):
     return rows
 
 
+def search_similar_for_user_in_docs(query_text, user_id, doc_ids, top_k=5):
+    """Search most similar chunks for a user within specific document IDs using pgvector cosine distance.
+
+    Args:
+        query_text: The query string to embed and search with.
+        user_id: The user whose chunks to search.
+        doc_ids: Iterable of document UUID strings to restrict the search to.
+        top_k: Number of top results to return.
+
+    Returns:
+        List[dict]: Each dict contains id, chunk_text, document_name, distance, and similarity.
+    """
+    if not doc_ids:
+        return search_similar_for_user(query_text, user_id, top_k=top_k)
+
+    query_emb = _embed_one(query_text).astype(float).tolist()
+
+    qs = (
+        DocumentChunk.objects
+        .filter(user_id=user_id, doc_id__in=list(doc_ids))
+        .exclude(embedding_vec__isnull=True)
+        .annotate(distance=RawSQL("embedding_vec <=> %s", (query_emb,)))
+        .order_by('distance')
+    )
+
+    rows = list(qs.values('id', 'chunk_text', 'document_name', 'distance')[:top_k])
+    for r in rows:
+        if r['distance'] is not None:
+            r['similarity'] = 1 - float(r['distance'])
+    return rows
+
+
 def search_similar(query_text, top_k=5):
     """Search most similar chunks across all users using pgvector cosine distance."""
     query_emb = _embed_one(query_text).astype(float).tolist()

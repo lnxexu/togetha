@@ -92,12 +92,12 @@ Backend/
 
 - **Framework**: Django 5.2.6
 - **API**: Django REST Framework 3.16.1
-- **Database**: PostgreSQL (production), SQLite (dev)
+- **Database**: PostgreSQL (dev and production)
 - **Cache**: Redis
 - **Task Queue**: Celery + Redis
 - **WSGI Server**: Gunicorn
 - **Static Files**: WhiteNoise
-- **AI/ML**: Sentence Transformers, FAISS, Torch
+- **AI/ML**: Google Generative AI (Gemini) for embeddings; pgvector on Postgres for vector search
 
 ## 🔧 Configuration
 
@@ -142,10 +142,10 @@ python manage.py test
 ## 📊 Database
 
 ### Local Development
-Uses PostgreSQL by default (see settings.py)
+Uses PostgreSQL by default (see `server/settings.py`)
 
 ### Production
-- Uses Render PostgreSQL
+- Uses managed PostgreSQL
 - Configured via `DATABASE_URL` environment variable
 - Migrations run automatically during deployment
 

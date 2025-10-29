@@ -100,5 +100,5 @@ After deployment:
 ## 8) Notes & tips
 
 - Debug Toolbar: Consider disabling in production or gating by IP/DEBUG flag.
-- RAG SQLite: `chatbot/rag.py` writes to a local SQLite file for similarity search. On Railway this isn’t persistent; for production, consider a DB-backed solution (e.g., Postgres + pgvector) as a follow-up.
+- RAG vector search: The RAG pipeline stores embeddings in Postgres using pgvector (see `chatbot/models.py -> DocumentChunk`). Ensure your Railway Postgres has the `pgvector` extension enabled; the included migrations will attempt to create it automatically.
 - Migrations: Keeping `migrate` in the build step works fine; you can also run it manually if you prefer controlled rollouts.

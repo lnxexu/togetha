@@ -57,12 +57,36 @@ class PDFEmbeddingSearchView(APIView):
 
         # Filter by similarity threshold
         THRESHOLD = 0.5
-        filtered = [r for r in results if r[2] >= THRESHOLD]
+        # Support dict or tuple formats
+        filtered = []
+        for r in results:
+            if isinstance(r, dict):
+                sim = float(r.get("similarity", 0.0))
+                if sim >= THRESHOLD:
+                    filtered.append(r)
+            else:
+                # tuple: (id, text, score, document, page)
+                if len(r) > 2 and float(r[2]) >= THRESHOLD:
+                    filtered.append(r)
         if not filtered:
             return Response({"message": "Query out of scope"}, status=200)
 
-        formatted = [
-            {"id": r[0], "text": r[1], "score": round(r[2], 3), "document": r[3], "page": r[4]}
-            for r in filtered
-        ]
+        formatted = []
+        for r in filtered:
+            if isinstance(r, dict):
+                formatted.append({
+                    "id": r.get("id"),
+                    "text": r.get("chunk_text"),
+                    "score": round(float(r.get("similarity", 0.0)), 3),
+                    "document": r.get("document_name"),
+                    "page": None,
+                })
+            else:
+                formatted.append({
+                    "id": r[0],
+                    "text": r[1],
+                    "score": round(float(r[2]), 3),
+                    "document": r[3],
+                    "page": r[4],
+                })
         return Response({"results": formatted}, status=200)
