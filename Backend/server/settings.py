@@ -27,17 +27,20 @@ DEBUG = os.environ.get("DEBUG", "False") == "True"
 
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1,192.168.0.153,192.168.1.187,192.168.15.50,172.16.3.152,172.23.176.1,togetha-production-2546.up.railway.app', cast=Csv())
 
-DEFAULT_FROM_EMAIL = 'kcorpuz_220000002183@uic.edu.ph'
+# Email sender defaults
+# Prefer environment-provided values. If DEFAULT_FROM_EMAIL is not set,
+# fall back to EMAIL_HOST_USER to keep the authenticated sender aligned.
+EMAIL_HOST_USER = config('EMAIL_HOST_USER', default=None)
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default=None)
+DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default=None) or EMAIL_HOST_USER
 
 EMAIL_BACKEND = 'server.email_backend.FallbackSMTPBackend'
 
-# Primary SMTP configuration (these will be tried by the fallback backend)
+# Primary SMTP configuration (these will be overridden by the fallback backend as needed)
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 465
-EMAIL_USE_SSL = True  
+EMAIL_USE_SSL = True
 EMAIL_USE_TLS = False
-EMAIL_HOST_USER = 'wlage35@gmail.com'
-EMAIL_HOST_PASSWORD = 'lbqi deda bbux ebxd'
 EMAIL_TIMEOUT = 60
 EMAIL_USE_LOCALTIME = False
  
