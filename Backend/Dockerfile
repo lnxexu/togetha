@@ -37,10 +37,10 @@ ENV PORT=8000
 # One image supports Web, Worker, Beat based on ROLE env var
 # ROLE=web|worker|beat
 CMD ["/app/entrypoint.sh"]
-# PostgreSQL 17 with pgvector preinstalled
-FROM ankane/pgvector:pg17
+# PostgreSQL 16 with pgvector preinstalled
+FROM ankane/pgvector:pg16
 
-# Set up environment variables
+# Set environment variables
 ENV POSTGRES_USER=postgres
 ENV POSTGRES_PASSWORD=postgres
 ENV POSTGRES_DB=railway
