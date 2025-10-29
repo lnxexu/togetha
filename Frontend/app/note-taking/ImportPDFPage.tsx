@@ -20,7 +20,7 @@ import * as FileSystem from "expo-file-system";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import PDFAnnotationViewer from "./components/PDFAnnotationViewer";
 import UnsavedChangesModal from "./components/UnsavedChangesModal";
-import { getLocalPDFPath, isRemoteURL } from "./utils/pdfUtils";
+import { getLocalPDFPath, isRemoteURL, tryCompressPDF } from "./utils/pdfUtils";
 import { useNetworkStatus, getNetworkStatusText, getNetworkStatusColor } from "./services/networkService";
 import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
 import { showSuccessToast, showErrorToast, showWarningToast, showInfoToast } from "../utils/ToastUtils";
@@ -181,8 +181,8 @@ const ImportPDFPage = () => {
       }
 
       // Copy file to permanent location
-      const fileName = `${Date.now()}_${file.name}`;
-      const permanentUri = `${docDir}${fileName}`;
+  const fileName = `${Date.now()}_${file.name}`;
+  let permanentUri = `${docDir}${fileName}`;
       
       await FileSystem.copyAsync({
         from: file.uri,
@@ -190,9 +190,25 @@ const ImportPDFPage = () => {
       });
 
       // Verify the copied file exists
-      const copiedFileInfo = await FileSystem.getInfoAsync(permanentUri);
+      let copiedFileInfo = await FileSystem.getInfoAsync(permanentUri);
       if (!copiedFileInfo.exists) {
         throw new Error('Failed to copy PDF file');
+      }
+
+      // If the imported PDF is large, attempt a best-effort compression to
+      // reduce viewer memory pressure. This creates a compressed copy only if
+      // it yields meaningful savings (non-destructive).
+      try {
+        const COMPRESSION_THRESHOLD = 12 * 1024 * 1024; // 12 MB
+        const compResult = await tryCompressPDF(permanentUri, COMPRESSION_THRESHOLD);
+        if (compResult.compressed && compResult.uri && compResult.newSize > 0) {
+          // Replace the permanentUri with the compressed copy
+          permanentUri = compResult.uri;
+          copiedFileInfo = await FileSystem.getInfoAsync(permanentUri);
+          showInfoToast(`PDF compressed to ${ (compResult.newSize/1024/1024).toFixed(1) } MB to improve viewer performance`);
+        }
+      } catch (compressErr) {
+        console.warn('PDF compression step failed (non-fatal):', compressErr);
       }
 
       // Create document record
@@ -200,7 +216,9 @@ const ImportPDFPage = () => {
         id: Date.now().toString(),
         name: file.name,
         uri: permanentUri,
-        size: file.size || copiedFileInfo.size || 0,
+        // FileInfo from expo may not have a 'size' property in its type; use a safe fallback
+        size:
+          (file as any).size ?? (('size' in copiedFileInfo ? (copiedFileInfo as any).size : 0) as number) ?? 0,
         mimeType: file.mimeType || "application/pdf",
         lastModified: Date.now(),
         annotationCount: 0,
@@ -672,7 +690,6 @@ const ImportPDFPage = () => {
       <PDFAnnotationViewer
         source={{ uri: selectedDocument.uri }}
         fileName={selectedDocument.name}
-        docId={selectedDocument.docId}
         onClose={handleCloseDocument}
         enableDirectSave={true}
         autoSave={true}

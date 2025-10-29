@@ -6,6 +6,7 @@ import { Priority, TaskFormData } from "./types/Task";
 import taskService from "./services/taskService";
 import { showSuccessToast, showErrorToast } from "../utils/ToastUtils";
 import {
+  SafeAreaView,
   View,
   Text,
   StyleSheet,
@@ -93,6 +94,13 @@ const TaskDetails: React.FC = () => {
         setEditedDescription(fetchedTask.description || "");
         setEditedPriority(fetchedTask.priority ?? "not-urgent-not-important");
         setEditedCategory(fetchedTask.category || "");
+        // Prefer explicit due_time (string) if backend provides it, otherwise derive from due_datetime
+        setEditedTime(
+          fetchedTask.due_time ||
+            (fetchedTask.due_datetime
+              ? formatTime(new Date(fetchedTask.due_datetime))
+              : "")
+        );
         setEditedDate(
           fetchedTask.due_datetime
             ? new Date(fetchedTask.due_datetime)
@@ -423,15 +431,15 @@ const TaskDetails: React.FC = () => {
 
   if (!task) {
     return (
-      <View style={styles.container}>
+      <SafeAreaView style={styles.safeArea}>
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>Loading task...</Text>
         </View>
-      </View>
+      </SafeAreaView>
     );
   }
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.safeArea}>
       {/* Header */}
       <LinearGradient
         colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
@@ -919,12 +927,16 @@ const TaskDetails: React.FC = () => {
           </View>
         </View>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+    backgroundColor: "#f8f9fa",
+  },
+  safeArea: {
     flex: 1,
     backgroundColor: "#f8f9fa",
   },
@@ -1172,7 +1184,7 @@ const styles = StyleSheet.create({
   },
   markAsDoneButton: {
     position: "absolute",
-    bottom: 30,
+    bottom: 70,
     right: 20,
     flexDirection: "row",
     alignItems: "center",

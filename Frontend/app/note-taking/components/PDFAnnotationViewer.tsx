@@ -469,8 +469,10 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
     const updatePath = () => {
       if (!currentPointsRef.current.length) return;
-      const now = performance.now();
-  const targetFrameTime = window.screen?.height > 1920 ? 11 : 14;
+    const now = performance.now();
+    // In React Native there may be no `window.screen` available (can crash on some runtimes).
+    // Use the Dimensions-derived `screenHeight` instead which is safe across platforms.
+    const targetFrameTime = screenHeight > 1920 ? 11 : 14;
       if (now - lastRenderTimeRef.current < targetFrameTime) {
         animationFrameRef.current = requestAnimationFrame(updatePath);
         return;
@@ -627,7 +629,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     translateX: 0,
     translateY: 0,
   });
-  const [isPinching, setIsPinching] = useState(false);
   const pdfTransformRef = useRef(pdfTransform);
   useEffect(() => {
     pdfTransformRef.current = pdfTransform;
@@ -759,11 +760,23 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       ) > 10;
 
     if (zoomChanged || sizeChanged) {
+      // Clear cached conversions when the visible scale or container size
+      // changes — otherwise cached SVG paths may be drawn at the wrong
+      // resolution/position and appear offset when panning/zooming.
       pathConversionCache.current.clear();
+      // Also clear stroke caches and temporary path cache used for live
+      // drawing so they will be regenerated at the new scale/size.
+      try {
+        strokePathCacheRef.current?.clear?.();
+      } catch (e) {}
+      try {
+        pathCacheRef.current = "";
+      } catch (e) {}
+
       lastZoomForCache.current = currentZoom;
       lastContainerSizeForCache.current = containerSize;
       if (__DEV__) {
-        console.log("🔄 Path cache cleared due to layout change");
+        console.log("🔄 Path & stroke caches cleared due to layout/zoom change");
       }
     }
   }, [currentZoom, containerSize.width, containerSize.height]);
@@ -788,6 +801,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const PINCH_SENSITIVITY = 1.0;
   const PINCH_SMOOTH_SCALE = 0.25;
   const PINCH_SMOOTH_TRANSLATION = 0.3;
+  
   const PAN_MIN_DISTANCE = 1;
   const PAN_ACTIVE_OFFSET_X = 3;
   const PAN_X_GAIN = 1.15;
@@ -845,78 +859,12 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     "worklet";
     return Math.max(min, Math.min(max, v));
   };
-
-  const pinchGesture = useMemo(() => {
-    return Gesture.Pinch()
-      .shouldCancelWhenOutside(false)
-  .enabled(!isEditMode || selectedTool === null)
-      .onStart((e: any) => {
-        "worklet";
-        svStartScale.value = svScale.value;
-        svAnchorX.value = (e.focalX - svTranslateX.value) / svScale.value;
-        svAnchorY.value = (e.focalY - svTranslateY.value) / svScale.value;
-        runOnJS(setShouldCaptureGestures)(true);
-        runOnJS(setIsPinching)(true);
-      })
-      .onUpdate((e: any) => {
-        "worklet";
-        const gainedScale = Math.pow(e.scale || 1, PINCH_SENSITIVITY);
-        const nextScaleRaw = clamp(
-          svStartScale.value * gainedScale,
-          MIN_PDF_SCALE,
-          MAX_PDF_SCALE
-        );
-        const smoothedScale =
-          svScale.value + PINCH_SMOOTH_SCALE * (nextScaleRaw - svScale.value);
-        const targetTX = e.focalX - svAnchorX.value * smoothedScale;
-        const targetTY = e.focalY - svAnchorY.value * smoothedScale;
-        const maxOffsetX = (svContainerW.value * (smoothedScale - 1)) / 2;
-        const maxOffsetY = (svContainerH.value * (smoothedScale - 1)) / 2;
-        const margin = 6;
-        const softClamp = (v: number, min: number, max: number) => {
-          "worklet";
-          if (v < min - margin) return min - margin;
-          if (v > max + margin) return max + margin;
-          return v;
-        };
-        const targetTXClamped = softClamp(targetTX, -maxOffsetX, maxOffsetX);
-        const targetTYClamped = softClamp(targetTY, -maxOffsetY, maxOffsetY);
-        svScale.value = smoothedScale;
-        svTranslateX.value =
-          svTranslateX.value +
-          PINCH_SMOOTH_TRANSLATION * (targetTXClamped - svTranslateX.value);
-        svTranslateY.value =
-          svTranslateY.value +
-          PINCH_SMOOTH_TRANSLATION * (targetTYClamped - svTranslateY.value);
-      })
-      .onEnd(() => {
-        "worklet";
-        const scale = svScale.value || 1;
-        const maxOffsetX = (svContainerW.value * (scale - 1)) / 2;
-        const maxOffsetY = (svContainerH.value * (scale - 1)) / 2;
-        const clampedTX = clamp(svTranslateX.value, -maxOffsetX, maxOffsetX);
-        const clampedTY = clamp(svTranslateY.value, -maxOffsetY, maxOffsetY);
-        svTranslateX.value = withSpring(clampedTX, {
-          damping: 20,
-          stiffness: 200,
-        });
-        svTranslateY.value = withSpring(clampedTY, {
-          damping: 20,
-          stiffness: 200,
-        });
-        runOnJS(setCurrentZoom)(scale);
-        runOnJS(setPdfTransform)({
-          scale,
-          translateX: clampedTX,
-          translateY: clampedTY,
-        });
-        runOnJS(setIsPinching)(false);
-      });
-  }, [MIN_PDF_SCALE, MAX_PDF_SCALE, isEditMode, selectedTool]);
+  const [isPinching, setIsPinching] = useState(false);
 
   const panEnabled =
     (!isEditMode && selectedTool === null) ||
     (selectedTool === null && currentZoom > 1);
+
   const panGesture = useMemo(() => {
     return Gesture.Pan()
       .shouldCancelWhenOutside(false)
@@ -981,6 +929,74 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       });
   }, [panEnabled]);
 
+  const pinchGesture = useMemo(() => {
+    return Gesture.Pinch()
+      .shouldCancelWhenOutside(false)
+      .enabled(!isEditMode || selectedTool === null)
+      .onStart((e: any) => {
+        "worklet";
+        svStartScale.value = svScale.value;
+        svAnchorX.value = (e.focalX - svTranslateX.value) / svScale.value;
+        svAnchorY.value = (e.focalY - svTranslateY.value) / svScale.value;
+        runOnJS(setShouldCaptureGestures)(true);
+        runOnJS(setIsPinching)(true);
+      })
+      .onUpdate((e: any) => {
+        "worklet";
+        const gainedScale = Math.pow(e.scale || 1, PINCH_SENSITIVITY);
+        const nextScaleRaw = clamp(
+          svStartScale.value * gainedScale,
+          MIN_PDF_SCALE,
+          MAX_PDF_SCALE
+        );
+        const smoothedScale =
+          svScale.value + PINCH_SMOOTH_SCALE * (nextScaleRaw - svScale.value);
+        const targetTX = e.focalX - svAnchorX.value * smoothedScale;
+        const targetTY = e.focalY - svAnchorY.value * smoothedScale;
+        const maxOffsetX = (svContainerW.value * (smoothedScale - 1)) / 2;
+        const maxOffsetY = (svContainerH.value * (smoothedScale - 1)) / 2;
+        const margin = 6;
+        const softClamp = (v: number, min: number, max: number) => {
+          "worklet";
+          if (v < min - margin) return min - margin;
+          if (v > max + margin) return max + margin;
+          return v;
+        };
+        const targetTXClamped = softClamp(targetTX, -maxOffsetX, maxOffsetX);
+        const targetTYClamped = softClamp(targetTY, -maxOffsetY, maxOffsetY);
+        svScale.value = smoothedScale;
+        svTranslateX.value =
+          svTranslateX.value +
+          PINCH_SMOOTH_TRANSLATION * (targetTXClamped - svTranslateX.value);
+        svTranslateY.value =
+          svTranslateY.value +
+          PINCH_SMOOTH_TRANSLATION * (targetTYClamped - svTranslateY.value);
+      })
+      .onEnd(() => {
+        "worklet";
+        const scale = svScale.value || 1;
+        const maxOffsetX = (svContainerW.value * (scale - 1)) / 2;
+        const maxOffsetY = (svContainerH.value * (scale - 1)) / 2;
+        const clampedTX = clamp(svTranslateX.value, -maxOffsetX, maxOffsetX);
+        const clampedTY = clamp(svTranslateY.value, -maxOffsetY, maxOffsetY);
+        svTranslateX.value = withSpring(clampedTX, {
+          damping: 20,
+          stiffness: 200,
+        });
+        svTranslateY.value = withSpring(clampedTY, {
+          damping: 20,
+          stiffness: 200,
+        });
+        runOnJS(setCurrentZoom)(scale);
+        runOnJS(setPdfTransform)( {
+          scale,
+          translateX: clampedTX,
+          translateY: clampedTY,
+        });
+        runOnJS(setIsPinching)(false);
+      });
+  }, [MIN_PDF_SCALE, MAX_PDF_SCALE, isEditMode, selectedTool]);
+
   const doubleTapGesture = useMemo(() => {
     return Gesture.Tap()
       .numberOfTaps(2)
@@ -1000,7 +1016,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         svTranslateX.value = withSpring(clamp(nextTX, -maxOffsetX, maxOffsetX));
         svTranslateY.value = withSpring(clamp(nextTY, -maxOffsetY, maxOffsetY));
         runOnJS(setCurrentZoom)(target);
-        runOnJS(setPdfTransform)({
+        runOnJS(setPdfTransform)( {
           scale: target,
           translateX: clamp(nextTX, -maxOffsetX, maxOffsetX),
           translateY: clamp(nextTY, -maxOffsetY, maxOffsetY),
@@ -4302,6 +4318,12 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
       console.log("💾 Automatically saving exported PDF to Downloads");
       await onAfterExportSaved(result.savedPath);
+      try {
+        const exportedName = result.savedPath.split("/").pop() || "exported.pdf";
+        showSuccessToast(`Exported PDF: ${exportedName}`);
+      } catch (e) {
+        // non-fatal: avoid crashing if toast fails for any reason
+      }
     } catch (error) {
       console.error("Error exporting PDF to new file:", error);
       showErrorToast(
@@ -5909,15 +5931,15 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
                               {/* Capture gestures only when necessary. When not editing and at 1x
                                   zoom we allow the native Pdf to handle horizontal swipes. When
                                   zoomed or editing we capture pinch/pan/draw here. */}
-                              {(isPinching || currentZoom > 1 || isEditMode || shouldCaptureGestures) ? (
-                                <GestureDetector gesture={combinedGesture}>
-                                  <View
-                                    pointerEvents="auto"
-                                    style={{ position: 'absolute', left: 0, top: 0, right: 0, height: displayH, zIndex: 9998, backgroundColor: 'transparent' }}
-                                    collapsable={false}
-                                  />
-                                </GestureDetector>
-                              ) : null}
+                              {/* Always intercept gestures with our GestureDetector overlay so the native PDF
+                                  view cannot perform pinch-to-zoom. Zooming is handled only via toolbar buttons. */}
+                              <GestureDetector gesture={combinedGesture}>
+                                <View
+                                  pointerEvents="auto"
+                                  style={{ position: 'absolute', left: 0, top: 0, right: 0, height: displayH, zIndex: 9998, backgroundColor: 'transparent' }}
+                                  collapsable={false}
+                                />
+                              </GestureDetector>
 
                               {/* Drawing overlay - only active when drawing tool selected */}
                               {isEditMode && selectedTool !== null && (
@@ -5955,7 +5977,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
           </TouchableOpacity>
           <View style={styles.focusHint} pointerEvents="none">
             <Text style={styles.focusHintText}>
-              Pinch to zoom • Drag to pan
+              Use zoom buttons • Drag to pan
             </Text>
           </View>
         </>

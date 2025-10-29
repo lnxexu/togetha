@@ -181,8 +181,8 @@ else:
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
             'NAME': 'togetha',
-            'USER': 'postgres',
-            'PASSWORD': 'Kobe@1314',
+            'USER': 'togetha',
+            'PASSWORD': 'geric',
             'HOST': 'localhost',
             'PORT': '5432',
         }

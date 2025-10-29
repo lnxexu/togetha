@@ -184,6 +184,83 @@ export async function validatePDFForAnnotation(uri: string): Promise<PDFValidati
 }
 
 /**
+ * Attempt to compress a PDF by re-saving it with optimized object streams.
+ * This is a best-effort, non-destructive operation: if compression fails or
+ * does not reduce size meaningfully, the original file URI is returned.
+ * @param uri local file URI of the PDF
+ * @param minSizeThreshold only attempt compression if original size >= this (bytes)
+ */
+export async function tryCompressPDF(
+  uri: string,
+  minSizeThreshold: number = 10 * 1024 * 1024 // 10 MB
+): Promise<{ uri: string; compressed: boolean; originalSize: number; newSize: number }> {
+  try {
+    const info = await FileSystem.getInfoAsync(uri);
+    const originalSize = 'size' in info ? info.size || 0 : 0;
+    if (originalSize === 0 || originalSize < minSizeThreshold) {
+      return { uri, compressed: false, originalSize, newSize: originalSize };
+    }
+
+    console.log(`🔧 Attempting to compress PDF (${formatFileSize(originalSize)}) : ${uri}`);
+
+    // Read as base64 and convert to Uint8Array
+    const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+    const buffer = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0)).buffer;
+
+    let pdfDoc: PDFDocument;
+    try {
+      pdfDoc = await PDFDocument.load(buffer);
+    } catch (err) {
+      console.warn('Could not load PDF for compression:', err);
+      return { uri, compressed: false, originalSize, newSize: originalSize };
+    }
+
+    // Try to save with object streams enabled to reduce size in some PDFs
+    let newBytes: Uint8Array | null = null;
+    try {
+      // @ts-ignore allow save options
+      newBytes = await (pdfDoc as any).save({ useObjectStreams: true });
+    } catch (saveErr) {
+      try {
+        newBytes = await pdfDoc.save();
+      } catch (err2) {
+        console.warn('PDF re-save for compression failed:', err2);
+        return { uri, compressed: false, originalSize, newSize: originalSize };
+      }
+    }
+
+    if (!newBytes || newBytes.length === 0) {
+      return { uri, compressed: false, originalSize, newSize: originalSize };
+    }
+
+    const newSize = newBytes.length;
+    // Only accept compression if the new file is meaningfully smaller
+    if (newSize >= originalSize * 0.98) {
+      console.log('Compression did not produce meaningful savings; skipping replace');
+      return { uri, compressed: false, originalSize, newSize };
+    }
+
+    // Write compressed file to same directory with _compressed suffix
+    const originalName = uri.split('/').pop() || `compressed_${Date.now()}.pdf`;
+    const dir = uri.replace(/\\/g, '/').split('/').slice(0, -1).join('/') + '/';
+    const compressedName = originalName.replace(/\.pdf$/i, '') + `_compressed.pdf`;
+    const compressedPath = `${dir}${compressedName}`;
+
+    const compressedBase64 = uint8ArrayToBase64(newBytes);
+    await FileSystem.writeAsStringAsync(compressedPath, compressedBase64, { encoding: FileSystem.EncodingType.Base64 });
+
+    const finalInfo = await FileSystem.getInfoAsync(compressedPath);
+    const finalSize = 'size' in finalInfo ? finalInfo.size || newSize : newSize;
+
+    console.log(`✅ Compressed PDF saved: ${compressedPath} (${formatFileSize(finalSize)})`);
+    return { uri: compressedPath, compressed: true, originalSize, newSize: finalSize };
+  } catch (error) {
+    console.warn('tryCompressPDF failed:', error);
+    return { uri, compressed: false, originalSize: 0, newSize: 0 };
+  }
+}
+
+/**
  * Quick page count estimation without loading entire PDF
  * @param uri PDF file URI
  * @returns Estimated page count
