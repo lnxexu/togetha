@@ -188,14 +188,14 @@ else:
     # Some hosts provide individual PG_* env vars instead of a single DATABASE_URL
     if os.environ.get('PGHOST') and os.environ.get('PGDATABASE'):
         DATABASES = {
-            'default': {
-                'ENGINE': 'django.db.backends.postgresql',
-                'NAME': os.environ.get('PGDATABASE'),
-                'USER': os.environ.get('PGUSER', ''),
-                'PASSWORD': os.environ.get('PGPASSWORD', ''),
-                'HOST': os.environ.get('PGHOST', 'localhost'),
-                'PORT': os.environ.get('PGPORT', '5432'),
-            }
+            "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": "railway",
+        "USER": "postgres",
+        "PASSWORD": "LINiBWJDsRyWxgFrpxKNOJSqOJwaXfYA",
+        "HOST": "postgres.railway.internal",
+        "PORT": "5432",
+    }
         }
     else:
         # DEVELOPMENT DATABASE - Fallback for local development
