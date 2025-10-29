@@ -35,11 +35,7 @@ google-genai>=1.40,<2
 
 ## Env management
 python-decouple>=3.8,<4
-<<<<<<< HEAD
 python-dotenv>=1,<2
 
 ## Postgres vector search (Django integration is included in pgvector)
 pgvector>=0.4.1,<1
-=======
-python-dotenv>=1,<2
->>>>>>> 89ddba6e8f0de5111535a1476442cf5bca40f488
