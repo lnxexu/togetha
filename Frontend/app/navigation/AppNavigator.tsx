@@ -29,6 +29,7 @@ import AddTask from "../task-management/AddTask";
 import TaskDetails from "../task-management/TaskDetails";
 import EisenhowerListPage from "../task-management/EisenhowerListPage";
 import CompletedTasks from "../task-management/CompletedTasks";
+import TotalTasks from "../task-management/TotalTasks";
 
 //profile components
 import Profile from "../profile/Profile";
@@ -90,6 +91,7 @@ export type RootStackParamList = {
     viewType: "tasks" | "activity" | "notes" | "urgent-tasks";
   };
   CompletedTasks: undefined;
+  TotalTasks: undefined;
   EisenhowerList: {
     tasks: any[];
     quadrant: string;
@@ -379,6 +381,7 @@ const AppNavigator: React.FC = () => {
         <Stack.Screen name="AddTask" component={AddTask} />
         <Stack.Screen name="editTaskId" component={AddTask} />
         <Stack.Screen name="CompletedTasks" component={CompletedTasks} />
+        <Stack.Screen name="TotalTasks" component={TotalTasks} />
         <Stack.Screen name="EisenhowerList" component={EisenhowerListPage} />
         <Stack.Screen name="AllItemsView" component={AllItemsView} />
       </Stack.Navigator>

@@ -27,6 +27,12 @@ interface EisenhowerMatrixProps {
   categories: TaskCategory[];
   selectedCategory: string;
   onCategoryChange: (category: string) => void;
+  onBulkComplete?: (taskIds: string[]) => void;
+  onBulkDelete?: (taskIds: string[]) => void;
+  isBulkSelectionMode: boolean;
+  selectedTasks: Set<string>;
+  onToggleBulkSelection: (taskId: string) => void;
+  onEnterBulkSelectionMode: (taskId: string) => void;
 }
 
 type QuadrantData = {
@@ -88,6 +94,12 @@ const EisenhowerMatrix: React.FC<EisenhowerMatrixProps> = ({
   categories,
   selectedCategory,
   onCategoryChange,
+  onBulkComplete,
+  onBulkDelete,
+  isBulkSelectionMode,
+  selectedTasks,
+  onToggleBulkSelection,
+  onEnterBulkSelectionMode,
 }) => {
   const navigation = useNavigation<NavigationProp>();
   const { width, height } = useWindowDimensions();
@@ -132,20 +144,44 @@ const EisenhowerMatrix: React.FC<EisenhowerMatrixProps> = ({
   };
 
   const handleTaskLongPress = (task: Task) => {
-    Alert.alert(task.title, "What would you like to do?", [
-      { text: "View Details", onPress: () => onTaskPress(task.id) },
-      {
-        text: "Mark Complete",
-        onPress: () => onMarkComplete(task.id),
-        style: "default",
-      },
-      {
-        text: "Delete",
-        onPress: () => onDeleteTask(task.id),
-        style: "destructive",
-      },
-      { text: "Cancel", style: "cancel" },
-    ]);
+    if (!isBulkSelectionMode) {
+      // Enter bulk selection mode and select the first task
+      onEnterBulkSelectionMode(task.id);
+    } else {
+      // Toggle selection of this task
+      onToggleBulkSelection(task.id);
+    }
+  };
+
+  const handleBulkComplete = () => {
+    if (onBulkComplete && selectedTasks.size > 0) {
+      onBulkComplete(Array.from(selectedTasks));
+      exitBulkSelectionMode();
+    }
+  };
+
+  const handleBulkDelete = () => {
+    if (onBulkDelete && selectedTasks.size > 0) {
+      Alert.alert(
+        "Delete Tasks",
+        `Are you sure you want to delete ${selectedTasks.size} task${selectedTasks.size > 1 ? 's' : ''}?`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: () => {
+              onBulkDelete(Array.from(selectedTasks));
+              exitBulkSelectionMode();
+            },
+          },
+        ]
+      );
+    }
+  };
+
+  const exitBulkSelectionMode = () => {
+    // This function is no longer needed since state is managed by parent
   };
 
   const renderQuadrant = (quadrantKey: string, isMobileView: boolean = false) => {
@@ -216,6 +252,18 @@ const EisenhowerMatrix: React.FC<EisenhowerMatrixProps> = ({
           ) : (
             quadrantTasks.map((task) => (
               <View key={task.id} style={styles.taskRow}>
+                {isBulkSelectionMode && (
+                  <TouchableOpacity
+                    style={styles.selectionCheckbox}
+                    onPress={() => onToggleBulkSelection(task.id)}
+                  >
+                    <MaterialIcons
+                      name={selectedTasks.has(task.id) ? "check-box" : "check-box-outline-blank"}
+                      size={20}
+                      color={selectedTasks.has(task.id) ? "#8B5CF6" : "#7f8c8d"}
+                    />
+                  </TouchableOpacity>
+                )}
                 <TouchableOpacity
                   style={styles.checkbox}
                   onPress={() => onMarkComplete(task.id)}
@@ -227,14 +275,25 @@ const EisenhowerMatrix: React.FC<EisenhowerMatrixProps> = ({
                   />
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={styles.taskTextContainer}
-                  onPress={() => onTaskPress(task.id)}
+                  style={[
+                    styles.taskTextContainer,
+                    selectedTasks.has(task.id) && styles.selectedTaskContainer,
+                  ]}
+                  onPress={() => {
+                    if (isBulkSelectionMode) {
+                      // Toggle selection
+                      onToggleBulkSelection(task.id);
+                    } else {
+                      onTaskPress(task.id);
+                    }
+                  }}
                   onLongPress={() => handleTaskLongPress(task)}
                 >
                   <Text
                     style={[
                       styles.taskText,
                       task.overdue && styles.overdueTaskText,
+                      selectedTasks.has(task.id) && styles.selectedTaskText,
                     ]}
                     numberOfLines={2}
                   >
@@ -750,6 +809,20 @@ const styles = StyleSheet.create({
   overdueTaskText: {
     color: "#e74c3c",
     fontWeight: "500",
+  },
+  selectionCheckbox: {
+    marginRight: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 2,
+  },
+  selectedTaskContainer: {
+    backgroundColor: "#F0F4FF",
+    borderRadius: 6,
+    padding: 4,
+  },
+  selectedTaskText: {
+    color: "#8B5CF6",
+    fontWeight: "600",
   },
 });
 

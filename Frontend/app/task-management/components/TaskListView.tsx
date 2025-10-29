@@ -16,9 +16,15 @@ interface TaskListViewProps {
   onTaskPress: (taskId: string) => void;
   onDeleteTask: (taskId: string) => void;
   onMarkComplete: (taskId: string) => void;
+  onBulkComplete: (taskIds: string[]) => void;
+  onBulkDelete: (taskIds: string[]) => void;
   categories: TaskCategory[];
   selectedCategory: string;
   onCategoryChange: (category: string) => void;
+  isBulkSelectionMode: boolean;
+  selectedTasks: Set<string>;
+  onToggleBulkSelection: (taskId: string) => void;
+  onEnterBulkSelectionMode: (taskId: string) => void;
 }
 
 type QuadrantData = {
@@ -83,9 +89,15 @@ const TaskListView: React.FC<TaskListViewProps> = ({
   onTaskPress,
   onDeleteTask,
   onMarkComplete,
+  onBulkComplete,
+  onBulkDelete,
   categories,
   selectedCategory,
   onCategoryChange,
+  isBulkSelectionMode,
+  selectedTasks,
+  onToggleBulkSelection,
+  onEnterBulkSelectionMode,
 }) => {
   const [selectedQuadrant, setSelectedQuadrant] = useState<string>("all");
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
@@ -107,24 +119,55 @@ const TaskListView: React.FC<TaskListViewProps> = ({
   };
 
   const handleTaskLongPress = (task: Task) => {
-    Alert.alert(task.title, "What would you like to do?", [
-      { text: "View Details", onPress: () => onTaskPress(task.id) },
-      {
-        text: task.completed ? "Mark Incomplete" : "Mark Complete",
-        onPress: () => onMarkComplete(task.id),
-        style: "default",
-      },
-      {
-        text: "Delete",
-        onPress: () => onDeleteTask(task.id),
-        style: "destructive",
-      },
-      { text: "Cancel", style: "cancel" },
-    ]);
+    if (!isBulkSelectionMode) {
+      // Enter bulk selection mode
+      onEnterBulkSelectionMode(task.id);
+    } else {
+      // Toggle selection in bulk mode
+      onToggleBulkSelection(task.id);
+    }
+  };
+
+  const handleBulkComplete = () => {
+    if (selectedTasks.size > 0) {
+      onBulkComplete(Array.from(selectedTasks));
+      // State management is handled by parent
+    }
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedTasks.size > 0) {
+      Alert.alert(
+        "Delete Tasks",
+        `Are you sure you want to delete ${selectedTasks.size} task${selectedTasks.size > 1 ? 's' : ''}?`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: () => {
+              onBulkDelete(Array.from(selectedTasks));
+              // State management is handled by parent
+            },
+          },
+        ]
+      );
+    }
+  };
+
+  const handleTaskPress = (task: Task) => {
+    if (isBulkSelectionMode) {
+      // In bulk mode, toggle selection
+      onToggleBulkSelection(task.id);
+    } else {
+      // Normal mode, open task details
+      onTaskPress(task.id);
+    }
   };
 
   const renderTaskCard = ({ item: task }: { item: Task }) => {
     const quadrant = quadrants[task.priority];
+    const isSelected = selectedTasks.has(task.id);
 
     return (
       <TouchableOpacity
@@ -136,29 +179,43 @@ const TaskListView: React.FC<TaskListViewProps> = ({
           },
           task.overdue && !task.completed && styles.overdueTask,
           task.completed && styles.completedTask,
+          isSelected && styles.selectedTaskContainer,
         ]}
-        onPress={() => onTaskPress(task.id)}
+        onPress={() => handleTaskPress(task)}
         onLongPress={() => handleTaskLongPress(task)}
       >
         <View style={styles.cardContent}>
           <View style={styles.cardHeader}>
             <View style={styles.leftSection}>
-              <TouchableOpacity
-                style={styles.checkbox}
-                onPress={() => onMarkComplete(task.id)}
-              >
-                <MaterialIcons
-                  name={task.completed ? "check-box" : "check-box-outline-blank"}
-                  size={20}
-                  color={
-                    task.completed
-                      ? "#27ae60"
-                      : task.overdue
-                      ? "#e74c3c"
-                      : "#7f8c8d"
-                  }
-                />
-              </TouchableOpacity>
+              {isBulkSelectionMode ? (
+                <TouchableOpacity
+                  style={styles.selectionCheckbox}
+                  onPress={() => handleTaskPress(task)}
+                >
+                  <MaterialIcons
+                    name={isSelected ? "check-box" : "check-box-outline-blank"}
+                    size={20}
+                    color={isSelected ? "#8B5CF6" : "#7f8c8d"}
+                  />
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={styles.checkbox}
+                  onPress={() => onMarkComplete(task.id)}
+                >
+                  <MaterialIcons
+                    name={task.completed ? "check-box" : "check-box-outline-blank"}
+                    size={20}
+                    color={
+                      task.completed
+                        ? "#27ae60"
+                        : task.overdue
+                        ? "#e74c3c"
+                        : "#7f8c8d"
+                    }
+                  />
+                </TouchableOpacity>
+              )}
               
               <View style={styles.taskInfo}>
                 <Text
@@ -166,6 +223,7 @@ const TaskListView: React.FC<TaskListViewProps> = ({
                     styles.taskTitle,
                     task.completed && styles.completedTaskTitle,
                     task.overdue && !task.completed && styles.overdueTaskTitle,
+                    isSelected && styles.selectedTaskText,
                   ]}
                   numberOfLines={2}
                 >
@@ -406,6 +464,38 @@ const TaskListView: React.FC<TaskListViewProps> = ({
         </View>
         {renderQuadrantFilters()}
       </View>
+
+      {/* Bulk Actions Bar */}
+      {isBulkSelectionMode && (
+        <View style={styles.bulkActionsBar}>
+          <View style={styles.bulkActionsLeft}>
+            <Text style={styles.bulkActionsText}>
+              {selectedTasks.size} task{selectedTasks.size !== 1 ? 's' : ''} selected
+            </Text>
+          </View>
+          <View style={styles.bulkActionsRight}>
+            <TouchableOpacity
+              style={styles.bulkActionButton}
+              onPress={handleBulkComplete}
+            >
+              <MaterialIcons name="check-circle" size={20} color="#22C55E" />
+              <Text style={[styles.bulkActionButtonText, { color: "#22C55E" }]}>
+                Complete
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.bulkActionButton}
+              onPress={handleBulkDelete}
+            >
+              <MaterialIcons name="delete" size={20} color="#EF4444" />
+              <Text style={[styles.bulkActionButtonText, { color: "#EF4444" }]}>
+                Delete
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       <View style={styles.tasksSection}>{renderAllTasks()}</View>
     </View>
   );
@@ -750,6 +840,56 @@ const styles = StyleSheet.create({
     fontFamily: "Inter-Medium",
     color: "#64748B",
     fontWeight: "500",
+  },
+  selectionCheckbox: {
+    padding: 2,
+    borderRadius: 6,
+  },
+  selectedTaskContainer: {
+    backgroundColor: "#F0F4FF",
+    borderRadius: 6,
+    padding: 4,
+  },
+  selectedTaskText: {
+    color: "#8B5CF6",
+    fontWeight: "600",
+  },
+  bulkActionsBar: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "#F8FAFC",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0",
+  },
+  bulkActionsLeft: {
+    flex: 1,
+  },
+  bulkActionsText: {
+    fontSize: 14,
+    fontFamily: "Inter-Medium",
+    color: "#374151",
+  },
+  bulkActionsRight: {
+    flexDirection: "row",
+    gap: 16,
+  },
+  bulkActionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  bulkActionButtonText: {
+    fontSize: 14,
+    fontFamily: "Inter-Medium",
+    marginLeft: 6,
   },
 });
 

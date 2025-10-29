@@ -202,7 +202,7 @@ const AddTask: React.FC = () => {
       }
 
       handleInputChange("due_datetime", merged);
-      
+
       // Update due_time for display purposes
       const timeString = selectedTime.toLocaleTimeString('en-US', {
         hour: 'numeric',
@@ -210,6 +210,17 @@ const AddTask: React.FC = () => {
         hour12: true
       });
       handleInputChange("due_time", timeString);
+    } else if (!selectedTime && formData.due_datetime) {
+      // User cancelled the time picker - clear the time input
+      handleInputChange("due_time", undefined);
+      // Reset due_datetime to date-only (midnight) to indicate no time is set
+      const dateOnly = new Date(
+        formData.due_datetime.getFullYear(),
+        formData.due_datetime.getMonth(),
+        formData.due_datetime.getDate(),
+        0, 0, 0, 0
+      );
+      handleInputChange("due_datetime", dateOnly);
     }
   };
 
@@ -217,14 +228,31 @@ const AddTask: React.FC = () => {
   const handleSave = async () => {
     if (!validateForm()) return;
 
+    // Check if trying to save a task for today without a specific time
+    if (formData.due_datetime && isSelectedDateToday() && !formData.due_time) {
+      showErrorToast("Please select a specific time for today's tasks");
+      return;
+    }
+
     setIsLoading(true);
     try {
       // Create a single Date object from date and time inputs
       let dueDate: Date | undefined = undefined;
 
       if (formData.due_datetime) {
-        // Use the locally combined date+time from the pickers as-is to avoid unwanted timezone shifts
-        dueDate = new Date(formData.due_datetime);
+        // If no time was selected, create a date-only Date object (set to midnight)
+        // to indicate the time should be treated as blank/empty
+        if (!formData.due_time) {
+          dueDate = new Date(
+            formData.due_datetime.getFullYear(),
+            formData.due_datetime.getMonth(),
+            formData.due_datetime.getDate(),
+            0, 0, 0, 0
+          );
+        } else {
+          // Use the locally combined date+time from the pickers as-is to avoid unwanted timezone shifts
+          dueDate = new Date(formData.due_datetime);
+        }
         // Note: handleTimeChange already merges the selected time into due_datetime using local hours.
         // Avoid setUTCHours here, which caused dates to shift backward for early-morning times.
       }

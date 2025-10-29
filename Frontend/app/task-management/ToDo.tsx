@@ -45,14 +45,14 @@ const ToDo: React.FC = () => {
   const [categories, setCategories] = useState<TaskCategory[]>([]);
   const [selectedFilter, setSelectedFilter] = useState<
     "all" | "pending" | "completed" | "overdue"
-  >("all");
+  >("pending");
   const [selectedCategory, setSelectedCategory] = useState<"all" | string>(
     "all"
   );
 
   const [selectedStatus, setSelectedStatus] = useState<
     "all" | "pending" | "completed" | "overdue"
-  >("all");
+  >("pending");
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [showQuickFilters, setShowQuickFilters] = useState(false);
@@ -70,6 +70,8 @@ const ToDo: React.FC = () => {
   const fabBottom = Math.max(insets.bottom, 0) + (navbarHeight || defaultNavbarHeight) + fabExtraOffset;
   
   const [showMoreVertMenu, setShowMoreVertMenu] = useState(false);
+  const [isBulkSelectionMode, setIsBulkSelectionMode] = useState(false);
+  const [selectedTasks, setSelectedTasks] = useState<Set<string>>(new Set());
   
   const statusOptions = [
     { value: "all", label: "All Tasks" },
@@ -213,6 +215,54 @@ const ToDo: React.FC = () => {
     } catch (error) {
       console.error("Error updating task:", error);
       Alert.alert("Error", "Failed to update task");
+    }
+  };
+
+  const handleBulkComplete = async (taskIds: string[]) => {
+    try {
+      for (const taskId of taskIds) {
+        await taskService.markTaskComplete(taskId);
+      }
+      setTasks((prev) => prev.map((t) => {
+        if (!taskIds.includes(t.id)) return t;
+        const completedAt = new Date();
+        return {
+          ...t,
+          completed: true,
+          completed_at: completedAt.toISOString(),
+          overdue: false,
+          updated_at: completedAt.toISOString(),
+        };
+      }));
+      loadTasks();
+      
+      if (!taskService.isOnline()) {
+        Alert.alert("Tasks Completed", "Tasks marked as completed offline. Changes will sync when you're back online.");
+      } else {
+        Alert.alert("Success", `${taskIds.length} task${taskIds.length > 1 ? 's' : ''} marked as completed!`);
+      }
+    } catch (error) {
+      console.error("Error updating tasks:", error);
+      Alert.alert("Error", "Failed to update tasks");
+    }
+  };
+
+  const handleBulkDelete = async (taskIds: string[]) => {
+    try {
+      for (const taskId of taskIds) {
+        await taskService.deleteTask(taskId);
+      }
+      setTasks((prev) => prev.filter((t) => !taskIds.includes(t.id)));
+      loadTasks();
+      
+      if (!taskService.isOnline()) {
+        Alert.alert("Tasks Deleted", "Tasks deleted offline. Changes will sync when you're back online.");
+      } else {
+        Alert.alert("Success", `${taskIds.length} task${taskIds.length > 1 ? 's' : ''} deleted successfully!`);
+      }
+    } catch (error) {
+      console.error("Error deleting tasks:", error);
+      Alert.alert("Error", "Failed to delete tasks");
     }
   };
 
@@ -484,7 +534,7 @@ const ToDo: React.FC = () => {
                 styles.dashboardCardItemWithBorder,
                 selectedFilter === "completed" && styles.activeDashboardCard,
               ]}
-              onPress={() => handleStatusSelect("completed")}
+              onPress={() => navigation.navigate("CompletedTasks")}
             >
               <Text style={[
                 styles.dashboardNumber,
@@ -521,7 +571,7 @@ const ToDo: React.FC = () => {
                 styles.dashboardCardItem,
                 selectedFilter === "all" && styles.activeDashboardCard,
               ]}
-              onPress={() => handleStatusSelect("all")}
+              onPress={() => navigation.navigate("TotalTasks")}
             >
               <Text style={[
                 styles.dashboardNumber,
@@ -538,7 +588,60 @@ const ToDo: React.FC = () => {
         </View>
       </View>
 
+      {/* Bulk Actions Header */}
+      {isBulkSelectionMode && (
+        <View style={styles.bulkActionsHeader}>
+          <View style={styles.bulkActionsInfo}>
+            <View style={styles.selectionCountBadge}>
+              <Text style={styles.selectionCountText}>
+                {selectedTasks.size}
+              </Text>
+            </View>
+            <Text style={styles.bulkActionsText}>
+              {selectedTasks.size === 1 ? "task" : "tasks"} selected
+            </Text>
+          </View>
+          <View style={styles.bulkActionsButtons}>
+            <TouchableOpacity
+              style={[styles.bulkActionButton, styles.completeButton]}
+              onPress={() => {
+                if (selectedTasks.size > 0) {
+                  handleBulkComplete(Array.from(selectedTasks));
+                  setIsBulkSelectionMode(false);
+                  setSelectedTasks(new Set());
+                }
+              }}
+            >
+              <MaterialIcons name="check-circle" size={18} color="#FFFFFF" />
+              
+            </TouchableOpacity>
 
+            <TouchableOpacity
+              style={[styles.bulkActionButton, styles.deleteButton]}
+              onPress={() => {
+                if (selectedTasks.size > 0) {
+                  handleBulkDelete(Array.from(selectedTasks));
+                  setIsBulkSelectionMode(false);
+                  setSelectedTasks(new Set());
+                }
+              }}
+            >
+              <MaterialIcons name="delete" size={18} color="#FFFFFF" />
+         
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.bulkActionButton, styles.cancelButton]}
+              onPress={() => {
+                setIsBulkSelectionMode(false);
+                setSelectedTasks(new Set());
+              }}
+            >
+              <MaterialIcons name="close" size={18} color="#64748B" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       <View
         style={[
@@ -558,9 +661,29 @@ const ToDo: React.FC = () => {
               onAddTask={handleAddTask}
               onDeleteTask={handleDeleteTask}
               onMarkComplete={handleMarkComplete}
+              onBulkComplete={handleBulkComplete}
+              onBulkDelete={handleBulkDelete}
               categories={categories}
               selectedCategory={selectedCategory}
               onCategoryChange={setSelectedCategory}
+              isBulkSelectionMode={isBulkSelectionMode}
+              selectedTasks={selectedTasks}
+              onToggleBulkSelection={(taskId) => {
+                const newSelectedTasks = new Set(selectedTasks);
+                if (newSelectedTasks.has(taskId)) {
+                  newSelectedTasks.delete(taskId);
+                  if (newSelectedTasks.size === 0) {
+                    setIsBulkSelectionMode(false);
+                  }
+                } else {
+                  newSelectedTasks.add(taskId);
+                }
+                setSelectedTasks(newSelectedTasks);
+              }}
+              onEnterBulkSelectionMode={(taskId) => {
+                setIsBulkSelectionMode(true);
+                setSelectedTasks(new Set([taskId]));
+              }}
             />
           ) : (
             <TaskListView
@@ -568,9 +691,29 @@ const ToDo: React.FC = () => {
               onTaskPress={handleTaskPress}
               onDeleteTask={handleDeleteTask}
               onMarkComplete={handleMarkComplete}
+              onBulkComplete={handleBulkComplete}
+              onBulkDelete={handleBulkDelete}
               categories={categories}
               selectedCategory={selectedCategory}
               onCategoryChange={setSelectedCategory}
+              isBulkSelectionMode={isBulkSelectionMode}
+              selectedTasks={selectedTasks}
+              onToggleBulkSelection={(taskId) => {
+                const newSelectedTasks = new Set(selectedTasks);
+                if (newSelectedTasks.has(taskId)) {
+                  newSelectedTasks.delete(taskId);
+                  if (newSelectedTasks.size === 0) {
+                    setIsBulkSelectionMode(false);
+                  }
+                } else {
+                  newSelectedTasks.add(taskId);
+                }
+                setSelectedTasks(newSelectedTasks);
+              }}
+              onEnterBulkSelectionMode={(taskId) => {
+                setIsBulkSelectionMode(true);
+                setSelectedTasks(new Set([taskId]));
+              }}
             />
           )
         )}
@@ -1403,6 +1546,89 @@ const styles = StyleSheet.create({
     color: "#334155",
     marginLeft: 12,
     fontWeight: "500",
+  },
+  bulkActionsHeader: {
+    position: "absolute",
+    top: Platform.OS === "ios" ? 30 : 40,
+    left: 0,
+    right: 0,
+    backgroundColor: "#FFFFFF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    zIndex: 2500,
+    elevation: 25,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3.84,
+  },
+  bulkActionsInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  selectionCountBadge: {
+    backgroundColor: "#6366F1",
+    borderRadius: 12,
+    minWidth: 24,
+    height: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 8,
+  },
+  selectionCountText: {
+    fontSize: 12,
+    fontFamily: "Inter-Bold",
+    color: "#FFFFFF",
+  },
+  bulkActionsText: {
+    fontSize: 15,
+    fontFamily: "Inter-Medium",
+    color: "#374151",
+  },
+  bulkActionsButtons: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  bulkActionButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  completeButton: {
+    backgroundColor: "#10B981",
+  },
+  deleteButton: {
+    backgroundColor: "#EF4444",
+  },
+  cancelButton: {
+    backgroundColor: "#F1F5F9",
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+  },
+  bulkActionButtonText: {
+    fontSize: 12,
+    fontFamily: "Inter-Medium",
+    color: "#FFFFFF",
+    marginLeft: 4,
   },
 });
 
