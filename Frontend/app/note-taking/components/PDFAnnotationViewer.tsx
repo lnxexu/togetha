@@ -23,6 +23,7 @@ import {
   Easing,
   Image,
   BackHandler,
+  Vibration,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -239,7 +240,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const [strokeWidth, setStrokeWidth] = useState(3);
   const [selectedColor, setSelectedColor] = useState(ANNOTATION_COLORS[0]);
   const [highlightOpacity, setHighlightOpacity] = useState(0.45);
-  const [eraserSize, setEraserSize] = useState(0.05);
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentPath, setCurrentPath] = useState("");
   const currentPathRef = useRef("");
@@ -308,13 +308,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const [showDebugMarkers, setShowDebugMarkers] = useState(false);
   const [showTextPreviewModal, setShowTextPreviewModal] = useState(false);
   const [previewExtractedText, setPreviewExtractedText] = useState<string>("");
-  const [showAIModal, setShowAIModal] = useState(false);
-  const [aiMessage, setAiMessage] = useState<string>("");
-  const [aiModalAnimation] = useState(new Animated.Value(0));
-  const [chatMessages, setChatMessages] = useState<
-    Array<{ type: "user" | "ai"; text: string }>
-  >([{ type: "ai", text: "How can I help you with this document?" }]);
-  const chatScrollViewRef = useRef<ScrollView>(null);
 
   type ToolbarTool = DrawingTool;
   const mapToolbarToolToViewer = (t: ToolbarTool): typeof selectedTool => {
@@ -421,50 +414,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       showErrorToast("Could not save snapshot");
     }
   };
- const [buttonPosition, setButtonPosition] = useState({
-    x: Math.max(20, screenWidth - 76),
-    y: 100,
-  });
-  const buttonPositionRef = useRef({
-    x: Math.max(20, screenWidth - 76),
-    y: 100,
-  });
-  const [isDraggingButton, setIsDraggingButton] = useState(false);
-  const buttonPanResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onPanResponderGrant: () => {
-        setIsDraggingButton(true);
-      },
-      onPanResponderMove: (_, gestureState) => {
-        buttonPositionRef.current = {
-          x: Math.max(
-            10,
-            Math.min(
-              screenWidth - 66,
-              buttonPositionRef.current.x + gestureState.dx
-            )
-          ),
-          y: Math.max(
-            80,
-            Math.min(
-              screenHeight - 180,
-              buttonPositionRef.current.y + gestureState.dy
-            )
-          ),
-        };
-        setButtonPosition(buttonPositionRef.current);
-      },
-      onPanResponderRelease: (_, __) => {
-        setIsDraggingButton(false);
-      },
-      onPanResponderTerminate: () => {
-        setIsDraggingButton(false);
-      },
-    })
-  ).current;
-
-  const updatePathWithAnimation = useCallback(() => {
+ const updatePathWithAnimation = useCallback(() => {
     if (currentPointsRef.current.length === 0) return;
 
     const updatePath = () => {
@@ -1763,6 +1713,25 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       if (currentNoteId) {
         try {
           const note = await offlineNotesService.getNoteById(currentNoteId);
+          // Initialize folder information from the note
+          if (note?.folderId) {
+            setSelectedFolderId(String(note.folderId));
+            // Fetch folder name if we have a folderId
+            try {
+              const folders = await offlineNotesService.getAllFolders();
+              const folder = Array.isArray(folders) ? folders.find(
+                (f: any) => (f.id ?? f.localId)?.toString() === String(note.folderId)
+              ) : null;
+              if (folder) {
+                setFolderName(folder.name);
+              }
+            } catch (folderErr) {
+              console.warn("Could not fetch folder name:", folderErr);
+            }
+          } else {
+            setSelectedFolderId(null);
+            setFolderName("PDF Documents");
+          }
           const rawAnns = (note?.document_annotations || []) as any[];
           let anns = normalizeAnnotations(
             Array.isArray(rawAnns) ? rawAnns : []
@@ -2719,13 +2688,22 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
   const localToSvg = useCallback((localX: number, localY: number) => {
     const { displayW, contentHeight } = getLayoutMetrics();
+    
+    // Untransform the coordinates since we're in the transformed container
+    const scale = currentZoom || 1;
+    const translateX = pdfTransform.translateX;
+    const translateY = pdfTransform.translateY;
+    
+    const untransformedX = (localX - translateX) / scale;
+    const untransformedY = (localY - translateY) / scale;
+    
     const clamp = (v: number, min: number, max: number) =>
       Math.max(min, Math.min(max, v));
     return {
-      x: clamp(localX, 0, displayW),
-      y: clamp(localY, 0, contentHeight),
+      x: clamp(untransformedX, 0, displayW),
+      y: clamp(untransformedY, 0, contentHeight),
     };
-  }, []);
+  }, [currentZoom, pdfTransform]);
 
   const getPageFromContentY = useCallback(
     (contentY: number) => {
@@ -2834,14 +2812,38 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   }, [isOnline]);
 
   const handleFolderSelect = (folder: any | null) => {
+    // Add haptic feedback for better UX
+    if (Platform.OS === 'ios') {
+      Vibration.vibrate(10);
+    }
+    
     if (folder) {
-      setSelectedFolderId(folder.id);
+      const folderId = folder.id ?? folder.localId;
+      setSelectedFolderId(String(folderId));
       setFolderName(folder.name);
+      showSuccessToast(`Moved to folder "${folder.name}"`);
     } else {
       setSelectedFolderId(null);
       setFolderName("PDF Documents");
     }
     setShowFolderModal(false);
+
+    // Save the folder change to the note
+    if (currentNoteId) {
+      try {
+        const folderIdToSave = folder ? (folder.id ?? folder.localId) : null;
+        offlineNotesService.updateNote(currentNoteId, {
+          folderId: folderIdToSave,
+          type: "document",
+        }).catch((error) => {
+          console.error("Failed to update note folder:", error);
+          showErrorToast("Failed to update folder");
+        });
+      } catch (error) {
+        console.error("Failed to update note folder:", error);
+        showErrorToast("Failed to update folder");
+      }
+    }
   };
 
   const fetchFolders = useCallback(async () => {
@@ -3180,8 +3182,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         ) {
           svLivePath.value = finalPath;
           addPenAnnotation(finalPath, selectedTool);
-        } else if (selectedTool === "eraser") {
-          partialEraseAnnotations(finalPath);
         }
 
         currentPointsRef.current.length = 0;
@@ -3742,77 +3742,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     return convertNormalizedPathToScreen(path);
   };
 
-  const partialEraseAnnotations = (eraserPath: string) => {
-    let actualErasePage = displayCurrentPage || currentPageRef.current || 1;
-    if (
-      (!displayCurrentPage && !currentPageRef.current) &&
-      currentPointsRef.current &&
-      currentPointsRef.current.length > 0
-    ) {
-      const firstPoint = currentPointsRef.current[0];
-      actualErasePage = getPageFromContentY(firstPoint.y);
-    }
-    const normalizedEraserPath = convertPathToNormalized(
-      eraserPath,
-      actualErasePage
-    );
-    const eraserPoints = getPathPoints(normalizedEraserPath);
-    const eraseThreshold = Math.max(0.01, Math.min(0.15, eraserSize));
-
-    const modifiedAnnotations = annotations
-      .map((ann) => {
-        if (ann.page !== actualErasePage) return ann; // Keep annotations from other pages
-        if (!ann.path && !ann.x && !ann.y) return ann; // Keep annotations without position data
-
-        if (ann.path) {
-          const annotationPoints = getPathPoints(ann.path);
-          const remainingPoints: { x: number; y: number }[] = [];
-
-          annotationPoints.forEach((point) => {
-            let shouldKeep = true;
-            for (const eraserPoint of eraserPoints) {
-              const distance = Math.sqrt(
-                (point.x - eraserPoint.x) ** 2 + (point.y - eraserPoint.y) ** 2
-              );
-              if (distance < eraseThreshold) {
-                shouldKeep = false;
-                break;
-              }
-            }
-            if (shouldKeep) {
-              remainingPoints.push(point);
-            }
-          });
-
-          if (remainingPoints.length > 1) {
-            const newPath = reconstructPath(remainingPoints);
-            return {
-              ...ann,
-              path: newPath,
-              id: ann.id + "_modified_" + Date.now(), // Update ID to trigger re-render
-            };
-          } else {
-            return null;
-          }
-        }
-
-        if (ann.x !== undefined && ann.y !== undefined) {
-          const shouldErase = eraserPoints.some((eraserPoint) => {
-            const distance = Math.sqrt(
-              (ann.x - eraserPoint.x) ** 2 + (ann.y - eraserPoint.y) ** 2
-            );
-            return distance < eraseThreshold;
-          });
-          return shouldErase ? null : ann;
-        }
-
-        return ann;
-      })
-      .filter((ann) => ann !== null) as Annotation[];
-
-    saveAnnotationsWithChanges(modifiedAnnotations);
-  };
-
   const attemptToExtractTextFromPath = (path: string) => {
     setShowTextExtractionModal(true);
   };
@@ -3880,6 +3809,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
   const reconstructPath = (points: { x: number; y: number }[]): string => {
     if (points.length === 0) return "";
+    if (points.length === 1) return `M${points[0].x},${points[0].y}`;
 
     let path = `M${points[0].x},${points[0].y}`;
     for (let i = 1; i < points.length; i++) {
@@ -3887,91 +3817,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     }
 
     return path;
-  };
-
-  const eraseAnnotations = (eraserPath: string) => {
-    const erased = annotations.filter((ann) => {
-      if (ann.page !== currentPageRef.current) return true; // Keep annotations from other pages
-      if (!ann.path && !ann.x && !ann.y) return true; // Keep annotations without position data
-
-      if (ann.path) {
-        return !isPathIntersecting(ann.path, eraserPath);
-      }
-
-      if (ann.x !== undefined && ann.y !== undefined) {
-        return !isPointInEraserPath(ann.x, ann.y, eraserPath);
-      }
-
-      return true;
-    });
-
-    saveAnnotationsWithChanges(erased);
-  };
-
-  const isPathIntersecting = (path1: string, path2: string) => {
-    const getPathPoints = (path: string) => {
-      const points: { x: number; y: number }[] = [];
-      const commands = path.split(/[ML]/).filter((cmd) => cmd.trim());
-
-      commands.forEach((cmd) => {
-        const coords = cmd.trim().split(",");
-        if (coords.length === 2) {
-          points.push({
-            x: parseFloat(coords[0]),
-            y: parseFloat(coords[1]),
-          });
-        }
-      });
-
-      return points;
-    };
-
-    const path1Points = getPathPoints(path1);
-    const path2Points = getPathPoints(path2);
-
-    const threshold = Math.max(0.01, Math.min(0.15, eraserSize));
-
-    for (const p1 of path1Points) {
-      for (const p2 of path2Points) {
-        const distance = Math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2);
-        if (distance < threshold) {
-          return true;
-        }
-      }
-    }
-
-    return false;
-  };
-
-  const isPointInEraserPath = (x: number, y: number, eraserPath: string) => {
-    const getPathPoints = (path: string) => {
-      const points: { x: number; y: number }[] = [];
-      const commands = path.split(/[ML]/).filter((cmd) => cmd.trim());
-
-      commands.forEach((cmd) => {
-        const coords = cmd.trim().split(",");
-        if (coords.length === 2) {
-          points.push({
-            x: parseFloat(coords[0]),
-            y: parseFloat(coords[1]),
-          });
-        }
-      });
-
-      return points;
-    };
-
-    const eraserPoints = getPathPoints(eraserPath);
-    const threshold = 0.05; // Normalized threshold (5% of screen)
-
-    for (const point of eraserPoints) {
-      const distance = Math.sqrt((x - point.x) ** 2 + (y - point.y) ** 2);
-      if (distance < threshold) {
-        return true;
-      }
-    }
-
-    return false;
   };
 
   const addHighlightAnnotation = (x: number, y: number) => {
@@ -5494,36 +5339,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
   return (
     <GestureHandlerRootView style={styles.container}>
-      {/* Floating AI Button */}
-      <Animated.View
-        style={[
-          styles.floatingAIButton,
-          {
-            left: buttonPosition.x,
-            bottom: buttonPosition.y,
-            transform: [{ scale: isDraggingButton ? 1.1 : 1 }],
-          },
-        ]}
-        {...buttonPanResponder.panHandlers}
-      >
-        <TouchableOpacity
-          style={styles.floatingAIButtonContent}
-          onLongPress={() => {}}
-          delayLongPress={200}
-          onPress={() => {
-            if (!isDraggingButton) {
-              setShowAIModal(true);
-              Animated.timing(aiModalAnimation, {
-                toValue: 1,
-                duration: 300,
-                useNativeDriver: true,
-              }).start();
-            }
-          }}
-        >
-          <MaterialCommunityIcons name="robot" size={28} color="#FFFFFF" />
-        </TouchableOpacity>
-      </Animated.View>
       {/* Header as background (hidden in focus mode) */}
       {!uiHidden && (
         <View style={styles.headerBackground}>
@@ -5632,6 +5447,15 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
                   )}
                 </TouchableOpacity>
 
+                {/* Folder Button */}
+                <TouchableOpacity
+                  onPress={() => setShowFolderModal(true)}
+                  style={styles.saveButton}
+                  activeOpacity={0.8}
+                >
+                  <MaterialIcons name="folder" size={18} color="#ffffff" />
+                </TouchableOpacity>
+
                 {/* More Options Menu */}
                 <TouchableOpacity
                   onPress={() => setShowMoreMenu(true)}
@@ -5656,7 +5480,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
               currentColor={selectedColor}
               currentWidth={strokeWidth}
               highlighterOpacity={highlightOpacity}
-              eraserSize={eraserSize}
               currentZoom={currentZoom}
               compact
               isEditMode={isEditMode}
@@ -6067,21 +5890,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
               />
               <Text style={styles.floatingPageText}>/ {displayTotalPages}</Text>
 
-              {/* Debug toggle button */}
-              <TouchableOpacity
-                style={[
-                  styles.floatingPageButton,
-                  { marginLeft: 8, backgroundColor: showDebugMarkers ? '#F87171' : undefined },
-                ]}
-                activeOpacity={0.8}
-                onPress={() => setShowDebugMarkers((v) => !v)}
-              >
-                <MaterialIcons
-                  name="bug-report"
-                  size={18}
-                  color={showDebugMarkers ? '#fff' : '#374151'}
-                />
-              </TouchableOpacity>
+           
 
               <TouchableOpacity
                 style={styles.floatingPageButton}
@@ -6271,11 +6080,12 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
                       : true
                   )
                   .map((folder: any) => {
+                    const folderId = folder.id ?? folder.localId;
                     const selected =
-                      selectedFolderId?.toString() === folder.id?.toString();
+                      selectedFolderId?.toString() === folderId?.toString();
                     return (
                       <TouchableOpacity
-                        key={folder.id}
+                        key={folderId}
                         style={[
                           styles.folderCard,
                           selected && styles.selectedFolderCard,
@@ -6286,10 +6096,10 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
                         <View
                           style={[
                             styles.folderCardIcon,
-                            { backgroundColor: "#8B5CF6" },
+                            { backgroundColor: folder.color || '#8B5CF6' },
                           ]}
                         >
-                          <MaterialIcons name="folder" size={20} color="#fff" />
+                          <MaterialIcons name={(folder.icon as any) || 'folder'} size={20} color="#fff" />
                         </View>
                         <View style={styles.folderCardTextWrap}>
                           <Text style={styles.folderCardTitle}>
@@ -6371,20 +6181,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.moreMenuItem}
-              onPress={() => {
-                setShowMoreMenu(false);
-                setShowFolderModal(true);
-              }}
-              activeOpacity={0.8}
-            >
-              <MaterialIcons name="folder" size={20} color="#667eea" />
-              <Text style={[styles.moreMenuText, { color: "#667eea" }]}>
-                Select Folder
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
               style={[
                 styles.moreMenuItem,
                 annotations.length > 0 && {
@@ -6444,6 +6240,20 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
             </TouchableOpacity>
 
             <TouchableOpacity
+              style={styles.moreMenuItem}
+              onPress={() => {
+                setShowMoreMenu(false);
+                navigation.navigate("RINA");
+              }}
+              activeOpacity={0.8}
+            >
+              <MaterialIcons name="smart-toy" size={20} color="#8B5CF6" />
+              <Text style={[styles.moreMenuText, { color: "#8B5CF6" }]}>
+                Ask AI
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
               style={[styles.moreMenuItem, { borderBottomWidth: 0 }]}
               onPress={() => {
                 setShowMoreMenu(false);
@@ -6458,142 +6268,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         </TouchableOpacity>
       </Modal>
 
-      {/* AI Assistant Modal */}
-      <Modal
-        visible={showAIModal}
-        transparent={true}
-        animationType="none"
-        onRequestClose={() => {
-          Animated.timing(aiModalAnimation, {
-            toValue: 0,
-            duration: 250,
-            useNativeDriver: true,
-          }).start(() => setShowAIModal(false));
-        }}
-      >
-        <TouchableOpacity
-          style={styles.aiModalOverlay}
-          activeOpacity={1}
-          onPress={() => {
-            Animated.timing(aiModalAnimation, {
-              toValue: 0,
-              duration: 250,
-              useNativeDriver: true,
-            }).start(() => setShowAIModal(false));
-          }}
-        >
-          <Animated.View
-            style={[
-              styles.aiModalContainer,
-              {
-                transform: [
-                  {
-                    translateY: aiModalAnimation.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [600, 0],
-                    }),
-                  },
-                ],
-              },
-            ]}
-          >
-            <View style={styles.aiModalContent}>
-              <View style={styles.aiModalHandle} />
-              <View style={styles.aiModalHeader}>
-                <View style={styles.aiModalIconContainer}>
-                  <MaterialCommunityIcons
-                    name="robot"
-                    size={24}
-                    color="#8B5CF6"
-                  />
-                </View>
-                <Text style={styles.aiModalTitle}>AI Assistant</Text>
-                <TouchableOpacity
-                  style={styles.aiModalCloseButton}
-                  onPress={() => {
-                    Animated.timing(aiModalAnimation, {
-                      toValue: 0,
-                      duration: 250,
-                      useNativeDriver: true,
-                    }).start(() => setShowAIModal(false));
-                  }}
-                >
-                  <MaterialIcons name="close" size={24} color="#6B7280" />
-                </TouchableOpacity>
-              </View>
 
-              <ScrollView
-                ref={chatScrollViewRef}
-                style={styles.aiModalBody}
-                contentContainerStyle={{ flexGrow: 1 }}
-                onContentSizeChange={() => {
-                  if (chatMessages.length > 1) {
-                    chatScrollViewRef.current?.scrollToEnd({ animated: true });
-                  }
-                }}
-              >
-                <View style={styles.aiChatContainer}>
-                  {chatMessages.map((message, index) =>
-                    message.type === "ai" ? (
-                      <View key={index} style={styles.aiMessageBubble}>
-                        <Text style={styles.aiMessageText}>{message.text}</Text>
-                      </View>
-                    ) : (
-                      <View key={index} style={styles.userMessageBubble}>
-                        <Text style={styles.userMessageText}>
-                          {message.text}
-                        </Text>
-                      </View>
-                    )
-                  )}
-                </View>
-              </ScrollView>
-
-              <View style={styles.aiInputContainer}>
-                <TextInput
-                  style={styles.aiInput}
-                  placeholder="Ask me anything about this document..."
-                  placeholderTextColor="#9CA3AF"
-                  value={aiMessage}
-                  onChangeText={setAiMessage}
-                  multiline
-                />
-                <TouchableOpacity
-                  style={styles.aiSendButton}
-                  onPress={() => {
-                    if (aiMessage.trim() === "") return;
-
-                    const userMessage = aiMessage.trim();
-                    setChatMessages((prev) => [
-                      ...prev,
-                      { type: "user", text: userMessage },
-                    ]);
-
-                    setAiMessage("");
-
-                    setTimeout(() => {
-                      const aiResponse = `I understand your query about "${userMessage.substring(
-                        0,
-                        20
-                      )}${
-                        userMessage.length > 20 ? "..." : ""
-                      }". Let me analyze this document further.`;
-                      setChatMessages((prev) => [
-                        ...prev,
-                        { type: "ai", text: aiResponse },
-                      ]);
-                    }, 1000);
-                  }}
-                >
-                  <Ionicons name="send" size={20} color="#FFFFFF" />
-                </TouchableOpacity>
-              </View>
-            </View>
-          </Animated.View>
-        </TouchableOpacity>
-      </Modal>
-
-      {/* Ask Rina Popup */}
       {showAskRinaPopup && !uiHidden && (
         <Animated.View
           style={[
@@ -8336,155 +8011,6 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
 
-  floatingAIButton: {
-    position: "absolute",
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#8B5CF6",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 8,
-    zIndex: 1000,
-  },
-  floatingAIButtonContent: {
-    width: "100%",
-    height: "100%",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 28,
-  },
-  aiModalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.4)",
-    justifyContent: "flex-end",
-  },
-  aiModalContainer: {
-    backgroundColor: "transparent",
-    width: "100%",
-    height: "90%", // Allow the modal to take up to 90% of screen height
-    justifyContent: "flex-end",
-  },
-  aiModalContent: {
-    backgroundColor: "#FFFFFF",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingBottom: Platform.OS === "ios" ? 48 : 24, // Extra padding for iOS devices with home indicator
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 16,
-    minHeight: "50%",
-    maxHeight: "92%",
-  },
-  aiModalHandle: {
-    width: 40,
-    height: 4,
-    backgroundColor: "#E5E7EB",
-    borderRadius: 2,
-    alignSelf: "center",
-    marginTop: 12,
-    marginBottom: 8,
-  },
-  aiModalHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F3F4F6",
-  },
-  aiModalIconContainer: {
-    backgroundColor: "rgba(139, 92, 246, 0.1)",
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  aiModalTitle: {
-    flex: 1,
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#1F2937",
-    marginLeft: 12,
-  },
-  aiModalCloseButton: {
-    padding: 6,
-    borderRadius: 20,
-  },
-  aiModalBody: {
-    flexGrow: 1,
-    padding: 16,
-    maxHeight: "70%",
-  },
-  aiChatContainer: {
-    paddingBottom: 16,
-  },
-  aiMessageBubble: {
-    backgroundColor: "#F3F4F6",
-    borderRadius: 16,
-    borderTopLeftRadius: 4,
-    padding: 12,
-    marginBottom: 12,
-    maxWidth: "80%",
-    alignSelf: "flex-start",
-  },
-  aiMessageText: {
-    fontSize: 16,
-    color: "#1F2937",
-    lineHeight: 22,
-  },
-  userMessageBubble: {
-    backgroundColor: "#8B5CF6",
-    borderRadius: 16,
-    borderTopRightRadius: 4,
-    padding: 12,
-    marginBottom: 12,
-    maxWidth: "80%",
-    alignSelf: "flex-end",
-  },
-  userMessageText: {
-    fontSize: 16,
-    color: "#FFFFFF",
-    lineHeight: 22,
-  },
-  aiInputContainer: {
-    flexDirection: "row",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    alignItems: "flex-end",
-    borderTopWidth: 1,
-    borderTopColor: "#F3F4F6",
-    backgroundColor: "#FFFFFF", // Ensure the input area has a solid background
-  },
-  aiInput: {
-    flex: 1,
-    backgroundColor: "#F9FAFB",
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    paddingRight: 48,
-    fontSize: 16,
-    maxHeight: 120,
-  },
-  aiSendButton: {
-    position: "absolute",
-    right: 24,
-    bottom: 20,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#8B5CF6",
-    alignItems: "center",
-    justifyContent: "center",
-  },
   toolboxModal: {
     width: "92%",
     maxWidth: 480,

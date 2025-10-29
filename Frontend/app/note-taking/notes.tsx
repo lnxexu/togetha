@@ -226,6 +226,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
   >(null);
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
   const [editingFolderName, setEditingFolderName] = useState("");
+  const [editingFolderColor, setEditingFolderColor] = useState("#667EEA");
   const [showEditFolderModal, setShowEditFolderModal] = useState(false);
   const [lastFolderFetch, setLastFolderFetch] = useState<number>(0);
   const [lastNoteFetch, setLastNoteFetch] = useState<number>(0);
@@ -1868,7 +1869,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
   }, []);
 
   // Add this helper function
-const updateFolderName = async (folderId: string, newName: string) => {
+const updateFolder = async (folderId: string, newName: string, newColor: string) => {
   // Check for duplicate folder name (excluding the current folder)
   const normalizedNewName = newName.trim().toLowerCase();
   const isDuplicate = folders.some(
@@ -1884,20 +1885,20 @@ const updateFolderName = async (folderId: string, newName: string) => {
 
   try {
     // Use offline service to update folder (works both online and offline)
-    await offlineNotesService.updateFolder(folderId, { name: newName });
+    await offlineNotesService.updateFolder(folderId, { name: newName, color: newColor });
 
     // Update folder in state
     setFolders(
       folders.map((folder) =>
-        folder.id === folderId ? { ...folder, name: newName } : folder
+        folder.id === folderId ? { ...folder, name: newName, color: newColor } : folder
       )
     );
 
-    showSuccessToast("Folder name updated successfully");
+    showSuccessToast("Folder updated successfully");
   } catch (error) {
-    console.error("Error updating folder name:", error);
-    showErrorToast("Failed to update folder name");
-    Alert.alert("Error", "Failed to update folder name. Please try again.");
+    console.error("Error updating folder:", error);
+    showErrorToast("Failed to update folder");
+    Alert.alert("Error", "Failed to update folder. Please try again.");
   }
 };
 const handleCreateFolder = async () => {
@@ -2106,6 +2107,7 @@ const handleCreateFolder = async () => {
     if (folder) {
       setEditingFolderId(folderId);
       setEditingFolderName(folder.name);
+      setEditingFolderColor(folder.color || "#667EEA");
       setShowEditFolderModal(true);
       setShowFolderOptionsModal(false);
     }
@@ -2638,12 +2640,16 @@ const handleCreateFolder = async () => {
               <View style={styles.metadataContainer}>
                 {!selectedFilterFolder && item.folderId && (
                   <View style={styles.folderBadge}>
-                    <MaterialIcons name="folder" size={10} color="#6A009C" />
-                    <Text style={styles.folderBadgeText} numberOfLines={1}>
-                      {folders.find((f) => f.id === item.folderId)?.name ||
-                        "Folder"}
-                    </Text>
-                  </View>
+                      <MaterialIcons name="folder" size={10} color="#6A009C" />
+                      <Text
+                        style={styles.folderBadgeText}
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
+                      >
+                        {folders.find((f) => f.id === item.folderId)?.name ||
+                          "Folder"}
+                      </Text>
+                    </View>
                 )}
 
                 {/* Tags removed from UI per request */}
@@ -3289,7 +3295,7 @@ const handleCreateFolder = async () => {
           <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
             <View style={styles.modalContent}>
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Edit Folder Name</Text>
+                <Text style={styles.modalTitle}>Edit Folder</Text>
                 <TouchableOpacity
                   onPress={() => setShowEditFolderModal(false)}
                   style={styles.modalCloseButton}
@@ -3299,15 +3305,45 @@ const handleCreateFolder = async () => {
               </View>
 
               <View style={styles.modalBody}>
-                <TextInput
-                  style={styles.textInput}
-                  value={editingFolderName}
-                  onChangeText={setEditingFolderName}
-                  placeholder="Enter folder name"
-                  placeholderTextColor="#9CA3AF"
-                  autoFocus={true}
-                  maxLength={20}
-                />
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Folder Name</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={editingFolderName}
+                    onChangeText={setEditingFolderName}
+                    placeholder="Enter folder name"
+                    placeholderTextColor="#9CA3AF"
+                    autoFocus={true}
+                    maxLength={20}
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Choose Color</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.colorSelector}
+                    keyboardShouldPersistTaps="always"
+                  >
+                    {FOLDER_COLORS.map((color) => (
+                      <TouchableOpacity
+                        key={color}
+                        style={[
+                          styles.colorOption,
+                          { backgroundColor: color },
+                          editingFolderColor === color &&
+                            styles.selectedColorOption,
+                        ]}
+                        onPress={() => setEditingFolderColor(color)}
+                      >
+                        {editingFolderColor === color && (
+                          <MaterialIcons name="check" size={20} color="#FFFFFF" />
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
               </View>
 
               <View style={styles.modalFooter}>
@@ -3321,9 +3357,10 @@ const handleCreateFolder = async () => {
                   style={styles.createButton}
                   onPress={() => {
                     if (editingFolderName.trim() !== "" && editingFolderId) {
-                      updateFolderName(
+                      updateFolder(
                         editingFolderId,
-                        editingFolderName.trim()
+                        editingFolderName.trim(),
+                        editingFolderColor
                       );
                       setShowEditFolderModal(false);
                     }
@@ -5073,7 +5110,10 @@ const styles = StyleSheet.create({
     fontFamily: "Inter-Regular",
     color: "#6A009C",
     marginLeft: 4,
+    maxWidth: 140,
+    flexShrink: 1,
   },
+
   folderStatsRow: {
     flexDirection: "row",
     alignItems: "center",

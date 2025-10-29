@@ -34,6 +34,7 @@ import SkeletonLoader from "./components/SkeletonLoader";
 import { notesCountUtils } from "./utils/NotesCountUtils";
 import { folderCacheUtils } from "./utils/FolderCacheUtils";
 import { WelcomeAnimationUtils } from "./utils/WelcomeAnimationUtils";
+import { userService } from "./profile/services/userService";
 
 const { width } = Dimensions.get("window");
 
@@ -227,36 +228,8 @@ export default function Home() {
           ]);
         }
 
-        // Ensure we're using the right token key
-        const token =
-          (await AsyncStorage.getItem("token")) ||
-          (await AsyncStorage.getItem("authToken"));
-
-        if (!token && online) {
-          navigation.navigate("Login");
-          return;
-        }
-
-        if (online && token) {
-          // Fetch username directly from server
-          const response = await fetch(
-            `${API_URL}${API_ENDPOINTS.USER_PROFILE}`,
-            {
-              headers: {
-                Authorization: `Token ${token}`,
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-              },
-            }
-          );
-
-          if (response.ok) {
-            const data = await response.json();
-            if (data.username) {
-              setUsername(data.username);
-              await AsyncStorage.setItem("username", data.username);
-            }
-          }
-        }
+        // Refresh user info
+        await fetchUserInfo(true);
 
         // The useEffects will handle the rest of data fetching
       } catch (error) {
@@ -270,118 +243,55 @@ export default function Home() {
   }, [navigation]);
 
   // Fetch user info with optimized error handling
-  useEffect(() => {
-    const fetchUserInfo = async (forceRefresh = false) => {
-      try {
-        setLoading(true);
+  const fetchUserInfo = async (forceRefresh = false) => {
+    try {
+      setLoading(true);
 
-        // First try to get username and profile picture from local storage for immediate display
-        if (!forceRefresh) {
-          const cachedUsername = await AsyncStorage.getItem("username");
-          if (cachedUsername) {
-            setUsername(cachedUsername);
-          }
-          
-          const cachedProfilePic = await AsyncStorage.getItem("userProfilePicture");
-          if (cachedProfilePic) {
-            setProfilePicture(`${API_URL}${cachedProfilePic}`);
-          }
+      // First try to get username and profile picture from local storage for immediate display
+      if (!forceRefresh) {
+        const cachedUsername = await AsyncStorage.getItem("username");
+        const cachedProfilePicture = await AsyncStorage.getItem("userProfilePicture");
+        if (cachedUsername) {
+          setUsername(cachedUsername);
         }
-
-        const token = await AsyncStorage.getItem("authToken");
-        if (!token || !isOnlineStrict()) {
-          return;
+        if (cachedProfilePicture) {
+          setProfilePicture(cachedProfilePicture);
         }
-
-        // Using Promise.race to use whichever endpoint responds first
-        const endpoints = [
-          fetch(`${API_URL}/auth/user/`, {
-            method: "GET",
-            headers: {
-              Authorization: `Token ${token}`,
-              "Cache-Control": "no-cache",
-            },
-          }),
-          fetch(`${API_URL}${API_ENDPOINTS.USER_PROFILE}`, {
-            method: "GET",
-            headers: {
-              Authorization: `Token ${token}`,
-              "Cache-Control": "no-cache",
-            },
-          }),
-        ];
-
-        // Wait for the fastest response
-        const fastestResponse = await Promise.race(endpoints);
-
-        if (fastestResponse.ok) {
-          const contentType = fastestResponse.headers.get("content-type");
-          if (contentType && contentType.includes("application/json")) {
-            const userData = await fastestResponse.json();
-            if (userData) {
-              const extractedUsername =
-                userData.username || userData.name || userData.user?.username;
-              if (extractedUsername) {
-                setUsername(extractedUsername);
-                // Cache the username for faster loading next time
-                await AsyncStorage.setItem("username", extractedUsername);
-              }
-
-              // Try to extract profile picture path
-              const profilePicPath =
-                userData.profile?.profile_picture ||
-                userData.profile_picture ||
-                userData.user?.profile?.profile_picture;
-
-              if (profilePicPath) {
-                setProfilePicture(`${API_URL}${profilePicPath}`);
-                await AsyncStorage.setItem("userProfilePicture", profilePicPath);
-              }
-            }
-          }
-        }
-
-        // If the fastest endpoint didn't work, try the other one
-        const allResponses = await Promise.allSettled(endpoints);
-        for (const result of allResponses) {
-          if (result.status === "fulfilled" && result.value.ok) {
-            try {
-              const contentType = result.value.headers.get("content-type");
-              if (contentType && contentType.includes("application/json")) {
-                const userData = await result.value.json();
-                if (userData) {
-                  const extractedUsername =
-                    userData.username ||
-                    userData.name ||
-                    userData.user?.username;
-                  if (extractedUsername) {
-                    setUsername(extractedUsername);
-                    await AsyncStorage.setItem("username", extractedUsername);
-                  }
-
-                  const profilePicPath =
-                    userData.profile?.profile_picture ||
-                    userData.profile_picture ||
-                    userData.user?.profile?.profile_picture;
-                  if (profilePicPath) {
-                    setProfilePicture(`${API_URL}${profilePicPath}`);
-                    await AsyncStorage.setItem("userProfilePicture", profilePicPath);
-                  }
-                }
-              }
-            } catch (error) {
-              // Error processing response
-            }
-          }
-        }
-      } catch (error) {
-        console.error("Error in user info fetch process:", error);
-        // Keep using default or cached username
-      } finally {
-        setLoading(false);
       }
-    };
 
+      const token = await AsyncStorage.getItem("authToken");
+      if (!token || !isOnlineStrict()) {
+        return;
+      }
+
+      // Clear cache before fetching new data
+      await userService.clearProfileCache();
+
+      // Get fresh data from the server
+      const userInfo = await userService.getUserInfo(forceRefresh);
+
+      if (Object.keys(userInfo).length > 0) {
+        // Update state
+        setUsername(userInfo.username || "User");
+        if (userInfo.profile?.profile_picture_url) {
+          setProfilePicture(userInfo.profile.profile_picture_url);
+        }
+
+        // Update AsyncStorage with new values
+        await AsyncStorage.setItem("username", userInfo.username || "");
+        if (userInfo.profile?.profile_picture_url) {
+          await AsyncStorage.setItem("userProfilePicture", userInfo.profile.profile_picture_url);
+        }
+      }
+    } catch (error) {
+      console.error("Error in user info fetch process:", error);
+      // Keep using default or cached username
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchUserInfo();
   }, []);
 
@@ -955,6 +865,9 @@ export default function Home() {
                   navigation.navigate("Login");
                   return;
                 }
+
+                // Refresh user info
+                await fetchUserInfo(true);
 
                 // Explicitly refresh notes count only when online
                 if (online) {

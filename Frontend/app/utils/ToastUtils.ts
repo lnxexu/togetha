@@ -1,6 +1,6 @@
 import Toast from 'react-native-toast-message';
 
-export type ToastType = 'success' | 'error' | 'info' | 'warning';
+export type ToastType = 'success' | 'error' | 'info';
 
 export const showToast = (message: string, type: ToastType = 'info') => {
   Toast.show({
@@ -20,8 +20,6 @@ const getToastTitle = (type: ToastType): string => {
       return 'Success';
     case 'error':
       return 'Error';
-    case 'warning':
-      return 'Warning';
     case 'info':
     default:
       return 'Info';
@@ -32,4 +30,4 @@ const getToastTitle = (type: ToastType): string => {
 export const showSuccessToast = (message: string) => showToast(message, 'success');
 export const showErrorToast = (message: string) => showToast(message, 'error');
 export const showInfoToast = (message: string) => showToast(message, 'info');
-export const showWarningToast = (message: string) => showToast(message, 'warning');
+export const showWarningToast = (message: string) => showToast(message, 'info');

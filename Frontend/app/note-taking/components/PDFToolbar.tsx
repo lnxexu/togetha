@@ -7,11 +7,10 @@ import type { TemplateType } from "./TemplateOverlay";
 // PDF-specific toolbar with DrawingToolbar-like appearance, but without tool selectors.
 export interface PDFToolbarProps {
   // Minimal tool selection and vitals
-  currentTool?: DrawingTool; // only pen | brush | highlighter | eraser are rendered
+  currentTool?: DrawingTool; // only pen | brush | highlighter are rendered
   currentColor?: string; // color swatch
   currentWidth?: number; // px label
   highlighterOpacity?: number; // 0..1 for display
-  eraserSize?: number; // 0..1 for display
   currentTemplate?: TemplateType;
   currentZoom?: number;
   compact?: boolean;
@@ -42,7 +41,6 @@ export const PDFToolbar: React.FC<PDFToolbarProps> = ({
   currentColor = '#000000',
   currentWidth = 2,
   highlighterOpacity,
-  eraserSize,
   isEditMode = true,
   onModeToggle,
   scaleStrokesWithZoom = false,
@@ -83,9 +81,6 @@ export const PDFToolbar: React.FC<PDFToolbarProps> = ({
     ) },
     { key: 'brush', label: 'Brush', renderIcon: (color: string, size = 16) => (
       <Ionicons name="brush-outline" size={size} color={color} />
-    ) },
-    { key: 'eraser', label: 'Eraser', renderIcon: (color: string, size = 16) => (
-      <MaterialCommunityIcons name="eraser" size={size} color={color} />
     ) },
   ] as const;
 
@@ -347,11 +342,6 @@ export const PDFToolbar: React.FC<PDFToolbarProps> = ({
             {typeof highlighterOpacity === 'number' && currentTool === 'highlighter' && (
               <View style={styles.vitalChip}>
                 <Text style={styles.vitalText}>Opacity {Math.round(Math.max(0, Math.min(1, highlighterOpacity)) * 100)}%</Text>
-              </View>
-            )}
-            {typeof eraserSize === 'number' && currentTool === 'eraser' && (
-              <View style={styles.vitalChip}>
-                <Text style={styles.vitalText}>Eraser {Math.round(Math.max(0, Math.min(1, eraserSize)) * 100)}%</Text>
               </View>
             )}
           </View>

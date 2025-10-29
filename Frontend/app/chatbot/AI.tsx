@@ -107,6 +107,8 @@ function ChatBot(): React.ReactElement {
   // Track if the current outgoing prompt should open flashcards when the response arrives
   const flashcardTriggerRef = useRef<boolean>(false);
 
+  const [showDisclaimerModal, setShowDisclaimerModal] = useState(false);
+
   // Utilities: detect and parse flashcards from AI text
   const isFlashcardTrigger = (text: string) => {
     const t = (text || '').toLowerCase();
@@ -284,6 +286,20 @@ A: The mitochondrion.`;
 
   initChat();
 }, []);
+
+  useEffect(() => {
+    const checkDisclaimer = async () => {
+      try {
+        const hasShown = await AsyncStorage.getItem('disclaimerShown');
+        if (!hasShown) {
+          setShowDisclaimerModal(true);
+        }
+      } catch (error) {
+        console.warn('Failed to check disclaimer:', error);
+      }
+    };
+    checkDisclaimer();
+  }, []);
 
   // If navigated here with a flag to start a new chat, create one immediately
   const handledNewChatRef = useRef(false);
@@ -1271,6 +1287,17 @@ const handleOCRModalOpen = () => {
   setShowChatOptions(false);
 };
 
+// ✅ Handle disclaimer acceptance
+const handleDisclaimerAccept = async () => {
+  try {
+    await AsyncStorage.setItem('aiDisclaimerAccepted', 'true');
+    setShowDisclaimerModal(false);
+  } catch (error) {
+    console.error('Failed to save disclaimer acceptance:', error);
+    setShowDisclaimerModal(false); // Still close modal even if storage fails
+  }
+};
+
 // ✅ Utility: Detect HEIC/HEIF images
 const isHeicLike = (file: any): boolean => {
   const mt = (file?.mimeType || '').toLowerCase();
@@ -2056,6 +2083,57 @@ const handleOCR = async () => {
     </TouchableOpacity>
   </View>
 </Animated.View>
+
+      {/* Disclaimer Modal */}
+      <Modal
+        visible={showDisclaimerModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowDisclaimerModal(false)}
+      >
+        <View style={styles.disclaimerModalContainer}>
+          <LinearGradient
+            colors={["#6366F1", "#8B5CF6"]}
+            style={styles.disclaimerModalHeader}>
+            <Text style={styles.disclaimerModalTitle}>AI Disclaimer</Text>
+            <TouchableOpacity 
+              style={styles.closeButton} 
+              onPress={() => setShowDisclaimerModal(false)}
+            >
+              <Ionicons name="close" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+          </LinearGradient>
+
+          <ScrollView style={styles.disclaimerModalContent} showsVerticalScrollIndicator={false}>
+            <View style={styles.disclaimerSection}>
+              <Text style={styles.disclaimerText}>
+                <Text style={styles.disclaimerBold}>Important Notice:</Text>{"\n\n"}
+                This AI assistant is powered by advanced language models that can make mistakes. 
+                While we strive for accuracy, please be aware that:{"\n\n"}
+                • AI responses may contain inaccuracies or outdated information{"\n"}
+                • Generated content should be verified before use{"\n"}
+                • AI cannot replace professional advice in legal, medical, or financial matters{"\n"}
+                • Conversations may be logged for service improvement{"\n\n"}
+                By continuing, you acknowledge these limitations and agree to use this tool responsibly.
+              </Text>
+            </View>
+
+            <View style={styles.disclaimerActions}>
+              <TouchableOpacity 
+                style={styles.understandButton}
+                onPress={handleDisclaimerAccept}
+              >
+                <LinearGradient
+                  colors={["#6366F1", "#8B5CF6"]}
+                  style={styles.understandButtonGradient}
+                >
+                  <Text style={styles.understandButtonText}>I Understand</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
 
       {/* OCR Modal */}
       <Modal
@@ -3372,6 +3450,63 @@ const styles = StyleSheet.create({
   copyTextButtonText: {
     color: "#6B46C1",
     fontSize: 14,
+    fontWeight: "600",
+  },
+
+  // Disclaimer Modal Styles
+  disclaimerModalContainer: {
+    flex: 1,
+    backgroundColor: "#F8FAFC",
+  },
+  disclaimerModalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 20,
+    paddingTop: 50,
+    backgroundColor: "#6B46C1",
+  },
+  disclaimerModalTitle: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: "#FFFFFF",
+  },
+  disclaimerModalContent: {
+    flex: 1,
+    padding: 20,
+  },
+  disclaimerSection: {
+    marginBottom: 24,
+  },
+  disclaimerText: {
+    fontSize: 16,
+    color: "#1E293B",
+    lineHeight: 24,
+  },
+  disclaimerBold: {
+    fontWeight: "bold",
+    color: "#1E293B",
+  },
+  disclaimerActions: {
+    marginTop: 20,
+  },
+  understandButton: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    shadowColor: "#6366F1",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  understandButtonGradient: {
+    padding: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  understandButtonText: {
+    color: "#FFFFFF",
+    fontSize: 16,
     fontWeight: "600",
   },
 });
