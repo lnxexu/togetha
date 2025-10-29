@@ -39,11 +39,3 @@ ENV PORT=8000
 CMD ["/app/entrypoint.sh"]
 # PostgreSQL 16 with pgvector preinstalled
 # ✅ PostgreSQL with pgvector (latest stable)
-FROM ankane/pgvector
-
-# Set environment variables
-ENV POSTGRES_USER=postgres
-ENV POSTGRES_PASSWORD=postgres
-ENV POSTGRES_DB=railway
-
-EXPOSE 5432

@@ -140,3 +140,22 @@ Fix:
 - In Railway, open your Postgres service → copy the Connection URL, and set it as `DATABASE_URL` on your Web/Worker/Beat services.
 - Ensure your service Root Directory is `Backend/` so this project’s `nixpacks.toml` is used.
 - Remove/ignore any local `.env` for production; Railway Variables will be used automatically at runtime.
+
+### Troubleshooting: Postgres version mismatch with a mounted volume
+
+Error similar to:
+
+```
+FATAL: database files are incompatible with server
+DETAIL: The data directory was initialized by PostgreSQL version 17, which is not compatible with this version 15.x.
+```
+
+Cause: A Postgres container is starting with a data directory created by a different major version.
+
+Fix options:
+- Preferred: Use Railway's managed Postgres service (set `DATABASE_URL`); do NOT run Postgres inside your Backend service.
+- If you run your own Postgres container as a separate service:
+  - Match the image to the data dir version, e.g. use `pgvector/pgvector:pg17` if the data dir was created by PG 17.
+  - Or reset the attached disk/volume (DATA LOSS!) and let the new Postgres version initialize a fresh cluster.
+
+Common pitfall: Do not append a Postgres `FROM` stage to the Backend Dockerfile. The Backend image must remain a Python/Django image and connect to Postgres via `DATABASE_URL`.
