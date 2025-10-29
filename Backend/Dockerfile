@@ -14,11 +14,6 @@ RUN apt-get update \
        build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-FROM postgres:17
-
-RUN apt-get update && \
-    apt-get install -y postgresql-17-pgvector && \
-    rm -rf /var/lib/apt/lists/*    
 WORKDIR /app
 
 # Install Python dependencies first (leverage Docker layer caching)
@@ -42,5 +37,3 @@ ENV PORT=8000
 # One image supports Web, Worker, Beat based on ROLE env var
 # ROLE=web|worker|beat
 CMD ["/app/entrypoint.sh"]
-# PostgreSQL 16 with pgvector preinstalled
-# ✅ PostgreSQL with pgvector (latest stable)
