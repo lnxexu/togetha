@@ -31,7 +31,7 @@ class FallbackSMTPBackend(EmailBackend):
             {
                 'host': 'smtp.gmail.com',
                 'port': 25,
-                'use_ssl': False,
+                'use_ssl': True,
                 'use_tls': True,
                 'description': 'Gmail Standard SMTP (Port 25)'
             }

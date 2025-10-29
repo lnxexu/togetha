@@ -45,8 +45,12 @@ EMAIL_USE_SSL = config('EMAIL_USE_SSL', default=True, cast=bool)
 EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=False, cast=bool)
 EMAIL_TIMEOUT = 60
 EMAIL_USE_LOCALTIME = False
- 
+
 # from decouple import Csv  # already imported above
+
+# Debug/ops: optionally log verification codes to backend logs (disabled by default)
+# Enable by setting LOG_VERIFICATION_CODES=True in the environment for non-DEBUG environments.
+LOG_VERIFICATION_CODES = config('LOG_VERIFICATION_CODES', default=False, cast=bool)
 
 # Gemini / Embeddings configuration
 # Do NOT provide a hardcoded default for API keys. Require environment or .env to supply it.

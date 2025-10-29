@@ -141,6 +141,21 @@ def send_email_verification(request):
         
         # Generate 6-digit verification code
         verification_code = get_random_string(6, allowed_chars='0123456789')
+
+        # Log the verification code to backend logs when allowed
+        try:
+            if settings.DEBUG or getattr(settings, 'LOG_VERIFICATION_CODES', False):
+                masked = f"{email[:3]}***@{email.split('@')[1]}" if '@' in email else email
+                logger.warning(
+                    "Email verification code generated | email=%s | username=%s | code=%s | expires_in=%s min",
+                    masked,
+                    username,
+                    verification_code,
+                    15,
+                )
+        except Exception:
+            # Never break signup flow due to logging issues
+            pass
         
         # Delete any existing verification codes for this email
         EmailVerification.objects.filter(email=email).delete()
