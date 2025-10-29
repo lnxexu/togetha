@@ -25,7 +25,7 @@ DEBUG = os.environ.get("DEBUG", "False") == "True"
 # Use environment variable DEBUG to override in non-development environments.
 # DEBUG = config('DEBUG', default=True, cast=bool)
 
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1,192.168.0.153', cast=Csv())
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1,192.168.0.153,192.168.1.187,192.168.15.50,172.16.3.152', cast=Csv())
 
 DEFAULT_FROM_EMAIL = 'kcorpuz_220000002183@uic.edu.ph'
 
@@ -76,6 +76,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'pgvector.django',
     'debug_toolbar',
     'django_celery_beat', 
     'rest_framework',
@@ -114,7 +115,7 @@ CSRF_COOKIE_HTTPONLY = False
 CSRF_COOKIE_SAMESITE = 'Lax'  
 CSRF_TRUSTED_ORIGINS = config(
     'CSRF_TRUSTED_ORIGINS',
-    default='http://localhost:3000,http://127.0.0.1:8000,http://192.168.0.153:8000',
+    default='http://localhost:3000,http://127.0.0.1:8000,http://192.168.0.153:8000,',
     cast=Csv()
 )
 
@@ -180,9 +181,9 @@ else:
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
-            'NAME': 'togetha',
-            'USER': 'postgres',
-            'PASSWORD': os.environ.get('DB_PASSWORD', 'Kobe@1314'),  # Only for local dev
+            'NAME': 'Togetha',
+            'USER': 'Togetha',
+            'PASSWORD': 'lol',  # Only for local dev
             'HOST': 'localhost',
             'PORT': '5432',
         }

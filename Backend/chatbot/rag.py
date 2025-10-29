@@ -1,14 +1,12 @@
 import os
-import sqlite3
 import uuid
 from PyPDF2 import PdfReader
 import numpy as np
 from django.conf import settings
 from google import genai
 from django.db import transaction
+from django.db.models.expressions import RawSQL
 from .models import DocumentChunk
-
-DB_PATH = os.path.join(os.path.dirname(__file__), "rag.sqlite3")
 
 # Configure Gemini/Embeddings
 GEMINI_API_KEY = getattr(settings, "GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY"))
@@ -16,54 +14,6 @@ EMBEDDING_MODEL = getattr(settings, "EMBEDDING_MODEL", os.environ.get("EMBEDDING
 EMBEDDING_MODEL_CANDIDATES = getattr(settings, "EMBEDDING_MODEL_CANDIDATES", [EMBEDDING_MODEL])
 
 GENAI_CLIENT = None  # Client will be created lazily per call to reflect current config
-
-
-def init_db():
-    """Ensure the SQLite DB and chunks table exist with proper schema."""
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-
-    # Check if table exists and get its schema
-    cur.execute("PRAGMA table_info(chunks)")
-    columns = [row[1] for row in cur.fetchall()]
-
-    if not columns:
-        # Create new table with full schema
-        cur.execute("""
-            CREATE TABLE chunks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                conversation_id TEXT,
-                document_name TEXT,
-                page_num INTEGER,
-                chunk_text TEXT,
-                embedding BLOB,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-    else:
-        # Add missing columns to existing table
-        if "user_id" not in columns:
-            cur.execute("ALTER TABLE chunks ADD COLUMN user_id INTEGER DEFAULT 1")
-        if "conversation_id" not in columns:
-            cur.execute("ALTER TABLE chunks ADD COLUMN conversation_id TEXT DEFAULT ''")
-        if "document_name" not in columns:
-            cur.execute("ALTER TABLE chunks ADD COLUMN document_name TEXT DEFAULT ''")
-        if "page_num" not in columns:
-            cur.execute("ALTER TABLE chunks ADD COLUMN page_num INTEGER DEFAULT -1")
-        if "created_at" not in columns:
-            cur.execute("ALTER TABLE chunks ADD COLUMN created_at TIMESTAMP DEFAULT '1970-01-01 00:00:00'")
-
-    # Create indexes
-    try:
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_id ON chunks(user_id)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_conversation_id ON chunks(conversation_id)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_page_num ON chunks(page_num)")
-    except sqlite3.OperationalError:
-        pass
-
-    conn.commit()
-    conn.close()
 
 
 def extract_text_by_page(file_path: str):
@@ -125,40 +75,24 @@ def embed_texts(texts):
 
 
 def save_chunks(chunks, embeddings, user_id=None, conversation_id=None, document_name="", page_num=-1, doc_id: uuid.UUID | None = None):
-    """Store chunks + embeddings into SQLite with user/conversation context, and mirror to Django DB.
+    """Store chunks + embeddings into PostgreSQL with pgvector via Django ORM.
 
     Args:
-        chunks: list[str] text chunks
-        embeddings: list[np.ndarray] embedding vectors aligned with chunks
-        user_id: int or None, owner of the chunks
-        conversation_id: optional conversation id string
-        document_name: original file name
-        page_num: page number for PDF context, -1 if not applicable
-        doc_id: UUID shared by all chunks from the same source document; auto-generated if None
+        chunks: list[str]
+        embeddings: list[np.ndarray]
+        user_id: int or None
+        conversation_id: optional string (currently unused)
+        document_name: source file name
+        page_num: unused placeholder for compatibility
+        doc_id: UUID to group chunks from same source
     """
     if doc_id is None:
         doc_id = uuid.uuid4()
 
-    # 1) Persist to local RAG SQLite for fast cosine search across all users
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    for txt, emb in zip(chunks, embeddings):
-        cur.execute(
-            """
-            INSERT INTO chunks (user_id, conversation_id, document_name, page_num, chunk_text, embedding)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (user_id, conversation_id, document_name, page_num, txt, emb.astype(np.float32).tobytes())
-        )
-    conn.commit()
-    conn.close()
-
-    # 2) Mirror to primary Django DB (PostgreSQL) in DocumentChunk for doc-specific queries
     try:
         with transaction.atomic():
             objs = []
             for txt, emb in zip(chunks, embeddings):
-                # Convert embedding to plain list[float] for JSONField
                 emb_list = emb.astype(float).tolist()
                 objs.append(
                     DocumentChunk(
@@ -167,12 +101,13 @@ def save_chunks(chunks, embeddings, user_id=None, conversation_id=None, document
                         document_name=document_name,
                         chunk_text=txt,
                         embedding=emb_list,
+                        embedding_vec=emb_list,
                     )
                 )
             if objs:
-                DocumentChunk.objects.bulk_create(objs, ignore_conflicts=True)
+                DocumentChunk.objects.bulk_create(objs)
     except Exception:
-        # Do not fail the request if the mirror write fails; best-effort
+        # Best-effort; let caller continue
         pass
 
     return doc_id
@@ -225,70 +160,47 @@ def process_file_for_user(file_path: str, user_id=None, conversation_id=None, do
             text = f.read()
         if not text.strip():
             return
-    chunks = chunk_text(text, chunk_size=500, overlap=50)
-    embeddings = embed_texts(chunks)
-    doc_id = save_chunks(chunks, embeddings, user_id=user_id, conversation_id=conversation_id, document_name=document_name, page_num=-1)
-    return {"doc_id": str(doc_id), "pages": 1}
+        chunks = chunk_text(text, chunk_size=500, overlap=50)
+        embeddings = embed_texts(chunks)
+        doc_id = save_chunks(chunks, embeddings, user_id=user_id, conversation_id=conversation_id, document_name=document_name, page_num=-1)
+        return {"doc_id": str(doc_id), "pages": 1}
 
     # TODO: add OCR for images and other formats if needed
     raise NotImplementedError(f"Unsupported file type for processing: {file_path}")
 
 
 def search_similar_for_user(query_text, user_id, top_k=5):
-    """Search for most similar chunks to a query for a specific user."""
-    init_db()
+    """Search most similar chunks for a user using pgvector cosine distance."""
+    query_emb = _embed_one(query_text).astype(float).tolist()
 
-    # Embed query
-    query_emb = _embed_one(query_text)
+    qs = (
+        DocumentChunk.objects
+        .filter(user_id=user_id)
+        .exclude(embedding_vec__isnull=True)
+        .annotate(distance=RawSQL("embedding_vec <=> %s", (query_emb,)))
+        .order_by('distance')
+    )
 
-    # Fetch chunks for this user
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("SELECT id, chunk_text, embedding, document_name, page_num FROM chunks WHERE user_id = ?", (user_id,))
-    rows = cur.fetchall()
-    conn.close()
-
-    if not rows:
-        return []
-
-    # Compute cosine similarity
-    results = []
-    for cid, txt, emb_blob, doc_name, page_num in rows:
-        emb = np.frombuffer(emb_blob, dtype=np.float32)
-        score = float(np.dot(query_emb, emb) / (np.linalg.norm(query_emb) * np.linalg.norm(emb)))
-        results.append((cid, txt, score, doc_name, page_num))
-
-    results.sort(key=lambda x: x[2], reverse=True)
-    return results[:top_k]
+    rows = list(qs.values('id', 'chunk_text', 'document_name', 'distance')[:top_k])
+    # Optionally convert distance to similarity (1 - distance)
+    for r in rows:
+        if r['distance'] is not None:
+            r['similarity'] = 1 - float(r['distance'])
+    return rows
 
 
 def search_similar(query_text, top_k=5):
-    """Search for most similar chunks to a query across all users."""
-    init_db()
+    """Search most similar chunks across all users using pgvector cosine distance."""
+    query_emb = _embed_one(query_text).astype(float).tolist()
+    qs = (
+        DocumentChunk.objects
+        .exclude(embedding_vec__isnull=True)
+        .annotate(distance=RawSQL("embedding_vec <=> %s", (query_emb,)))
+        .order_by('distance')
+    )
+    rows = list(qs.values('id', 'chunk_text', 'document_name', 'distance')[:top_k])
+    for r in rows:
+        if r['distance'] is not None:
+            r['similarity'] = 1 - float(r['distance'])
+    return rows
 
-    # Embed query
-    query_emb = _embed_one(query_text)
-
-    # Fetch all chunks
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("SELECT id, chunk_text, embedding, document_name, page_num FROM chunks")
-    rows = cur.fetchall()
-    conn.close()
-
-    if not rows:
-        return []
-
-    # Compute cosine similarity
-    results = []
-    for cid, txt, emb_blob, doc_name, page_num in rows:
-        emb = np.frombuffer(emb_blob, dtype=np.float32)
-        score = float(np.dot(query_emb, emb) / (np.linalg.norm(query_emb) * np.linalg.norm(emb)))
-        results.append((cid, txt, score, doc_name, page_num))
-
-    results.sort(key=lambda x: x[2], reverse=True)
-    return results[:top_k]
-
-
-# 🔑 Ensure DB exists on import
-init_db()

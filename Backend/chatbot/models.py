@@ -2,6 +2,7 @@ from django.db import models
 from django.conf import settings
 import uuid
 from django.contrib.auth.models import User
+from pgvector.django import VectorField
 
 class Conversation(models.Model):
     """A conversation between a user and the chatbot system"""
@@ -98,10 +99,14 @@ class ChatbotSetting(models.Model):
         return f"Settings for {self.user.username}"
 
 class DocumentChunk(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)   # link per-user
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    doc_id = models.UUIDField(default=uuid.uuid4, editable=False)
     document_name = models.CharField(max_length=255)
     chunk_text = models.TextField()
-    embedding = models.JSONField()   # store embedding as list of floats
+    # Keep JSON embedding for backward compatibility / debugging
+    embedding = models.JSONField()
+    # New: pgvector field for fast similarity search
+    embedding_vec = VectorField(dimensions=768, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -132,11 +137,4 @@ class ConversationFile(models.Model):
     class Meta:
         ordering = ['-created_at']
 
-# models.py
-class DocumentChunk(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    doc_id = models.UUIDField(default=uuid.uuid4, editable=False)   # unique doc identifier
-    document_name = models.CharField(max_length=255)
-    chunk_text = models.TextField()
-    embedding = models.JSONField()
-    created_at = models.DateTimeField(auto_now_add=True)
+# (Duplicate class definition removed)
