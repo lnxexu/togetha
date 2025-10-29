@@ -171,23 +171,44 @@ WSGI_APPLICATION = 'server.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-# PRODUCTION DATABASE - Uses DATABASE_URL from environment
-if os.environ.get("DATABASE_URL"):
+# PRODUCTION DATABASE - prefer a database URL if provided by the host (DATABASE_URL, RAILWAY, etc.)
+database_url = (
+    os.environ.get("DATABASE_URL")
+    or os.environ.get("RAILWAY_DATABASE_URL")
+    or os.environ.get("RAILWAY_POSTGRESQL_URI")
+    or os.environ.get("RAILWAY_POSTGRESQL_URL")
+    or os.environ.get("POSTGRES_URL")
+)
+
+if database_url:
     DATABASES = {
-        "default": dj_database_url.parse(os.environ["DATABASE_URL"], conn_max_age=600)
+        "default": dj_database_url.parse(database_url, conn_max_age=600)
     }
 else:
-    # DEVELOPMENT DATABASE - Fallback for local development
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': 'Togetha',
-            'USER': 'Togetha',
-            'PASSWORD': 'lol',  # Only for local dev
-            'HOST': 'localhost',
-            'PORT': '5432',
+    # Some hosts provide individual PG_* env vars instead of a single DATABASE_URL
+    if os.environ.get('PGHOST') and os.environ.get('PGDATABASE'):
+        DATABASES = {
+            'default': {
+                'ENGINE': 'django.db.backends.postgresql',
+                'NAME': os.environ.get('PGDATABASE'),
+                'USER': os.environ.get('PGUSER', ''),
+                'PASSWORD': os.environ.get('PGPASSWORD', ''),
+                'HOST': os.environ.get('PGHOST', 'localhost'),
+                'PORT': os.environ.get('PGPORT', '5432'),
+            }
         }
-    }
+    else:
+        # DEVELOPMENT DATABASE - Fallback for local development
+        DATABASES = {
+            'default': {
+                'ENGINE': 'django.db.backends.postgresql',
+                'NAME': 'Togetha',
+                'USER': 'Togetha',
+                'PASSWORD': 'lol',  # Only for local dev
+                'HOST': 'localhost',
+                'PORT': '5432',
+            }
+        }
 
 
 # Password validation
