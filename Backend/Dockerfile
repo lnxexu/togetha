@@ -38,7 +38,8 @@ ENV PORT=8000
 # ROLE=web|worker|beat
 CMD ["/app/entrypoint.sh"]
 # PostgreSQL 16 with pgvector preinstalled
-FROM ankane/pgvector:pg16
+# ✅ PostgreSQL with pgvector (latest stable)
+FROM ankane/pgvector
 
 # Set environment variables
 ENV POSTGRES_USER=postgres
