@@ -18,9 +18,18 @@ from task_manager.models import Task
 from notes.models import Note
 from chatbot.models import Message
 from django.http import JsonResponse
+from .email_service import send_verification_email
 import uuid
 import random
 import string
+import logging
+
+logger = logging.getLogger(__name__)
+from django.utils.dateparse import parse_datetime
+from .models import SendGridEvent
+from rest_framework.permissions import AllowAny
+from rest_framework.decorators import permission_classes
+from django.views.decorators.csrf import csrf_exempt
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
@@ -392,12 +401,10 @@ Account: {email}
 Time: {timezone.now().strftime('%Y-%m-%d %H:%M:%S UTC')}
             """
             
-            send_mail(
+            send_verification_email(
+                email,
                 subject,
-                message,
-                settings.DEFAULT_FROM_EMAIL,
-                [email],
-                fail_silently=False,
+                message
             )
             
         except Exception as e:
@@ -593,3 +600,121 @@ def serve_profile_picture(request, user_id):
             'error': 'Failed to serve profile picture',
             'detail': str(e)
         }, status=400)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@csrf_exempt
+def sendgrid_event_webhook(request):
+    """
+    Endpoint to receive SendGrid Event Webhook POSTs.
+
+    SendGrid posts an array of event JSON objects. We store each event in
+    the SendGridEvent model for later inspection.
+    """
+    # Optional: verify signature if public key is configured
+    pub_key = getattr(settings, 'SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY', None)
+    if pub_key:
+        try:
+            signature = request.META.get('HTTP_X_TWILIO_EMAIL_EVENT_WEBHOOK_SIGNATURE')
+            timestamp = request.META.get('HTTP_X_TWILIO_EMAIL_EVENT_WEBHOOK_TIMESTAMP')
+            if not signature or not timestamp:
+                logger.warning('Missing SendGrid webhook signature/timestamp headers')
+            else:
+                try:
+                    import base64
+                    try:
+                        from nacl.signing import VerifyKey
+                        from nacl.exceptions import BadSignatureError
+                    except Exception:
+                        VerifyKey = None
+
+                    payload = timestamp.encode('utf-8') + request.body
+
+                    sig = base64.b64decode(signature)
+
+                    # Try interpreting pub_key as base64-encoded raw key, then as raw bytes
+                    verified = False
+                    if VerifyKey is not None:
+                        try:
+                            try:
+                                key_bytes = base64.b64decode(pub_key)
+                            except Exception:
+                                key_bytes = pub_key.encode('utf-8')
+                            vk = VerifyKey(key_bytes)
+                            vk.verify(payload, sig)
+                            verified = True
+                        except BadSignatureError:
+                            verified = False
+                        except Exception:
+                            logger.exception('Error while verifying SendGrid webhook signature')
+
+                    if not verified:
+                        logger.error('Failed to verify SendGrid webhook signature')
+                        # Reject the request explicitly
+                        return Response({'error': 'invalid webhook signature'}, status=status.HTTP_403_FORBIDDEN)
+                except Exception:
+                    logger.exception('Exception during webhook signature verification')
+                    return Response({'error': 'signature verification failure'}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            logger.exception('Failed to perform webhook verification')
+
+    try:
+        payload = request.data
+
+        # Accept either a list of events or a single event object
+        if isinstance(payload, dict):
+            events = [payload]
+        else:
+            events = payload
+
+        created = []
+        for ev in events:
+            try:
+                email = ev.get('email') or ev.get('recipient') or ev.get('to')
+                event_type = ev.get('event') or ev.get('type')
+                sg_message_id = ev.get('sg_message_id') or ev.get('message_id') or ev.get('smtp-id')
+                app_message_id = None
+                # Try to pull our app_message_id from SendGrid's custom_args if present
+                try:
+                    ca = ev.get('custom_args') or ev.get('custom_args', {})
+                    if isinstance(ca, dict):
+                        app_message_id = ca.get('app_message_id')
+                except Exception:
+                    app_message_id = None
+
+                # Use event timestamp if available, else now()
+                ts = ev.get('timestamp')
+                if ts:
+                    try:
+                        # SendGrid timestamp is often an int (epoch seconds)
+                        if isinstance(ts, (int, float)):
+                            import datetime
+                            timestamp = datetime.datetime.fromtimestamp(int(ts), tz=datetime.timezone.utc)
+                        else:
+                            timestamp = parse_datetime(str(ts))
+                    except Exception:
+                        from django.utils import timezone
+                        timestamp = timezone.now()
+                else:
+                    from django.utils import timezone
+                    timestamp = timezone.now()
+
+                sg_ev = SendGridEvent.objects.create(
+                    email=email or '',
+                    event=event_type or 'unknown',
+                    sg_message_id=sg_message_id,
+                    app_message_id=app_message_id,
+                    raw=ev,
+                    timestamp=timestamp
+                )
+                created.append(sg_ev.id)
+            except Exception as e:
+                # Don't fail the whole webhook on single-bad payload
+                logger.exception(f"Failed to store SendGrid event: {e} - payload: {ev}")
+
+        return Response({'received': len(created)}, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        logger.exception(f"Error in SendGrid webhook endpoint: {e}")
+        return Response({'error': 'failed to process events'}, status=status.HTTP_400_BAD_REQUEST)

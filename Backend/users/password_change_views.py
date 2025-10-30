@@ -10,6 +10,7 @@ from django.utils.crypto import get_random_string
 from django.utils import timezone
 from datetime import timedelta
 from .models import PasswordChangeVerification
+from .email_service import send_verification_email
 import re
 import logging
 
@@ -46,13 +47,7 @@ Account: {user.email}
 Time: {timezone.now().strftime('%Y-%m-%d %H:%M:%S UTC')}
 '''
         
-        send_mail(
-            subject=subject,
-            message=message,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[user.email],
-            fail_silently=False,
-        )
+        send_verification_email(user.email, subject, message)
         
         # Log only non-sensitive information
         logger.info(f"Password change verification sent to {user.email[:3]}***@{user.email.split('@')[1]}")
@@ -227,13 +222,7 @@ def verify_password_change(request):
             Togetha Team
             '''
             
-            send_mail(
-                subject,
-                message,
-                settings.EMAIL_HOST_USER,
-                [user.email],
-                fail_silently=True,
-            )
+            send_verification_email(user.email, subject, message)
         except:
             pass  # Don't fail the password change if email fails
         

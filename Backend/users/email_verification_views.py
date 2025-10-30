@@ -10,6 +10,7 @@ from rest_framework import status
 from django.utils import timezone
 from datetime import timedelta
 from .models import EmailVerification
+from .email_service import send_verification_email as sendgrid_email
 import logging
 import re
 
@@ -33,7 +34,7 @@ def validate_email_format(email):
     
     return True
 
-def send_verification_email(email, username, verification_code):
+def send_verification_email_local(email, username, verification_code):
     """Send verification email securely without logging sensitive data"""
     try:
         subject = 'Email Verification - Welcome to Togetha!'
@@ -57,17 +58,7 @@ The Togetha Team
 Need help? Contact us at support@togetha.com
 '''
         
-        send_mail(
-            subject=subject,
-            message=message,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[email],
-            fail_silently=False,
-        )
-        
-        # Log only non-sensitive information
-        logger.info(f"Verification email sent to {email[:3]}***@{email.split('@')[1]}")
-        return True
+        return sendgrid_email(email, subject, message)
         
     except Exception as e:
         logger.error(f"Failed to send verification email: {str(e)}")
@@ -169,7 +160,7 @@ def send_email_verification(request):
         )
         
         # Send email
-        if send_verification_email(email, username, verification_code):
+        if send_verification_email_local(email, username, verification_code):
             return Response({
                 'success': True,
                 'message': 'Verification code sent to your email',
@@ -290,9 +281,8 @@ def verify_email_and_signup(request):
         
         # Send welcome email without exposing sensitive data
         try:
-            send_mail(
-                subject='Welcome to Togetha - Account Created Successfully!',
-                message=f'''Welcome to Togetha, {username}!
+            subject = 'Welcome to Togetha - Account Created Successfully!'
+            message = f'''Welcome to Togetha, {username}!
 
 Your account has been successfully created and verified. You can now log in and start using all our features:
 
@@ -314,11 +304,9 @@ The Togetha Team
 
 ---
 Need help? Contact us at support@togetha.com
-Security concerns? Email security@togetha.com''',
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[email],
-                fail_silently=True,
-            )
+Security concerns? Email security@togetha.com'''
+            
+            sendgrid_email(email, subject, message)
         except Exception as e:
             logger.warning(f"Failed to send welcome email: {str(e)}")
         

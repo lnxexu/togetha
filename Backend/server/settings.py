@@ -30,9 +30,11 @@ ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1,192.168.0.1
 # Email configuration (Railway-ready)
 # Use environment variables to avoid committing credentials and to support different providers.
 # Recommended for Gmail on Railway: set EMAIL_PORT=587, EMAIL_USE_TLS=True, EMAIL_USE_SSL=False
-EMAIL_HOST_USER = config('EMAIL_HOST_USER', default=None)
-EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default=None)
-DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default=None) or EMAIL_HOST_USER
+
+
+# SendGrid configuration for email_service.py
+SENDGRID_API_KEY = config('SENDGRID_API_KEY', default="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")
+EMAIL_FROM = config('EMAIL_FROM', default="yellowhyunjin123@gmail.com")
 
 EMAIL_BACKEND = 'server.email_backend.FallbackSMTPBackend'
 
@@ -211,9 +213,9 @@ else:
         DATABASES = {
             'default': {
                 'ENGINE': 'django.db.backends.postgresql',
-                'NAME': 'Togetha',
-                'USER': 'Togetha',
-                'PASSWORD': 'lol',  # Only for local dev
+                'NAME': 'togetha',
+                'USER': 'postgres',
+                'PASSWORD': 'Kobe@1314',  # Only for local dev
                 'HOST': 'localhost',
                 'PORT': '5432',
             }
@@ -330,6 +332,11 @@ LOGGING = {
         'server.email_backend': {
             'handlers': ['console', 'file'],
             'level': 'DEBUG',
+            'propagate': False,
+        },
+        'users.email_service': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
             'propagate': False,
         },
         'django.core.mail': {

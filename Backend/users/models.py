@@ -243,3 +243,32 @@ class EmailVerification(models.Model):
         if not self.expires_at:
             self.expires_at = timezone.now() + timedelta(minutes=15)
         super().save(*args, **kwargs)
+
+
+class SendGridEvent(models.Model):
+    """Stores SendGrid Event Webhook payloads for message tracking and debugging."""
+    # The recipient email (to)
+    email = models.EmailField(db_index=True)
+
+    # SendGrid event type: processed, delivered, bounce, dropped, deferred, spamreport, etc.
+    event = models.CharField(max_length=50, db_index=True)
+
+    # SendGrid message id/header (e.g., SG message-id or our X-App-Message-Id header)
+    sg_message_id = models.CharField(max_length=255, blank=True, null=True, db_index=True)
+    app_message_id = models.CharField(max_length=64, blank=True, null=True, db_index=True)
+
+    # Full raw event payload for inspection
+    raw = models.JSONField()
+
+    # Timestamp when the event was received by SendGrid (if provided) or by our server
+    timestamp = models.DateTimeField()
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-timestamp', '-created_at']
+        verbose_name = 'SendGrid Event'
+        verbose_name_plural = 'SendGrid Events'
+
+    def __str__(self):
+        return f"{self.event} for {self.email} at {self.timestamp}"
