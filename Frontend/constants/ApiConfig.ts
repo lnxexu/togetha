@@ -6,9 +6,9 @@ import { DEFAULT_CONFIG, PLATFORM_DEFAULTS, EnvironmentConfig } from './Environm
 function getEnvironmentConfig(): EnvironmentConfig {
     // Try to get configuration from environment variables first
     const envConfig = {
-        apiUrl: process.env.EXPO_PUBLIC_API_URL,
-        environment: process.env.EXPO_PUBLIC_ENVIRONMENT as 'development' | 'staging' | 'production',
-        debug: process.env.EXPO_PUBLIC_DEBUG === 'true',
+        apiUrl: process.env.PUBLIC_API_URL,
+        environment: process.env.PUBLIC_ENVIRONMENT as 'development' | 'staging' | 'production',
+        debug: process.env.PUBLIC_DEBUG === 'true',
     };
 
     // Use environment config if available, otherwise fall back to defaults

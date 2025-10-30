@@ -8,9 +8,9 @@ export interface EnvironmentConfig {
 }
 //change ni sa IP address atm
 export const DEFAULT_CONFIG: EnvironmentConfig = {
-  apiUrl: 'http://192.168.1.187:8000',
-  environment: 'development',
-  debug: true,
+  apiUrl: process.env.PUBLIC_API_URL || 'https://togetha-production-2546.up.railway.app',
+  environment: (process.env.PUBLIC_ENVIRONMENT as 'development' | 'staging' | 'production') || 'development',
+  debug: process.env.PUBLIC_DEBUG === 'true' || true,
 };
 
 // Platform-specific default URLs for development
