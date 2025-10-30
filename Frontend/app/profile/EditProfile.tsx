@@ -9,6 +9,7 @@ import {
   ScrollView,
   Platform,
   Alert,
+  KeyboardAvoidingView,
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
@@ -242,11 +243,15 @@ const EditProfile: React.FC = () => {
   if (!userData) {
     return (
       <SafeAreaWrapper>
-      <View style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Loading...</Text>
-        </View>
-      </View>
+        <KeyboardAvoidingView
+          style={styles.container}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 80}
+        >
+          <View style={styles.loadingContainer}>
+            <Text style={styles.loadingText}>Loading...</Text>
+          </View>
+        </KeyboardAvoidingView>
       </SafeAreaWrapper>
     );
   }
@@ -259,7 +264,11 @@ const EditProfile: React.FC = () => {
 
   return (
     <SafeAreaWrapper>
-    <View style={styles.container}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 80}
+      >
       {/* Header */}
       <LinearGradient
         colors={["#A855F7", "#8B5CF6", "#7C3AED"]}
@@ -289,7 +298,12 @@ const EditProfile: React.FC = () => {
         </LinearGradient>
         
       {/* Content */}
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={styles.scrollContentContainer}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.profilePictureSection}>
           <View style={styles.profilePicContainer}>
             {userData.profile?.profile_picture_url ? (
@@ -501,25 +515,27 @@ const EditProfile: React.FC = () => {
           </View>
         </View>
 
-        {/* Action Buttons */}
-        {isEditing && (
-          <View style={styles.actionButtons}>
-            <TouchableOpacity
-              style={[styles.button, styles.cancelButton]}
-              onPress={handleCancel}
-            >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.button, styles.saveButton]}
-              onPress={handleSave}
-            >
-              <Text style={styles.saveButtonText}>Save Changes</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+        
       </ScrollView>
+
+      {/* Bottom action bar to ensure Save/Cancel are visible while editing */}
+      {isEditing && (
+        <View style={styles.footerBar}>
+          <TouchableOpacity
+            style={[styles.footerButton, styles.footerCancel]}
+            onPress={handleCancel}
+          >
+            <Text style={styles.footerCancelText}>Cancel</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.footerButton, styles.footerSave]}
+            onPress={handleSave}
+          >
+            <Text style={styles.footerSaveText}>Save</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Date Picker */}
       {showDatePicker && userData && (
@@ -531,7 +547,7 @@ const EditProfile: React.FC = () => {
           maximumDate={new Date()}
         />
       )}
-    </View>
+      </KeyboardAvoidingView>
     </SafeAreaWrapper>
   );
 };
@@ -572,7 +588,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 24,
-    color: "#ffffffff",
+    color: "#FFFFFF",
     fontFamily: "Inter-Bold",
   },
   actionButton: {
@@ -591,7 +607,8 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 24,
-    paddingTop: 20,
+    paddingTop: 10,
+    paddingBottom: 10,
   },
   profilePictureSection: {
     alignItems: "center",
@@ -745,6 +762,49 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#1E293B",
     fontFamily: "Inter-Regular",
+  },
+  scrollContentContainer: {
+    paddingBottom: 180,
+  },
+  footerBar: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 45,
+    paddingHorizontal: 24,
+    paddingVertical: 15,
+    backgroundColor: "rgba(248,249,250,0.98)",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#e9ecef",
+  },
+  footerButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  footerCancel: {
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#e9ecef",
+    marginRight: 8,
+  },
+  footerSave: {
+    backgroundColor: "#6A009C",
+  },
+  footerCancelText: {
+    fontSize: 16,
+    color: "#6c757d",
+    fontFamily: "Inter-SemiBold",
+  },
+  footerSaveText: {
+    fontSize: 16,
+    color: "#fff",
+    fontFamily: "Inter-SemiBold",
   },
 });
 
