@@ -237,6 +237,7 @@ This project is configured to use SendGrid SMTP by default and will automaticall
 - The backend will attempt SMTP first. If SMTP fails (e.g., due to egress/port restrictions), it will automatically fall back to the SendGrid Web API over HTTPS using `SENDGRID_API_KEY`.
    - You can force API-first sending by setting `EMAIL_PREFER_SENDGRID_API=True` in Railway variables.
    - To avoid waiting on SMTPS:465 timeouts, set `EMAIL_SMTP_TRY_SSL=False`.
+   - If SendGrid returns `401 Unauthorized` with `The requestor's IP Address is not whitelisted`, either disable IP Access Management in SendGrid or add your server's egress IP to the SendGrid allowlist. Until then, you can set `EMAIL_DISABLE_SENDGRID_API=True` to use SMTP only.
 
 - Never commit your real API keys. Ensure `.env` is not checked in and set secrets only in Railway.
 

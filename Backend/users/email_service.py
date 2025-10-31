@@ -111,7 +111,9 @@ def send_verification_email(to_email: str, subject: str, content: str) -> bool:
         html_body = _to_html(content or '')
 
         # If configured to prefer API, try API first (avoids SMTP egress issues)
-        if getattr(settings, 'EMAIL_PREFER_SENDGRID_API', False):
+        prefer_api = getattr(settings, 'EMAIL_PREFER_SENDGRID_API', False)
+        disable_api = getattr(settings, 'EMAIL_DISABLE_SENDGRID_API', False)
+        if prefer_api and not disable_api:
             if _send_via_sendgrid_api(to_email, subject, text_body, html_body):
                 return True
             # Fall back to SMTP if API failed
@@ -125,13 +127,16 @@ def send_verification_email(to_email: str, subject: str, content: str) -> bool:
             logger.info(f"Email sent via SMTP to {to_email} using backend {settings.EMAIL_BACKEND}")
             return True
         logger.error(f"SMTP backend returned 0 for recipient {to_email}")
-        # Try SendGrid Web API fallback if SMTP indicates failure
-        return _send_via_sendgrid_api(to_email, subject, text_body, html_body)
+        # Try SendGrid Web API fallback if SMTP indicates failure (unless disabled)
+        if not disable_api:
+            return _send_via_sendgrid_api(to_email, subject, text_body, html_body)
+        return False
     except Exception as e:
         logger.exception(f"Failed to send email to {to_email} via SMTP: {e}")
-        # On any SMTP exception, try API fallback (more reliable on some hosts)
+        # On any SMTP exception, try API fallback (more reliable on some hosts) unless disabled
         text_body = content or ''
         html_body = _to_html(content or '')
-        if _send_via_sendgrid_api(to_email, subject, text_body, html_body):
-            return True
+        if not getattr(settings, 'EMAIL_DISABLE_SENDGRID_API', False):
+            if _send_via_sendgrid_api(to_email, subject, text_body, html_body):
+                return True
         return False
