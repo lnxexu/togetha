@@ -27,22 +27,39 @@ DEBUG = os.environ.get("DEBUG", "False") == "True"
 
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1,192.168.0.153,192.168.1.187,192.168.15.50,172.16.3.152,172.23.176.1,togetha-production-2546.up.railway.app', cast=Csv())
 
-# Email configuration (Railway-ready)
-# Use environment variables to avoid committing credentials and to support different providers.
-# Recommended for Gmail on Railway: set EMAIL_PORT=587, EMAIL_USE_TLS=True, EMAIL_USE_SSL=False
-EMAIL_HOST_USER = config('EMAIL_HOST_USER', default=None)
-EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default=None)
-DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default=None) or EMAIL_HOST_USER
+"""
+Email configuration
 
+Goal: Prefer SendGrid SMTP using credentials from env, with graceful fallback.
+Essentials (env):
+    - SENDGRID_API_KEY
+    - EMAIL_FROM (sender address)
+Optional overrides:
+    - EMAIL_HOST, EMAIL_PORT, EMAIL_USE_TLS/SSL, EMAIL_HOST_USER, EMAIL_HOST_PASSWORD
+"""
+
+# Core credentials
+# For SendGrid SMTP, username must literally be 'apikey' and the password is the API key.
+SENDGRID_API_KEY = config('SENDGRID_API_KEY', default=None)
+EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='apikey' if SENDGRID_API_KEY else None)
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default=SENDGRID_API_KEY)
+
+# From address
+DEFAULT_FROM_EMAIL = (
+        config('EMAIL_FROM', default=None)
+        or config('DEFAULT_FROM_EMAIL', default=None)
+        or EMAIL_HOST_USER
+)
+
+# Use custom backend that can try multiple ports; we'll seed it with SendGrid defaults
 EMAIL_BACKEND = 'server.email_backend.FallbackSMTPBackend'
 
-# Primary SMTP configuration (overridable via env variables)
-# The FallbackSMTPBackend will try multiple ports, but these defaults are used for credentials
-# and as the initial attempt. Override on Railway using variables.
-EMAIL_HOST = config('EMAIL_HOST', default='smtp.gmail.com')
-EMAIL_PORT = config('EMAIL_PORT', default=465, cast=int)
-EMAIL_USE_SSL = config('EMAIL_USE_SSL', default=True, cast=bool)
-EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=False, cast=bool)
+# Primary SMTP configuration (can be overridden by env)
+# Defaults to SendGrid SMTP if SENDGRID_API_KEY is present; otherwise falls back to Gmail-like defaults
+EMAIL_HOST = config('EMAIL_HOST', default='smtp.sendgrid.net' if SENDGRID_API_KEY else 'smtp.gmail.com')
+EMAIL_PORT = config('EMAIL_PORT', default=587 if SENDGRID_API_KEY else 465, cast=int)
+EMAIL_USE_SSL = config('EMAIL_USE_SSL', default=False if SENDGRID_API_KEY else True, cast=bool)
+EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True if SENDGRID_API_KEY else False, cast=bool)
 EMAIL_TIMEOUT = 60
 EMAIL_USE_LOCALTIME = False
 
