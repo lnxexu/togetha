@@ -929,18 +929,49 @@ def serve_document(request, note_id):
         # Get the note and verify ownership
         note = get_object_or_404(Note, id=note_id, user=user)
         
-        # If a file is stored on disk, redirect to its media URL (served by Django in DEBUG)
+        # If a file is stored on disk, stream it directly so we can control CORS/HEAD
         if getattr(note, 'document_file') and note.document_file:
-            # Update last_accessed and return redirect to media URL
+            # Update last_accessed
             note.last_accessed = timezone.now()
             note.save(update_fields=['last_accessed'])
+
             try:
-                file_url = note.document_file.url
-                # Return a 302 redirect to the media URL
-                from django.shortcuts import redirect
-                return redirect(file_url)
+                # Open the file from storage and build a proper response
+                f = note.document_file.open('rb')
+                content = f.read() if request.method == 'GET' else b''
+                f.seek(0, 2)  # move to end to get size
+                size = f.tell()
+                f.close()
+
+                response = HttpResponse(
+                    content,
+                    content_type=note.document_content_type or 'application/octet-stream'
+                )
+
+                # Content headers for PDF.js and general clients
+                filename = note.document_filename or 'document'
+                response['Content-Disposition'] = f'inline; filename="{filename}"'
+                response['Content-Length'] = str(size)
+                # Advertise byte ranges support (even if serving whole file)
+                response['Accept-Ranges'] = 'bytes'
+
+                # CORS headers needed by PDF.js remote check (HEAD) and fetch
+                response['Access-Control-Allow-Origin'] = '*'
+                response['Access-Control-Allow-Methods'] = 'GET, HEAD, OPTIONS'
+                response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+
+                # Log document access
+                create_log(
+                    user=user,
+                    action='view',
+                    entity_type='document',
+                    entity_id=note.id,
+                    message=f'Document "{note.title}" served from storage.',
+                    request=request
+                )
+                return response
             except Exception:
-                # Fall back to serving binary content below
+                # Fall back to serving binary content stored in DB
                 pass
 
         if not note.document_content:
@@ -953,7 +984,8 @@ def serve_document(request, note_id):
         note.save(update_fields=['last_accessed'])
 
         # Create response with document content from database (legacy)
-        response = HttpResponse(note.document_content, content_type=note.document_content_type or 'application/octet-stream')
+        body = note.document_content if request.method == 'GET' else b''
+        response = HttpResponse(body, content_type=note.document_content_type or 'application/octet-stream')
 
         # Add CORS headers for PDF.js compatibility - include HEAD and OPTIONS
         response['Access-Control-Allow-Origin'] = '*'
@@ -966,6 +998,8 @@ def serve_document(request, note_id):
         # Add content disposition for proper handling
         filename = note.document_filename or 'document'
         response['Content-Disposition'] = f'inline; filename="{filename}"'
+        response['Content-Length'] = str(len(note.document_content or b''))
+        response['Accept-Ranges'] = 'bytes'
 
         # Log document access
         create_log(
