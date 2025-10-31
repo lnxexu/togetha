@@ -766,11 +766,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   title: {
-    fontSize: 32, // Slightly reduced for better proportions
-    color: "#FFFFFF",
+     fontSize: 32,
     fontFamily: "Lexend",
-    letterSpacing: -0.5,
-    fontWeight: "700", // Added explicit weight
+    color: "#ffffffff",
+    marginBottom: 4,
   },
   headerActions: {
     flexDirection: "row",

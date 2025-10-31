@@ -712,6 +712,19 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
           const createdAt = toDate(n.createdAt) || toDate(n.created_at) || new Date(0);
           const updatedAt = toDate(n.updatedAt) || toDate(n.updated_at) || toDate(n.lastModified) || createdAt;
           const lastAccessedAt = toDate(n.lastAccessedAt) || toDate(n.last_accessed);
+          
+          // Fix document URLs that might be stored with localhost in development
+          let documentUrl = n.document_url || n.document_file || null;
+          if (documentUrl && typeof documentUrl === 'string') {
+            // Replace localhost/127.0.0.1 URLs with the current API base URL
+            const localhostPattern = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/;
+            if (localhostPattern.test(documentUrl)) {
+              const path = documentUrl.replace(localhostPattern, '');
+              documentUrl = API_URL + path;
+              console.log('Fixed document URL from localhost to API_URL:', documentUrl);
+            }
+          }
+          
           return {
             id: n.id?.toString?.() ?? String(n.id),
             title: n.title || "",
@@ -728,7 +741,7 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
             template: n.template || null,
             drawing_data: n.drawing_data || null,
             document_file: n.document_file || null,
-            document_url: n.document_url || n.document_file || null,
+            document_url: documentUrl,
             document_annotations: n.document_annotations || null,
           };
         });
@@ -1550,6 +1563,8 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
             await folderCacheUtils.invalidateCache();
 
             const documentUrl = result.document_url || result.document_file || documentInfo.uri;
+            
+            // Note: Server now generates correct URLs using SITE_URL, so no local fixing needed
             let finalDocumentUri = documentUrl;
 
             if (documentType === "pdf" && isRemoteURL(documentUrl)) {
@@ -1761,7 +1776,35 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
         }
       );
       if (!response.ok) {
-        throw new Error("Failed to assign notes to folder");
+        // Read server body (if any) for better diagnostics
+        let text = "";
+        try {
+          text = await response.text();
+        } catch (e) {}
+        console.error("Assign notes to folder failed", response.status, text);
+
+        // Fallback: persist folder assignment locally so UI reflects the change and sync can happen later
+        try {
+          const updatePromises = noteIDs.map((id) =>
+            offlineNotesService.updateNote(id, { folderId: folderID } as any)
+          );
+          await Promise.all(updatePromises);
+
+          // Update UI optimistically to show transfer immediately
+          const updatedNotes = notes.map((note) =>
+            noteIDs.includes(note.id) ? { ...note, folderId: folderID } : note
+          );
+          setNotes(updatedNotes);
+          setSelectedNotes([]);
+          setIsSelectMode(false);
+          await folderCacheUtils.invalidateCache();
+          showSuccessToast("Notes assigned to folder");
+        } catch (offlineErr) {
+          console.error("Failed to persist folder assignment offline:", offlineErr);
+          throw new Error(`Failed to assign notes to folder (server ${response.status})`);
+        }
+
+        return;
       }
 
       // Update local state to reflect changes
@@ -1947,7 +1990,7 @@ const handleCreateFolder = async () => {
     if (offlineNotesService.isOnline()) {
       showSuccessToast(`Folder "${newFolderName}" created successfully`);
     } else {
-      showSuccessToast(`Folder "${newFolderName}" created offline. Will sync when you're back online.`);
+      showSuccessToast(`Folder "${newFolderName}" created.`);
     }
 
     // Invalidate cache
@@ -3400,7 +3443,7 @@ const handleCreateFolder = async () => {
         <View style={styles.headerTopRow}>
           <View style={styles.headerTitleSection}>
             <Text style={styles.headerTitle}>
-              {folderName ? `${folderName} Notes` : "Notes"}
+              Notes
             </Text>
           </View>
           <View style={styles.headerActions}>

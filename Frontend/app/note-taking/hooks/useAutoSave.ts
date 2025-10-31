@@ -167,6 +167,13 @@ export function useAutoSave<T>(
     }
   }, [initialData]);
 
+  // Auto-save on data changes
+  useEffect(() => {
+    if (enabled && trackChanges && lastSavedDataRef.current && JSON.stringify(data) !== JSON.stringify(lastSavedDataRef.current)) {
+      triggerSave(data);
+    }
+  }, [data, enabled, trackChanges, triggerSave]);
+
   return {
     triggerSave,
     forceSave,

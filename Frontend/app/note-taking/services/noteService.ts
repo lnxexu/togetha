@@ -138,8 +138,8 @@ class NoteService {
       return {
         note,
         status: {
-          status: 'error',
-          message: 'Failed to save note. Please try again.'
+          status: isAutoSave ? 'offline' : 'error',
+          message: isAutoSave ? 'Saved locally. Will sync when online.' : 'Failed to save note. Please try again.'
         }
       };
     } finally {

@@ -334,10 +334,6 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     return () => {
       keyboardDidShowListener.remove();
       keyboardDidHideListener.remove();
-      // Clean up auto-save timeout
-      if (autoSaveTimeoutRef.current) {
-        clearTimeout(autoSaveTimeoutRef.current);
-      }
     };
   }, []);
 
@@ -449,7 +445,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   };
 
   const { triggerSave, forceSave, hasUnsavedChanges: autoSaveHasChanges } = useAutoSave(currentNote, saveNote, {
-    delay: 2000, // 2 seconds like Google Docs
+    delay: 0, // Immediate save after changes
     enabled: true,
     initialData: route.params?.initialNote ? {
       id: route.params.noteId || noteService.generateNoteId(),
@@ -472,7 +468,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     },
   });
 
-  // Update current note when individual fields change and trigger auto-save
+  // Update current note when individual fields change
   useEffect(() => {
     const updatedNote: NoteType & { lastAccessedAt?: string } = {
       ...currentNote,
@@ -486,11 +482,6 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     };
     
     setCurrentNote(updatedNote);
-    
-    // Only trigger save if there's actual content
-    if (title.trim() || content.trim() || formattedContent.trim()) {
-      triggerSave(updatedNote);
-    }
   }, [title, content, formattedContent, selectedFolderId]);
 
   // Trigger sync when coming back online, and reconcile local->server IDs
@@ -542,10 +533,6 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
         folderId: selectedFolderId,
         updatedAt: new Date().toISOString(),
       };
-      if (autoSaveTimeoutRef.current) {
-        clearTimeout(autoSaveTimeoutRef.current);
-        autoSaveTimeoutRef.current = null;
-      }
       await forceSave(updatedNote);
     } catch (e) {
       // proceed regardless to avoid trapping the user
@@ -1353,19 +1340,6 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
                       lastHistoryPushRef.current = now;
                       prevHtmlRef.current = html;
                     }
-                  }
-                  
-                  // Auto-save on every change with debouncing
-                  if (stripped.trim() || html.trim()) {
-                    // Clear existing timeout
-                    if (autoSaveTimeoutRef.current) {
-                      clearTimeout(autoSaveTimeoutRef.current);
-                    }
-                    
-                    // Set new timeout for auto-save (1 second delay)
-                    autoSaveTimeoutRef.current = setTimeout(() => {
-                      handleAutoSave();
-                    }, 1000);
                   }
                 }}
                 placeholder="Start writing your note here..."

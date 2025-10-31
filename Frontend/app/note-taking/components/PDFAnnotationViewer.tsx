@@ -22,8 +22,8 @@ import {
   PanResponder,
   Easing,
   Image,
-  BackHandler,
   Vibration,
+  BackHandler,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -240,6 +240,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const [strokeWidth, setStrokeWidth] = useState(3);
   const [selectedColor, setSelectedColor] = useState(ANNOTATION_COLORS[0]);
   const [highlightOpacity, setHighlightOpacity] = useState(0.45);
+  const [eraserSize, setEraserSize] = useState(0.05);
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentPath, setCurrentPath] = useState("");
   const currentPathRef = useRef("");
@@ -293,7 +294,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const [showTextExtractionModal, setShowTextExtractionModal] = useState(false);
   const [isExtractingText, setIsExtractingText] = useState(false);
   const [extractedText, setExtractedText] = useState("");
-  const debugPDFCoordinates = (..._args: any[]) => {};
   const [isBboxDrawing, setIsBboxDrawing] = useState(false);
   const [bboxStart, setBboxStart] = useState<{ x: number; y: number } | null>(
     null
@@ -305,9 +305,9 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     height: number;
   } | null>(null);
   // Debug helpers
-  const [showDebugMarkers, setShowDebugMarkers] = useState(false);
   const [showTextPreviewModal, setShowTextPreviewModal] = useState(false);
   const [previewExtractedText, setPreviewExtractedText] = useState<string>("");
+  // AI modal/state removed; navigation to the chatbot screen is used instead
 
   type ToolbarTool = DrawingTool;
   const mapToolbarToolToViewer = (t: ToolbarTool): typeof selectedTool => {
@@ -414,15 +414,15 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       showErrorToast("Could not save snapshot");
     }
   };
- const updatePathWithAnimation = useCallback(() => {
+  // Floating AI button removed — state and pan responder cleaned up.
+
+  const updatePathWithAnimation = useCallback(() => {
     if (currentPointsRef.current.length === 0) return;
 
     const updatePath = () => {
       if (!currentPointsRef.current.length) return;
-    const now = performance.now();
-    // In React Native there may be no `window.screen` available (can crash on some runtimes).
-    // Use the Dimensions-derived `screenHeight` instead which is safe across platforms.
-    const targetFrameTime = screenHeight > 1920 ? 11 : 14;
+      const now = performance.now();
+      const targetFrameTime = window.screen?.height > 1920 ? 11 : 14;
       if (now - lastRenderTimeRef.current < targetFrameTime) {
         animationFrameRef.current = requestAnimationFrame(updatePath);
         return;
@@ -430,62 +430,50 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
       const pointsLength = currentPointsRef.current.length;
 
-      
       if (pointsLength === pointsCountRef.current && pathCacheRef.current) {
         lastRenderTimeRef.current = now;
         animationFrameRef.current = requestAnimationFrame(updatePath);
         return;
       }
 
-      
       let adaptiveSmoothing = smoothingLevelRef.current;
       if (pointsLength > 50) {
-        
         adaptiveSmoothing = Math.max(
           4,
           smoothingLevelRef.current - Math.floor(pointsLength / 100)
         );
       }
 
-      
       const simplifiedLive = simplifyPointsWithTimestamp(
         currentPointsRef.current,
         320
       );
 
-      
       const smooth = convertPointsToSmoothedPath(
         simplifiedLive as any,
         adaptiveSmoothing
       );
 
-      
       pathCacheRef.current = smooth;
       pointsCountRef.current = pointsLength;
 
-      
       currentPathRef.current = smooth;
 
-      
       const nowMs = Date.now();
       if (!lastSetTimeRef.current || nowMs - lastSetTimeRef.current >= 33) {
         setCurrentPath(smooth);
         lastSetTimeRef.current = nowMs;
       }
 
-      
       try {
         const liveKey = `live-${currentPageRef.current}`;
         if ((strokePathCacheRef as any)?.current instanceof Map) {
           (strokePathCacheRef as any).current.set(liveKey, smooth);
         }
-      } catch (e) {
-        
-      }
+      } catch (e) {}
 
       lastRenderTimeRef.current = now;
 
-      
       if (pendingPathUpdateRef.current) {
         animationFrameRef.current = requestAnimationFrame(updatePath);
       }
@@ -497,7 +485,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     }
   }, []);
 
-  
   const strokePathCacheRef = useRef<Map<string, string>>(new Map());
 
   const svLivePath = useSharedValue("");
@@ -559,7 +546,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     svLiveHaloOpacity.value = selectedTool === "highlight" ? 0.35 : 1;
   }, [selectedTool]);
 
-
   const [currentZoom, setCurrentZoom] = useState(1);
 
   useEffect(() => {
@@ -600,7 +586,10 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const pdfScrollRef = useRef<any>(null);
   // Keep the pager (single Pdf instance) in sync when displayCurrentPage changes
   useEffect(() => {
-    const target = Math.max(1, displayCurrentPage || currentPageRef.current || 1);
+    const target = Math.max(
+      1,
+      displayCurrentPage || currentPageRef.current || 1
+    );
     const pdf = pdfRef.current as any;
     if (!pdf) return;
     try {
@@ -617,23 +606,24 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       // ignore errors
     }
   }, [displayCurrentPage]);
-  const onViewableItemsChangedRef = useRef<any>(({ viewableItems }: { viewableItems?: any[] }) => {
-    if (viewableItems && viewableItems.length > 0) {
-      const first = viewableItems[0];
-      const page = first.item as number;
-      if (page !== currentPageRef.current) {
-        currentPageRef.current = page;
-        if (displayCurrentPage !== page) setDisplayCurrentPage(page);
+  const onViewableItemsChangedRef = useRef<any>(
+    ({ viewableItems }: { viewableItems?: any[] }) => {
+      if (viewableItems && viewableItems.length > 0) {
+        const first = viewableItems[0];
+        const page = first.item as number;
+        if (page !== currentPageRef.current) {
+          currentPageRef.current = page;
+          if (displayCurrentPage !== page) setDisplayCurrentPage(page);
+        }
       }
     }
-  });
+  );
   const [pdfContainerLayout, setPdfContainerLayout] = useState<{
     x: number;
     y: number;
     width: number;
     height: number;
   } | null>(null);
-
 
   const animatedTranslateX = useRef(new Animated.Value(0)).current;
   const animatedTranslateY = useRef(new Animated.Value(0)).current;
@@ -671,8 +661,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     };
     runOnJS(sync)();
   };
-
-  
 
   useEffect(() => {
     animatedTranslateX.setValue(pdfTransform.translateX);
@@ -726,7 +714,9 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       lastZoomForCache.current = currentZoom;
       lastContainerSizeForCache.current = containerSize;
       if (__DEV__) {
-        console.log("🔄 Path & stroke caches cleared due to layout/zoom change");
+        console.log(
+          "🔄 Path & stroke caches cleared due to layout/zoom change"
+        );
       }
     }
   }, [currentZoom, containerSize.width, containerSize.height]);
@@ -751,7 +741,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const PINCH_SENSITIVITY = 1.0;
   const PINCH_SMOOTH_SCALE = 0.25;
   const PINCH_SMOOTH_TRANSLATION = 0.3;
-  
+
   const PAN_MIN_DISTANCE = 1;
   const PAN_ACTIVE_OFFSET_X = 3;
   const PAN_X_GAIN = 1.15;
@@ -938,7 +928,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
           stiffness: 200,
         });
         runOnJS(setCurrentZoom)(scale);
-        runOnJS(setPdfTransform)( {
+        runOnJS(setPdfTransform)({
           scale,
           translateX: clampedTX,
           translateY: clampedTY,
@@ -966,7 +956,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         svTranslateX.value = withSpring(clamp(nextTX, -maxOffsetX, maxOffsetX));
         svTranslateY.value = withSpring(clamp(nextTY, -maxOffsetY, maxOffsetY));
         runOnJS(setCurrentZoom)(target);
-        runOnJS(setPdfTransform)( {
+        runOnJS(setPdfTransform)({
           scale: target,
           translateX: clamp(nextTX, -maxOffsetX, maxOffsetX),
           translateY: clamp(nextTY, -maxOffsetY, maxOffsetY),
@@ -1101,6 +1091,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const [folders, setFolders] = useState<any[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [folderName, setFolderName] = useState("PDF Documents");
+  const [folderColor, setFolderColor] = useState<string | null>(null);
   const [showFolderModal, setShowFolderModal] = useState(false);
   const [folderFilter, setFolderFilter] = useState("");
   const [isLoadingFolders, setIsLoadingFolders] = useState(false);
@@ -1169,8 +1160,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         if (!strokePathCacheRef.current.has(cacheKey)) {
           strokePathCacheRef.current.set(cacheKey, pointsToPath(simplified));
         }
-      } catch (e) {
-      }
+      } catch (e) {}
     }
   }, [strokes, containerSize.width, containerSize.height, pdfPageDimensions]);
 
@@ -1713,24 +1703,26 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       if (currentNoteId) {
         try {
           const note = await offlineNotesService.getNoteById(currentNoteId);
-          // Initialize folder information from the note
-          if (note?.folderId) {
-            setSelectedFolderId(String(note.folderId));
-            // Fetch folder name if we have a folderId
-            try {
-              const folders = await offlineNotesService.getAllFolders();
-              const folder = Array.isArray(folders) ? folders.find(
-                (f: any) => (f.id ?? f.localId)?.toString() === String(note.folderId)
-              ) : null;
-              if (folder) {
-                setFolderName(folder.name);
+          // Initialize folder selection from existing note if present
+          try {
+            if (note?.folderId) {
+              setSelectedFolderId(String(note.folderId));
+              if (note.folder && note.folder.name) {
+                setFolderName(note.folder.name);
               }
-            } catch (folderErr) {
-              console.warn("Could not fetch folder name:", folderErr);
+                  // Try to get color from note.folder or fallback to cached folders
+                  try {
+                    const colorFromNote = (note.folder && (note.folder.color || note.folder.color_hex || note.folder.colorHex)) || (note.folder_color || note.folderColor);
+                    if (colorFromNote) {
+                      setFolderColor(colorFromNote);
+                    } else {
+                      const localMatch = folders.find((f: any) => f.id?.toString() === String(note.folderId));
+                      if (localMatch) setFolderColor(localMatch.color || null);
+                    }
+                  } catch (e) {}
             }
-          } else {
-            setSelectedFolderId(null);
-            setFolderName("PDF Documents");
+          } catch (e) {
+            // ignore
           }
           const rawAnns = (note?.document_annotations || []) as any[];
           let anns = normalizeAnnotations(
@@ -2517,8 +2509,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
                   buf.byteLength
                 );
               }
-            } catch (bufErr) {
-            }
+            } catch (bufErr) {}
 
             throw new Error("No base64 decode available in this environment");
           };
@@ -2688,22 +2679,13 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
   const localToSvg = useCallback((localX: number, localY: number) => {
     const { displayW, contentHeight } = getLayoutMetrics();
-    
-    // Untransform the coordinates since we're in the transformed container
-    const scale = currentZoom || 1;
-    const translateX = pdfTransform.translateX;
-    const translateY = pdfTransform.translateY;
-    
-    const untransformedX = (localX - translateX) / scale;
-    const untransformedY = (localY - translateY) / scale;
-    
     const clamp = (v: number, min: number, max: number) =>
       Math.max(min, Math.min(max, v));
     return {
-      x: clamp(untransformedX, 0, displayW),
-      y: clamp(untransformedY, 0, contentHeight),
+      x: clamp(localX, 0, displayW),
+      y: clamp(localY, 0, contentHeight),
     };
-  }, [currentZoom, pdfTransform]);
+  }, []);
 
   const getPageFromContentY = useCallback(
     (contentY: number) => {
@@ -2812,51 +2794,142 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   }, [isOnline]);
 
   const handleFolderSelect = (folder: any | null) => {
-    // Add haptic feedback for better UX
-    if (Platform.OS === 'ios') {
+    // Haptic feedback and UX parity with NewNoteEditor
+    try {
       Vibration.vibrate(10);
-    }
-    
-    if (folder) {
-      const folderId = folder.id ?? folder.localId;
-      setSelectedFolderId(String(folderId));
-      setFolderName(folder.name);
-      showSuccessToast(`Moved to folder "${folder.name}"`);
-    } else {
-      setSelectedFolderId(null);
-      setFolderName("PDF Documents");
-    }
-    setShowFolderModal(false);
+    } catch (e) {}
 
-    // Save the folder change to the note
-    if (currentNoteId) {
-      try {
-        const folderIdToSave = folder ? (folder.id ?? folder.localId) : null;
-        offlineNotesService.updateNote(currentNoteId, {
-          folderId: folderIdToSave,
-          type: "document",
-        }).catch((error) => {
-          console.error("Failed to update note folder:", error);
-          showErrorToast("Failed to update folder");
-        });
-      } catch (error) {
-        console.error("Failed to update note folder:", error);
-        showErrorToast("Failed to update folder");
+    (async () => {
+      if (folder) {
+        const fid = folder.id?.toString?.() ?? String(folder.id);
+        setSelectedFolderId(fid);
+        setFolderName(folder.name);
+        // Save color for UI usage
+        const color = folder.color || folder.color_hex || folder.colorHex || "#667EEA";
+        setFolderColor(color);
+
+        // If we have a current note and a PDF source, attempt to persist/move the PDF into a folder-specific directory
+        try {
+          if (currentNoteId && currentSource?.uri) {
+            const src = currentSource.uri;
+            // Only proceed for file:// or documentDirectory URIs (local files)
+            const isLocal = typeof src === "string" && (src.startsWith("file://") || src.startsWith(FileSystem.documentDirectory || ""));
+            if (isLocal) {
+              try {
+                const folderDir = `${FileSystem.documentDirectory}pdf_documents/folders/${fid}/`;
+                const dirInfo = await FileSystem.getInfoAsync(folderDir);
+                if (!dirInfo.exists) {
+                  await FileSystem.makeDirectoryAsync(folderDir, { intermediates: true });
+                }
+
+                const baseName = src.split("/").pop() || `document_${Date.now()}.pdf`;
+                const safeName = `${Date.now()}_${baseName}`;
+                const dest = `${folderDir}${safeName}`;
+
+                // Only copy if dest differs from src
+                if (dest !== src) {
+                  try {
+                    await FileSystem.copyAsync({ from: src, to: dest });
+                    // Update current source so viewer will use new location
+                    setCurrentSource({ uri: dest });
+                    // Persist update to offline note: set folderId and document file/url
+                    try {
+                      await offlineNotesService.updateNote(currentNoteId, {
+                        folderId: fid,
+                        document_file: dest,
+                        document_url: dest,
+                      } as any);
+                    } catch (e) {
+                      // Best-effort: still set folderId even if file update failed
+                      try {
+                        await offlineNotesService.updateNote(currentNoteId, {
+                          folderId: fid,
+                        } as any);
+                      } catch (_) {}
+                    }
+                    showSuccessToast(`Moved PDF to folder "${folder.name}"`);
+                  } catch (copyErr) {
+                    console.warn("Failed to copy PDF into folder dir:", copyErr);
+                    // Fallback: just update note folder without moving file
+                    try {
+                      await offlineNotesService.updateNote(currentNoteId, { folderId: fid } as any);
+                      showSuccessToast(`Assigned to folder "${folder.name}" (file unchanged)`);
+                    } catch (updErr) {
+                      console.warn("Failed to update note folderId:", updErr);
+                      showErrorToast("Could not move PDF to folder");
+                    }
+                  }
+                } else {
+                  // src and dest equal (unlikely) - still update folder
+                  try {
+                    await offlineNotesService.updateNote(currentNoteId, {
+                      folderId: fid,
+                    } as any);
+                    showSuccessToast(`Assigned to folder "${folder.name}"`);
+                  } catch (e) {
+                    console.warn("Failed to update note with folderId:", e);
+                  }
+                }
+              } catch (err) {
+                console.warn("Error preparing folder directory:", err);
+                try {
+                  await offlineNotesService.updateNote(currentNoteId, { folderId: fid } as any);
+                } catch {}
+                showWarningToast(`Assigned to folder "${folder.name}" (file not moved)`);
+              }
+            } else {
+              // Remote file or unknown scheme - just update folder metadata
+              try {
+                await offlineNotesService.updateNote(currentNoteId, { folderId: fid } as any);
+                showSuccessToast(`Assigned to folder "${folder.name}"`);
+              } catch (e) {
+                console.warn("Failed to update note with folderId for remote file:", e);
+              }
+            }
+          } else {
+            // No current note - just update selection state
+            showSuccessToast(`Moved to folder "${folder.name}"`);
+          }
+        } catch (outerErr) {
+          console.warn("Error while assigning folder:", outerErr);
+          showErrorToast("Failed to move PDF to folder");
+        }
+      } else {
+        setSelectedFolderId(null);
+        setFolderName("PDF Documents");
+        setFolderColor(null);
+        // If we have a note id, clear folder association
+        try {
+          if (currentNoteId) {
+            await offlineNotesService.updateNote(currentNoteId, { folderId: null } as any);
+          }
+        } catch (e) {}
+        showSuccessToast("Moved to Unorganized Notes");
       }
-    }
+      setShowFolderModal(false);
+    })();
   };
 
   const fetchFolders = useCallback(async () => {
     try {
       setIsLoadingFolders(true);
       const data = await offlineNotesService.getAllFolders();
-      setFolders(Array.isArray(data) ? data : []);
+      const mapped = (Array.isArray(data) ? data : []).map((folder: any) => ({
+        id: folder.id?.toString?.() ?? String(folder.id),
+        name: folder.name,
+        color: folder.color || folder.color_hex || folder.colorHex || "#667EEA",
+        icon: folder.icon || "folder",
+        note_count: folder.note_count || folder.notes_count || 0,
+      }));
+
+      setFolders(mapped);
 
       if (selectedFolderId) {
-        const match = (Array.isArray(data) ? data : []).find(
-          (f: any) => (f.id ?? f.localId)?.toString() === selectedFolderId
-        );
-        if (match) setFolderName(match.name);
+        const match = mapped.find((f: any) => f.id?.toString() === selectedFolderId);
+        if (match) {
+          setFolderName(match.name);
+          setFolderColor(match.color || null);
+        }
       }
     } catch (e) {
       console.warn("Failed to load folders:", e);
@@ -2867,6 +2940,11 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       setIsLoadingFolders(false);
     }
   }, [selectedFolderId, isOnline]);
+
+  // Fetch folders once on mount so folderName can be initialized for existing notes
+  useEffect(() => {
+    fetchFolders();
+  }, [fetchFolders]);
 
   useEffect(() => {
     if (showFolderModal) {
@@ -3182,6 +3260,8 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         ) {
           svLivePath.value = finalPath;
           addPenAnnotation(finalPath, selectedTool);
+        } else if (selectedTool === "eraser") {
+          partialEraseAnnotations(finalPath);
         }
 
         currentPointsRef.current.length = 0;
@@ -3368,8 +3448,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
             : displayH
         );
 
-    // Defensive clamp to avoid extremely large SVG/container heights which
-    // can crash native PDF rendering or exhaust memory on low-end devices.
     const contentHeight = Math.min(rawContentHeight, maxContentHeight);
     if (rawContentHeight > maxContentHeight && __DEV__) {
       console.warn(
@@ -3419,7 +3497,8 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     // to determine the annotation page. Fall back to content Y if needed.
     let actualPage = displayCurrentPage || currentPageRef.current || 1;
     if (
-      (!displayCurrentPage && !currentPageRef.current) &&
+      !displayCurrentPage &&
+      !currentPageRef.current &&
       currentPointsRef.current &&
       currentPointsRef.current.length > 0
     ) {
@@ -3452,7 +3531,8 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
   const addFreehandHighlight = (path: string) => {
     let actualPage = displayCurrentPage || currentPageRef.current || 1;
     if (
-      (!displayCurrentPage && !currentPageRef.current) &&
+      !displayCurrentPage &&
+      !currentPageRef.current &&
       currentPointsRef.current &&
       currentPointsRef.current.length > 0
     ) {
@@ -3656,11 +3736,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
       if (!path) return "";
 
       const { displayW, displayH, offsetX, pageSpacing } = getLayoutMetrics();
-      // When using a single native Pdf instance with horizontal paging we render
-      // only the visible page. In that mode the overlay's origin is the page
-      // itself (no stacked vertical offset). Use `singlePageRenderMode` to
-      // control that behavior.
-      const singlePageRenderMode = true; // viewer now uses a single Pdf component
+      const singlePageRenderMode = true;
       const pageIndex = Math.max(0, (page || 1) - 1);
       const effectivePageIndex = singlePageRenderMode ? 0 : pageIndex;
       const pageStartY = effectiveSafeMode
@@ -3742,6 +3818,78 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     return convertNormalizedPathToScreen(path);
   };
 
+  const partialEraseAnnotations = (eraserPath: string) => {
+    let actualErasePage = displayCurrentPage || currentPageRef.current || 1;
+    if (
+      !displayCurrentPage &&
+      !currentPageRef.current &&
+      currentPointsRef.current &&
+      currentPointsRef.current.length > 0
+    ) {
+      const firstPoint = currentPointsRef.current[0];
+      actualErasePage = getPageFromContentY(firstPoint.y);
+    }
+    const normalizedEraserPath = convertPathToNormalized(
+      eraserPath,
+      actualErasePage
+    );
+    const eraserPoints = getPathPoints(normalizedEraserPath);
+    const eraseThreshold = Math.max(0.01, Math.min(0.15, eraserSize));
+
+    const modifiedAnnotations = annotations
+      .map((ann) => {
+        if (ann.page !== actualErasePage) return ann; // Keep annotations from other pages
+        if (!ann.path && !ann.x && !ann.y) return ann; // Keep annotations without position data
+
+        if (ann.path) {
+          const annotationPoints = getPathPoints(ann.path);
+          const remainingPoints: { x: number; y: number }[] = [];
+
+          annotationPoints.forEach((point) => {
+            let shouldKeep = true;
+            for (const eraserPoint of eraserPoints) {
+              const distance = Math.sqrt(
+                (point.x - eraserPoint.x) ** 2 + (point.y - eraserPoint.y) ** 2
+              );
+              if (distance < eraseThreshold) {
+                shouldKeep = false;
+                break;
+              }
+            }
+            if (shouldKeep) {
+              remainingPoints.push(point);
+            }
+          });
+
+          if (remainingPoints.length > 1) {
+            const newPath = reconstructPath(remainingPoints);
+            return {
+              ...ann,
+              path: newPath,
+              id: ann.id + "_modified_" + Date.now(), // Update ID to trigger re-render
+            };
+          } else {
+            return null;
+          }
+        }
+
+        if (ann.x !== undefined && ann.y !== undefined) {
+          const shouldErase = eraserPoints.some((eraserPoint) => {
+            const distance = Math.sqrt(
+              (ann.x - eraserPoint.x) ** 2 + (ann.y - eraserPoint.y) ** 2
+            );
+            return distance < eraseThreshold;
+          });
+          return shouldErase ? null : ann;
+        }
+
+        return ann;
+      })
+      .filter((ann) => ann !== null) as Annotation[];
+
+    saveAnnotationsWithChanges(modifiedAnnotations);
+  };
+
   const attemptToExtractTextFromPath = (path: string) => {
     setShowTextExtractionModal(true);
   };
@@ -3809,7 +3957,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
   const reconstructPath = (points: { x: number; y: number }[]): string => {
     if (points.length === 0) return "";
-    if (points.length === 1) return `M${points[0].x},${points[0].y}`;
 
     let path = `M${points[0].x},${points[0].y}`;
     for (let i = 1; i < points.length; i++) {
@@ -3817,6 +3964,91 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     }
 
     return path;
+  };
+
+  const eraseAnnotations = (eraserPath: string) => {
+    const erased = annotations.filter((ann) => {
+      if (ann.page !== currentPageRef.current) return true; // Keep annotations from other pages
+      if (!ann.path && !ann.x && !ann.y) return true; // Keep annotations without position data
+
+      if (ann.path) {
+        return !isPathIntersecting(ann.path, eraserPath);
+      }
+
+      if (ann.x !== undefined && ann.y !== undefined) {
+        return !isPointInEraserPath(ann.x, ann.y, eraserPath);
+      }
+
+      return true;
+    });
+
+    saveAnnotationsWithChanges(erased);
+  };
+
+  const isPathIntersecting = (path1: string, path2: string) => {
+    const getPathPoints = (path: string) => {
+      const points: { x: number; y: number }[] = [];
+      const commands = path.split(/[ML]/).filter((cmd) => cmd.trim());
+
+      commands.forEach((cmd) => {
+        const coords = cmd.trim().split(",");
+        if (coords.length === 2) {
+          points.push({
+            x: parseFloat(coords[0]),
+            y: parseFloat(coords[1]),
+          });
+        }
+      });
+
+      return points;
+    };
+
+    const path1Points = getPathPoints(path1);
+    const path2Points = getPathPoints(path2);
+
+    const threshold = Math.max(0.01, Math.min(0.15, eraserSize));
+
+    for (const p1 of path1Points) {
+      for (const p2 of path2Points) {
+        const distance = Math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2);
+        if (distance < threshold) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  };
+
+  const isPointInEraserPath = (x: number, y: number, eraserPath: string) => {
+    const getPathPoints = (path: string) => {
+      const points: { x: number; y: number }[] = [];
+      const commands = path.split(/[ML]/).filter((cmd) => cmd.trim());
+
+      commands.forEach((cmd) => {
+        const coords = cmd.trim().split(",");
+        if (coords.length === 2) {
+          points.push({
+            x: parseFloat(coords[0]),
+            y: parseFloat(coords[1]),
+          });
+        }
+      });
+
+      return points;
+    };
+
+    const eraserPoints = getPathPoints(eraserPath);
+    const threshold = 0.05; // Normalized threshold (5% of screen)
+
+    for (const point of eraserPoints) {
+      const distance = Math.sqrt((x - point.x) ** 2 + (y - point.y) ** 2);
+      if (distance < threshold) {
+        return true;
+      }
+    }
+
+    return false;
   };
 
   const addHighlightAnnotation = (x: number, y: number) => {
@@ -3906,50 +4138,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
     saveAnnotationsWithChanges(updated);
   };
 
-  const debugCoordinateConversion = () => {
-    console.log("🧪 HORIZONTAL PAGING COORDINATE CONVERSION DEBUG TEST:");
-    console.log("📊 Current state:", {
-      totalPages,
-      currentPage,
-      containerSize,
-      pdfPageDimensions,
-      screenDimensions: { width: screenWidth, height: screenHeight },
-    });
-
-    annotations.forEach((ann, index) => {
-      console.log(`  Annotation ${index + 1}:`, {
-        id: ann.id,
-        type: ann.type,
-        page: ann.page,
-        coordinates: { x: ann.x, y: ann.y },
-        isValidPage: ann.page >= 1 && ann.page <= totalPages,
-        isValidCoords: ann.x >= 0 && ann.x <= 1 && ann.y >= 0 && ann.y <= 1,
-      });
-    });
-
-    const testPoints = [
-      { x: 20, y: 20, desc: "top-left" },
-      { x: screenWidth / 2, y: screenHeight / 4, desc: "top-center" },
-      { x: screenWidth - 20, y: 20, desc: "top-right" },
-      { x: screenWidth / 2, y: screenHeight / 2, desc: "center" },
-      { x: 20, y: screenHeight - 100, desc: "bottom-left" },
-      { x: screenWidth - 20, y: screenHeight - 100, desc: "bottom-right" },
-    ];
-
-    console.log(
-      `🧪 Testing coordinate conversion on page ${currentPageRef.current}:`
-    );
-    testPoints.forEach((point) => {
-      const converted = screenToPDFCoordinates(point.x, point.y);
-      console.log(
-        `  ${point.desc}: (${point.x}, ${
-          point.y
-        }) → (${converted.normalizedX.toFixed(
-          3
-        )}, ${converted.normalizedY.toFixed(3)})`
-      );
-    });
-  };
 
   const exportAnnotatedPDF = async () => {
     try {
@@ -4039,8 +4227,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         },
       };
 
-      debugCoordinateConversion();
-
       let pageHeight;
       if (pdfPageDimensions.width && pdfPageDimensions.height) {
         const aspectRatio = pdfPageDimensions.height / pdfPageDimensions.width;
@@ -4070,16 +4256,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         );
       }
 
-      debugPDFCoordinates(
-        pdfAnnotations,
-        {
-          totalPages,
-          viewerWidth: containerSize.width || screenWidth,
-          viewerHeight: totalPages * pageHeight, // Use exact height calculation
-          pdfPageDimensions,
-        },
-        totalPages
-      );
+      
 
       console.log(
         `Exporting ${pdfAnnotations.length} annotations to new PDF with enhanced debugging...`
@@ -4163,12 +4340,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
 
       console.log("💾 Automatically saving exported PDF to Downloads");
       await onAfterExportSaved(result.savedPath);
-      try {
-        const exportedName = result.savedPath.split("/").pop() || "exported.pdf";
-        showSuccessToast(`Exported PDF: ${exportedName}`);
-      } catch (e) {
-        // non-fatal: avoid crashing if toast fails for any reason
-      }
     } catch (error) {
       console.error("Error exporting PDF to new file:", error);
       showErrorToast(
@@ -5046,8 +5217,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
                 />
               );
             }
-          } catch (e) {
-          }
+          } catch (e) {}
           return null;
         })()}
 
@@ -5254,9 +5424,15 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
                       case "pen":
                         return { strokeWidth: baseStroke, opacity: 1 } as any;
                       case "brush":
-                        return { strokeWidth: baseStroke * 1.8, opacity: 0.9 } as any;
+                        return {
+                          strokeWidth: baseStroke * 1.8,
+                          opacity: 0.9,
+                        } as any;
                       case "pencil":
-                        return { strokeWidth: baseStroke * 0.8, opacity: 0.8 } as any;
+                        return {
+                          strokeWidth: baseStroke * 0.8,
+                          opacity: 0.8,
+                        } as any;
                       default:
                         return { strokeWidth: baseStroke, opacity: 1 } as any;
                     }
@@ -5334,11 +5510,19 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         </Svg>
       );
     },
-    [memoizedAnnotations, convertNormalizedPathToScreenForPage, scaleStrokesWithZoom, currentZoom, highlightOpacity, deleteAnnotation]
+    [
+      memoizedAnnotations,
+      convertNormalizedPathToScreenForPage,
+      scaleStrokesWithZoom,
+      currentZoom,
+      highlightOpacity,
+      deleteAnnotation,
+    ]
   );
 
   return (
     <GestureHandlerRootView style={styles.container}>
+      {/* Floating AI Button removed */}
       {/* Header as background (hidden in focus mode) */}
       {!uiHidden && (
         <View style={styles.headerBackground}>
@@ -5447,13 +5631,28 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
                   )}
                 </TouchableOpacity>
 
-                {/* Folder Button */}
                 <TouchableOpacity
-                  onPress={() => setShowFolderModal(true)}
                   style={styles.saveButton}
-                  activeOpacity={0.8}
+                  onPress={() => setShowFolderModal(true)}
                 >
-                  <MaterialIcons name="folder" size={18} color="#ffffff" />
+                  <View style={{ width: 22, height: 22, alignItems: 'center', justifyContent: 'center' }}>
+                    <MaterialIcons name="folder" size={18} color="#fff" />
+                    {folderColor ? (
+                      <View
+                        style={{
+                          position: 'absolute',
+                          right: -2,
+                          top: -2,
+                          width: 10,
+                          height: 10,
+                          borderRadius: 6,
+                          backgroundColor: folderColor,
+                          borderWidth: 1,
+                          borderColor: '#fff',
+                        }}
+                      />
+                    ) : null}
+                  </View>
                 </TouchableOpacity>
 
                 {/* More Options Menu */}
@@ -5654,29 +5853,47 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
                         // Render a single native Pdf instance that handles horizontal paging internally.
                         // This mirrors PDFAnnotationViewerHorizontal.md: one heavy native view, overlays on top.
                         const { displayW, displayH } = getLayoutMetrics();
-                        const pageToShow = displayCurrentPage || currentPageRef.current || 1;
+                        const pageToShow =
+                          displayCurrentPage || currentPageRef.current || 1;
 
                         return (
-                          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                          <View
+                            style={{
+                              flex: 1,
+                              alignItems: "center",
+                              justifyContent: "center",
+                            }}
+                          >
                             <View style={{ width: displayW, height: displayH }}>
-                                {Platform.OS !== 'web' && Pdf ? (
+                              {Platform.OS !== "web" && Pdf ? (
                                 <PdfAny
                                   ref={pdfRef}
                                   source={currentSource}
-                                  style={{ width: Math.max(1, displayW), height: Math.max(1, displayH) }}
+                                  style={{
+                                    width: Math.max(1, displayW),
+                                    height: Math.max(1, displayH),
+                                  }}
                                   page={pageToShow}
                                   onLoadComplete={onPdfLoadComplete}
                                   onLoadProgress={onPdfLoadProgress}
                                   onError={onPdfError}
-                                  onPageChanged={(page: number, pageCount: number) => {
+                                  onPageChanged={(
+                                    page: number,
+                                    pageCount: number
+                                  ) => {
                                     setCurrentPage(page);
                                     currentPageRef.current = page;
-                                    if (pageCount && pageCount !== totalPagesRef.current) {
+                                    if (
+                                      pageCount &&
+                                      pageCount !== totalPagesRef.current
+                                    ) {
                                       setTotalPages(pageCount);
                                       totalPagesRef.current = pageCount;
-                                      if (displayTotalPages !== pageCount) setDisplayTotalPages(pageCount);
+                                      if (displayTotalPages !== pageCount)
+                                        setDisplayTotalPages(pageCount);
                                     }
-                                    if (displayCurrentPage !== page) setDisplayCurrentPage(page);
+                                    if (displayCurrentPage !== page)
+                                      setDisplayCurrentPage(page);
                                   }}
                                   enablePaging={true}
                                   horizontal={true}
@@ -5689,65 +5906,40 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
                                   singlePage={false}
                                   // Allow native swipe when not editing and at 1x zoom. When zoomed or
                                   // in edit mode we capture gestures in JS to support pinch/pan/draw.
-                                  enableSwipe={!isEditMode && (currentZoom <= 1)}
+                                  enableSwipe={!isEditMode && currentZoom <= 1}
                                 />
                               ) : (
                                 <View style={styles.webPdfPlaceholder}>
-                                  <MaterialIcons name="description" size={64} color="#9CA3AF" />
-                                  <Text style={styles.webPdfText}>PDF viewing not supported on web</Text>
-                                  <Text style={styles.webPdfSubtext}>Please use the mobile app to view and annotate PDFs</Text>
+                                  <MaterialIcons
+                                    name="description"
+                                    size={64}
+                                    color="#9CA3AF"
+                                  />
+                                  <Text style={styles.webPdfText}>
+                                    PDF viewing not supported on web
+                                  </Text>
+                                  <Text style={styles.webPdfSubtext}>
+                                    Please use the mobile app to view and
+                                    annotate PDFs
+                                  </Text>
                                 </View>
                               )}
 
                               {/* Annotation overlay for the visible page */}
                               <View
-                                style={{ position: 'absolute', left: 0, top: 0, right: 0, height: displayH, zIndex: 10 }}
+                                style={{
+                                  position: "absolute",
+                                  left: 0,
+                                  top: 0,
+                                  right: 0,
+                                  height: displayH,
+                                  zIndex: 10,
+                                }}
                                 pointerEvents="box-none"
                               >
                                 {renderAnnotationsForPage(pageToShow)}
 
-                                {/* Debug markers overlay (pixel markers) */}
-                                {showDebugMarkers && (
-                                  <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, width: displayW, height: displayH }}>
-                                    {(memoizedAnnotations.get(pageToShow) || []).map((ann) => {
-                                      try {
-                                        let nx = 0;
-                                        let ny = 0;
-                                        if (ann.path) {
-                                          const p = getFirstNormalizedPointFromPath(ann.path);
-                                          nx = p.x;
-                                          ny = p.y;
-                                        } else {
-                                          nx = ann.x || 0;
-                                          ny = ann.y || 0;
-                                        }
-
-                                        const px = Math.max(0, Math.min(1, nx)) * displayW;
-                                        const py = Math.max(0, Math.min(1, ny)) * displayH;
-
-                                        return (
-                                          <View
-                                            key={`dbg-${ann.id}`}
-                                            style={{
-                                              position: 'absolute',
-                                              left: px - 6,
-                                              top: py - 6,
-                                              width: 12,
-                                              height: 12,
-                                              borderRadius: 6,
-                                              backgroundColor: 'rgba(255,0,0,0.9)',
-                                              borderWidth: 1,
-                                              borderColor: '#fff',
-                                              zIndex: 99999,
-                                            }}
-                                          />
-                                        );
-                                      } catch (e) {
-                                        return null;
-                                      }
-                                    })}
-                                  </View>
-                                )}
+                                
                               </View>
 
                               {/* Gesture capture overlay - only active when NOT drawing */}
@@ -5759,7 +5951,15 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
                               <GestureDetector gesture={combinedGesture}>
                                 <View
                                   pointerEvents="auto"
-                                  style={{ position: 'absolute', left: 0, top: 0, right: 0, height: displayH, zIndex: 9998, backgroundColor: 'transparent' }}
+                                  style={{
+                                    position: "absolute",
+                                    left: 0,
+                                    top: 0,
+                                    right: 0,
+                                    height: displayH,
+                                    zIndex: 9998,
+                                    backgroundColor: "transparent",
+                                  }}
                                   collapsable={false}
                                 />
                               </GestureDetector>
@@ -5768,7 +5968,15 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
                               {isEditMode && selectedTool !== null && (
                                 <View
                                   pointerEvents="auto"
-                                  style={{ position: 'absolute', left: 0, top: 0, right: 0, height: displayH, zIndex: 9999, backgroundColor: 'transparent' }}
+                                  style={{
+                                    position: "absolute",
+                                    left: 0,
+                                    top: 0,
+                                    right: 0,
+                                    height: displayH,
+                                    zIndex: 9999,
+                                    backgroundColor: "transparent",
+                                  }}
                                   collapsable={false}
                                   {...panResponder.panHandlers}
                                 />
@@ -5827,13 +6035,16 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
                   const target = Math.max(1, (currentPageRef.current || 1) - 1);
                   currentPageRef.current = target;
                   setDisplayCurrentPage(target);
-                    if (!effectiveSafeMode) {
+                  if (!effectiveSafeMode) {
                     // Use single Pdf ref to change page instead of scrolling a FlatList
                     const pdf = pdfRef.current as any;
                     try {
                       if (pdf && typeof pdf.setPage === "function") {
                         pdf.setPage(target);
-                      } else if (pdf && typeof pdf.setNativeProps === "function") {
+                      } else if (
+                        pdf &&
+                        typeof pdf.setNativeProps === "function"
+                      ) {
                         pdf.setNativeProps({ page: target });
                       }
                     } catch (e) {
@@ -5874,12 +6085,15 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
                   if (num !== currentPageRef.current) {
                     currentPageRef.current = num;
                     setDisplayCurrentPage(num);
-                      if (!effectiveSafeMode) {
+                    if (!effectiveSafeMode) {
                       const pdf = pdfRef.current as any;
                       try {
                         if (pdf && typeof pdf.setPage === "function") {
                           pdf.setPage(num);
-                        } else if (pdf && typeof pdf.setNativeProps === "function") {
+                        } else if (
+                          pdf &&
+                          typeof pdf.setNativeProps === "function"
+                        ) {
                           pdf.setNativeProps({ page: num });
                         }
                       } catch (e) {}
@@ -5890,7 +6104,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
               />
               <Text style={styles.floatingPageText}>/ {displayTotalPages}</Text>
 
-           
+              
 
               <TouchableOpacity
                 style={styles.floatingPageButton}
@@ -5901,12 +6115,15 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
                   const target = Math.min(max, current + 1);
                   currentPageRef.current = target;
                   setDisplayCurrentPage(target);
-                    if (!effectiveSafeMode) {
+                  if (!effectiveSafeMode) {
                     const pdf = pdfRef.current as any;
                     try {
                       if (pdf && typeof pdf.setPage === "function") {
                         pdf.setPage(target);
-                      } else if (pdf && typeof pdf.setNativeProps === "function") {
+                      } else if (
+                        pdf &&
+                        typeof pdf.setNativeProps === "function"
+                      ) {
                         pdf.setNativeProps({ page: target });
                       }
                     } catch (e) {}
@@ -5993,7 +6210,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         </View>
       </Modal>
 
-      {/* Folder Selection Modal (replaces Export Modal) */}
       <Modal
         visible={showFolderModal}
         transparent={true}
@@ -6003,16 +6219,11 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         <View style={styles.modalOverlay}>
           <View style={styles.folderModalContent}>
             <View style={styles.folderModalHeaderRow}>
-              <View style={{ flexDirection: "row", alignItems: "center" }}>
-                <MaterialIcons name="folder" size={22} color="#8B5CF6" />
-                <Text style={styles.folderModalTitle}> Select Folder</Text>
-              </View>
               <TouchableOpacity onPress={() => setShowFolderModal(false)}>
                 <MaterialIcons name="close" size={22} color="#6B7280" />
               </TouchableOpacity>
             </View>
 
-            {/* Search / quick filter */}
             <View style={styles.folderSearchRow}>
               <TextInput
                 placeholder="Search folders"
@@ -6080,12 +6291,11 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
                       : true
                   )
                   .map((folder: any) => {
-                    const folderId = folder.id ?? folder.localId;
                     const selected =
-                      selectedFolderId?.toString() === folderId?.toString();
+                      selectedFolderId?.toString() === folder.id?.toString();
                     return (
                       <TouchableOpacity
-                        key={folderId}
+                        key={folder.id}
                         style={[
                           styles.folderCard,
                           selected && styles.selectedFolderCard,
@@ -6093,14 +6303,14 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
                         onPress={() => handleFolderSelect(folder)}
                         activeOpacity={0.8}
                       >
-                        <View
-                          style={[
-                            styles.folderCardIcon,
-                            { backgroundColor: folder.color || '#8B5CF6' },
-                          ]}
-                        >
-                          <MaterialIcons name={(folder.icon as any) || 'folder'} size={20} color="#fff" />
-                        </View>
+                                <View
+                                  style={[
+                                    styles.folderCardIcon,
+                                    { backgroundColor: folder.color || "#8B5CF6" },
+                                  ]}
+                                >
+                                  <MaterialIcons name="folder" size={20} color="#fff" />
+                                </View>
                         <View style={styles.folderCardTextWrap}>
                           <Text style={styles.folderCardTitle}>
                             {folder.name}
@@ -6223,7 +6433,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
             >
               <MaterialIcons name="image" size={20} color="#F59E0B" />
               <Text style={[styles.moreMenuText, { color: "#F59E0B" }]}>
-                Export PDF as JPEG
+                Download Page as JPEG
               </Text>
             </TouchableOpacity>
 
@@ -6240,20 +6450,6 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.moreMenuItem}
-              onPress={() => {
-                setShowMoreMenu(false);
-                navigation.navigate("RINA");
-              }}
-              activeOpacity={0.8}
-            >
-              <MaterialIcons name="smart-toy" size={20} color="#8B5CF6" />
-              <Text style={[styles.moreMenuText, { color: "#8B5CF6" }]}>
-                Ask AI
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
               style={[styles.moreMenuItem, { borderBottomWidth: 0 }]}
               onPress={() => {
                 setShowMoreMenu(false);
@@ -6264,11 +6460,27 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
               <MaterialIcons name="info-outline" size={20} color="#334155" />
               <Text style={styles.moreMenuText}>Document Info</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.moreMenuItem}
+              onPress={() => {
+                setShowMoreMenu(false);
+                navigation.navigate("RINA");
+              }}
+              activeOpacity={0.8}
+            >
+              <MaterialIcons name="psychology" size={20} color="#8B5CF6" />
+              <Text style={[styles.moreMenuText, { color: "#8B5CF6" }]}>
+                Ask Rina
+              </Text>
+            </TouchableOpacity>
           </View>
         </TouchableOpacity>
       </Modal>
 
+      {/* AI Assistant modal removed; navigation to chatbot (RINA) should be used instead */}
 
+      {/* Ask Rina Popup */}
       {showAskRinaPopup && !uiHidden && (
         <Animated.View
           style={[
@@ -8011,6 +8223,136 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
 
+  /* Floating AI button styles removed */
+  aiModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
+    justifyContent: "flex-end",
+  },
+  aiModalContainer: {
+    backgroundColor: "transparent",
+    width: "100%",
+    height: "90%", // Allow the modal to take up to 90% of screen height
+    justifyContent: "flex-end",
+  },
+  aiModalContent: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingBottom: Platform.OS === "ios" ? 48 : 24, // Extra padding for iOS devices with home indicator
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 16,
+    minHeight: "50%",
+    maxHeight: "92%",
+  },
+  aiModalHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: "#E5E7EB",
+    borderRadius: 2,
+    alignSelf: "center",
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  aiModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
+  },
+  aiModalIconContainer: {
+    backgroundColor: "rgba(139, 92, 246, 0.1)",
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  aiModalTitle: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#1F2937",
+    marginLeft: 12,
+  },
+  aiModalCloseButton: {
+    padding: 6,
+    borderRadius: 20,
+  },
+  aiModalBody: {
+    flexGrow: 1,
+    padding: 16,
+    maxHeight: "70%",
+  },
+  aiChatContainer: {
+    paddingBottom: 16,
+  },
+  aiMessageBubble: {
+    backgroundColor: "#F3F4F6",
+    borderRadius: 16,
+    borderTopLeftRadius: 4,
+    padding: 12,
+    marginBottom: 12,
+    maxWidth: "80%",
+    alignSelf: "flex-start",
+  },
+  aiMessageText: {
+    fontSize: 16,
+    color: "#1F2937",
+    lineHeight: 22,
+  },
+  userMessageBubble: {
+    backgroundColor: "#8B5CF6",
+    borderRadius: 16,
+    borderTopRightRadius: 4,
+    padding: 12,
+    marginBottom: 12,
+    maxWidth: "80%",
+    alignSelf: "flex-end",
+  },
+  userMessageText: {
+    fontSize: 16,
+    color: "#FFFFFF",
+    lineHeight: 22,
+  },
+  aiInputContainer: {
+    flexDirection: "row",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    alignItems: "flex-end",
+    borderTopWidth: 1,
+    borderTopColor: "#F3F4F6",
+    backgroundColor: "#FFFFFF", // Ensure the input area has a solid background
+  },
+  aiInput: {
+    flex: 1,
+    backgroundColor: "#F9FAFB",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    paddingRight: 48,
+    fontSize: 16,
+    maxHeight: 120,
+  },
+  aiSendButton: {
+    position: "absolute",
+    right: 24,
+    bottom: 20,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#8B5CF6",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   toolboxModal: {
     width: "92%",
     maxWidth: 480,

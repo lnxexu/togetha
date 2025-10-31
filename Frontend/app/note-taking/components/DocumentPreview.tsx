@@ -63,21 +63,40 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
           return;
         }
         console.log("DocumentPreview: Source URI:", source);
-        // Ensure we have a local file path for react-native-pdf
-        const token = await AsyncStorage.getItem("authToken");
-        const authHeaders = token ? { Authorization: `Token ${token}` } : undefined;
-        const result = await getLocalPDFPath(source, undefined, authHeaders);
-        if (!mounted) return;
-        console.log("DocumentPreview: Local URI result:", result);
-        if (!result) {
-          throw new Error("getLocalPDFPath returned null or undefined.");
+        
+        // For remote URLs, try to get local path first, but fall back gracefully
+        if (source.startsWith('http://') || source.startsWith('https://')) {
+          try {
+            // Ensure we have a local file path for react-native-pdf
+            const token = await AsyncStorage.getItem("authToken");
+            const authHeaders = token ? { Authorization: `Token ${token}` } : undefined;
+            const result = await getLocalPDFPath(source, undefined, authHeaders);
+            if (!mounted) return;
+            console.log("DocumentPreview: Local URI result:", result);
+            if (result) {
+              setLocalUri(result);
+              return;
+            }
+          } catch (downloadError: any) {
+            console.warn("DocumentPreview: Failed to download PDF locally:", downloadError);
+            // For preview purposes, we can try to use the remote URL directly
+            // Some PDF viewers can handle remote URLs, though it's less reliable
+            if (source.startsWith('https://')) {
+              console.log("DocumentPreview: Attempting to use remote URL directly for preview");
+              setLocalUri(source);
+              return;
+            }
+            // If it's HTTP or download failed completely, show error
+            setError(`Failed to download PDF: ${downloadError.message || 'Network request failed'}`);
+            return;
+          }
+        } else {
+          // Local file - use directly
+          setLocalUri(source);
         }
-        setLocalUri(result);
       } catch (e: any) {
-        console.error("DocumentPreview: Error getting local PDF path:", e);
+        console.error("DocumentPreview: Error getting PDF:", e);
         setError(e.message || "Failed to load PDF.");
-        // fall back to undefined
-        // no-op
       } finally {
         if (mounted) setLoading(false);
       }
@@ -276,7 +295,11 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   if (error) {
     return (
       <View style={[styles.container, { width, height, backgroundColor: '#FEE2E2', justifyContent: 'center', alignItems: 'center', padding: 4 }]}>
-        <Text style={{ color: '#B91C1C', fontSize: 10, textAlign: 'center' }}>{error}</Text>
+        <Text style={{ color: '#B91C1C', fontSize: 10, textAlign: 'center' }}>
+          {error.includes('Network request failed') 
+            ? 'PDF unavailable offline. Connect to internet to view.' 
+            : error}
+        </Text>
       </View>
     );
   }

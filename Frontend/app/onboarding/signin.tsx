@@ -354,7 +354,7 @@ export default function LogIn() {
                     fontSize: isLandscape ? 14 : 16,
                   }
                 ]}
-                placeholder="Username or email"
+                placeholder="Username"
                 placeholderTextColor={OnboardingColors.input.placeholder}
                 autoCapitalize="none"
                 value={username}

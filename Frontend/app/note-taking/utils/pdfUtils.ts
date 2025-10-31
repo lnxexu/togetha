@@ -376,6 +376,7 @@ export async function downloadPDFToLocalEnhanced(
     });
     
     // Do a quick HTTP check (HEAD) to ensure the remote resource exists and is a PDF
+    // Note: Some production servers block HEAD requests, so we handle this gracefully
     try {
       const headResp = await fetch(remoteUrl, { method: 'HEAD', headers: fetchHeaders });
       if (!headResp.ok) {
@@ -387,7 +388,7 @@ export async function downloadPDFToLocalEnhanced(
       const contentLength = headResp.headers.get('content-length');
       if (!contentType.toLowerCase().includes('pdf')) {
         console.warn('Remote resource content-type is not PDF:', contentType);
-        // continue but mark as potentially invalid — downstream validation will fail if not a PDF
+        // Continue anyway - some servers don't set content-type correctly
       }
       if (contentLength) {
         const len = parseInt(contentLength, 10);
@@ -396,18 +397,36 @@ export async function downloadPDFToLocalEnhanced(
         }
       }
     } catch (err) {
+      console.warn('HEAD request failed, trying GET fallback:', err);
       // If HEAD fails (some servers block it), try a lightweight GET for the first bytes
       try {
-        const getResp = await fetch(remoteUrl, { method: 'GET', headers: fetchHeaders });
+        const getResp = await fetch(remoteUrl, { 
+          method: 'GET', 
+          headers: { 
+            ...fetchHeaders,
+            'Range': 'bytes=0-1023' // Only request first 1KB to minimize data usage
+          }
+        });
         if (!getResp.ok) {
           throw new Error(`Remote resource not available. HTTP ${getResp.status}`);
         }
-        const ct = getResp.headers.get('content-type') || '';
-        if (!ct.toLowerCase().includes('pdf')) {
-          console.warn('Remote GET content-type not PDF:', ct);
+        const contentType = getResp.headers.get('content-type') || '';
+        if (!contentType.toLowerCase().includes('pdf')) {
+          console.warn('Remote GET content-type not PDF:', contentType);
+          // Continue anyway - some servers don't set content-type correctly
+        }
+        const contentLength = getResp.headers.get('content-length');
+        if (contentLength) {
+          const len = parseInt(contentLength, 10);
+          if (!isNaN(len)) {
+            onProgress?.({ stage: 'downloading', progress: 10, message: `Remote file size: ${formatFileSize(len)}`, totalBytes: len });
+          }
         }
       } catch (err2) {
-        throw new Error(`Remote file check failed: ${(err2 && (err2 as Error).message) || err}`);
+        console.warn('Both HEAD and GET requests failed:', err2);
+        // For document URLs that might be protected, try to proceed with download anyway
+        // Some servers may block preflight requests but allow actual downloads
+        console.log('Attempting download despite failed pre-check...');
       }
     }
 
