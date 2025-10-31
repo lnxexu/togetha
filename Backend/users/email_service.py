@@ -70,6 +70,12 @@ def send_verification_email(to_email: str, subject: str, content: str) -> bool:
         text_body = content or ''
         html_body = _to_html(content or '')
 
+        # If configured to prefer API, try API first (avoids SMTP egress issues)
+        if getattr(settings, 'EMAIL_PREFER_SENDGRID_API', False):
+            if _send_via_sendgrid_api(to_email, subject, text_body, html_body):
+                return True
+            # Fall back to SMTP if API failed
+
         msg = EmailMultiAlternatives(subject=subject, body=text_body, from_email=from_email, to=[to_email])
         if html_body:
             msg.attach_alternative(html_body, "text/html")

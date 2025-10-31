@@ -63,6 +63,11 @@ EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True if SENDGRID_API_KEY else Fa
 EMAIL_TIMEOUT = 60
 EMAIL_USE_LOCALTIME = False
 
+# Prefer SendGrid Web API (HTTPS) over SMTP to avoid blocked SMTP ports in some hosts
+EMAIL_PREFER_SENDGRID_API = config('EMAIL_PREFER_SENDGRID_API', default=False, cast=bool)
+# Control whether the custom SMTP backend should also try SMTPS:465 after 587
+EMAIL_SMTP_TRY_SSL = config('EMAIL_SMTP_TRY_SSL', default=True, cast=bool)
+
 # from decouple import Csv  # already imported above
 
 # Debug/ops: optionally log verification codes to backend logs (disabled by default)

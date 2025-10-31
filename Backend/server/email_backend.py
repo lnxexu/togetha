@@ -37,15 +37,18 @@ class FallbackSMTPBackend(EmailBackend):
                 'use_ssl': False,
                 'use_tls': True,
                 'description': 'SendGrid TLS (Port 587)'
-            },
-            {
+            }
+        ])
+
+        # Optionally try SMTPS 465 if enabled
+        if getattr(settings, 'EMAIL_SMTP_TRY_SSL', True):
+            self.smtp_configs.append({
                 'host': 'smtp.sendgrid.net',
                 'port': 465,
                 'use_ssl': True,
                 'use_tls': False,
                 'description': 'SendGrid SSL (Port 465)'
-            },
-        ])
+            })
 
         # Gmail as final fallback (useful only in development contexts)
         self.smtp_configs.extend([

@@ -235,6 +235,8 @@ This project is configured to use SendGrid SMTP by default and will automaticall
    - `EMAIL_FROM` or `DEFAULT_FROM_EMAIL` — a verified sender in SendGrid
 
 - The backend will attempt SMTP first. If SMTP fails (e.g., due to egress/port restrictions), it will automatically fall back to the SendGrid Web API over HTTPS using `SENDGRID_API_KEY`.
+   - You can force API-first sending by setting `EMAIL_PREFER_SENDGRID_API=True` in Railway variables.
+   - To avoid waiting on SMTPS:465 timeouts, set `EMAIL_SMTP_TRY_SSL=False`.
 
 - Never commit your real API keys. Ensure `.env` is not checked in and set secrets only in Railway.
 
