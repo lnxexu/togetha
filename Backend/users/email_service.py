@@ -28,17 +28,26 @@ def _send_via_sendgrid_api(to_email: str, subject: str, text_body: str, html_bod
     try:
         # Import locally to avoid hard errors when SDK is not installed in some environments
         from sendgrid import SendGridAPIClient  # type: ignore
-        from sendgrid.helpers.mail import Mail  # type: ignore
+        from sendgrid.helpers.mail import Mail, Content, MimeType  # type: ignore
+
+        # Build message and content using explicit MimeType to avoid invalid types like 'text/plain; charset=utf-8'
         message = Mail(
             from_email=from_email,
             to_emails=to_email,
             subject=subject,
-            html_content=html_body or text_body or ''
         )
-        # Prefer text as well when available
-        if text_body and html_body and hasattr(message, 'add_content'):
-            # add plain text as an additional content part
-            message.add_content('text/plain', text_body)
+
+        text_part = (text_body or '').strip()
+        html_part = (html_body or '').strip()
+
+        if text_part and html_part:
+            # Order matters: text/plain first, then text/html
+            message.add_content(Content(MimeType.text, text_part))
+            message.add_content(Content(MimeType.html, html_part))
+        elif html_part:
+            message.add_content(Content(MimeType.html, html_part))
+        else:
+            message.add_content(Content(MimeType.text, text_part))
 
         sg = SendGridAPIClient(api_key)
         response = sg.send(message)
