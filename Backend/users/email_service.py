@@ -59,7 +59,16 @@ def _send_via_sendgrid_api(to_email: str, subject: str, text_body: str, html_bod
             logger.error("Hint: Verify that DEFAULT_FROM_EMAIL/EMAIL_FROM matches a verified sender in SendGrid.")
         return False
     except Exception as e:  # pragma: no cover - network side effects
-        logger.exception("Failed to send email via SendGrid API: %s", e)
+        # Try to surface more details from SendGrid client exceptions
+        status_code = getattr(e, 'status_code', None) or getattr(e, 'code', None)
+        raw_body = getattr(e, 'body', None)
+        try:
+            body_text = raw_body.decode('utf-8') if isinstance(raw_body, (bytes, bytearray)) else str(raw_body)
+        except Exception:
+            body_text = str(raw_body)
+        logger.error("Failed to send email via SendGrid API: %s | status=%s | body=%s", e, status_code, (body_text or '')[:2000])
+        if body_text and ('Sender Identity' in body_text or 'from address' in body_text):
+            logger.error("Hint: Verify DEFAULT_FROM_EMAIL/EMAIL_FROM is a verified sender in SendGrid.")
         return False
 
 

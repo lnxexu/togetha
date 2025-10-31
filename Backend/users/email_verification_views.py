@@ -168,10 +168,11 @@ def send_email_verification(request):
         else:
             # Clean up if email failed
             verification.delete()
+            # Return a gateway error so the app can display a friendly message without implying user fault
             return Response({
                 'success': False,
-                'message': 'Failed to send verification email. Please try again.'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                'message': 'Email service error: could not send verification. Please try again later or contact support.'
+            }, status=status.HTTP_502_BAD_GATEWAY)
         
     except Exception as e:
         logger.error(f"Error in send_email_verification: {str(e)}")
