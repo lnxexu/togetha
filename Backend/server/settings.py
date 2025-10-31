@@ -228,9 +228,9 @@ else:
         DATABASES = {
             'default': {
                 'ENGINE': 'django.db.backends.postgresql',
-                'NAME': 'Togetha',
-                'USER': 'Togetha',
-                'PASSWORD': 'lol',  # Only for local dev
+                'NAME': 'togetha',
+                'USER': 'postgres',
+                'PASSWORD': 'Kobe@1314',  # Only for local dev
                 'HOST': 'localhost',
                 'PORT': '5432',
             }
@@ -347,6 +347,11 @@ LOGGING = {
         'server.email_backend': {
             'handlers': ['console', 'file'],
             'level': 'DEBUG',
+            'propagate': False,
+        },
+        'users.email_service': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
             'propagate': False,
         },
         'django.core.mail': {

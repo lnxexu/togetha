@@ -25,6 +25,8 @@ urlpatterns = [
     
     # Email verification for signup
     path('send-email-verification/', send_email_verification, name='send_email_verification'),
+    # SendGrid Event Webhook endpoint
+    path('sendgrid/webhook/', views.sendgrid_event_webhook, name='sendgrid_event_webhook'),
     path('verify-email-and-signup/', verify_email_and_signup, name='verify_email_and_signup'),
     
     # Multi-factor authentication
