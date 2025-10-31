@@ -23,7 +23,7 @@ qrcode>=7,<9
 pyotp>=2.8,<3
 requests>=2.31,<3
 pytz>=2024.1
-sendgrid>=6.10,<7
+sendgrid>=6.11,<7
 sendgrid_event_webhook>=0.1.0
 PyNaCl>=1.5.0
 
