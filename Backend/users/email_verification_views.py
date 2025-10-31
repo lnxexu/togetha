@@ -1,7 +1,6 @@
 from rest_framework.decorators import api_view, permission_classes
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.crypto import get_random_string
-from django.core.mail import send_mail
 from django.conf import settings
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -10,7 +9,7 @@ from rest_framework import status
 from django.utils import timezone
 from datetime import timedelta
 from .models import EmailVerification
-from .email_service import send_verification_email as sendgrid_email
+from .email_service import send_verification_email
 import logging
 import re
 
@@ -58,7 +57,7 @@ The Togetha Team
 Need help? Contact us at support@togetha.com
 '''
         
-        return sendgrid_email(email, subject, message)
+        return send_verification_email(email, subject, message)
         
     except Exception as e:
         logger.error(f"Failed to send verification email: {str(e)}")
@@ -306,7 +305,7 @@ The Togetha Team
 Need help? Contact us at support@togetha.com
 Security concerns? Email security@togetha.com'''
             
-            sendgrid_email(email, subject, message)
+            send_verification_email(email, subject, message)
         except Exception as e:
             logger.warning(f"Failed to send welcome email: {str(e)}")
         
