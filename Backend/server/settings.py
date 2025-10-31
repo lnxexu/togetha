@@ -46,8 +46,8 @@ EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default=SENDGRID_API_KEY)
 
 # From address
 DEFAULT_FROM_EMAIL = (
-        config('EMAIL_FROM', default=None)
-        or config('DEFAULT_FROM_EMAIL', default=None)
+        config('EMAIL_FROM', default='yellowhyunjin123@gmail.com')
+        or config('DEFAULT_FROM_EMAIL', default='yellowhyunjin123@gmail.com')
         or EMAIL_HOST_USER
 )
 

@@ -18,7 +18,7 @@ import {
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
+import { API_URL, API_ENDPOINTS, normalizeToHttps } from "@/constants/ApiConfig";
 import Svg, { Rect, Circle, Path, Text as SvgText } from "react-native-svg";
 import { WebView } from "react-native-webview";
 
@@ -445,7 +445,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
       // For backend documents, we need to proxy through our authenticated endpoint
       console.log("Using backend document from database:", documentUri);
       const fullUrl = documentUri.startsWith('http') ? documentUri : `${API_URL}${documentUri}`;
-      return fullUrl;
+      // Normalize to https for Android cleartext policy
+      return normalizeToHttps(fullUrl);
     }
 
     if (actualDocumentType === "pdf") {
@@ -461,29 +462,33 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
         return documentUri;
       }
 
+      // Normalize remote URIs to https to avoid mixed content / Android cleartext issues
+      const remotePdf = normalizeToHttps(documentUri);
+
       // For remote PDFs, use the selected web viewer
       if (useAlternativeViewer) {
-        const encodedUri = encodeURIComponent(documentUri);
+        const encodedUri = encodeURIComponent(remotePdf);
         const googleDocsUrl = `https://docs.google.com/viewer?url=${encodedUri}&embedded=true`;
         console.log("Using Google Docs PDF viewer:", googleDocsUrl);
         return googleDocsUrl;
       } else {
-        const encodedUri = encodeURIComponent(documentUri);
+        const encodedUri = encodeURIComponent(remotePdf);
         const pdfJsUrl = `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodedUri}`;
         console.log("Using PDF.js viewer:", pdfJsUrl);
         return pdfJsUrl;
       }
     } else if (actualDocumentType === "image") {
       // For images, display directly
-      console.log("Using direct image URL:", documentUri);
-      return documentUri;
+      const imgUrl = documentUri.startsWith('http') ? normalizeToHttps(documentUri) : documentUri;
+      console.log("Using direct image URL:", imgUrl);
+      return imgUrl;
     } else if (
       actualDocumentType === "word" ||
       actualDocumentType === "doc" ||
       actualDocumentType === "docx"
     ) {
       // For Word documents, use Office Online viewer
-      const encodedUri = encodeURIComponent(documentUri);
+      const encodedUri = encodeURIComponent(normalizeToHttps(documentUri));
       if (useAlternativeViewer) {
         // Alternative: Google Docs viewer
         const googleDocsUrl = `https://docs.google.com/viewer?url=${encodedUri}&embedded=true`;
@@ -497,10 +502,11 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
       }
     } else {
       // For other document types, try generic viewers
-      const encodedUri = encodeURIComponent(documentUri);
+      const encodedUri = encodeURIComponent(normalizeToHttps(documentUri));
       if (useAlternativeViewer) {
-        console.log("Using direct access for other document:", documentUri);
-        return documentUri;
+        const direct = documentUri.startsWith('http') ? normalizeToHttps(documentUri) : documentUri;
+        console.log("Using direct access for other document:", direct);
+        return direct;
       } else {
         const googleDocsUrl = `https://docs.google.com/viewer?url=${encodedUri}&embedded=true`;
         console.log("Using Google Docs for other document:", googleDocsUrl);
@@ -512,7 +518,20 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   // Open document in external browser with platform-specific handling
   const openInExternalBrowser = async () => {
     try {
-      const url = documentUri;
+      // Build an external URL, adding token for backend documents when available
+      let url = documentUri;
+      if (isBackendDocumentUri(documentUri)) {
+        const base = documentUri.startsWith('http') ? documentUri : `${API_URL}${documentUri}`;
+        if (authToken) {
+          const sep = base.includes('?') ? '&' : '?';
+          url = `${base}${sep}token=${authToken}`;
+        } else {
+          url = base;
+        }
+        url = normalizeToHttps(url);
+      } else if (url.startsWith('http://')) {
+        url = normalizeToHttps(url);
+      }
       console.log("Opening in external browser:", url);
 
       const canOpen = await Linking.canOpenURL(url);

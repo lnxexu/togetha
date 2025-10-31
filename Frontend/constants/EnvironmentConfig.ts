@@ -8,7 +8,7 @@ export interface EnvironmentConfig {
 }
 //change ni sa IP address atm
 export const DEFAULT_CONFIG: EnvironmentConfig = {
-  apiUrl: 'http://192.168.254.107:8000',
+  apiUrl: 'https://togetha-production-2546.up.railway.app',
   environment: 'development',
   debug: true,
 };

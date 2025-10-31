@@ -46,11 +46,32 @@ function getApiBaseUrl(): string {
 
 export const API_URL = getApiBaseUrl();
 
+// Upgrade http to https for non-local hosts (Android blocks cleartext by default)
+export function normalizeToHttps(url: string): string {
+    try {
+        const u = new URL(url);
+        const host = u.hostname;
+        const isLocal = (
+            host === 'localhost' || host === '127.0.0.1' ||
+            host.startsWith('10.') || host.startsWith('192.168.') ||
+            /^172\.(1[6-9]|2[0-9]|3[01])\./.test(host)
+        );
+        if (u.protocol === 'http:' && !isLocal) {
+            u.protocol = 'https:';
+            return u.toString();
+        }
+        return url;
+    } catch {
+        return url;
+    }
+}
+
 // Safely join base URL and path to avoid accidental double slashes
 export function joinUrl(base: string, path: string): string {
     const trimmedBase = base.replace(/\/+$/, '');
     const trimmedPath = path.replace(/^\/+/, '');
-    return `${trimmedBase}/${trimmedPath}`;
+    const joined = `${trimmedBase}/${trimmedPath}`;
+    return joined.startsWith('http://') ? normalizeToHttps(joined) : joined;
 }
 
 // API endpoint paths
