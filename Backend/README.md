@@ -221,6 +221,25 @@ python manage.py collectstatic --noinput
 - Check `REDIS_URL` configuration
 - Verify Redis service is accessible
 
+### Email Delivery on Railway (SendGrid)
+
+This project is configured to use SendGrid SMTP by default and will automatically try common SendGrid ports (587 TLS, 465 SSL). On some hosts, outbound SMTP can be restricted. To make email verification robust on Railway:
+
+- Set the following variables in Railway → Variables:
+   - `SENDGRID_API_KEY` — your SendGrid API key
+   - `EMAIL_HOST` = `smtp.sendgrid.net`
+   - `EMAIL_PORT` = `587`
+   - `EMAIL_USE_TLS` = `True`
+   - `EMAIL_USE_SSL` = `False`
+   - `EMAIL_HOST_USER` = `apikey` (literally this word)
+   - `EMAIL_FROM` or `DEFAULT_FROM_EMAIL` — a verified sender in SendGrid
+
+- The backend will attempt SMTP first. If SMTP fails (e.g., due to egress/port restrictions), it will automatically fall back to the SendGrid Web API over HTTPS using `SENDGRID_API_KEY`.
+
+- Never commit your real API keys. Ensure `.env` is not checked in and set secrets only in Railway.
+
+- If you use the optional SendGrid Event Webhook, add `SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY` and expose `POST /users/sendgrid/webhook/` from your app.
+
 ## 📚 Documentation
 
 - [Django Documentation](https://docs.djangoproject.com/)
