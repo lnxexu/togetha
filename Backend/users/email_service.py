@@ -30,26 +30,25 @@ def _send_via_sendgrid_api(to_email: str, subject: str, text_body: str, html_bod
         from sendgrid import SendGridAPIClient  # type: ignore
         from sendgrid.helpers.mail import Mail, Content, MimeType  # type: ignore
 
-        # Build message and content using explicit MimeType to avoid invalid types like 'text/plain; charset=utf-8'
-        message = Mail(
-            from_email=from_email,
-            to_emails=to_email,
-            subject=subject,
-        )
-
-        text_part = (text_body or '').strip()
-        html_part = (html_body or '').strip()
-
-        if text_part and html_part:
-            # Order matters: text/plain first, then text/html
-            message.add_content(Content(MimeType.text, text_part))
-            message.add_content(Content(MimeType.html, html_part))
-        elif html_part:
-            message.add_content(Content(MimeType.html, html_part))
-        else:
-            message.add_content(Content(MimeType.text, text_part))
+        def _build_message(_from_email: str) -> Mail:
+            msg = Mail(
+                from_email=_from_email,
+                to_emails=to_email,
+                subject=subject,
+            )
+            text_part = (text_body or '').strip()
+            html_part = (html_body or '').strip()
+            if text_part and html_part:
+                msg.add_content(Content(MimeType.text, text_part))
+                msg.add_content(Content(MimeType.html, html_part))
+            elif html_part:
+                msg.add_content(Content(MimeType.html, html_part))
+            else:
+                msg.add_content(Content(MimeType.text, text_part))
+            return msg
 
         sg = SendGridAPIClient(api_key)
+        message = _build_message(from_email)
         response = sg.send(message)
         status_code = getattr(response, 'status_code', 0)
         body = getattr(response, 'body', b'')
@@ -63,9 +62,21 @@ def _send_via_sendgrid_api(to_email: str, subject: str, text_body: str, html_bod
             logger.info("Email sent via SendGrid Web API to %s", to_email)
             return True
         logger.error("SendGrid API send failed | status=%s | body=%s", status_code, body_text[:2000])
-        # Provide a hint for common misconfigurations
+        # Provide a hint for common misconfigurations and attempt an optional fallback sender
         if 'Sender Identity' in body_text or 'from address' in body_text:
             logger.error("Hint: Verify that DEFAULT_FROM_EMAIL/EMAIL_FROM matches a verified sender in SendGrid.")
+            fallback_from = getattr(settings, 'SENDGRID_FALLBACK_FROM', None) or getattr(settings, 'DEFAULT_FROM_EMAIL', None)
+            # Only retry if an explicit separate fallback is provided and different from current
+            if fallback_from and fallback_from != from_email and isinstance(fallback_from, str) and '@' in fallback_from:
+                try:
+                    logger.info("Retrying SendGrid API send with fallback from address: %s", fallback_from)
+                    fallback_msg = _build_message(fallback_from)
+                    response2 = sg.send(fallback_msg)
+                    if 200 <= getattr(response2, 'status_code', 0) < 300:
+                        logger.info("Email sent via SendGrid Web API using fallback from address")
+                        return True
+                except Exception as e2:  # pragma: no cover - network side effects
+                    logger.error("Fallback send also failed: %s", e2)
         return False
     except Exception as e:  # pragma: no cover - network side effects
         # Try to surface more details from SendGrid client exceptions

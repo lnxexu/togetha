@@ -264,6 +264,11 @@ To maximize deliverability and satisfy SendGrid requirements:
    - DMARC (recommended): `TXT _dmarc  v=DMARC1; p=quarantine; rua=mailto:dmarc@your-domain.com`
 3. Use a From address on the verified domain, e.g. `no-reply@your-domain.com`.
 
+If you encounter 403 Sender Identity errors from the SendGrid Web API, ensure your app uses a verified sender address:
+
+- Set `DEFAULT_FROM_EMAIL` (or `EMAIL_FROM`) to your verified sender.
+- Optionally set `SENDGRID_FALLBACK_FROM` to a known-good verified address; the backend will retry a single time with this address when a Sender Identity error is detected.
+
 Notes when using Railway for your web app domain:
 - Root/apex domains usually need ALIAS/ANAME or CNAME flattening at your DNS provider.
 - Subdomains and wildcards cannot overlap unless managed by the same service.
