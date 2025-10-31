@@ -242,6 +242,38 @@ This project is configured to use SendGrid SMTP by default and will automaticall
 
 - If you use the optional SendGrid Event Webhook, add `SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY` and expose `POST /users/sendgrid/webhook/` from your app.
 
+#### SMTP Connectivity Health Check
+
+Run an on-platform SMTP probe similar to the bash snippet you provided:
+
+```bash
+python manage.py check_smtp --host smtp.sendgrid.net --ports 25 465 587 2525 --timeout 3 --starttls
+```
+
+This will print reachability and attempt TLS/STARTTLS handshakes, which is more reliable than plain TCP checks.
+
+#### Domain + DNS for Reliable Delivery
+
+To maximize deliverability and satisfy SendGrid requirements:
+
+1. Verify a sender domain in SendGrid (recommended) or a Single Sender (temporary/testing).
+2. Add the DNS records SendGrid provides for your domain:
+   - SPF: `TXT @  v=spf1 include:sendgrid.net ~all`
+   - DKIM: three `CNAME` records as instructed in SendGrid
+   - Return-Path: optional `CNAME` for bounce handling
+   - DMARC (recommended): `TXT _dmarc  v=DMARC1; p=quarantine; rua=mailto:dmarc@your-domain.com`
+3. Use a From address on the verified domain, e.g. `no-reply@your-domain.com`.
+
+Notes when using Railway for your web app domain:
+- Root/apex domains usually need ALIAS/ANAME or CNAME flattening at your DNS provider.
+- Subdomains and wildcards cannot overlap unless managed by the same service.
+- Railway issues and renews TLS certs (90-day certs, renewed automatically); issuance typically completes within an hour.
+- SNI is required for HTTPS certificate matching; browsers/clients handle this automatically. SMTP does not use SNI.
+
+Security reminders:
+- Never commit real API keys to git. `.env` is already ignored, but rotate any exposed keys immediately in SendGrid.
+- Ensure `DEFAULT_FROM_EMAIL`/`EMAIL_FROM` matches a verified sender identity in SendGrid.
+
 ## 📚 Documentation
 
 - [Django Documentation](https://docs.djangoproject.com/)
