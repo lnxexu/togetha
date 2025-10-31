@@ -42,10 +42,21 @@ def _send_via_sendgrid_api(to_email: str, subject: str, text_body: str, html_bod
 
         sg = SendGridAPIClient(api_key)
         response = sg.send(message)
-        if 200 <= getattr(response, 'status_code', 0) < 300:
+        status_code = getattr(response, 'status_code', 0)
+        body = getattr(response, 'body', b'')
+        # body can be bytes or str depending on SDK; normalize to str for logging
+        try:
+            body_text = body.decode('utf-8') if isinstance(body, (bytes, bytearray)) else str(body)
+        except Exception:
+            body_text = str(body)
+
+        if 200 <= status_code < 300:
             logger.info("Email sent via SendGrid Web API to %s", to_email)
             return True
-        logger.error("SendGrid API send failed with status %s", getattr(response, 'status_code', 'unknown'))
+        logger.error("SendGrid API send failed | status=%s | body=%s", status_code, body_text[:2000])
+        # Provide a hint for common misconfigurations
+        if 'Sender Identity' in body_text or 'from address' in body_text:
+            logger.error("Hint: Verify that DEFAULT_FROM_EMAIL/EMAIL_FROM matches a verified sender in SendGrid.")
         return False
     except Exception as e:  # pragma: no cover - network side effects
         logger.exception("Failed to send email via SendGrid API: %s", e)
