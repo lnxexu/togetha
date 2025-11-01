@@ -25,7 +25,7 @@ import { SafeAreaWrapper } from "./components/SafeAreaWrapper";
 import Navbar from "./NavBar";
 import { RootStackParamList } from "./navigation/AppNavigator";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { API_URL, API_ENDPOINTS } from "../constants/ApiConfig";
+import { API_URL, API_ENDPOINTS, joinUrl, normalizeToHttps } from "../constants/ApiConfig";
 import AuthService from "./onboarding/service/AuthService";
 // taskService for managing tasks
 import taskService from "./task-management/services/taskService";
@@ -255,7 +255,10 @@ export default function Home() {
           setUsername(cachedUsername);
         }
         if (cachedProfilePicture) {
-          setProfilePicture(cachedProfilePicture);
+          const normalizedCached = cachedProfilePicture.startsWith('http')
+            ? normalizeToHttps(cachedProfilePicture)
+            : normalizeToHttps(joinUrl(API_URL, cachedProfilePicture));
+          setProfilePicture(normalizedCached);
         }
       }
 
@@ -274,13 +277,19 @@ export default function Home() {
         // Update state
         setUsername(userInfo.username || "User");
         if (userInfo.profile?.profile_picture_url) {
-          setProfilePicture(userInfo.profile.profile_picture_url);
+          const pic = userInfo.profile.profile_picture_url.startsWith('http')
+            ? normalizeToHttps(userInfo.profile.profile_picture_url)
+            : normalizeToHttps(joinUrl(API_URL, userInfo.profile.profile_picture_url));
+          setProfilePicture(pic);
         }
 
         // Update AsyncStorage with new values
         await AsyncStorage.setItem("username", userInfo.username || "");
         if (userInfo.profile?.profile_picture_url) {
-          await AsyncStorage.setItem("userProfilePicture", userInfo.profile.profile_picture_url);
+          const pic = userInfo.profile.profile_picture_url.startsWith('http')
+            ? normalizeToHttps(userInfo.profile.profile_picture_url)
+            : normalizeToHttps(joinUrl(API_URL, userInfo.profile.profile_picture_url));
+          await AsyncStorage.setItem("userProfilePicture", pic);
         }
       }
     } catch (error) {
@@ -786,7 +795,7 @@ export default function Home() {
               >
                 {profilePicture ? (
                   <Image
-                    source={{ uri: profilePicture }}
+                    source={{ uri: normalizeToHttps(profilePicture) }}
                     style={styles.profileImage}
                     resizeMode="cover"
                   />

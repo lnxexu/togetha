@@ -5,6 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from django.conf import settings
 from .. import rag
 from ..models import Conversation, Message
+from ..models import DocumentChunk
 import traceback
 import os
 from google import genai
@@ -48,22 +49,50 @@ class ChatView(APIView):
                 message_type='user'
             )
 
+            # Optional doc restriction provided by client (e.g., uploaded doc context)
+            doc_ids = request.data.get("doc_ids", []) or []
+            if isinstance(doc_ids, str):
+                # Accept comma-separated string too
+                doc_ids = [d for d in doc_ids.split(",") if d]
+
             # Determine if we should bypass medical-only restriction
             attachments_exist = conversation.attached_files.exists()
-            # RAG context check
-            use_rag = any(k in query_text.lower() for k in ["document", "file", "pdf", "uploaded"])
+
+            # If no explicit doc_ids, try to derive from conversation's attached files
+            if not doc_ids and attachments_exist:
+                try:
+                    attached_names = list(conversation.attached_files.values_list('file_name', flat=True))
+                    if attached_names:
+                        derived_ids = (
+                            DocumentChunk.objects
+                            .filter(user_id=request.user.id, document_name__in=attached_names)
+                            .values_list('doc_id', flat=True)
+                            .distinct()
+                        )
+                        doc_ids = [str(d) for d in derived_ids if d]
+                except Exception:
+                    doc_ids = doc_ids  # leave unchanged if any error
+
+            # RAG context check: trigger if keywords, attachments exist, or explicit doc_ids provided
+            use_rag = bool(doc_ids) or attachments_exist or any(
+                k in query_text.lower() for k in ["document", "file", "pdf", "uploaded"]
+            )
+
             context = ""
             if use_rag:
                 try:
-                    # search_similar_for_user returns tuples of
-                    # (id, chunk_text, score, document_name, page_num)
-                    chunks = rag.search_similar_for_user(query_text, request.user.id, top_k=3)
-                    # take the chunk_text (index 1) from each result
-                    context = "\n\n".join([c[1] for c in chunks]) if chunks else ""
+                    # Prefer restricting to specific documents if provided
+                    if doc_ids:
+                        chunks = rag.search_similar_for_user_in_docs(query_text, request.user.id, doc_ids, top_k=3)
+                    else:
+                        chunks = rag.search_similar_for_user(query_text, request.user.id, top_k=3)
+
+                    # chunks is a list of dicts with keys: chunk_text, distance, similarity, etc.
+                    context = "\n\n".join([c.get("chunk_text", "") for c in chunks if c.get("chunk_text")]) if chunks else ""
                 except Exception as e:
                     print("RAG failed:", e)
 
-            bypass_medical = attachments_exist or (use_rag and bool(context))
+            bypass_medical = attachments_exist or bool(doc_ids) or (use_rag and bool(context))
 
             # Prepare system + history with conditional topic policy
             rules = [

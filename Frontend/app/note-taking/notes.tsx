@@ -49,6 +49,7 @@ import {
 import SkeletonLoader from "../components/SkeletonLoader";
 import { folderCacheUtils } from "../utils/FolderCacheUtils";
 import { getLocalPDFPath, isRemoteURL } from "./utils/pdfUtils";
+import { toAbsoluteMediaUrl, getAlternateMediaUrls } from "@/constants/ApiConfig";
 import { parseServerDate, formatShortLocalDate } from "./utils/localDate";
 import offlineNotesService from "./services/offlineNotesService";
 import * as FileSystem from 'expo-file-system';
@@ -1237,7 +1238,9 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
       if (isDocumentNote) {
         console.log('Opening as document note:', { id: note.id, type: note.type, hasDocRef, inferredByTitle, rawDocUrl });
         // Prefer explicit URL/file; otherwise build a server URL
-        let documentUrl = hasDocRef ? rawDocUrl : `${API_URL}/note_taking/documents/${note.id}/serve/`;
+        let documentUrl = hasDocRef
+          ? toAbsoluteMediaUrl(rawDocUrl, { cacheBust: true })
+          : `${API_URL}/note_taking/documents/${note.id}/serve/`;
 
         const urlLc = documentUrl?.toLowerCase?.() || "";
         const documentType = (urlLc.includes('.pdf') || titleLc.includes('.pdf'))
@@ -1252,7 +1255,21 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
           try {
             const token = await AsyncStorage.getItem('authToken');
             const authHeaders: HeadersInit | undefined = token ? { Authorization: `Token ${token}` } : undefined;
-            finalDocumentUri = await getLocalPDFPath(documentUrl, undefined, authHeaders);
+            try {
+              finalDocumentUri = await getLocalPDFPath(documentUrl, undefined, authHeaders);
+            } catch (primaryErr) {
+              // Try alternates (Railway host variants) if first attempt fails
+              const alts = getAlternateMediaUrls(documentUrl);
+              let succeeded = false;
+              for (const alt of alts) {
+                try {
+                  finalDocumentUri = await getLocalPDFPath(alt, undefined, authHeaders);
+                  succeeded = true;
+                  break;
+                } catch {}
+              }
+              if (!succeeded) throw primaryErr;
+            }
           } catch (error) {
             console.error('Failed to cache PDF locally:', error);
             finalDocumentUri = documentUrl; // fallback
@@ -1279,6 +1296,25 @@ export default function NotesScreen({ navigation, route }: NotesScreenProps) {
               if (lc.startsWith("file://") || lc.startsWith("content://") || lc.startsWith(FileSystem.documentDirectory || "")) {
                 const info = await FileSystem.getInfoAsync(normalizedUri);
                 if (!info.exists) {
+                  // Local cache missing; if we have a remote source, re-download now
+                  if (isRemoteURL(documentUrl)) {
+                    const token = await AsyncStorage.getItem('authToken');
+                    const authHeaders: HeadersInit | undefined = token ? { Authorization: `Token ${token}` } : undefined;
+                    try {
+                      const refreshed = await getLocalPDFPath(documentUrl, undefined, authHeaders);
+                      return refreshed;
+                    } catch (reErr) {
+                      // Try alternates as last resort
+                      const alts = getAlternateMediaUrls(documentUrl);
+                      for (const alt of alts) {
+                        try {
+                          const refreshedAlt = await getLocalPDFPath(alt, undefined, authHeaders);
+                          return refreshedAlt;
+                        } catch {}
+                      }
+                      throw new Error('Local file missing and redownload failed');
+                    }
+                  }
                   throw new Error('Local file missing');
                 }
                 return normalizedUri;

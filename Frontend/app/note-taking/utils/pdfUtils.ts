@@ -447,6 +447,9 @@ export async function downloadPDFToLocalEnhanced(
       }
     }
 
+    console.log('PDF Download: Starting download with headers:', Object.keys(normalizedHeaders));
+    console.log('PDF Download: Remote URL:', remoteUrl);
+
     const downloadResumable = FileSystem.createDownloadResumable(
       remoteUrl,
       localPath,
@@ -469,6 +472,17 @@ export async function downloadPDFToLocalEnhanced(
     if (!downloadResult) {
       throw new Error('Download failed - no result returned');
     }
+
+    console.log('PDF Download: Download completed, result URI:', downloadResult.uri);
+    console.log('PDF Download: Checking downloaded file size...');
+
+    // Check the downloaded file size
+    const downloadedFileInfo = await FileSystem.getInfoAsync(downloadResult.uri);
+    console.log('PDF Download: Downloaded file info:', {
+      exists: downloadedFileInfo.exists,
+      size: 'size' in downloadedFileInfo ? downloadedFileInfo.size : 'unknown',
+      uri: downloadResult.uri
+    });
     
     onProgress?.({
       stage: 'validating',

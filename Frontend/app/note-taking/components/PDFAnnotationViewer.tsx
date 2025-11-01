@@ -56,7 +56,7 @@ import { PDFDocument } from "pdf-lib";
 import { PDFAnnotation, getLocalPDFPathEnhanced } from "../utils/pdfUtils";
 import { drawingAPI, PDFSaveOptions } from "../services/drawingAPI";
 import offlineNotesService from "../services/offlineNotesService";
-import { API_URL } from "@/constants/ApiConfig";
+import { API_URL, toAbsoluteMediaUrl, getAlternateMediaUrls } from "@/constants/ApiConfig";
 import { savePDFToDownloads, saveDrawingAsJPEG } from "../utils/downloadUtils";
 import {
   showSuccessToast,
@@ -1277,43 +1277,13 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
         if (
           source?.uri &&
           (source.uri.startsWith("http://") ||
-            source.uri.startsWith("https://"))
+            source.uri.startsWith("https://") ||
+            source.uri.startsWith("/"))
         ) {
           setIsLoading(true);
 
-          let downloadUrl = source.uri;
-          try {
-            const sourceUrl = new URL(source.uri);
-            const apiUrl = new URL(API_URL);
-
-            const getActualPort = (url: URL) => {
-              if (url.port) return url.port;
-              return url.protocol === "https:" ? "443" : "80";
-            };
-
-            const sourcePort = getActualPort(sourceUrl);
-            const apiPort = getActualPort(apiUrl);
-
-            const isPrivateIP =
-              sourceUrl.hostname.startsWith("192.168.") ||
-              sourceUrl.hostname.startsWith("10.0.") ||
-              sourceUrl.hostname.startsWith("172.") ||
-              sourceUrl.hostname === "localhost" ||
-              sourceUrl.hostname === "127.0.0.1";
-
-            if (
-              sourcePort === apiPort &&
-              isPrivateIP &&
-              sourceUrl.hostname !== apiUrl.hostname
-            ) {
-              downloadUrl = API_URL + sourceUrl.pathname + sourceUrl.search;
-            }
-          } catch (urlParseError) {
-            console.warn(
-              "Could not parse URL for normalization:",
-              urlParseError
-            );
-          }
+          // Build absolute, cache-busted URL and normalize to https
+          const downloadUrl = toAbsoluteMediaUrl(source.uri, { cacheBust: true });
 
           try {
             let fetchHeaders: HeadersInit | undefined;
@@ -1331,7 +1301,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
               }
             }
 
-            const result = await getLocalPDFPathEnhanced(
+            let result = await getLocalPDFPathEnhanced(
               downloadUrl,
               fileName,
               undefined,
@@ -1341,6 +1311,27 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
             setCurrentSource({ uri: localUri });
           } catch (err) {
             console.error("Failed to download remote PDF before loading:", err);
+            // Try alternate Railway host variants
+            const alternates = getAlternateMediaUrls(downloadUrl);
+            for (const alt of alternates) {
+              try {
+                console.warn('PDFAnnotationViewer: Primary PDF failed, trying alternate host:', alt);
+                const altResult = await getLocalPDFPathEnhanced(
+                  alt,
+                  fileName,
+                  undefined,
+                  undefined
+                );
+                const localUri = altResult.uri;
+                setCurrentSource({ uri: localUri });
+                setHasError(false);
+                setIsLoading(false);
+                return;
+              } catch (altErr) {
+                // continue to next alternate
+              }
+            }
+
             setHasError(true);
             setIsLoading(false);
 
@@ -1351,7 +1342,7 @@ const PDFAnnotationViewer: React.FC<PDFAnnotationViewerProps> = ({
               errorMessage.includes("not available");
             const urlInfo =
               downloadUrl !== source.uri
-                ? `\nOriginal URL: ${source.uri}\nNormalized URL: ${downloadUrl}`
+                ? `\nOriginal URL: ${source.uri}\nResolved URL: ${downloadUrl}`
                 : `\nURL: ${downloadUrl}`;
 
             Alert.alert(

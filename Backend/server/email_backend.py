@@ -13,14 +13,45 @@ class FallbackSMTPBackend(EmailBackend):
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.smtp_configs = [
+        # Build a prioritized list of SMTP configs.
+        # 1) First try exactly what's in Django settings (could be SendGrid or custom host)
+        # 2) Then try SendGrid standard ports
+        # 3) Finally, try Gmail as a last resort for dev/prototyping
+        self.smtp_configs = []
+
+        # Settings-provided host (if present)
+        if getattr(settings, 'EMAIL_HOST', None):
+            self.smtp_configs.append({
+                'host': settings.EMAIL_HOST,
+                'port': getattr(settings, 'EMAIL_PORT', 587),
+                'use_ssl': getattr(settings, 'EMAIL_USE_SSL', False),
+                'use_tls': getattr(settings, 'EMAIL_USE_TLS', True),
+                'description': f"Settings SMTP ({settings.EMAIL_HOST}:{getattr(settings,'EMAIL_PORT',587)})"
+            })
+
+        # SendGrid standard SMTP endpoints
+        self.smtp_configs.extend([
             {
-                'host': 'smtp.gmail.com',
+                'host': 'smtp.sendgrid.net',
+                'port': 587,
+                'use_ssl': False,
+                'use_tls': True,
+                'description': 'SendGrid TLS (Port 587)'
+            }
+        ])
+
+        # Optionally try SMTPS 465 if enabled
+        if getattr(settings, 'EMAIL_SMTP_TRY_SSL', True):
+            self.smtp_configs.append({
+                'host': 'smtp.sendgrid.net',
                 'port': 465,
                 'use_ssl': True,
                 'use_tls': False,
-                'description': 'Gmail SSL (Port 465)'
-            },
+                'description': 'SendGrid SSL (Port 465)'
+            })
+
+        # Gmail as final fallback (useful only in development contexts)
+        self.smtp_configs.extend([
             {
                 'host': 'smtp.gmail.com',
                 'port': 587,
@@ -30,12 +61,12 @@ class FallbackSMTPBackend(EmailBackend):
             },
             {
                 'host': 'smtp.gmail.com',
-                'port': 25,
-                'use_ssl': False,
-                'use_tls': True,
-                'description': 'Gmail Standard SMTP (Port 25)'
-            }
-        ]
+                'port': 465,
+                'use_ssl': True,
+                'use_tls': False,
+                'description': 'Gmail SSL (Port 465)'
+            },
+        ])
     
     def open(self):
         """
@@ -54,6 +85,10 @@ class FallbackSMTPBackend(EmailBackend):
                 self.use_ssl = config['use_ssl']
                 self.use_tls = config['use_tls']
                 
+                # Ensure the credentials from settings are applied
+                self.username = getattr(settings, 'EMAIL_HOST_USER', None)
+                self.password = getattr(settings, 'EMAIL_HOST_PASSWORD', None)
+
                 # Try to establish connection
                 connection_opened = super().open()
                 if connection_opened:
@@ -107,13 +142,9 @@ def test_email_connection():
     Can be called from Django shell or management command.
     """
     backend = FallbackSMTPBackend()
-    
-    configs = [
-        {'host': 'smtp.gmail.com', 'port': 465, 'use_ssl': True, 'use_tls': False},
-        {'host': 'smtp.gmail.com', 'port': 587, 'use_ssl': False, 'use_tls': True},
-        {'host': 'smtp.gmail.com', 'port': 25, 'use_ssl': False, 'use_tls': True}
-    ]
-    
+
+    configs = backend.smtp_configs
+
     for i, config in enumerate(configs):
         print(f"\nTesting configuration {i+1}: {config}")
         
@@ -134,6 +165,6 @@ def test_email_connection():
         except Exception as e:
             print(f"❌ ERROR: Configuration {i+1} failed with: {str(e)}")
             
-    print("\n❌ All configurations failed. ISP likely blocking SMTP ports.")
-    print("Consider using a service like SendGrid, Mailgun, or AWS SES.")
+    print("\n❌ All configurations failed. SMTP connectivity blocked or credentials invalid.")
+    print("Verify EMAIL_HOST/PORT/TLS settings and credentials. For SendGrid SMTP, username='apikey' and password=SENDGRID_API_KEY.")
     return None

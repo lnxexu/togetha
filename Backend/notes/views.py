@@ -501,7 +501,8 @@ def bulk_note_action(request):
         return Response({"deleted_count": count}, status=status.HTTP_200_OK)
     
     elif action == 'archive':
-        valid_notes.update(archived=True)
+        # Note model uses is_archived, not archived
+        valid_notes.update(is_archived=True)
         
         # Log bulk archiving
         create_log(
@@ -516,7 +517,8 @@ def bulk_note_action(request):
         return Response({"archived_count": count}, status=status.HTTP_200_OK)
     
     elif action == 'unarchive':
-        valid_notes.update(archived=False)
+        # Note model uses is_archived, not archived
+        valid_notes.update(is_archived=False)
         
         # Log bulk unarchiving
         create_log(

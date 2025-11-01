@@ -6,9 +6,9 @@ import { DEFAULT_CONFIG, PLATFORM_DEFAULTS, EnvironmentConfig } from './Environm
 function getEnvironmentConfig(): EnvironmentConfig {
     // Try to get configuration from environment variables first
     const envConfig = {
-        apiUrl: process.env.PUBLIC_API_URL,
-        environment: process.env.PUBLIC_ENVIRONMENT as 'development' | 'staging' | 'production',
-        debug: process.env.PUBLIC_DEBUG === 'true',
+        apiUrl: process.env.EXPO_PUBLIC_API_URL,
+        environment: process.env.EXPO_PUBLIC_ENVIRONMENT as 'development' | 'staging' | 'production',
+        debug: process.env.EXPO_PUBLIC_DEBUG === 'true',
     };
 
     // Use environment config if available, otherwise fall back to defaults
@@ -46,11 +46,76 @@ function getApiBaseUrl(): string {
 
 export const API_URL = getApiBaseUrl();
 
+// Upgrade http to https for non-local hosts (Android blocks cleartext by default)
+export function normalizeToHttps(url: string): string {
+    try {
+        const u = new URL(url);
+        const host = u.hostname;
+        const isLocal = (
+            host === 'localhost' || host === '127.0.0.1' ||
+            host.startsWith('10.') || host.startsWith('192.168.') ||
+            /^172\.(1[6-9]|2[0-9]|3[01])\./.test(host)
+        );
+        if (u.protocol === 'http:' && !isLocal) {
+            u.protocol = 'https:';
+            return u.toString();
+        }
+        return url;
+    } catch {
+        return url;
+    }
+}
+
 // Safely join base URL and path to avoid accidental double slashes
 export function joinUrl(base: string, path: string): string {
     const trimmedBase = base.replace(/\/+$/, '');
     const trimmedPath = path.replace(/^\/+/, '');
-    return `${trimmedBase}/${trimmedPath}`;
+    const joined = `${trimmedBase}/${trimmedPath}`;
+    return joined.startsWith('http://') ? normalizeToHttps(joined) : joined;
+}
+
+// Build an absolute media URL from a possibly relative path
+export function toAbsoluteMediaUrl(pathOrUrl: string, opts?: { cacheBust?: boolean }): string {
+    if (!pathOrUrl) return '';
+    const absolute = pathOrUrl.startsWith('http')
+        ? normalizeToHttps(pathOrUrl)
+        : normalizeToHttps(joinUrl(API_URL, pathOrUrl));
+    if (opts?.cacheBust) {
+        try {
+            const u = new URL(absolute);
+            u.searchParams.set('t', Date.now().toString());
+            return u.toString();
+        } catch {
+            return absolute;
+        }
+    }
+    return absolute;
+}
+
+// Given an absolute media URL, produce alternate candidates (e.g., Railway host variants)
+export function getAlternateMediaUrls(absoluteUrl: string): string[] {
+    try {
+        const u = new URL(absoluteUrl);
+        const { protocol, hostname } = u;
+        const candidates: string[] = [];
+
+        // If hostname looks like <name>-<suffix>.up.railway.app, try without the numeric suffix
+        const m = hostname.match(/^(.*)-(\d+)\.up\.railway\.app$/);
+        if (m) {
+            const baseHost = `${m[1]}.up.railway.app`;
+            candidates.push(`${protocol}//${baseHost}${u.pathname}${u.search}`);
+        }
+
+        // Also try forcing https (normalize ensures this, but keep for completeness)
+        if (absoluteUrl.startsWith('http://')) {
+            candidates.push(absoluteUrl.replace('http://', 'https://'));
+        }
+
+        // De-duplicate while preserving order
+        return Array.from(new Set(candidates));
+    } catch {
+        return [];
+    }
 }
 
 // API endpoint paths

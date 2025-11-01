@@ -45,6 +45,22 @@ Django REST API backend for the Togetha application.
    ```
 
 8. **Run Celery (Optional - in separate terminals)**
+### Local Postgres (pgvector) via Docker
+
+You can spin up a local Postgres with the pgvector extension (plus Redis) using Docker Compose:
+
+1. Start services
+   - Ensure Docker Desktop is running
+   - From `Backend/`: `docker compose up -d`
+2. Configure your `.env`
+   - `DATABASE_URL=postgres://Togetha:lol@localhost:5433/Togetha`
+   - `REDIS_URL=redis://localhost:6379/1`
+3. Run migrations and start the backend as usual
+
+Alternatively on Windows PowerShell, you can use the helper script:
+
+- `scripts/start_postgres_docker.ps1` (starts the same pgvector image on port 5433)
+
    ```bash
    # Worker
    celery -A server worker --loglevel=info --pool=solo
@@ -92,12 +108,12 @@ Backend/
 
 - **Framework**: Django 5.2.6
 - **API**: Django REST Framework 3.16.1
-- **Database**: PostgreSQL (production), SQLite (dev)
+- **Database**: PostgreSQL (dev and production)
 - **Cache**: Redis
 - **Task Queue**: Celery + Redis
 - **WSGI Server**: Gunicorn
 - **Static Files**: WhiteNoise
-- **AI/ML**: Sentence Transformers, FAISS, Torch
+- **AI/ML**: Google Generative AI (Gemini) for embeddings; pgvector on Postgres for vector search
 
 ## 🔧 Configuration
 
@@ -142,10 +158,10 @@ python manage.py test
 ## 📊 Database
 
 ### Local Development
-Uses PostgreSQL by default (see settings.py)
+Uses PostgreSQL by default (see `server/settings.py`)
 
 ### Production
-- Uses Render PostgreSQL
+- Uses managed PostgreSQL
 - Configured via `DATABASE_URL` environment variable
 - Migrations run automatically during deployment
 
@@ -204,6 +220,65 @@ python manage.py collectstatic --noinput
 - Ensure Redis is running
 - Check `REDIS_URL` configuration
 - Verify Redis service is accessible
+
+### Email Delivery on Railway (SendGrid)
+
+This project is configured to use SendGrid SMTP by default and will automatically try common SendGrid ports (587 TLS, 465 SSL). On some hosts, outbound SMTP can be restricted. To make email verification robust on Railway:
+
+- Set the following variables in Railway → Variables:
+   - `SENDGRID_API_KEY` — your SendGrid API key
+   - `EMAIL_HOST` = `smtp.sendgrid.net`
+   - `EMAIL_PORT` = `587`
+   - `EMAIL_USE_TLS` = `True`
+   - `EMAIL_USE_SSL` = `False`
+   - `EMAIL_HOST_USER` = `apikey` (literally this word)
+   - `EMAIL_FROM` or `DEFAULT_FROM_EMAIL` — a verified sender in SendGrid
+
+- The backend will attempt SMTP first. If SMTP fails (e.g., due to egress/port restrictions), it will automatically fall back to the SendGrid Web API over HTTPS using `SENDGRID_API_KEY`.
+   - You can force API-first sending by setting `EMAIL_PREFER_SENDGRID_API=True` in Railway variables.
+   - To avoid waiting on SMTPS:465 timeouts, set `EMAIL_SMTP_TRY_SSL=False`.
+   - If SendGrid returns `401 Unauthorized` with `The requestor's IP Address is not whitelisted`, either disable IP Access Management in SendGrid or add your server's egress IP to the SendGrid allowlist. Until then, you can set `EMAIL_DISABLE_SENDGRID_API=True` to use SMTP only.
+
+- Never commit your real API keys. Ensure `.env` is not checked in and set secrets only in Railway.
+
+- If you use the optional SendGrid Event Webhook, add `SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY` and expose `POST /users/sendgrid/webhook/` from your app.
+
+#### SMTP Connectivity Health Check
+
+Run an on-platform SMTP probe similar to the bash snippet you provided:
+
+```bash
+python manage.py check_smtp --host smtp.sendgrid.net --ports 25 465 587 2525 --timeout 3 --starttls
+```
+
+This will print reachability and attempt TLS/STARTTLS handshakes, which is more reliable than plain TCP checks.
+
+#### Domain + DNS for Reliable Delivery
+
+To maximize deliverability and satisfy SendGrid requirements:
+
+1. Verify a sender domain in SendGrid (recommended) or a Single Sender (temporary/testing).
+2. Add the DNS records SendGrid provides for your domain:
+   - SPF: `TXT @  v=spf1 include:sendgrid.net ~all`
+   - DKIM: three `CNAME` records as instructed in SendGrid
+   - Return-Path: optional `CNAME` for bounce handling
+   - DMARC (recommended): `TXT _dmarc  v=DMARC1; p=quarantine; rua=mailto:dmarc@your-domain.com`
+3. Use a From address on the verified domain, e.g. `no-reply@your-domain.com`.
+
+If you encounter 403 Sender Identity errors from the SendGrid Web API, ensure your app uses a verified sender address:
+
+- Set `DEFAULT_FROM_EMAIL` (or `EMAIL_FROM`) to your verified sender.
+- Optionally set `SENDGRID_FALLBACK_FROM` to a known-good verified address; the backend will retry a single time with this address when a Sender Identity error is detected.
+
+Notes when using Railway for your web app domain:
+- Root/apex domains usually need ALIAS/ANAME or CNAME flattening at your DNS provider.
+- Subdomains and wildcards cannot overlap unless managed by the same service.
+- Railway issues and renews TLS certs (90-day certs, renewed automatically); issuance typically completes within an hour.
+- SNI is required for HTTPS certificate matching; browsers/clients handle this automatically. SMTP does not use SNI.
+
+Security reminders:
+- Never commit real API keys to git. `.env` is already ignored, but rotate any exposed keys immediately in SendGrid.
+- Ensure `DEFAULT_FROM_EMAIL`/`EMAIL_FROM` matches a verified sender identity in SendGrid.
 
 ## 📚 Documentation
 

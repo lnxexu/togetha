@@ -161,6 +161,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [title, setTitle] = useState(route.params?.initialNote?.title || "");
   const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(route.params?.initialNote?.title || ""); // Draft title for editing without triggering save
   const [content, setContent] = useState(
     route.params?.initialNote?.content || ""
   );
@@ -522,12 +523,17 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
   // Handle back button - ensure we save current rich text content before exiting
   const handleBackPress = async () => {
     try {
+      // Commit any unsaved title changes first
+      if (editingTitle && titleDraft !== title) {
+        setTitle(titleDraft);
+      }
+      
       // Pull the freshest HTML from editor in case state lags while typing
       const latestHtml: string = (await richTextRef.current?.getContentHtml?.()) ?? formattedContent ?? "";
       const latestText = latestHtml.replace(/<[^>]*>/g, "");
       const updatedNote: NoteType = {
         ...currentNote,
-        title,
+        title: editingTitle ? titleDraft : title, // Use the draft if currently editing
         content: latestText,
         formatted_content: latestHtml,
         folderId: selectedFolderId,
@@ -559,6 +565,17 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
     { name: "pink", hex: "#FFC0CB" },
     { name: "cyan", hex: "#00FFFF" },
   ];
+
+  // Title editing handlers - only commit changes when done editing
+  const handleStartEditingTitle = () => {
+    setTitleDraft(title); // Initialize draft with current title
+    setEditingTitle(true);
+  };
+
+  const handleFinishEditingTitle = () => {
+    setTitle(titleDraft); // Commit the draft to actual title (triggers save)
+    setEditingTitle(false);
+  };
 
   const handleFolderSelect = (folder: any | null) => {
     // Add haptic feedback for better UX
@@ -1012,10 +1029,10 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
                 {editingTitle ? (
                   <TextInput
                     style={styles.modernTitleInput}
-                    value={title}
-                    onChangeText={setTitle}
-                    onBlur={() => setEditingTitle(false)}
-                    onSubmitEditing={() => setEditingTitle(false)}
+                    value={titleDraft}
+                    onChangeText={setTitleDraft}
+                    onBlur={handleFinishEditingTitle}
+                    onSubmitEditing={handleFinishEditingTitle}
                     placeholder="Enter note title"
                     placeholderTextColor="rgba(255,255,255,0.6)"
                     maxLength={50}
@@ -1025,7 +1042,7 @@ const NewNoteEditor: React.FC<NoteEditorProps> = ({ route, navigation }) => {
                 ) : (
                   <TouchableOpacity
                     style={styles.titleTouchable}
-                    onPress={() => setEditingTitle(true)}
+                    onPress={handleStartEditingTitle}
                     activeOpacity={0.7}
                   >
                     <Text style={styles.headerTitle}>{title || "Untitled Note"}</Text>

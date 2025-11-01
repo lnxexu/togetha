@@ -1,0 +1,176 @@
+# Deploying the Backend to Railway
+
+This guide deploys the Django + DRF app with Celery worker and Celery beat to Railway, using Postgres and Redis. OCR is enabled by installing Tesseract via Nixpacks.
+
+## 1) Prerequisites
+
+- A Railway account and project.
+- This repo connected to Railway with the `Backend/` as the root for your service.
+- Add managed services in Railway:
+  - PostgreSQL (for your main DB)
+  - Redis (for Celery broker and results)
+
+## 2) System packages (Tesseract)
+
+pytesseract requires the Tesseract binary at runtime. This repo contains `nixpacks.toml` which installs it automatically:
+
+```toml
+[phases.setup]
+nixPkgs = ["tesseract"]
+```
+
+You don’t need to change code paths: the code only sets a Windows path override when running on Windows.
+
+## 3) Services layout in Railway
+
+Create three services from the same repo (or use Railway Deploy Templates):
+
+- Web (Django + Gunicorn)
+- Worker (Celery worker)
+- Beat (Celery beat scheduler)
+
+Option A: Nixpacks (auto)
+
+Railway will detect `nixpacks.toml`. You can pick which process each service should run from the defined processes:
+
+```toml
+[processes]
+web = "gunicorn server.wsgi:application --workers 3 --bind 0.0.0.0:$PORT"
+worker = "celery -A server worker --loglevel=info"
+beat = "celery -A server beat --loglevel=info"
+```
+
+Option B: Dockerfile (explicit)
+
+If you prefer a Docker-based deploy, a `Backend/Dockerfile` and `Backend/entrypoint.sh` are provided.
+
+- Build context: `Backend/`
+- Start command: leave blank (Dockerfile sets CMD)
+- Set `ROLE` per service:
+  - Web: `ROLE=web`
+  - Worker: `ROLE=worker`
+  - Beat: `ROLE=beat`
+
+The container reads `PORT` from the environment (Railway sets this automatically). Migrations and collectstatic can be toggled with `RUN_MIGRATIONS=1`, `COLLECTSTATIC=1` (defaults: migrate=1, collectstatic=0 at runtime; already collected at build).
+
+## 4) Environment variables (all services)
+
+Set these in Railway → Variables for each service (web, worker, beat):
+
+- Core
+  - SECRET_KEY = <strong random value>
+  - DEBUG = False
+  - ALLOWED_HOSTS = your-domain.up.railway.app,your-custom-domain.com
+  - CSRF_TRUSTED_ORIGINS = https://your-domain.up.railway.app,https://your-custom-domain.com
+  - CORS_ALLOWED_ORIGINS = https://your-frontend-domain
+- Database & cache/broker
+  - DATABASE_URL = (from Railway Postgres service)
+  - REDIS_URL = (from Railway Redis service)
+- Email (if used)
+  - EMAIL_HOST=smtp.gmail.com
+  - EMAIL_PORT=587
+  - EMAIL_USE_TLS=True
+  - EMAIL_USE_SSL=False
+  - EMAIL_HOST_USER=your-gmail-address
+  - EMAIL_HOST_PASSWORD=your-gmail-app-password
+- RAG/Embeddings
+  - GEMINI_API_KEY (required)
+  - GEMINI_MODEL (optional, defaults in settings)
+  - EMBEDDING_MODEL (optional, defaults in settings)
+- Python version (optional, already set via runtime.txt and nixpacks.toml)
+  - PYTHON_VERSION = 3.11.0
+
+### Recommended Railway variables (all services)
+
+Set these in Railway → Variables for each service (Web, Worker, Beat):
+
+- SECRET_KEY
+- DEBUG
+- ALLOWED_HOSTS
+- CSRF_TRUSTED_ORIGINS
+- CORS_ALLOWED_ORIGINS
+- DATABASE_URL (from Railway Postgres)
+- REDIS_URL (from Railway Redis)
+- GEMINI_API_KEY (optional: GEMINI_MODEL, EMBEDDING_MODEL)
+- EMAIL_HOST, EMAIL_PORT, EMAIL_USE_TLS, EMAIL_USE_SSL, EMAIL_HOST_USER, EMAIL_HOST_PASSWORD (if emailing)
+
+### Email on Railway (Gmail)
+
+If you use Gmail SMTP:
+
+- Create an App Password in your Google Account (2FA required) and use it for `EMAIL_HOST_PASSWORD`.
+- Use TLS on port 587 (`EMAIL_PORT=587`, `EMAIL_USE_TLS=True`, `EMAIL_USE_SSL=False`).
+- Set `DEFAULT_FROM_EMAIL` to your Gmail address (or configure "Send mail as" in Gmail if you need a different From domain).
+
+If outbound SMTP is blocked in your region/network, consider an email provider with an HTTPS API (e.g., SendGrid, Mailgun, AWS SES) to avoid SMTP port issues.
+
+## 5) Build & start commands
+
+`nixpacks.toml` includes install and build steps:
+
+```toml
+[phases.install]
+cmds = [
+  "pip install --upgrade pip",
+  "pip install -r requirements.txt"
+]
+
+[phases.build]
+cmds = [
+  "python manage.py collectstatic --noinput",
+  "python manage.py migrate"
+]
+```
+
+For each Railway service, choose the corresponding process:
+- Web → `web`
+- Worker → `worker`
+- Beat → `beat`
+
+Alternatively, you can override the start command per service in Railway’s UI.
+
+## 6) Static and media files
+
+- Static: Collected by `collectstatic` and served by WhiteNoise (already configured in `server/settings.py`).
+- Media: Railway disk is ephemeral. For uploads, consider S3 or another persistent object store in production.
+
+## 7) Verifications
+
+After deployment:
+- Web logs: Confirm Gunicorn starts and Django loads.
+- Worker logs: Confirm Celery connects to Redis and finds tasks.
+- Beat logs: Confirm schedules are registered (e.g., `check_due_tasks` entries).
+
+## 8) Notes & tips
+
+- Debug Toolbar: Consider disabling in production or gating by IP/DEBUG flag.
+- RAG vector search: The RAG pipeline stores embeddings in Postgres using pgvector (see `chatbot/models.py -> DocumentChunk`). Ensure your Railway Postgres has the `pgvector` extension enabled; the included migrations will attempt to create it automatically.
+- Migrations: Keeping `migrate` in the build step works fine; you can also run it manually if you prefer controlled rollouts.
+
+### Troubleshooting: connection refused to 127.0.0.1:5432
+
+If you see errors like “connection to server at 127.0.0.1, port 5432 failed: Connection refused”, it means the app is trying to use a local Postgres instead of the managed Railway database.
+
+Fix:
+- In Railway, open your Postgres service → copy the Connection URL, and set it as `DATABASE_URL` on your Web/Worker/Beat services.
+- Ensure your service Root Directory is `Backend/` so this project’s `nixpacks.toml` is used.
+- Remove/ignore any local `.env` for production; Railway Variables will be used automatically at runtime.
+
+### Troubleshooting: Postgres version mismatch with a mounted volume
+
+Error similar to:
+
+```
+FATAL: database files are incompatible with server
+DETAIL: The data directory was initialized by PostgreSQL version 17, which is not compatible with this version 15.x.
+```
+
+Cause: A Postgres container is starting with a data directory created by a different major version.
+
+Fix options:
+- Preferred: Use Railway's managed Postgres service (set `DATABASE_URL`); do NOT run Postgres inside your Backend service.
+- If you run your own Postgres container as a separate service:
+  - Match the image to the data dir version, e.g. use `pgvector/pgvector:pg17` if the data dir was created by PG 17.
+  - Or reset the attached disk/volume (DATA LOSS!) and let the new Postgres version initialize a fresh cluster.
+
+Common pitfall: Do not append a Postgres `FROM` stage to the Backend Dockerfile. The Backend image must remain a Python/Django image and connect to Postgres via `DATABASE_URL`.

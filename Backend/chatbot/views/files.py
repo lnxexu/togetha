@@ -6,6 +6,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from django.conf import settings
 import os
 from ..rag import process_file_for_user, extract_text_by_page
+from ..models import Conversation, ConversationFile
 
 
 class FileUploadView(APIView):
@@ -42,6 +43,26 @@ class FileUploadView(APIView):
                         extracted_preview = pages[0][1][:300]
                 except Exception:
                     extracted_preview = None
+
+            # If a conversation was provided, create a ConversationFile record so chat can derive doc_ids later
+            try:
+                if conversation_id:
+                    conv = Conversation.objects.filter(pk=conversation_id, user=request.user).first()
+                    if conv:
+                        ConversationFile.objects.create(
+                            conversation=conv,
+                            message=None,
+                            file_name=uploaded_file.name,
+                            file_path=file_path,
+                            file_type=getattr(uploaded_file, 'content_type', '') or 'application/octet-stream',
+                            file_size=getattr(uploaded_file, 'size', 0) or 0,
+                            is_processed=True,
+                            processing_status='completed',
+                            extracted_text=extracted_preview or ''
+                        )
+            except Exception:
+                # Non-fatal; uploading should still succeed
+                pass
 
             payload = {
                 "message": "File uploaded and processed successfully",

@@ -16,6 +16,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { userService, UserProfile } from './services/userService';
 import { SafeAreaWrapper } from '../components/SafeAreaWrapper';
+import { normalizeToHttps } from '../../constants/ApiConfig';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -125,7 +126,7 @@ const ManageProfile: React.FC = () => {
                     <View style={styles.profilePicContainer}>
                         {userData.profile?.profile_picture ? (
                             <Image 
-                                source={{ uri: userData.profile.profile_picture }} 
+                                source={{ uri: normalizeToHttps(userData.profile.profile_picture) }} 
                                 style={styles.profilePic}
                             />
                         ) : (

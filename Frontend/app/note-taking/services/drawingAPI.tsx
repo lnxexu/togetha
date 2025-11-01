@@ -148,7 +148,7 @@ export class DrawingAPI {
     const data = await response.json();
       console.log('API getDrawing response:', data);
       
-      let strokes: DrawingStroke[] = [];
+  let strokes: DrawingStroke[] = [];
       
       // Try to parse drawing_data if it exists
       if (data.drawing_data) {
@@ -168,7 +168,16 @@ export class DrawingAPI {
         strokes = Array.isArray(data.strokes) ? data.strokes : [];
       }
       
-      console.log('Parsed strokes:', strokes.length, strokes.length > 0 ? strokes[0] : 'none');
+      // De-duplicate strokes by unique id to avoid duplicates if sync double-applied
+      if (Array.isArray(strokes) && strokes.length > 1) {
+        const byId = new Map<string, DrawingStroke>();
+        for (const s of strokes) {
+          const key = (s as any)?.id || `${(s as any)?.timestamp}-${(s as any)?.color}-${(s as any)?.width}`;
+          if (!byId.has(key)) byId.set(key, s as any);
+        }
+        strokes = Array.from(byId.values());
+      }
+      console.log('Parsed strokes (deduped):', strokes.length, strokes.length > 0 ? strokes[0] : 'none');
       
       const drawingData: DrawingData = {
         strokes,
@@ -177,16 +186,10 @@ export class DrawingAPI {
         lastUpdate: (parseServerDate(data.updated_at) || parseServerDate(data.last_update) || new Date()).toISOString(),
       };
 
-      // If server returned empty strokes, prefer offline cache to avoid blanking
+      // Trust server: if empty, clear stale offline cache; else cache server value
       if (strokes.length === 0) {
-        try {
-          const cached = await offlineStorage.getOfflineDrawing(String(noteId));
-          if (cached && Array.isArray(cached.strokes) && cached.strokes.length > 0) {
-            return cached;
-          }
-        } catch {}
+        try { await offlineStorage.deleteOfflineDrawing(String(noteId)); } catch {}
       } else {
-        // Cache non-empty server result
         try { await offlineStorage.saveOfflineDrawing(String(noteId), drawingData); } catch {}
       }
 
@@ -206,12 +209,12 @@ export class DrawingAPI {
     try {
       const headers = await this.getAuthHeaders();
       
-      // Clear drawing by setting drawing_data to empty array
+      // Clear drawing by setting drawing_strokes to empty array
       const response = await fetch(`${API_URL}${API_ENDPOINTS.NOTES}${noteId}/`, {
         method: 'PATCH',
         headers,
         body: JSON.stringify({
-          drawing_data: JSON.stringify([]) // Clear with empty array
+          drawing_strokes: [] // Clear with empty array
         }),
       });
 
@@ -219,6 +222,21 @@ export class DrawingAPI {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
       }
+
+      // Update offline caches to reflect deletion immediately
+      try {
+        await offlineStorage.deleteOfflineDrawing(String(noteId));
+        const note = await offlineStorage.getOfflineNoteById(String(noteId));
+        if (note) {
+          await offlineStorage.saveOfflineNote({
+            ...note,
+            drawing_data: '',
+            has_drawing: false,
+            lastModified: new Date().toISOString(),
+            syncStatus: 'synced',
+          } as any);
+        }
+      } catch {}
 
       return await response.json();
     } catch (error) {
@@ -247,8 +265,7 @@ export class DrawingAPI {
   ): Promise<{noteId: string, note: any}> {
     try {
       const headers = await this.getAuthHeaders();
-      console.log('Creating new note with title:', title);
-      console.log('Headers:', headers);
+    console.log('Creating new note with title:', title);
       
       // First, create a new note
       const noteResponse = await fetch(`${API_URL}${API_ENDPOINTS.NOTES}`, {

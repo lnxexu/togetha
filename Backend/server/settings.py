@@ -25,23 +25,54 @@ DEBUG = os.environ.get("DEBUG", "False") == "True"
 # Use environment variable DEBUG to override in non-development environments.
 # DEBUG = config('DEBUG', default=True, cast=bool)
 
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='*,192.168.0.153,localhost,127.0.0.1', cast=Csv())
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1,192.168.0.153,192.168.1.187,192.168.15.50,172.16.3.152,172.23.176.1,togetha-production-2546.up.railway.app', cast=Csv())
 
-DEFAULT_FROM_EMAIL = 'kcorpuz_220000002183@uic.edu.ph'
+"""
+Email configuration
 
+Goal: Prefer SendGrid SMTP using credentials from env, with graceful fallback.
+Essentials (env):
+    - SENDGRID_API_KEY
+    - EMAIL_FROM (sender address)
+Optional overrides:
+    - EMAIL_HOST, EMAIL_PORT, EMAIL_USE_TLS/SSL, EMAIL_HOST_USER, EMAIL_HOST_PASSWORD
+"""
+
+# Core credentials
+# For SendGrid SMTP, username must literally be 'apikey' and the password is the API key.
+SENDGRID_API_KEY = config('SENDGRID_API_KEY', default=None)
+EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='apikey' if SENDGRID_API_KEY else None)
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default=SENDGRID_API_KEY)
+
+# From address
+DEFAULT_FROM_EMAIL = (
+        config('EMAIL_FROM', default='yellowhyunjin123@gmail.com')
+        or config('DEFAULT_FROM_EMAIL', default='yellowhyunjin123@gmail.com')
+        or EMAIL_HOST_USER
+)
+
+# Use custom backend that can try multiple ports; we'll seed it with SendGrid defaults
 EMAIL_BACKEND = 'server.email_backend.FallbackSMTPBackend'
 
-# Primary SMTP configuration (these will be tried by the fallback backend)
-EMAIL_HOST = 'smtp.gmail.com'
-EMAIL_PORT = 465
-EMAIL_USE_SSL = True  
-EMAIL_USE_TLS = False
-EMAIL_HOST_USER = 'wlage35@gmail.com'
-EMAIL_HOST_PASSWORD = 'lbqi deda bbux ebxd'
-EMAIL_TIMEOUT = 60 
+# Primary SMTP configuration (can be overridden by env)
+# Defaults to SendGrid SMTP if SENDGRID_API_KEY is present; otherwise falls back to Gmail-like defaults
+EMAIL_HOST = config('EMAIL_HOST', default='smtp.sendgrid.net' if SENDGRID_API_KEY else 'smtp.gmail.com')
+EMAIL_PORT = config('EMAIL_PORT', default=587 if SENDGRID_API_KEY else 465, cast=int)
+EMAIL_USE_SSL = config('EMAIL_USE_SSL', default=False if SENDGRID_API_KEY else True, cast=bool)
+EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True if SENDGRID_API_KEY else False, cast=bool)
+EMAIL_TIMEOUT = 60
 EMAIL_USE_LOCALTIME = False
- 
-from decouple import Csv
+
+# Prefer SendGrid Web API (HTTPS) over SMTP to avoid blocked SMTP ports in some hosts
+EMAIL_PREFER_SENDGRID_API = config('EMAIL_PREFER_SENDGRID_API', default=False, cast=bool)
+# Control whether the custom SMTP backend should also try SMTPS:465 after 587
+EMAIL_SMTP_TRY_SSL = config('EMAIL_SMTP_TRY_SSL', default=True, cast=bool)
+
+# from decouple import Csv  # already imported above
+
+# Debug/ops: optionally log verification codes to backend logs (disabled by default)
+# Enable by setting LOG_VERIFICATION_CODES=True in the environment for non-DEBUG environments.
+LOG_VERIFICATION_CODES = config('LOG_VERIFICATION_CODES', default=False, cast=bool)
 
 # Gemini / Embeddings configuration
 # Do NOT provide a hardcoded default for API keys. Require environment or .env to supply it.
@@ -76,6 +107,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'pgvector.django',
     'debug_toolbar',
     'django_celery_beat', 
     'rest_framework',
@@ -114,16 +146,16 @@ CSRF_COOKIE_HTTPONLY = False
 CSRF_COOKIE_SAMESITE = 'Lax'  
 CSRF_TRUSTED_ORIGINS = config(
     'CSRF_TRUSTED_ORIGINS',
-    default='http://localhost:3000,http://127.0.0.1:8000,http://192.168.0.153:8000',
+    default='http://localhost:3000,http://127.0.0.1:8000,http://192.168.0.153:8000,http://172.23.176.1:8000',
     cast=Csv()
 )
 
 CORS_ALLOWED_ORIGINS = config(
     'CORS_ALLOWED_ORIGINS', 
-    default='http://localhost:3000,http://127.0.0.1:8000,http://192.168.0.153:8000',
+    default='http://localhost:3000,http://127.0.0.1:3000,http://192.168.0.153:3000',
     cast=Csv()
 )
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = False  # Disabled for security in production
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_METHODS = [
     'DELETE',
@@ -170,23 +202,44 @@ WSGI_APPLICATION = 'server.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-# PRODUCTION DATABASE - Uses DATABASE_URL from environment
-if os.environ.get("DATABASE_URL"):
+# PRODUCTION DATABASE - prefer a database URL if provided by the host (DATABASE_URL, RAILWAY, etc.)
+database_url = (
+    os.environ.get("DATABASE_URL")
+    or os.environ.get("RAILWAY_DATABASE_URL")
+    or os.environ.get("RAILWAY_POSTGRESQL_URI")
+    or os.environ.get("RAILWAY_POSTGRESQL_URL")
+    or os.environ.get("POSTGRES_URL")
+)
+
+if database_url:
     DATABASES = {
-        "default": dj_database_url.parse(os.environ["DATABASE_URL"], conn_max_age=600)
+        "default": dj_database_url.parse(database_url, conn_max_age=600)
     }
 else:
-    # DEVELOPMENT DATABASE - Fallback for local development
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': 'togetha',
-            'USER': 'togetha',
-            'PASSWORD': 'geric',
-            'HOST': 'localhost',
-            'PORT': '5432',
+    # Some hosts provide individual PG_* env vars instead of a single DATABASE_URL
+    if os.environ.get('PGHOST') and os.environ.get('PGDATABASE'):
+        DATABASES = {
+            'default': {
+                'ENGINE': 'django.db.backends.postgresql',
+                'NAME': os.environ.get('PGDATABASE'),
+                'USER': os.environ.get('PGUSER', ''),
+                'PASSWORD': os.environ.get('PGPASSWORD', ''),
+                'HOST': os.environ.get('PGHOST', 'localhost'),
+                'PORT': os.environ.get('PGPORT', '5432'),
+            }
         }
-    }
+    else:
+        # DEVELOPMENT DATABASE - Fallback for local development
+        DATABASES = {
+            'default': {
+                'ENGINE': 'django.db.backends.postgresql',
+                'NAME': 'togetha',
+                'USER': 'postgres',
+                'PASSWORD': 'Kobe@1314',  # Only for local dev
+                'HOST': 'localhost',
+                'PORT': '5432',
+            }
+        }
 
 
 # Password validation
@@ -299,6 +352,11 @@ LOGGING = {
         'server.email_backend': {
             'handlers': ['console', 'file'],
             'level': 'DEBUG',
+            'propagate': False,
+        },
+        'users.email_service': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
             'propagate': False,
         },
         'django.core.mail': {

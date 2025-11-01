@@ -62,10 +62,18 @@ class OfflineNotesService {
       options.body = JSON.stringify(body);
     }
 
-  const response = await fetch(joinUrl(API_URL, endpoint), options);
+    const response = await fetch(joinUrl(API_URL, endpoint), options);
 
     if (!response.ok) {
-      throw new Error(`API Error: ${response.status} ${response.statusText}`);
+      // Try to extract error details to aid debugging
+      let detail = '';
+      try {
+        const data = await response.json();
+        detail = data?.detail || data?.error || JSON.stringify(data);
+      } catch {
+        try { detail = await response.text(); } catch {}
+      }
+      throw new Error(`API Error: ${response.status} ${response.statusText}${detail ? ` - ${detail}` : ''}`);
     }
 
     if (method === 'DELETE') {
@@ -222,13 +230,80 @@ class OfflineNotesService {
           pendingNotes.forEach(consider);
           const allOfflineNotes = Array.from(mergedMap.values());
 
-          // Persist de-duplicated list
-          await offlineStorage.saveOfflineNotes(allOfflineNotes);
-          
-          // Trigger sync for any pending operations
-          noteSyncService.syncWithServer().catch(console.error);
-          
-          return allOfflineNotes.map(n => this.offlineNoteToNote(n));
+          // One-time deduplication before display: eliminate duplicates that slipped through
+          const stableJson = (obj: any) => {
+            try { return JSON.stringify(obj); } catch { return ''; }
+          };
+          const parseDrawing = (val: any): any[] => {
+            try {
+              if (!val) return [];
+              if (typeof val === 'string') {
+                const p = JSON.parse(val);
+                if (Array.isArray(p)) return p;
+                if (p && Array.isArray(p.strokes)) return p.strokes;
+                return [];
+              }
+              if (Array.isArray(val)) return val;
+              if (typeof val === 'object' && Array.isArray((val as any).strokes)) return (val as any).strokes;
+            } catch {}
+            return [];
+          };
+          const drawingSignature = (n: OfflineNote) => {
+            const strokes = parseDrawing((n as any).drawing_data);
+            if (!strokes || strokes.length === 0) return 'no-draw';
+            // Build a compact signature: count + first/last point + color/width diversity
+            const count = strokes.length;
+            const first = strokes[0];
+            const last = strokes[strokes.length - 1];
+            const firstPt = Array.isArray(first?.points) && first.points.length >= 2 ? `${first.points[0]}:${first.points[1]}` : 'na';
+            const lastPt = Array.isArray(last?.points) && last.points.length >= 2 ? `${last.points[last.points.length-2]}:${last.points[last.points.length-1]}` : 'na';
+            const colors = new Set<string>();
+            const widths = new Set<number>();
+            for (const s of strokes) { if (s?.color) colors.add(String(s.color)); if (typeof s?.width === 'number') widths.add(s.width); }
+            return `${count}|${firstPt}|${lastPt}|c${colors.size}|w${widths.size}`;
+          };
+          const getTime = (n: any) => {
+            const ts = (n.updatedAt || n.updated_at || n.lastModified || n.createdAt || n.created_at);
+            const d = ts ? new Date(ts).getTime() : 0;
+            return isNaN(d) ? 0 : d;
+          };
+
+          const byGroup = new Map<string, OfflineNote[]>();
+          for (const n of allOfflineNotes) {
+            const key = `${(n.title || '').trim()}|${(n.type || 'text')}|${drawingSignature(n)}`;
+            const arr = byGroup.get(key) || [];
+            arr.push(n);
+            byGroup.set(key, arr);
+          }
+          const deduped: OfflineNote[] = [];
+          const toRemoveIds = new Set<string>();
+          for (const arr of byGroup.values()) {
+            if (arr.length === 1) { deduped.push(arr[0]); continue; }
+            // Prefer items with real server ID, then non-failed, then newest timestamp
+            const sorted = arr.slice().sort((a, b) => {
+              const aServer = a.id && typeof a.id === 'string' && !a.id.startsWith('local_') ? 1 : 0;
+              const bServer = b.id && typeof b.id === 'string' && !b.id.startsWith('local_') ? 1 : 0;
+              if (aServer !== bServer) return bServer - aServer;
+              const aFailed = a.syncStatus === 'failed' ? 1 : 0;
+              const bFailed = b.syncStatus === 'failed' ? 1 : 0;
+              if (aFailed !== bFailed) return aFailed - bFailed; // prefer not failed
+              return getTime(b) - getTime(a);
+            });
+            const keep = sorted[0];
+            deduped.push(keep);
+            for (let i = 1; i < sorted.length; i++) {
+              if (sorted[i]?.id) toRemoveIds.add(String(sorted[i].id));
+            }
+          }
+
+          if (toRemoveIds.size > 0) {
+            console.log(`🧹 Dedupe removed ${toRemoveIds.size} duplicate note(s) before display`);
+          }
+
+          // Persist deduplicated list and do NOT auto-trigger sync (one-shot sync behavior)
+          await offlineStorage.saveOfflineNotes(deduped);
+
+          return deduped.map(n => this.offlineNoteToNote(n));
         } catch (error) {
           console.warn("Failed to fetch notes from server, falling back to offline storage:", error);
           // Fall through to offline mode
@@ -238,7 +313,61 @@ class OfflineNotesService {
       // Offline mode or server fetch failed
       console.log("Using offline storage for getAllNotes");
       const offlineNotes = await offlineStorage.getOfflineNotes();
-      return offlineNotes.map(note => this.offlineNoteToNote(note));
+      // Apply same dedupe before displaying
+      const parseDrawing = (val: any): any[] => {
+        try {
+          if (!val) return [];
+          if (typeof val === 'string') { const p = JSON.parse(val); if (Array.isArray(p)) return p; if (p && Array.isArray(p.strokes)) return p.strokes; return []; }
+          if (Array.isArray(val)) return val;
+          if (typeof val === 'object' && Array.isArray((val as any).strokes)) return (val as any).strokes;
+        } catch {}
+        return [];
+      };
+      const drawingSignature = (n: OfflineNote) => {
+        const strokes = parseDrawing((n as any).drawing_data);
+        if (!strokes || strokes.length === 0) return 'no-draw';
+        const count = strokes.length;
+        const first = strokes[0];
+        const last = strokes[strokes.length - 1];
+        const firstPt = Array.isArray(first?.points) && first.points.length >= 2 ? `${first.points[0]}:${first.points[1]}` : 'na';
+        const lastPt = Array.isArray(last?.points) && last.points.length >= 2 ? `${last.points[last.points.length-2]}:${last.points[last.points.length-1]}` : 'na';
+        const colors = new Set<string>();
+        const widths = new Set<number>();
+        for (const s of strokes) { if (s?.color) colors.add(String(s.color)); if (typeof s?.width === 'number') widths.add(s.width); }
+        return `${count}|${firstPt}|${lastPt}|c${colors.size}|w${widths.size}`;
+      };
+      const getTime = (n: any) => {
+        const ts = (n.updatedAt || n.updated_at || n.lastModified || n.createdAt || n.created_at);
+        const d = ts ? new Date(ts).getTime() : 0;
+        return isNaN(d) ? 0 : d;
+      };
+      const byGroup = new Map<string, OfflineNote[]>();
+      for (const n of offlineNotes) {
+        const key = `${(n.title || '').trim()}|${(n.type || 'text')}|${drawingSignature(n)}`;
+        const arr = byGroup.get(key) || [];
+        arr.push(n);
+        byGroup.set(key, arr);
+      }
+      const deduped: OfflineNote[] = [];
+      const toRemoveIds = new Set<string>();
+      for (const arr of byGroup.values()) {
+        if (arr.length === 1) { deduped.push(arr[0]); continue; }
+        const sorted = arr.slice().sort((a, b) => {
+          const aServer = a.id && typeof a.id === 'string' && !a.id.startsWith('local_') ? 1 : 0;
+          const bServer = b.id && typeof b.id === 'string' && !b.id.startsWith('local_') ? 1 : 0;
+          if (aServer !== bServer) return bServer - aServer;
+          const aFailed = a.syncStatus === 'failed' ? 1 : 0;
+          const bFailed = b.syncStatus === 'failed' ? 1 : 0;
+          if (aFailed !== bFailed) return aFailed - bFailed;
+          return getTime(b) - getTime(a);
+        });
+        const keep = sorted[0];
+        deduped.push(keep);
+        for (let i = 1; i < sorted.length; i++) { if (sorted[i]?.id) toRemoveIds.add(String(sorted[i].id)); }
+      }
+      if (toRemoveIds.size > 0) { console.log(`🧹 Dedupe (offline) removed ${toRemoveIds.size} duplicate note(s) before display`); }
+      await offlineStorage.saveOfflineNotes(deduped);
+      return deduped.map(note => this.offlineNoteToNote(note));
     } catch (error) {
       console.error("Error fetching notes:", error);
       return [];
@@ -304,9 +433,6 @@ class OfflineNotesService {
           const normalizedFolder =
             typeof rawFolder === 'number' ? rawFolder
             : (typeof rawFolder === 'string' ? rawFolder : null);
-          const tagNames = Array.isArray(noteData.tags)
-            ? noteData.tags.map((t: any) => (typeof t === 'string' ? t : t?.name)).filter(Boolean)
-            : [];
           const payload: any = {
             title: noteData.title,
             content: noteData.content || "",
@@ -316,7 +442,6 @@ class OfflineNotesService {
             is_archived: noteData.is_archived || false,
             // template is not a backend field; keep only offline
             drawing_strokes: this.serializeDrawingData(noteData.drawing_data),
-            tag_names: tagNames,
           };
           if (noteData.document_annotations !== undefined && noteData.document_annotations !== null) {
             payload.document_annotations = noteData.document_annotations;
@@ -426,9 +551,6 @@ class OfflineNotesService {
           const normalizedFolder =
             typeof rawFolder === 'number' ? rawFolder
             : (typeof rawFolder === 'string' ? rawFolder : null);
-          const tagNames = Array.isArray(updatedNote.tags)
-            ? (updatedNote.tags as any[]).map((t: any) => (typeof t === 'string' ? t : t?.name)).filter(Boolean)
-            : [];
           const payload: any = {
             title: updatedNote.title,
             content: updatedNote.content,
@@ -441,7 +563,6 @@ class OfflineNotesService {
             ...(updatedNote.type === 'drawing' && {
               drawing_strokes: this.serializeDrawingData(updatedNote.drawing_data),
             }),
-            tag_names: tagNames,
           };
           if (updatedNote.document_annotations !== undefined && updatedNote.document_annotations !== null) {
             payload.document_annotations = updatedNote.document_annotations;
@@ -815,6 +936,10 @@ class OfflineNotesService {
             await offlineStorage.saveOfflineNote(syncedNote);
           }
 
+          // Note: we intentionally do not clear pending operations here to avoid
+          // accidentally removing other queued updates for the same note id.
+          // The sync layer de-dupes drawing updates safely.
+
           return {
             message: "Drawing saved successfully",
             note_id: noteId,
@@ -823,12 +948,20 @@ class OfflineNotesService {
           };
         } catch (error) {
           console.warn("Failed to save drawing to server, queued for sync:", error);
-          // Queue for sync when online
-          await noteSyncService.queueOperation('update', 'drawing', noteId);
+          // Queue for sync when online (but avoid duplicate queueing when note create is pending)
+          const pending = await offlineStorage.getPendingSyncOperations();
+          const hasCreateForThisNote = pending.some(op => op.entityType === 'note' && op.action === 'create' && (op.id === noteId || op.localId === noteId));
+          if (!hasCreateForThisNote) {
+            await noteSyncService.queueOperation('update', 'drawing', noteId);
+          }
         }
       } else {
-        // Queue for sync when online
-        await noteSyncService.queueOperation('update', 'drawing', noteId);
+        // Queue for sync when online (but avoid duplicate queueing when note create is pending)
+        const pending = await offlineStorage.getPendingSyncOperations();
+        const hasCreateForThisNote = pending.some(op => op.entityType === 'note' && op.action === 'create' && (op.id === noteId || op.localId === noteId));
+        if (!hasCreateForThisNote) {
+          await noteSyncService.queueOperation('update', 'drawing', noteId);
+        }
       }
 
       return {
@@ -861,6 +994,16 @@ class OfflineNotesService {
             } catch (parseError) {
               console.error('Failed to parse drawing_data:', parseError);
             }
+          }
+
+          // De-duplicate strokes by id
+          if (Array.isArray(strokes) && strokes.length > 1) {
+            const byId = new Map<string, DrawingStroke>();
+            for (const s of strokes) {
+              const key = (s as any)?.id || `${(s as any)?.timestamp}-${(s as any)?.color}-${(s as any)?.width}`;
+              if (!byId.has(key)) byId.set(key, s as any);
+            }
+            strokes = Array.from(byId.values());
           }
 
           const drawingData: DrawingData = {

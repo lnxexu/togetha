@@ -1,0 +1,31 @@
+# Nixpacks configuration for Railway deployment
+# - Installs Tesseract for pytesseract OCR
+# - Uses Python 3.11 (aligned with runtime.txt)
+# - Defines processes for web, Celery worker, and Celery beat
+
+[variables]
+PYTHON_VERSION = "3.11.0"
+
+[phases.setup]
+# Install system packages needed at runtime
+nixPkgs = ["tesseract"]
+
+[phases.install]
+cmds = [
+  "pip install --upgrade pip",
+  "pip install -r requirements.txt"
+]
+
+[phases.build]
+# Collect static files and run migrations during the build/deploy step
+cmds = [
+  "python manage.py collectstatic --noinput",
+  "python manage.py migrate"
+]
+
+[processes]
+# Railway typically runs one process per service; create separate services
+# in Railway and select the appropriate process (web, worker, or beat).
+web = "gunicorn server.wsgi:application --workers 3 --bind 0.0.0.0:$PORT"
+worker = "celery -A server worker --loglevel=info"
+beat = "celery -A server beat --loglevel=info"

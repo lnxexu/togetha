@@ -3,6 +3,7 @@ import { View, StyleSheet, Platform, ActivityIndicator, Text } from "react-nativ
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Svg, { Rect, Circle, Path, Text as SvgText } from "react-native-svg";
 import { getLocalPDFPath } from "../utils/pdfUtils";
+import { normalizeToHttps, API_URL, toAbsoluteMediaUrl, getAlternateMediaUrls } from "../../../constants/ApiConfig";
 
 // Lazy require to avoid web bundling issues
 const Pdf = Platform.OS !== "web" ? require("react-native-pdf").default : null;
@@ -55,35 +56,92 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
       setLoading(true); // Start loading
       setError(null);
       try {
-        const source = uri || documentUrl || undefined;
+  const source = uri || documentUrl || undefined;
         if (!source) {
           console.log("DocumentPreview: No source URI provided.");
           setError("No source URI provided.");
           setLoading(false);
           return;
         }
-        console.log("DocumentPreview: Source URI:", source);
+        
+        // Build absolute, cache-busted URL for media/documents, normalize to https
+        const normalizedSource = toAbsoluteMediaUrl(source, { cacheBust: true });
+        console.log("DocumentPreview: Final source URI:", normalizedSource);
         
         // For remote URLs, try to get local path first, but fall back gracefully
-        if (source.startsWith('http://') || source.startsWith('https://')) {
+        if (normalizedSource.startsWith('http://') || normalizedSource.startsWith('https://')) {
           try {
             // Ensure we have a local file path for react-native-pdf
             const token = await AsyncStorage.getItem("authToken");
-            const authHeaders = token ? { Authorization: `Token ${token}` } : undefined;
-            const result = await getLocalPDFPath(source, undefined, authHeaders);
+            let authHeaders: Record<string, string> | undefined;
+            if (token) {
+              authHeaders = { 
+                Authorization: `Token ${token}`,
+                Accept: "application/pdf",
+              };
+            } else {
+              authHeaders = { Accept: "application/pdf" };
+            }
+            console.log("DocumentPreview: Attempting download with auth headers:", !!authHeaders);
+            console.log("DocumentPreview: Download URL:", normalizedSource);
+            let result = await getLocalPDFPath(normalizedSource, undefined, authHeaders);
             if (!mounted) return;
-            console.log("DocumentPreview: Local URI result:", result);
+            console.log("DocumentPreview: Download result:", result);
             if (result) {
               setLocalUri(result);
               return;
             }
+            // Try alternate Railway host variants if first download failed silently
+            const alternates = getAlternateMediaUrls(normalizedSource);
+            for (const alt of alternates) {
+              console.warn('DocumentPreview: Primary PDF failed, trying alternate host:', alt);
+              result = await getLocalPDFPath(alt, undefined, authHeaders);
+              if (!mounted) return;
+              if (result) {
+                setLocalUri(result);
+                return;
+              }
+            }
           } catch (downloadError: any) {
             console.warn("DocumentPreview: Failed to download PDF locally:", downloadError);
+            console.warn("DocumentPreview: Download error details:", {
+              message: downloadError.message,
+              stack: downloadError.stack,
+              url: normalizedSource
+            });
+            
+            // If the error is about invalid PDF format, let's check what the server is actually returning
+            if (downloadError.message && downloadError.message.includes('Invalid PDF downloaded')) {
+              try {
+                console.log("DocumentPreview: Checking server response for debugging...");
+                const token = await AsyncStorage.getItem("authToken");
+                const debugHeaders = token ? { Authorization: `Token ${token}` } : undefined;
+                const debugResponse = await fetch(normalizedSource, {
+                  method: 'GET',
+                  headers: debugHeaders
+                });
+                console.log("DocumentPreview: Server response status:", debugResponse.status);
+                console.log("DocumentPreview: Server response headers:", Object.fromEntries(debugResponse.headers.entries()));
+                const contentType = debugResponse.headers.get('content-type');
+                console.log("DocumentPreview: Server response content-type:", contentType);
+                
+                if (contentType && contentType.includes('application/json')) {
+                  const jsonResponse = await debugResponse.json();
+                  console.log("DocumentPreview: Server returned JSON:", jsonResponse);
+                } else {
+                  const textResponse = await debugResponse.text();
+                  console.log("DocumentPreview: Server returned text (first 200 chars):", textResponse.substring(0, 200));
+                }
+              } catch (debugError) {
+                console.warn("DocumentPreview: Failed to debug server response:", debugError);
+              }
+            }
+            
             // For preview purposes, we can try to use the remote URL directly
             // Some PDF viewers can handle remote URLs, though it's less reliable
-            if (source.startsWith('https://')) {
+            if (normalizedSource.startsWith('https://')) {
               console.log("DocumentPreview: Attempting to use remote URL directly for preview");
-              setLocalUri(source);
+              setLocalUri(normalizedSource);
               return;
             }
             // If it's HTTP or download failed completely, show error

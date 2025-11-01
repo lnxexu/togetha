@@ -18,7 +18,7 @@ import {
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { API_URL, API_ENDPOINTS } from "@/constants/ApiConfig";
+import { API_URL, API_ENDPOINTS, normalizeToHttps, toAbsoluteMediaUrl, getAlternateMediaUrls, joinUrl } from "@/constants/ApiConfig";
 import Svg, { Rect, Circle, Path, Text as SvgText } from "react-native-svg";
 import { WebView } from "react-native-webview";
 
@@ -85,6 +85,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   const [currentStroke, setCurrentStroke] = useState<string>("");
   const [lastSaveTime, setLastSaveTime] = useState<number>(Date.now());
   const [authToken, setAuthToken] = useState<string>("");
+  const [resolvedPdfUrl, setResolvedPdfUrl] = useState<string | null>(null);
+  const [pdfAltTried, setPdfAltTried] = useState(false);
 
   const webViewRef = useRef<WebView>(null);
   const drawingPathRef = useRef<string>("");
@@ -135,6 +137,75 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
       lc.startsWith('/')
     );
   };
+
+  // Pre-resolve PDF URLs from media/documents with cache-busting and Railway host fallback
+  useEffect(() => {
+    const resolvePdf = async () => {
+      try {
+        setResolvedPdfUrl(null);
+        setPdfAltTried(false);
+
+        if (actualDocumentType !== 'pdf') return;
+
+        // Only attempt to resolve for backend or media paths
+        const needsResolve = isBackendDocumentUri(documentUri) || /\/media\/documents\//i.test(documentUri);
+        if (!needsResolve) return;
+
+        const absolute = toAbsoluteMediaUrl(documentUri, { cacheBust: true });
+
+        // Try original first
+        const ok = await tryFetchHead(absolute);
+        if (ok) {
+          setResolvedPdfUrl(absolute);
+          return;
+        }
+
+        // Try alternates (e.g., without numeric Railway suffix)
+        const alts = getAlternateMediaUrls(absolute);
+        for (const alt of alts) {
+          const altOk = await tryFetchHead(alt);
+          if (altOk) {
+            console.warn('PDF 404 on primary – using alternate host:', alt);
+            setResolvedPdfUrl(alt);
+            setPdfAltTried(true);
+            return;
+          }
+        }
+
+        // If all fail, still set the original so viewer can attempt
+        setResolvedPdfUrl(absolute);
+      } catch (e) {
+        console.log('Error resolving PDF URL:', e);
+        // Fallback to normalized absolute URL
+        setResolvedPdfUrl(toAbsoluteMediaUrl(documentUri, { cacheBust: true }));
+      }
+    };
+
+    // Helper: attempt a lightweight fetch to verify availability
+    const tryFetchHead = async (url: string): Promise<boolean> => {
+      try {
+        const headers: any = {
+          'Cache-Control': 'no-cache',
+        };
+        // If URL is under our API host and we have a token, include it
+        try {
+          const apiHost = new URL(API_URL).host;
+          const u = new URL(url);
+          if (authToken && u.host === apiHost) {
+            headers['Authorization'] = `Token ${authToken}`;
+          }
+        } catch {}
+
+        const resp = await fetch(url, { method: 'GET', headers });
+        return resp.ok;
+      } catch {
+        return false;
+      }
+    };
+
+    resolvePdf();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [documentUri, actualDocumentType, authToken]);
 
   // Auto-save functionality similar to drawing feature
   const autoSave = useCallback(async () => {
@@ -442,10 +513,12 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
                               documentUri.includes('/api/users/');
     
     if (isBackendDocument) {
-      // For backend documents, we need to proxy through our authenticated endpoint
+      // For backend documents, normalize to absolute; if it's a PDF and we resolved, use that
       console.log("Using backend document from database:", documentUri);
       const fullUrl = documentUri.startsWith('http') ? documentUri : `${API_URL}${documentUri}`;
-      return fullUrl;
+      const abs = normalizeToHttps(fullUrl);
+      if (actualDocumentType === 'pdf' && resolvedPdfUrl) return resolvedPdfUrl;
+      return abs;
     }
 
     if (actualDocumentType === "pdf") {
@@ -454,36 +527,58 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
       // return the local URI directly so the native PDF renderer or WebView
       // can open it without the remote PDF.js viewer (which will load a
       // default sample PDF if the `file` parameter is invalid).
-      const isRemote = typeof documentUri === 'string' && (documentUri.startsWith('http://') || documentUri.startsWith('https://'));
+      const source = resolvedPdfUrl || documentUri;
+  const isRemote = typeof source === 'string' && (source.startsWith('http://') || source.startsWith('https://'));
 
       if (!isRemote) {
         console.log('PDF appears to be a local file, returning local URI for direct viewing:', documentUri);
         return documentUri;
       }
 
+      // Normalize remote URIs to https and attach auth token when using backend
+      let remotePdf = normalizeToHttps(source);
+      try {
+        const u = new URL(remotePdf);
+        const apiHost = new URL(API_URL).host;
+        // Prefer tokenized serve endpoint when noteId is available
+        if (noteId && u.pathname.includes('/note_taking/documents/')) {
+          const serve = joinUrl(API_URL, API_ENDPOINTS.SERVE_DOCUMENT(noteId));
+          const serveUrl = new URL(serve);
+          if (authToken) serveUrl.searchParams.set('token', authToken);
+          serveUrl.searchParams.set('t', Date.now().toString());
+          remotePdf = serveUrl.toString();
+        } else if (authToken && (u.host === apiHost || u.pathname.startsWith('/'))) {
+          // Append token for protected media when served from our API host
+          u.searchParams.set('token', authToken);
+          u.searchParams.set('t', Date.now().toString());
+          remotePdf = u.toString();
+        }
+      } catch {}
+
       // For remote PDFs, use the selected web viewer
       if (useAlternativeViewer) {
-        const encodedUri = encodeURIComponent(documentUri);
+        const encodedUri = encodeURIComponent(remotePdf);
         const googleDocsUrl = `https://docs.google.com/viewer?url=${encodedUri}&embedded=true`;
         console.log("Using Google Docs PDF viewer:", googleDocsUrl);
         return googleDocsUrl;
       } else {
-        const encodedUri = encodeURIComponent(documentUri);
+        const encodedUri = encodeURIComponent(remotePdf);
         const pdfJsUrl = `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodedUri}`;
         console.log("Using PDF.js viewer:", pdfJsUrl);
         return pdfJsUrl;
       }
     } else if (actualDocumentType === "image") {
       // For images, display directly
-      console.log("Using direct image URL:", documentUri);
-      return documentUri;
+      const imgUrl = documentUri.startsWith('http') ? normalizeToHttps(documentUri) : documentUri;
+      console.log("Using direct image URL:", imgUrl);
+      return imgUrl;
     } else if (
       actualDocumentType === "word" ||
       actualDocumentType === "doc" ||
       actualDocumentType === "docx"
     ) {
       // For Word documents, use Office Online viewer
-      const encodedUri = encodeURIComponent(documentUri);
+      const encodedUri = encodeURIComponent(normalizeToHttps(documentUri));
       if (useAlternativeViewer) {
         // Alternative: Google Docs viewer
         const googleDocsUrl = `https://docs.google.com/viewer?url=${encodedUri}&embedded=true`;
@@ -497,10 +592,11 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
       }
     } else {
       // For other document types, try generic viewers
-      const encodedUri = encodeURIComponent(documentUri);
+      const encodedUri = encodeURIComponent(normalizeToHttps(documentUri));
       if (useAlternativeViewer) {
-        console.log("Using direct access for other document:", documentUri);
-        return documentUri;
+        const direct = documentUri.startsWith('http') ? normalizeToHttps(documentUri) : documentUri;
+        console.log("Using direct access for other document:", direct);
+        return direct;
       } else {
         const googleDocsUrl = `https://docs.google.com/viewer?url=${encodedUri}&embedded=true`;
         console.log("Using Google Docs for other document:", googleDocsUrl);
@@ -512,7 +608,25 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   // Open document in external browser with platform-specific handling
   const openInExternalBrowser = async () => {
     try {
-      const url = documentUri;
+      // Build an external URL, adding token for backend documents when available
+      let url = documentUri;
+      const source = resolvedPdfUrl || documentUri;
+      if (actualDocumentType === 'pdf' && noteId) {
+        // Prefer serve endpoint with token
+        const serve = joinUrl(API_URL, API_ENDPOINTS.SERVE_DOCUMENT(noteId));
+        const serveUrl = new URL(serve);
+        if (authToken) serveUrl.searchParams.set('token', authToken);
+        serveUrl.searchParams.set('t', Date.now().toString());
+        url = serveUrl.toString();
+      } else if (isBackendDocumentUri(source)) {
+        const base = source.startsWith('http') ? source : `${API_URL}${source}`;
+        const full = new URL(normalizeToHttps(base));
+        if (authToken) full.searchParams.set('token', authToken);
+        full.searchParams.set('t', Date.now().toString());
+        url = full.toString();
+      } else if (url.startsWith('http://')) {
+        url = normalizeToHttps(url);
+      }
       console.log("Opening in external browser:", url);
 
       const canOpen = await Linking.canOpenURL(url);

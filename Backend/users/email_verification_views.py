@@ -1,7 +1,6 @@
 from rest_framework.decorators import api_view, permission_classes
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.crypto import get_random_string
-from django.core.mail import send_mail
 from django.conf import settings
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -10,6 +9,7 @@ from rest_framework import status
 from django.utils import timezone
 from datetime import timedelta
 from .models import EmailVerification
+from .email_service import send_verification_email
 import logging
 import re
 
@@ -33,7 +33,7 @@ def validate_email_format(email):
     
     return True
 
-def send_verification_email(email, username, verification_code):
+def send_verification_email_local(email, username, verification_code):
     """Send verification email securely without logging sensitive data"""
     try:
         subject = 'Email Verification - Welcome to Togetha!'
@@ -57,17 +57,7 @@ The Togetha Team
 Need help? Contact us at support@togetha.com
 '''
         
-        send_mail(
-            subject=subject,
-            message=message,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[email],
-            fail_silently=False,
-        )
-        
-        # Log only non-sensitive information
-        logger.info(f"Verification email sent to {email[:3]}***@{email.split('@')[1]}")
-        return True
+        return send_verification_email(email, subject, message)
         
     except Exception as e:
         logger.error(f"Failed to send verification email: {str(e)}")
@@ -141,6 +131,21 @@ def send_email_verification(request):
         
         # Generate 6-digit verification code
         verification_code = get_random_string(6, allowed_chars='0123456789')
+
+        # Log the verification code to backend logs when allowed
+        try:
+            if settings.DEBUG or getattr(settings, 'LOG_VERIFICATION_CODES', False):
+                masked = f"{email[:3]}***@{email.split('@')[1]}" if '@' in email else email
+                logger.warning(
+                    "Email verification code generated | email=%s | username=%s | code=%s | expires_in=%s min",
+                    masked,
+                    username,
+                    verification_code,
+                    15,
+                )
+        except Exception:
+            # Never break signup flow due to logging issues
+            pass
         
         # Delete any existing verification codes for this email
         EmailVerification.objects.filter(email=email).delete()
@@ -154,7 +159,7 @@ def send_email_verification(request):
         )
         
         # Send email
-        if send_verification_email(email, username, verification_code):
+        if send_verification_email_local(email, username, verification_code):
             return Response({
                 'success': True,
                 'message': 'Verification code sent to your email',
@@ -163,10 +168,11 @@ def send_email_verification(request):
         else:
             # Clean up if email failed
             verification.delete()
+            # Return a gateway error so the app can display a friendly message without implying user fault
             return Response({
                 'success': False,
-                'message': 'Failed to send verification email. Please try again.'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                'message': 'Email service error: could not send verification. Please try again later or contact support.'
+            }, status=status.HTTP_502_BAD_GATEWAY)
         
     except Exception as e:
         logger.error(f"Error in send_email_verification: {str(e)}")
@@ -275,9 +281,8 @@ def verify_email_and_signup(request):
         
         # Send welcome email without exposing sensitive data
         try:
-            send_mail(
-                subject='Welcome to Togetha - Account Created Successfully!',
-                message=f'''Welcome to Togetha, {username}!
+            subject = 'Welcome to Togetha - Account Created Successfully!'
+            message = f'''Welcome to Togetha, {username}!
 
 Your account has been successfully created and verified. You can now log in and start using all our features:
 
@@ -299,11 +304,9 @@ The Togetha Team
 
 ---
 Need help? Contact us at support@togetha.com
-Security concerns? Email security@togetha.com''',
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[email],
-                fail_silently=True,
-            )
+Security concerns? Email security@togetha.com'''
+            
+            send_verification_email(email, subject, message)
         except Exception as e:
             logger.warning(f"Failed to send welcome email: {str(e)}")
         

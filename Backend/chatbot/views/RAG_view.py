@@ -29,14 +29,25 @@ class ChatRAGView(APIView):
         # Build results either from user-wide search or specific documents
         if not doc_ids:
             hits = rag_helper.search_similar_for_user(query, user_id=user_id, top_k=top_k)
-            for cid, txt, score, doc_name, page_num in hits:
-                results.append({
-                    "doc_id": None,
-                    "snippet": txt,
-                    "score": score,
-                    "document_name": doc_name,
-                    "page": page_num,
-                })
+            for h in hits:
+                # Support both dict and tuple shapes for backward compatibility
+                if isinstance(h, dict):
+                    results.append({
+                        "doc_id": None,
+                        "snippet": h.get("chunk_text", ""),
+                        "score": h.get("similarity", 0.0),
+                        "document_name": h.get("document_name"),
+                        "page": None,
+                    })
+                else:
+                    cid, txt, score, doc_name, page_num = h
+                    results.append({
+                        "doc_id": None,
+                        "snippet": txt,
+                        "score": score,
+                        "document_name": doc_name,
+                        "page": page_num,
+                    })
         else:
             try:
                 query_emb = rag_helper.embed_texts([query])[0]

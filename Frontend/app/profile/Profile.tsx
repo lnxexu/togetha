@@ -25,8 +25,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { userService, UserProfile } from "./services/userService";
 import { progressService, ProgressSummary, DailyProgress } from "./services/progressService";
 import { utilityService } from "./services/utilityService";
-import { ProgressCard, ProgressChart } from "./components/ProgressComponents";
-import { API_URL } from "../../constants/ApiConfig";
+import { API_URL, joinUrl, normalizeToHttps, toAbsoluteMediaUrl, getAlternateMediaUrls } from "../../constants/ApiConfig";
 import * as ImagePicker from "expo-image-picker";
 
 // Lightweight skeleton component for profile loading
@@ -60,6 +59,8 @@ const Profile: React.FC = () => {
   const [selectedLanguage, setSelectedLanguage] = useState<string>("English");
   const [selectedTheme, setSelectedTheme] = useState<string>("Light");
   const [authToken, setAuthToken] = useState<string>("");
+  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [altTried, setAltTried] = useState(false);
 
   // Load auth token
   useFocusEffect(
@@ -133,6 +134,11 @@ const Profile: React.FC = () => {
         // Update state
         setUserData(profile);
         setUsername(profile.username || "");
+        const initialPic = profile.profile?.profile_picture_url
+          ? toAbsoluteMediaUrl(profile.profile.profile_picture_url, { cacheBust: true })
+          : null;
+        setImageUri(initialPic);
+        setAltTried(false);
 
         // Update AsyncStorage with new values
         await AsyncStorage.setItem("username", profile.username || "");
@@ -422,10 +428,10 @@ const Profile: React.FC = () => {
 
         // Store in AsyncStorage for persistence
         if (updatedProfile.profile?.profile_picture_url) {
-          await AsyncStorage.setItem(
-            "userProfilePicture",
-            updatedProfile.profile.profile_picture_url
-          );
+          const pic = toAbsoluteMediaUrl(updatedProfile.profile.profile_picture_url, { cacheBust: true });
+          setImageUri(pic);
+          setAltTried(false);
+          await AsyncStorage.setItem("userProfilePicture", pic);
         }
 
         Alert.alert("Success", "Profile picture updated successfully!");
@@ -473,18 +479,33 @@ const Profile: React.FC = () => {
   ]}
 >
   <View style={styles.profilePicContainer}>
-    {userData?.profile?.profile_picture_url ? (
+    {imageUri ? (
       <Image
         source={{ 
-          uri: userData.profile.profile_picture_url.startsWith('http') 
-            ? userData.profile.profile_picture_url 
-            : `${API_URL}${userData.profile.profile_picture_url}`,
+          uri: imageUri,
           headers: authToken ? {
             'Authorization': `Token ${authToken}`
           } : undefined
         }}
         style={styles.profilePic}
         resizeMode="cover"
+        onError={() => {
+          if (!imageUri) return;
+          if (!altTried) {
+            const alts = getAlternateMediaUrls(imageUri);
+            if (alts.length > 0) {
+              try {
+                const u = new URL(alts[0]);
+                u.searchParams.set('t', Date.now().toString());
+                console.warn('Profile picture 404 – retrying with alternate host:', u.toString());
+                setImageUri(u.toString());
+                setAltTried(true);
+                return;
+              } catch {}
+            }
+          }
+          setImageUri(null);
+        }}
       />
     ) : (
       <View style={styles.defaultProfilePic}>
