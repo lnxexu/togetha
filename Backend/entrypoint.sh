@@ -4,13 +4,14 @@ set -euo pipefail
 # Optional: run migrations at startup if requested
 if [ "${RUN_MIGRATIONS:-1}" = "1" ]; then
   echo "==> Applying database migrations"
-  python manage.py migrate --noinput || true
+  # Fail fast if migrations cannot be applied, so the container doesn't run in a bad state
+  python manage.py migrate --noinput
 fi
 
 # Optional: collect static at startup; safe if already collected at build
 if [ "${COLLECTSTATIC:-0}" = "1" ]; then
   echo "==> Collecting static files"
-  python manage.py collectstatic --noinput || true
+  python manage.py collectstatic --noinput
 fi
 
 ROLE=${ROLE:-web}
