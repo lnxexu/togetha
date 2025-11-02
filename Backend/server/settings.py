@@ -1,4 +1,3 @@
-from pathlib import Path
 import os
 from decouple import config, Csv
 import dj_database_url
@@ -46,9 +45,9 @@ EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default=SENDGRID_API_KEY)
 
 # From address
 DEFAULT_FROM_EMAIL = (
-        config('EMAIL_FROM', default='yellowhyunjin123@gmail.com')
-        or config('DEFAULT_FROM_EMAIL', default='yellowhyunjin123@gmail.com')
-        or EMAIL_HOST_USER
+    config('EMAIL_FROM', default=None)
+    or config('DEFAULT_FROM_EMAIL', default=None)
+    or EMAIL_HOST_USER
 )
 
 # Use custom backend that can try multiple ports; we'll seed it with SendGrid defaults
@@ -108,7 +107,6 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'pgvector.django',
-    'debug_toolbar',
     'django_celery_beat', 
     'rest_framework',
     'rest_framework.authtoken', 
@@ -123,23 +121,45 @@ INSTALLED_APPS = [
     'usage_tracking',
 ]
 
+# Enable Django Debug Toolbar only in development
+if DEBUG:
+    INSTALLED_APPS.append('debug_toolbar')
+
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',  # Add WhiteNoise for static files in production
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # WhiteNoise for static files in production
     'django.contrib.sessions.middleware.SessionMiddleware',
     'server.middleware.ClientTimezoneMiddleware',
     'django.middleware.common.CommonMiddleware',
-    'server.middleware.CSRFExemptAPIMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'server.middleware.DebugAuthMiddleware',  
-    'server.middleware.UserActivityMiddleware',  
-    "debug_toolbar.middleware.DebugToolbarMiddleware",
+    'server.middleware.UserActivityMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+# Opt-in developer middlewares (CSRF exemption and debug auth) — disabled in production
+ENABLE_DEV_MIDDLEWARE = os.environ.get('ENABLE_DEV_MIDDLEWARE', 'False') == 'True'
+if DEBUG or ENABLE_DEV_MIDDLEWARE:
+    # Ensure CSRF exemption runs before the CsrfViewMiddleware
+    try:
+        _csrf_index = MIDDLEWARE.index('django.middleware.csrf.CsrfViewMiddleware')
+        MIDDLEWARE.insert(_csrf_index, 'server.middleware.CSRFExemptAPIMiddleware')
+    except ValueError:
+        MIDDLEWARE.append('server.middleware.CSRFExemptAPIMiddleware')
+
+    # Place DebugAuth just after AuthenticationMiddleware
+    try:
+        _auth_index = MIDDLEWARE.index('django.contrib.auth.middleware.AuthenticationMiddleware')
+        MIDDLEWARE.insert(_auth_index + 1, 'server.middleware.DebugAuthMiddleware')
+    except ValueError:
+        MIDDLEWARE.append('server.middleware.DebugAuthMiddleware')
+
+# Enable Debug Toolbar middleware only when DEBUG is true
+if DEBUG:
+    MIDDLEWARE.append('debug_toolbar.middleware.DebugToolbarMiddleware')
 
 CSRF_USE_SESSIONS = False  
 CSRF_COOKIE_HTTPONLY = False
@@ -302,7 +322,7 @@ REST_FRAMEWORK = {
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')  # For collectstatic in production
 STATICFILES_DIRS = [
-    os.path.join(BASE_DIR, 'templates'), 
+    os.path.join(BASE_DIR, 'static'),
 ]
 
 # WhiteNoise configuration for efficient static file serving
@@ -349,18 +369,19 @@ LOGGING = {
             'level': 'INFO',
             'propagate': False,
         },
+        # Use file handler only in DEBUG; otherwise, console only
         'server.email_backend': {
-            'handlers': ['console', 'file'],
+            'handlers': ['console'] + (['file'] if DEBUG else []),
             'level': 'DEBUG',
             'propagate': False,
         },
         'users.email_service': {
-            'handlers': ['console', 'file'],
+            'handlers': ['console'] + (['file'] if DEBUG else []),
             'level': 'INFO',
             'propagate': False,
         },
         'django.core.mail': {
-            'handlers': ['console', 'file'],
+            'handlers': ['console'] + (['file'] if DEBUG else []),
             'level': 'DEBUG',
             'propagate': False,
         },
