@@ -86,16 +86,50 @@ def create_log(user=None, level="INFO", message="", action="", entity_type=None,
     if entity_id and len(str(entity_id)) > 64:
         entity_id = str(entity_id)[:61] + "..."
 
-    log = Log.objects.create(
+    # Build the kwargs for creation. We'll attempt to include the timezone fields,
+    # but if the database doesn't yet have these columns (migrations pending),
+    # fall back to creating without them to avoid 500s in production.
+    create_kwargs = dict(
         user=user,
         level=level,
         message=message,
         action=action,
         entity_type=entity_type,
         entity_id=entity_id,
+    )
+
+    # Only include these if available; we'll also guard with a retry below.
+    create_kwargs_with_local = dict(
+        **create_kwargs,
         local_timestamp=local_ts,
         local_timestamp_text=local_ts_text,
-        client_timezone=client_tzname
+        client_timezone=client_tzname,
     )
-    return log
+
+    try:
+        return Log.objects.create(**create_kwargs_with_local)
+    except Exception as e:
+        # If the error hints that the column doesn't exist (e.g., migrations not applied), retry without those fields.
+        try:
+            from psycopg.errors import UndefinedColumn  # type: ignore
+            undefined_col = isinstance(e.__cause__, UndefinedColumn) or isinstance(e, UndefinedColumn)
+        except Exception:
+            undefined_col = False
+
+        message_str = str(e)
+        missing_column = (
+            "local_timestamp" in message_str
+            or "local_timestamp_text" in message_str
+            or "client_timezone" in message_str
+            or "UndefinedColumn" in message_str
+        )
+
+        if undefined_col or missing_column:
+            try:
+                return Log.objects.create(**create_kwargs)
+            except Exception:
+                # Last resort: don't crash logging; swallow to avoid masking original flow
+                return None
+        # Non-schema error: don't swallow silently; re-raise
+        raise
 
