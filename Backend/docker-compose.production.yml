@@ -1,0 +1,79 @@
+version: "3.9"
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: togetha-backend:latest
+    env_file: .env
+    environment:
+      # These should be present in your .env or set here explicitly
+      # SECRET_KEY: ${SECRET_KEY}
+      # DEBUG: "False"
+      # ALLOWED_HOSTS: your-domain.com
+      # CSRF_TRUSTED_ORIGINS: https://your-domain.com
+      # CORS_ALLOWED_ORIGINS: https://your-frontend.com
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@postgres:5432/togetha}
+      # Use split Redis URLs if provided, else REDIS_URL fallback inside app will handle
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/1}
+      REDIS_BROKER_URL: ${REDIS_BROKER_URL:-redis://redis:6379/0}
+      REDIS_CACHE_URL: ${REDIS_CACHE_URL:-redis://redis:6379/1}
+      PORT: 8000
+    command: ["/app/entrypoint.sh"]
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+      # - postgres   # uncomment if using local postgres below
+    restart: unless-stopped
+
+  worker:
+    image: togetha-backend:latest
+    env_file: .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@postgres:5432/togetha}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/1}
+      REDIS_BROKER_URL: ${REDIS_BROKER_URL:-redis://redis:6379/0}
+      REDIS_CACHE_URL: ${REDIS_CACHE_URL:-redis://redis:6379/1}
+    command: ["celery", "-A", "server", "worker", "--loglevel=info"]
+    depends_on:
+      - redis
+      # - postgres
+    restart: unless-stopped
+
+  beat:
+    image: togetha-backend:latest
+    env_file: .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@postgres:5432/togetha}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/1}
+      REDIS_BROKER_URL: ${REDIS_BROKER_URL:-redis://redis:6379/0}
+      REDIS_CACHE_URL: ${REDIS_CACHE_URL:-redis://redis:6379/1}
+    command: ["celery", "-A", "server", "beat", "--loglevel=info"]
+    depends_on:
+      - redis
+      # - postgres
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+  # Optional: local Postgres for non-Railway runs
+  # postgres:
+  #   image: pgvector/pgvector:pg17
+  #   environment:
+  #     POSTGRES_DB: togetha
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: postgres
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - pgdata:/var/lib/postgresql/data
+  #   restart: unless-stopped
+
+# volumes:
+#   pgdata:

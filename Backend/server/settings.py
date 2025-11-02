@@ -280,12 +280,15 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-# REDIS CACHE - Use REDIS_URL from environment or fallback to localhost
-REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/1')
+# REDIS CACHE - Prefer split URLs for cache vs broker; fall back to REDIS_URL
+REDIS_CACHE_URL = (
+    os.environ.get('REDIS_CACHE_URL')
+    or os.environ.get('REDIS_URL', 'redis://localhost:6379/1')
+)
 CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.redis.RedisCache',
-        'LOCATION': REDIS_URL,
+        'LOCATION': REDIS_CACHE_URL,
         'OPTIONS': {
             'CLIENT_CLASS': 'django_redis.client.DefaultClient',
         }
@@ -391,8 +394,11 @@ LOGGING = {
 TIME_ZONE = 'UTC'
 USE_TZ = True
 
-# CELERY CONFIGURATION - Use REDIS_URL from environment or fallback to localhost
-REDIS_BROKER_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+# CELERY CONFIGURATION - Prefer REDIS_BROKER_URL; fall back to REDIS_URL
+REDIS_BROKER_URL = (
+    os.environ.get('REDIS_BROKER_URL')
+    or os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+)
 CELERY_BROKER_URL = REDIS_BROKER_URL
 CELERY_RESULT_BACKEND = REDIS_BROKER_URL
 CELERY_TASK_SERIALIZER = 'json'
