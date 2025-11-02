@@ -90,7 +90,12 @@ Set these in Railway → Variables for each service (Web, Worker, Beat):
 - CSRF_TRUSTED_ORIGINS
 - CORS_ALLOWED_ORIGINS
 - DATABASE_URL (from Railway Postgres)
-- REDIS_URL (from Railway Redis)
+- Redis (choose one of the following approaches):
+  - Preferred: set split URLs
+    - REDIS_BROKER_URL = redis://:PASSWORD@HOST:PORT/0  (or rediss:// for TLS)
+    - REDIS_CACHE_URL  = redis://:PASSWORD@HOST:PORT/1  (or rediss:// for TLS)
+  - Simple: set only REDIS_URL (app will reuse it for both broker and cache)
+  - Convenience: if Railway provides REDIS_PUBLIC_URL/REDISHOST/REDISPORT/REDIS_PASSWORD, the app will auto-derive split URLs when REDIS_BROKER_URL/REDIS_CACHE_URL are not set.
 - GEMINI_API_KEY (optional: GEMINI_MODEL, EMBEDDING_MODEL)
 - EMAIL_HOST, EMAIL_PORT, EMAIL_USE_TLS, EMAIL_USE_SSL, EMAIL_HOST_USER, EMAIL_HOST_PASSWORD (if emailing)
 
@@ -140,6 +145,10 @@ After deployment:
 - Web logs: Confirm Gunicorn starts and Django loads.
 - Worker logs: Confirm Celery connects to Redis and finds tasks.
 - Beat logs: Confirm schedules are registered (e.g., `check_due_tasks` entries).
+
+### Redis and TLS (rediss://)
+
+If your Railway Redis URL uses `rediss://` (TLS), the app enables SSL automatically for both Django cache and Celery. No extra settings needed beyond using the `rediss://` scheme in your URLs.
 
 ## 8) Notes & tips
 

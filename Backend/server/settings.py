@@ -1,4 +1,5 @@
 import os
+import urllib.parse
 from decouple import config, Csv
 import dj_database_url
 from dotenv import load_dotenv
@@ -280,11 +281,52 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-# REDIS CACHE - Prefer split URLs for cache vs broker; fall back to REDIS_URL
-REDIS_CACHE_URL = (
-    os.environ.get('REDIS_CACHE_URL')
-    or os.environ.get('REDIS_URL', 'redis://localhost:6379/1')
-)
+# REDIS configuration
+# Prefer split URLs for cache vs broker; support Railway-style variables and TLS (rediss://)
+
+# Gather possible env inputs (Railway may expose multiple names)
+_env_redis_public_url = os.environ.get('REDIS_PUBLIC_URL') or os.environ.get('REDIS_URL')
+_env_redis_cache_url = os.environ.get('REDIS_CACHE_URL')
+_env_redis_broker_url = os.environ.get('REDIS_BROKER_URL')
+_env_redis_host = os.environ.get('REDISHOST') or os.environ.get('REDIS_HOST')
+_env_redis_port = os.environ.get('REDISPORT') or os.environ.get('REDIS_PORT')
+_env_redis_password = os.environ.get('REDISPASSWORD') or os.environ.get('REDIS_PASSWORD')
+
+def _with_db(url: str, db_index: int) -> str:
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        path = f"/{db_index}"
+        return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, path, parsed.query, parsed.fragment))
+    except Exception:
+        return url
+
+def _build_url(host: str, port: str, password: str | None, scheme: str = 'redis', db_index: int = 0) -> str:
+    auth = f":{password}@" if password else ""
+    return f"{scheme}://{auth}{host}:{port}/{db_index}"
+
+# Derive broker/cache URLs with priority:
+# 1) Explicit REDIS_BROKER_URL / REDIS_CACHE_URL
+# 2) From REDIS_PUBLIC_URL / REDIS_URL by forcing db index 0/1
+# 3) From REDIS(HOST|PORT|PASSWORD)
+REDIS_BROKER_URL = _env_redis_broker_url
+REDIS_CACHE_URL = _env_redis_cache_url
+
+if not REDIS_BROKER_URL or not REDIS_CACHE_URL:
+    base_url = _env_redis_public_url
+    if base_url:
+        REDIS_BROKER_URL = REDIS_BROKER_URL or _with_db(base_url, 0)
+        REDIS_CACHE_URL = REDIS_CACHE_URL or _with_db(base_url, 1)
+
+if (not REDIS_BROKER_URL or not REDIS_CACHE_URL) and _env_redis_host and _env_redis_port:
+    # Use rediss if base_url indicates TLS; otherwise default to redis
+    scheme = 'rediss' if (_env_redis_public_url or '').startswith('rediss://') else 'redis'
+    REDIS_BROKER_URL = REDIS_BROKER_URL or _build_url(_env_redis_host, _env_redis_port, _env_redis_password, scheme, 0)
+    REDIS_CACHE_URL = REDIS_CACHE_URL or _build_url(_env_redis_host, _env_redis_port, _env_redis_password, scheme, 1)
+
+# Final fallbacks for local dev
+REDIS_BROKER_URL = REDIS_BROKER_URL or os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+REDIS_CACHE_URL = REDIS_CACHE_URL or os.environ.get('REDIS_URL', 'redis://localhost:6379/1')
+
 CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.redis.RedisCache',
@@ -394,11 +436,7 @@ LOGGING = {
 TIME_ZONE = 'UTC'
 USE_TZ = True
 
-# CELERY CONFIGURATION - Prefer REDIS_BROKER_URL; fall back to REDIS_URL
-REDIS_BROKER_URL = (
-    os.environ.get('REDIS_BROKER_URL')
-    or os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
-)
+# CELERY CONFIGURATION - Use derived REDIS_BROKER_URL
 CELERY_BROKER_URL = REDIS_BROKER_URL
 CELERY_RESULT_BACKEND = REDIS_BROKER_URL
 CELERY_TASK_SERIALIZER = 'json'
@@ -411,3 +449,14 @@ CELERY_TASK_EAGER_PROPAGATES = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_DISABLE_RATE_LIMITS = True
+
+# Enable TLS/SSL for Redis if using rediss://
+if REDIS_CACHE_URL.startswith('rediss://'):
+    cache_options = CACHES['default'].setdefault('OPTIONS', {})
+    # Allow connecting without requiring CA bundle (managed providers often use trusted certs)
+    cache_options['CONNECTION_POOL_KWARGS'] = {'ssl_cert_reqs': None}
+
+if REDIS_BROKER_URL.startswith('rediss://'):
+    # Celery expects these names when loaded via namespace=CELERY
+    CELERY_BROKER_USE_SSL = True
+    CELERY_REDIS_BACKEND_USE_SSL = {'ssl_cert_reqs': None}
