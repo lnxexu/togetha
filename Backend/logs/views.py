@@ -2,6 +2,7 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from .models import Log
+from django.db import connection
 from django.utils import timezone as dj_timezone
 from django.utils.timezone import get_current_timezone_name, localtime
 from .serializers import LogSerializer
@@ -86,50 +87,67 @@ def create_log(user=None, level="INFO", message="", action="", entity_type=None,
     if entity_id and len(str(entity_id)) > 64:
         entity_id = str(entity_id)[:61] + "..."
 
-    # Build the kwargs for creation. We'll attempt to include the timezone fields,
-    # but if the database doesn't yet have these columns (migrations pending),
-    # fall back to creating without them to avoid 500s in production.
-    create_kwargs = dict(
-        user=user,
-        level=level,
-        message=message,
-        action=action,
-        entity_type=entity_type,
-        entity_id=entity_id,
-    )
-
-    # Only include these if available; we'll also guard with a retry below.
-    create_kwargs_with_local = dict(
-        **create_kwargs,
-        local_timestamp=local_ts,
-        local_timestamp_text=local_ts_text,
-        client_timezone=client_tzname,
-    )
-
-    try:
-        return Log.objects.create(**create_kwargs_with_local)
-    except Exception as e:
-        # If the error hints that the column doesn't exist (e.g., migrations not applied), retry without those fields.
+    # Determine whether the target DB table has the newer timezone columns.
+    def _table_has_columns(table: str, columns: list[str]) -> bool:
         try:
-            from psycopg.errors import UndefinedColumn  # type: ignore
-            undefined_col = isinstance(e.__cause__, UndefinedColumn) or isinstance(e, UndefinedColumn)
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = %s
+                    """,
+                    [table],
+                )
+                existing = {row[0] for row in cursor.fetchall()}
+            return set(columns).issubset(existing)
         except Exception:
-            undefined_col = False
+            # If introspection fails for any reason, assume columns exist to avoid silent data loss
+            return True
 
-        message_str = str(e)
-        missing_column = (
-            "local_timestamp" in message_str
-            or "local_timestamp_text" in message_str
-            or "client_timezone" in message_str
-            or "UndefinedColumn" in message_str
-        )
+    tz_cols = ["local_timestamp", "local_timestamp_text", "client_timezone"]
+    has_tz_columns = _table_has_columns("logs_log", tz_cols)
 
-        if undefined_col or missing_column:
-            try:
-                return Log.objects.create(**create_kwargs)
-            except Exception:
-                # Last resort: don't crash logging; swallow to avoid masking original flow
-                return None
-        # Non-schema error: don't swallow silently; re-raise
-        raise
+    if has_tz_columns:
+        # Normal path: insert including timezone-related columns
+        try:
+            return Log.objects.create(
+                user=user,
+                level=level,
+                message=message,
+                action=action,
+                entity_type=entity_type,
+                entity_id=entity_id,
+                local_timestamp=local_ts,
+                local_timestamp_text=local_ts_text,
+                client_timezone=client_tzname,
+            )
+        except Exception:
+            # Don't break primary flow due to logging
+            return None
+    else:
+        # Pre-migration safety: perform a raw insert that excludes missing columns
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO logs_log
+                        (user_id, level, message, action, entity_type, entity_id, timestamp, read)
+                    VALUES
+                        (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    [
+                        getattr(user, "id", None),
+                        level,
+                        message,
+                        action,
+                        entity_type,
+                        entity_id,
+                        dj_timezone.now(),
+                        False,
+                    ],
+                )
+            return None
+        except Exception:
+            return None
 
