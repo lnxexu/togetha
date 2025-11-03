@@ -621,10 +621,14 @@ def sendgrid_event_webhook(request):
                 try:
                     import base64
                     try:
-                        from nacl.signing import VerifyKey
-                        from nacl.exceptions import BadSignatureError
+                        import importlib
+                        nacl_signing = importlib.import_module('nacl.signing')
+                        VerifyKey = getattr(nacl_signing, 'VerifyKey', None)
+                        nacl_exceptions = importlib.import_module('nacl.exceptions')
+                        BadSignatureError = getattr(nacl_exceptions, 'BadSignatureError', Exception)
                     except Exception:
                         VerifyKey = None
+                        BadSignatureError = Exception
 
                     payload = timestamp.encode('utf-8') + request.body
 
