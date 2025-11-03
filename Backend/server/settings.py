@@ -1,4 +1,6 @@
 import os
+import logging
+import random
 import urllib.parse
 from decouple import config, Csv
 import dj_database_url
@@ -392,12 +394,38 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 
+# Sampling filter to reduce INFO/DEBUG log volume while always allowing WARNING+
+class InfoSamplerFilter(logging.Filter):
+    def __init__(self, rate: float = 0.05):
+        try:
+            self.rate = float(rate)
+        except Exception:
+            self.rate = 0.05
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        # Always allow warnings and above
+        if record.levelno >= logging.WARNING:
+            return True
+        # Sample lower-level logs
+        return random.random() < self.rate
+
+# Controls for production logging behavior
+LOG_SAMPLE_RATE = float(os.environ.get('LOG_SAMPLE_RATE', '0.05'))
+LOG_LEVEL = os.environ.get('LOG_LEVEL', 'WARNING').upper()
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
+    'filters': {
+        'info_sampler': {
+            '()': InfoSamplerFilter,
+            'rate': LOG_SAMPLE_RATE,
+        },
+    },
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
+            'filters': ['info_sampler'],
         },
         'file': {
             'class': 'logging.FileHandler',
@@ -406,9 +434,35 @@ LOGGING = {
     },
     'root': {
         'handlers': ['console'],
-        'level': 'INFO',
+        'level': LOG_LEVEL,
     },
     'loggers': {
+        # Framework and library loggers (keep noise down in production)
+        'django': {
+            'level': 'WARNING',
+            'handlers': ['console'],
+            'propagate': False,
+        },
+        'django.request': {
+            'level': 'WARNING',
+            'handlers': ['console'],
+            'propagate': False,
+        },
+        'django.server': {
+            'level': 'WARNING',
+            'handlers': ['console'],
+            'propagate': False,
+        },
+        'django.db.backends': {
+            'level': 'ERROR',  # avoid per-query info
+            'handlers': ['console'],
+            'propagate': False,
+        },
+        'celery': {
+            'level': 'WARNING',
+            'handlers': ['console'],
+            'propagate': False,
+        },
         'scheduler.tasks': {
             'handlers': ['console'],
             'level': 'INFO',
@@ -428,6 +482,22 @@ LOGGING = {
         'django.core.mail': {
             'handlers': ['console'] + (['file'] if DEBUG else []),
             'level': 'DEBUG',
+            'propagate': False,
+        },
+        # App-level loggers: keep at INFO but subject to sampling
+        'users': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'server': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'logs': {
+            'handlers': ['console'],
+            'level': 'INFO',
             'propagate': False,
         },
     },

@@ -52,9 +52,9 @@ def user_profile(request):
 
     elif request.method in ['PUT', 'PATCH']:
         try:
-            # Log the request data for debugging
-            print(f"Request data: {request.data}")
-            print(f"Request FILES: {request.FILES}")
+            # Log the request data for debugging (debug-level to avoid noise)
+            logger.debug(f"Request data: {request.data}")
+            logger.debug(f"Request FILES: {request.FILES}")
 
             profile_picture = None
             if 'profile_picture' in request.FILES:
@@ -76,7 +76,7 @@ def user_profile(request):
                         profile.profile_picture_content_type = profile_picture.content_type
                         profile.save()
                     except Exception as e:
-                        print(f"Profile picture upload error: {e}")
+                        logger.error(f"Profile picture upload error: {e}")
                         return Response({"detail": f"Profile picture upload failed: {str(e)}"},
                                         status=status.HTTP_400_BAD_REQUEST)
 
@@ -85,8 +85,7 @@ def user_profile(request):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             import traceback
-            print(f"ERROR in user_profile: {str(e)}")
-            print(traceback.format_exc())
+            logger.exception(f"ERROR in user_profile: {str(e)}")
             return Response({"detail": f"Server error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
 
@@ -409,7 +408,7 @@ Time: {timezone.now().strftime('%Y-%m-%d %H:%M:%S UTC')}
             
         except Exception as e:
             # Log the error but don't expose it to the user
-            print(f"Error sending password reset email: {e}")
+            logger.error(f"Error sending password reset email: {e}")
             return Response(
                 {'error': 'Failed to send reset code. Please try again later.'}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -421,7 +420,7 @@ Time: {timezone.now().strftime('%Y-%m-%d %H:%M:%S UTC')}
         )
         
     except Exception as e:
-        print(f"Forgot password error: {e}")
+        logger.error(f"Forgot password error: {e}")
         return Response(
             {'error': 'An error occurred. Please try again later.'}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -502,7 +501,7 @@ def verify_reset_code(request):
         )
         
     except Exception as e:
-        print(f"Verify reset code error: {e}")
+        logger.error(f"Verify reset code error: {e}")
         return Response(
             {'error': 'An error occurred. Please try again later.'}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -539,7 +538,7 @@ def serve_profile_picture(request, user_id):
                     return resp
                 # If file doesn't exist on disk, fall back to redirect to URL (may return 404)
             except Exception as e:
-                print(f"Error serving profile picture file directly: {e}")
+                logger.error(f"Error serving profile picture file directly: {e}")
                 # Fall through to legacy handling
 
         if not profile.profile_picture_content:
@@ -593,9 +592,7 @@ def serve_profile_picture(request, user_id):
         return response
         
     except Exception as e:
-        print(f"Error serving profile picture: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.exception(f"Error serving profile picture: {e}")
         return JsonResponse({
             'error': 'Failed to serve profile picture',
             'detail': str(e)

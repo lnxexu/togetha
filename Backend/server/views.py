@@ -1,4 +1,5 @@
 from rest_framework.decorators import api_view, permission_classes
+import logging
 from rest_framework.response import Response
 from .serializers import UserSerializer
 from rest_framework import status
@@ -15,6 +16,7 @@ from rest_framework.response import Response
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import authenticate, login as django_login, logout
 from logs.views import create_log
+logger = logging.getLogger(__name__)
 
 
 @api_view(['POST'])
@@ -70,7 +72,7 @@ def login_api(request):
                     request=request
                 )
             except Exception as e:
-                print(f"Auto logout log creation error: {str(e)}")
+                logger.error(f"Auto logout log creation error: {str(e)}")
         
         # Create new session for current device
         session_id = str(uuid.uuid4())
@@ -98,10 +100,10 @@ def login_api(request):
                 request=request
             )
         except Exception as e:
-            print(f"Log creation error: {str(e)}")
+            logger.error(f"Log creation error: {str(e)}")
 
     except Exception as e:
-        print(f"Session creation error: {str(e)}")
+        logger.error(f"Session creation error: {str(e)}")
         return Response({
             'error': 'Session creation failed',
             'detail': str(e)
@@ -263,13 +265,13 @@ def user_logout(request):
             # Deactivate all sessions if no specific device info
             UserSession.objects.filter(user=user, is_active=True).update(is_active=False)
     except Exception as e:
-        print(f"Session deactivation error: {str(e)}")
+        logger.error(f"Session deactivation error: {str(e)}")
     
     # Delete the token to logout
     try:
         user.auth_token.delete()
     except Exception as e:
-        print(f"Token deletion error: {str(e)}")
+        logger.error(f"Token deletion error: {str(e)}")
     
     # Logout from Django session
     logout(request)
@@ -285,7 +287,7 @@ def user_logout(request):
             entity_id=user.id
         )
     except Exception as e:
-        print(f"Log creation error: {str(e)}")
+        logger.error(f"Log creation error: {str(e)}")
 
     return Response({'message': 'Successfully logged out'}, 
                     status=status.HTTP_200_OK)

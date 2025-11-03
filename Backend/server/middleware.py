@@ -1,4 +1,5 @@
 from django.utils import timezone
+import logging
 try:
     from zoneinfo import ZoneInfo
 except Exception:
@@ -101,7 +102,7 @@ class UserActivityMiddleware:
                     )
                 except Exception as e:
                     # Don't let logging errors break the request
-                    print(f"UserActivityMiddleware error: {str(e)}")
+                    logging.getLogger(__name__).error(f"UserActivityMiddleware error: {str(e)}")
         
         return response
 
@@ -133,7 +134,7 @@ class DebugAuthMiddleware:
             request.META['HTTP_AUTHORIZATION'] = auth_header
         
         if auth_header:
-            print(f"Auth header present: {auth_header[:15]}...")
+            logging.getLogger(__name__).debug(f"Auth header present: {auth_header[:15]}...")
             
             # Ensure the auth processing happens correctly
             if auth_header.startswith('Token '):
@@ -141,27 +142,27 @@ class DebugAuthMiddleware:
                 from rest_framework.authtoken.models import Token
                 try:
                     token = Token.objects.get(key=token_key)
-                    print(f"Found token for user: {token.user.username}")
+                    logging.getLogger(__name__).debug(f"Found token for user: {token.user.username}")
                     request.user = token.user
                 except Token.DoesNotExist:
-                    print(f"Token not found in database: {token_key[:10]}...")
+                    logging.getLogger(__name__).debug(f"Token not found in database: {token_key[:10]}...")
                 except Exception as e:
-                    print(f"Error processing token: {str(e)}")
+                    logging.getLogger(__name__).error(f"Error processing token: {str(e)}")
         else:
             # Only log for endpoints that typically require authentication
             auth_required_paths = ['/users/profile/', '/users/progress/', '/users/session/']
             if any(request.path.startswith(path) for path in auth_required_paths):
-                print("No authorization header found for authenticated endpoint")
+                logging.getLogger(__name__).debug("No authorization header found for authenticated endpoint")
         
         response = self.get_response(request)
         
         if response.status_code >= 400 and auth_header:
-            print(f"User authenticated: {request.user.is_authenticated}")
+            logging.getLogger(__name__).debug(f"User authenticated: {request.user.is_authenticated}")
         
         # Only log response status for errors
         if response.status_code >= 400:
-            print(f"Response status: {response.status_code}")
+            logging.getLogger(__name__).warning(f"Response status: {response.status_code}")
             if response.status_code >= 500:
-                print(f"Server error on path: {request.path}")
+                logging.getLogger(__name__).error(f"Server error on path: {request.path}")
         
         return response
